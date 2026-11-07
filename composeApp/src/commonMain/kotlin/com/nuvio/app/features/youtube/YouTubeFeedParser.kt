@@ -446,6 +446,35 @@ internal fun parseYouTubeChannelStats(body: String): YouTubeChannelStats? {
     return YouTubeChannelStats(subscribers, videos)
 }
 
+/**
+ * The last path segment of the tab a channel page answered with ("videos", "streams", "playlists",
+ * "featured"): the `tabRenderer` marked `selected`, by its endpoint's web URL. YouTube does not refuse a
+ * tab the channel lacks (no live streams, no playlists); it answers with the channel's Home tab
+ * selected, whose shelves would otherwise read as that tab's videos. Null when no tab says it is
+ * selected (a continuation page, or a shape this does not know), so callers keep the answer as it is.
+ */
+internal fun parseYouTubeSelectedChannelTab(body: String): String? {
+    val root = runCatching { feedJson.parseToJsonElement(body) }.getOrNull() ?: return null
+    val selected = (collectObjects(root, "tabRenderer") + collectObjects(root, "expandableTabRenderer"))
+        .firstOrNull { it.boolean("selected") == true } ?: return null
+    val url = ((((selected["endpoint"] as? JsonObject)?.get("commandMetadata") as? JsonObject)
+        ?.get("webCommandMetadata") as? JsonObject)?.get("url") as? JsonPrimitive)?.content ?: return null
+    val segment = url.substringBefore('?').trimEnd('/').substringAfterLast('/')
+    // A channel's root URL ("/@name") is its Home tab.
+    return if (segment.startsWith("@") || segment.startsWith("UC")) "featured" else segment
+}
+
+/** Whether a first page of [tab] is really that tab, not the Home tab YouTube falls back to. */
+internal fun isYouTubeChannelTabAnswer(body: String, tab: YouTubeChannelTab): Boolean {
+    val segment = parseYouTubeSelectedChannelTab(body) ?: return true
+    val expected = when (tab) {
+        YouTubeChannelTab.Videos -> "videos"
+        YouTubeChannelTab.Live -> "streams"
+        YouTubeChannelTab.Playlists -> "playlists"
+    }
+    return segment.equals(expected, ignoreCase = true)
+}
+
 private val YOUTUBE_VIDEO_COUNT = Regex("""^[\d.,\s]+[KMB]?\s+videos?$""", RegexOption.IGNORE_CASE)
 
 private fun watchedPercent(raw: Int?): Int? = raw?.takeIf { it > 0 }?.coerceAtMost(100)

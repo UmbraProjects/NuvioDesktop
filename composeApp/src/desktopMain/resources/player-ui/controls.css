@@ -1373,6 +1373,14 @@ button svg * {
   opacity: 1;
   transform: translate(-50%, 0);
 }
+/* The card's content takes clicks (pointer-events: auto below), so the hidden card must be out of
+ * reach entirely: at opacity 0 its "Go back" button sat invisibly under the subtitles and a click
+ * there left playback. Hidden only once the fade-out has finished. */
+.playback-error:not(.visible) {
+  visibility: hidden;
+  transition: opacity 180ms ease, transform 180ms var(--ease-out), visibility 0s linear 180ms;
+}
+.playback-error:not(.visible) .playback-error-content { pointer-events: none; }
 
 .playback-error-content {
   width: 100%;
@@ -7817,4 +7825,508 @@ svg {
   border: 1px solid rgba(255, 255, 255, .6);
   background: rgba(255, 255, 255, .92);
   box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
+}
+
+/* ---- Docked panels ----------------------------------------------------------------------------
+ * Subtitles (tracks, addons, style), audio, stream info, submit intro and the watch party open as
+ * one black glass panel standing just above the progress cluster: pinned to its right end, or its
+ * left end on the Official Nuvio layout (.dock-side-left), and grown out of the tool pill on
+ * Minimal with pills (.dock-integrated). controls.js positionDockPanel sets the offsets and size
+ * limits; the inner edges drag to resize. A rail of icons down the inner side switches between
+ * them in place. No scrim: the layer takes no clicks, so the control row under it stays usable.
+ * The HUD has nothing behind it to blur (the picture is a separate surface), so the glass is
+ * translucent black with a sheen rather than a blur. */
+:is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal).dock-modal {
+  display: block;
+  padding: 0;
+  background: transparent;
+}
+.modal-layer.dock-modal.modal-visible { pointer-events: none; }
+.dock-modal .dock-frame {
+  position: absolute;
+  left: var(--dock-left, auto);
+  right: var(--dock-right, 24px);
+  bottom: var(--dock-bottom, 140px);
+  pointer-events: none;
+}
+.dock-modal.modal-visible .dock-frame { pointer-events: auto; }
+
+:is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .track-panel.dock-panel {
+  width: var(--dock-w, 680px);
+  height: var(--dock-h, 460px);
+  max-height: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  border: 1px solid rgba(255, 255, 255, .11);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, .012) 34%, rgba(255, 255, 255, 0) 60%),
+    rgba(6, 6, 8, .82);
+  box-shadow:
+    0 26px 70px rgba(0, 0, 0, .55),
+    0 2px 10px rgba(0, 0, 0, .35),
+    inset 0 1px 0 rgba(255, 255, 255, .10);
+  transform-origin: 100% 100%;
+}
+.player.dock-side-left :is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .track-panel.dock-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  transform-origin: 0 100%;
+}
+.modal-layer.dock-modal .track-panel.dock-panel { transform: translateY(10px) scale(.985); }
+.modal-layer.dock-modal.modal-visible .track-panel.dock-panel { transform: none; }
+.modal-layer.dock-modal.modal-closing .track-panel.dock-panel { transform: translateY(6px) scale(.99); }
+
+/* Minimal + pills: the panel grows up out of the tool pill. The pill darkens to the panel glass
+ * while it is open and the two share an edge, so they read as one shape. */
+.player.dock-integrated :is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .track-panel.dock-panel {
+  border-bottom-color: transparent;
+  border-radius: 20px 20px 0 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, 0) 50%),
+    rgba(8, 8, 11, .86);
+  box-shadow: 0 -18px 60px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .09);
+  transition:
+    clip-path var(--motion-panel) var(--ease-out),
+    opacity var(--motion-standard) ease;
+}
+.player.dock-integrated .modal-layer.dock-modal .track-panel.dock-panel {
+  transform: none;
+  clip-path: inset(100% 0 0 0 round 20px 20px 0 20px);
+}
+.player.dock-integrated .modal-layer.dock-modal.modal-visible .track-panel.dock-panel {
+  clip-path: inset(0 0 0 0 round 20px 20px 0 20px);
+}
+.player.minimal-hud.minimal-pills.dock-integrated.dock-open .desktop-control-row .action-row {
+  border-radius: 0 0 23px 23px;
+  background: rgba(8, 8, 11, .86);
+  /* The panel's one-pixel edge carried on down the pill's sides and round its foot, so the two
+   * outlines run into each other as one. */
+  box-shadow:
+    inset 1px 0 0 rgba(255, 255, 255, .11),
+    inset -1px 0 0 rgba(255, 255, 255, .11),
+    inset 0 -1px 0 rgba(255, 255, 255, .11);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.player.minimal-hud.minimal-pills .desktop-control-row .action-row {
+  transition: border-radius var(--motion-standard) ease, background-color var(--motion-standard) ease;
+}
+
+/* One docked panel replacing another is a tab change: it appears in place, without the fade. */
+.modal-layer.dock-modal.dock-switching,
+.modal-layer.dock-modal.dock-switching .track-panel.dock-panel { transition: none !important; }
+
+/* Resize handles on the moving edges: the top edge, the inner side and the corner between. */
+.dock-resize {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+.dock-resize-y { top: -4px; left: 16px; right: 16px; height: 9px; cursor: ns-resize; }
+.dock-resize-x { top: 16px; bottom: 16px; left: -4px; width: 9px; cursor: ew-resize; }
+.dock-resize-xy { top: -5px; left: -5px; width: 18px; height: 18px; cursor: nwse-resize; }
+.player.dock-side-left .dock-resize-x { left: auto; right: -4px; }
+.player.dock-side-left .dock-resize-xy { left: auto; right: -5px; cursor: nesw-resize; }
+.player.dock-resizing,
+.player.dock-resizing * { user-select: none; }
+.player.dock-resizing .dock-modal .track-panel.dock-panel { transition: none; }
+
+/* The rail sits on the inner side: left of the content, or right of it when docked left. */
+.dock-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 8px;
+  border-right: 1px solid rgba(255, 255, 255, .08);
+  background: rgba(0, 0, 0, .30);
+}
+.player.dock-side-left .dock-rail { order: 2; border-right: 0; border-left: 1px solid rgba(255, 255, 255, .08); }
+.dock-rail-button {
+  position: relative;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(255, 255, 255, .55);
+  cursor: pointer;
+  transition: background-color .12s ease, border-color .12s ease, color .12s ease;
+}
+.dock-rail-button svg { width: 20px; height: 20px; fill: currentColor; }
+.dock-rail-button:hover,
+.dock-rail-button:focus-visible {
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+  outline: none;
+}
+.dock-rail-button.selected {
+  border-color: rgba(255, 255, 255, .16);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .07));
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+.dock-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.dock-body > :is(.track-list, .style-panel, .intro-form, .stream-info-body, .party-body, .party-chat, .consent-body) {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.dock-body > :is(.track-list, .style-panel, .intro-form, .stream-info-body, .party-body) { overflow-y: auto; }
+.dock-body > .party-chat { height: auto; }
+/* Scrolls with the wheel, but draws no scroll bar. */
+:is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .dock-panel * { scrollbar-width: none; }
+:is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .dock-panel *::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+:is(#audioModal, #subtitleModal) .dock-body .track-header {
+  padding: 14px 20px;
+  font-size: 15px;
+  text-align: left;
+}
+.dock-body .track-header-row { padding: 10px 14px 10px 20px; }
+.dock-body .track-title { font-size: 15px; }
+:is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .dock-body :is(.track-header, .track-header-row) {
+  border-bottom-color: rgba(255, 255, 255, .08);
+}
+/* Tracks, addons and style each have their own rail entry; the tab strip would repeat them. */
+#subtitleModal .dock-body .subtitle-tabs { display: none; }
+
+/* ---- Subtitle style, docked ------------------------------------------------------------------
+ * One continuous settings sheet rather than a stack of cards: section titles in small caps with a
+ * hairline between sections, flat rows on one rhythm, and every control (stepper, dropdown,
+ * button, switch) drawn as the same low glass well at the same height, so they read as one set. */
+#subtitleModal .dock-body .style-panel {
+  --style-control-width: 168px;
+  --style-well: rgba(255, 255, 255, .065);
+  --style-well-hover: rgba(255, 255, 255, .11);
+  --style-control-height: 30px;
+  gap: 0;
+  padding: 4px 20px 16px;
+}
+#subtitleModal .dock-body .style-group {
+  padding: 10px 0 6px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 0;
+  background: transparent;
+}
+#subtitleModal .dock-body .style-group:first-child { border-top: 0; padding-top: 4px; }
+#subtitleModal .dock-body .style-group-head {
+  min-height: 30px;
+  padding: 4px 0 2px;
+}
+#subtitleModal .dock-body .style-group-title {
+  color: rgba(255, 255, 255, .46);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+}
+#subtitleModal .dock-body .style-group :is(.style-row, .swatch-section, .auto-sync-card),
+#subtitleModal .dock-body .style-group-head + :is(.style-row, .swatch-section, .auto-sync-card) {
+  min-height: 40px;
+  padding: 5px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#subtitleModal .dock-body .style-group .style-label {
+  color: rgba(255, 255, 255, .84);
+  font-size: 13px;
+  font-weight: 500;
+}
+#subtitleModal .dock-body .style-group .stream-subtitle {
+  color: rgba(255, 255, 255, .42);
+  font-size: 11.5px;
+}
+/* Swatches share the row with their label, right-aligned like every other control. */
+#subtitleModal .dock-body .style-group .swatch-section {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+#subtitleModal .dock-body .style-group .swatch-section > .style-label { flex: 0 0 auto; }
+#subtitleModal .dock-body .style-group .swatch-row {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  gap: 7px;
+}
+#subtitleModal .dock-body .style-group-head + .swatch-section { padding-top: 0; }
+#subtitleModal .dock-body .style-group .swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, .18);
+}
+#subtitleModal .dock-body .style-group .swatch.selected {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px rgba(8, 8, 11, .9), 0 0 0 3.5px rgba(255, 255, 255, .9);
+}
+#subtitleModal .dock-body .style-group .auto-sync-card { gap: 4px; }
+#subtitleModal .dock-body .style-group .auto-sync-card > .style-row { min-height: 30px; padding: 0; }
+
+/* The one control well. */
+#subtitleModal .dock-body .style-group .stepper,
+#subtitleModal .dock-body .style-group .style-select,
+#subtitleModal .dock-body .style-panel .panel-button {
+  height: var(--style-control-height);
+  min-height: var(--style-control-height);
+  border: 0;
+  border-radius: 9px;
+  background: var(--style-well);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+  color: rgba(255, 255, 255, .9);
+}
+#subtitleModal .dock-body .style-group .style-select:hover,
+#subtitleModal .dock-body .style-panel .panel-button:hover:not(:disabled) {
+  border: 0;
+  background: var(--style-well-hover);
+  color: #fff;
+}
+#subtitleModal .dock-body .style-group .stepper { padding: 0 2px; }
+#subtitleModal .dock-body .style-group .style-select {
+  padding: 0 10px;
+  font-weight: 500;
+}
+#subtitleModal .dock-body .style-panel .panel-button {
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+#subtitleModal .dock-body .style-group .icon-reset-button {
+  width: var(--style-control-height);
+  min-width: var(--style-control-height);
+  padding: 0;
+}
+#subtitleModal .dock-body .style-group .stepper .round-step,
+#subtitleModal .dock-body .style-group .stepper .round-step:hover:not(:disabled) {
+  width: 28px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, .62);
+  font-size: 16px;
+  font-weight: 500;
+}
+#subtitleModal .dock-body .style-group .stepper .round-step:hover:not(:disabled) {
+  background: rgba(255, 255, 255, .09);
+  color: #fff;
+}
+#subtitleModal .dock-body .style-group .stepper-value { font-size: 12.5px; font-weight: 600; }
+#subtitleModal .dock-body .style-group .delay-controls .stepper {
+  width: calc(var(--style-control-width) - var(--style-control-height) - 6px);
+}
+
+/* Switches in the same well tone, the accent only when on. */
+#subtitleModal .dock-body .style-switch {
+  margin-right: calc((var(--style-control-width) - 40px) / 2);
+  width: 40px;
+  height: 22px;
+  border: 0;
+  background: var(--style-well-hover);
+}
+#subtitleModal .dock-body .style-switch::after { top: 3px; left: 3px; width: 16px; height: 16px; }
+#subtitleModal .dock-body .style-switch[aria-checked="true"] {
+  background: var(--glass-sheen), linear-gradient(var(--glass-tint-edge), var(--glass-tint-edge));
+}
+#subtitleModal .dock-body .style-switch[aria-checked="true"]::after { transform: translateX(18px); }
+
+#subtitleModal .dock-body .style-footer {
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+}
+
+/* The docked panel is the containing block of the style dropdown lists, and its size includes its
+ * edge, so a panel grown from the pill is exactly the pill's width. */
+:is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .track-panel.dock-panel {
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* Style dropdowns: the native select stays hidden behind a field in the sheet's own well; its list
+ * opens directly under the field, at the field's width (controls.js openStyleDropdownFor). */
+#subtitleModal .dock-body .style-select-native { display: none; }
+#subtitleModal .dock-body .style-dropdown {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  width: var(--style-control-width);
+  height: var(--style-control-height);
+  padding: 0 28px 0 11px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--style-well);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+  color: rgba(255, 255, 255, .9);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color .12s ease;
+}
+#subtitleModal .dock-body .style-dropdown:hover,
+#subtitleModal .dock-body .style-dropdown.open {
+  background: var(--style-well-hover);
+  color: #fff;
+}
+#subtitleModal .dock-body .style-dropdown:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
+#subtitleModal .dock-body .style-dropdown-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#subtitleModal .dock-body .style-dropdown::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: .7;
+  transform: translateY(-70%) rotate(45deg);
+  transition: transform .16s ease;
+}
+#subtitleModal .dock-body .style-dropdown.open::after { transform: translateY(-25%) rotate(-135deg); }
+#subtitleModal .style-dropdown-menu {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  box-sizing: border-box;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: 11px;
+  background: rgba(14, 14, 18, .98);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+#subtitleModal .style-dropdown-item {
+  flex: 0 0 auto;
+  height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, .8);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+#subtitleModal .style-dropdown-item:hover,
+#subtitleModal .style-dropdown-item:focus-visible {
+  background: rgba(255, 255, 255, .08);
+  color: #fff;
+  outline: none;
+}
+#subtitleModal .style-dropdown-item.selected {
+  background: rgba(255, 255, 255, .13);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Auto sync: no status line; Reload and Capture share the control column, so the pair is exactly
+ * as wide as the stepper or dropdown above it. */
+#subtitleModal .dock-body #autoSyncStatus { display: none; }
+#subtitleModal .dock-body .auto-sync-card > .style-row { justify-content: space-between; }
+#subtitleModal .dock-body .auto-sync-card .panel-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  width: var(--style-control-width);
+  margin-left: auto;
+}
+#subtitleModal .dock-body .auto-sync-card .panel-actions .panel-button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 6px;
+}
+
+/* Grown from the pill (Minimal + pills + "Panels grow from the tool pill"): exactly the pill's
+ * width, square along the shared edge, so panel and pill read as one shape. Only the height drags. */
+.player.dock-integrated :is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .track-panel.dock-panel {
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+}
+.player.dock-integrated .modal-layer.dock-modal .track-panel.dock-panel {
+  clip-path: inset(100% 0 0 0 round 20px 20px 0 0);
+}
+.player.dock-integrated .modal-layer.dock-modal.modal-visible .track-panel.dock-panel {
+  clip-path: inset(0 0 0 0 round 20px 20px 0 0);
+}
+.player.dock-integrated .dock-resize-x,
+.player.dock-integrated .dock-resize-xy { display: none; }
+.player.dock-integrated .dock-resize-y { left: 20px; right: 20px; }
+
+/* Episodes shelf: one gap above the season pills, between them and the cards, and under the
+ * cards, so the rows sit evenly in the shelf; square along its lower edge like the top. */
+#episodesModal .track-panel.wide { border-radius: 0; }
+#episodesModal .filter-row {
+  height: auto;
+  min-height: 0;
+  padding-top: clamp(8px, .9vw, 14px);
+  padding-bottom: 0;
+}
+#episodesModal .track-list {
+  padding-top: clamp(8px, .9vw, 14px);
+  padding-bottom: clamp(8px, .9vw, 14px);
+}
+
+/* Docked panel headings: one band exactly as tall as the rail's first slot (12px + 40px + 12px),
+ * so the title centres on the first rail icon, and one text inset (--dock-inset) shared by the
+ * title, the list rows' text, and every other panel's content. */
+:is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .track-panel.dock-panel {
+  --dock-inset: 26px;
+}
+:is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .dock-body :is(.track-header, .track-header-row) {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  height: 64px;
+  min-height: 64px;
+  padding: 0 14px 0 var(--dock-inset);
+  font-size: 16px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -.1px;
+}
+:is(#submitIntroModal, #partyModal, #streamInfoModal) .dock-body .track-title {
+  font-size: 16px;
+  line-height: 1.2;
+  letter-spacing: -.1px;
+}
+:is(#submitIntroModal, #partyModal, #streamInfoModal) .dock-body .track-header-row .panel-button {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 12.5px;
+}
+/* List rows carry 12px of padding inside a 1px edge, so the list gives up 13px of the inset. */
+:is(#audioModal, #subtitleModal) .dock-body > .track-list {
+  padding-left: calc(var(--dock-inset) - 13px);
+  padding-right: calc(var(--dock-inset) - 13px);
+}
+#subtitleModal .dock-body .style-panel,
+:is(#submitIntroModal, #partyModal, #streamInfoModal) .dock-body > :is(.intro-form, .stream-info-body, .party-body, .party-chat, .party-tabs) {
+  padding-left: var(--dock-inset);
+  padding-right: var(--dock-inset);
 }

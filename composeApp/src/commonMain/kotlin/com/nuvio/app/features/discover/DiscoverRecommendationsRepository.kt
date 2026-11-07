@@ -672,6 +672,7 @@ object DiscoverRecommendationsRepository {
             continueWatchingParentKeys = continueWatchingKeys,
             now = now,
             minIdleMs = settings.discoverFinishIdleDays * MILLIS_PER_DAY,
+            watchedSincePaused = ::finishEntryWatchedSincePaused,
         )
         if (picked.isEmpty()) {
             log.d {

@@ -1,6 +1,9 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.LinearProgressIndicator
@@ -273,12 +276,22 @@ private fun VoiceTestRow(state: VoiceControlUiState, isTablet: Boolean) {
         when (test) {
             is VoiceTestState.Recording -> SettingsGlassButton(text = "Stop", accent = true, onClick = VoiceControlRepository::stopTest)
             VoiceTestState.Transcribing -> SettingsGlassButton(text = "Test", enabled = false, loading = true, onClick = {})
-            else -> SettingsGlassButton(
-                text = if (test is VoiceTestState.Idle) "Test" else "Test again",
-                enabled = ready,
-                accent = true,
-                onClick = VoiceControlRepository::startTest,
-            )
+            else -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                // What the model was given, to hear why it misheard: kept in memory for this result only.
+                if (test is VoiceTestState.Heard) {
+                    SettingsGlassButton(
+                        text = if (state.testPlaying) "Stop" else "Play recording",
+                        onClick = VoiceControlRepository::playTestRecording,
+                    )
+                    SettingsGlassButton(text = "Save as WAV", onClick = VoiceControlRepository::showTestRecording)
+                }
+                SettingsGlassButton(
+                    text = if (test is VoiceTestState.Idle) "Test" else "Test again",
+                    enabled = ready,
+                    accent = true,
+                    onClick = VoiceControlRepository::startTest,
+                )
+            }
         }
     }
     if (test is VoiceTestState.Recording) {

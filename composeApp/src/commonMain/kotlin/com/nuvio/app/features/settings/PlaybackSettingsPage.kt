@@ -89,6 +89,9 @@ import com.nuvio.app.features.player.DesktopCustomShaderOption
 import com.nuvio.app.features.player.DesktopRendererApi
 import com.nuvio.app.features.player.DesktopHudLayout
 import com.nuvio.app.features.player.DesktopPlayerNotificationPosition
+import com.nuvio.app.features.player.DesktopPlayerZoneAction
+import com.nuvio.app.features.player.DesktopPlayerZoneActions
+import com.nuvio.app.features.player.DesktopPlayerZoneInput
 import com.nuvio.app.features.player.DesktopSourceNotchPosition
 import com.nuvio.app.features.player.DesktopColorProfile
 import com.nuvio.app.features.player.DesktopHdrMode
@@ -543,6 +546,75 @@ private fun subtitleBackgroundColorOptions(): List<SubtitleColorOption> =
         SubtitleColorOption(Color(0xFF064E3B).copy(alpha = 0.68f), "Forest"),
         SubtitleColorOption(Color(0xFF1E3A8A).copy(alpha = 0.68f), "Navy"),
     )
+
+// Player zones: how they are driven, then one row per third. Its own composable so the playback
+// section's body doesn't grow by three choice rows.
+@Composable
+private fun DesktopPlayerZoneRows(
+    input: DesktopPlayerZoneInput,
+    actions: DesktopPlayerZoneActions,
+    isTablet: Boolean,
+) {
+    val offLabel = stringResource(Res.string.compose_action_off)
+    val wheelLabel = stringResource(Res.string.settings_playback_zone_input_wheel)
+    val dragLabels = DesktopPlayerZoneInput.entries.mapNotNull { entry ->
+        entry.buttonLabel?.let { button -> entry to stringResource(Res.string.settings_playback_zone_input_drag, button) }
+    }
+    val inputLabels = mapOf(
+        DesktopPlayerZoneInput.Off to offLabel,
+        DesktopPlayerZoneInput.Wheel to wheelLabel,
+    ) + dragLabels
+    SettingsChoiceRow(
+        title = stringResource(Res.string.settings_playback_scroll_zones),
+        description = if (input == DesktopPlayerZoneInput.Off) {
+            stringResource(Res.string.settings_playback_scroll_zones_description)
+        } else {
+            inputLabels.getValue(input)
+        },
+        options = DesktopPlayerZoneInput.entries.map { SettingsChoiceOption(it, inputLabels.getValue(it)) },
+        selectedValue = input,
+        isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("scroll-zones")),
+        onSelected = PlayerSettingsRepository::setDesktopPlayerZoneInput,
+    )
+    if (input == DesktopPlayerZoneInput.Off) return
+    val actionLabels = mapOf(
+        DesktopPlayerZoneAction.None to stringResource(Res.string.settings_playback_zone_action_none),
+        DesktopPlayerZoneAction.Speed to stringResource(Res.string.settings_playback_zone_action_speed),
+        DesktopPlayerZoneAction.Seek to stringResource(Res.string.settings_playback_zone_action_seek),
+        DesktopPlayerZoneAction.Volume to stringResource(Res.string.settings_playback_zone_action_volume),
+        DesktopPlayerZoneAction.FastForward to stringResource(Res.string.settings_playback_zone_action_fast_forward),
+    )
+    val options = DesktopPlayerZoneAction.entries
+        .filter { it.availableFor(input) }
+        .map { SettingsChoiceOption(it, actionLabels.getValue(it)) }
+    val zones = listOf(
+        Res.string.settings_playback_zone_left to actions.left,
+        Res.string.settings_playback_zone_middle to actions.middle,
+        Res.string.settings_playback_zone_right to actions.right,
+    )
+    zones.forEachIndexed { index, (titleRes, stored) ->
+        // Fast-forward kept from the drag input reads as nothing under the wheel, as the HUD treats it.
+        val action = if (stored.availableFor(input)) stored else DesktopPlayerZoneAction.None
+        SettingsGroupDivider(isTablet = isTablet)
+        SettingsChoiceRow(
+            title = stringResource(titleRes),
+            description = actionLabels.getValue(action),
+            options = options,
+            selectedValue = action,
+            isTablet = isTablet,
+            onSelected = { picked ->
+                PlayerSettingsRepository.setDesktopPlayerZoneActions(
+                    when (index) {
+                        0 -> actions.copy(left = picked)
+                        1 -> actions.copy(middle = picked)
+                        else -> actions.copy(right = picked)
+                    },
+                )
+            },
+        )
+    }
+}
 
 @Composable
 private fun SubtitleColorDropdownRow(
@@ -1076,6 +1148,12 @@ private fun PlaybackSettingsSection(
                             onCheckedChange = PlayerSettingsRepository::setDesktopPlaybackSpeedFineIncrementsEnabled,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
+                        DesktopPlayerZoneRows(
+                            input = autoPlayPlayerSettings.desktopPlayerZoneInput,
+                            actions = autoPlayPlayerSettings.desktopPlayerZoneActions,
+                            isTablet = isTablet,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
                         SettingsRangeSliderRow(
                             title = stringResource(Res.string.settings_playback_speed_toggle),
                             description = stringResource(Res.string.settings_playback_speed_toggle_description),
@@ -1200,6 +1278,17 @@ private fun PlaybackSettingsSection(
                                 checked = autoPlayPlayerSettings.desktopMinimalHudPillsEnabled,
                                 isTablet = isTablet,
                                 onCheckedChange = PlayerSettingsRepository::setDesktopMinimalHudPillsEnabled,
+                            )
+                            SettingsGroupDivider(isTablet = isTablet)
+                            // Needs the pills: the panel takes the tool pill's width and joins it.
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_hud_dock_from_bar),
+                                description = stringResource(Res.string.settings_playback_hud_dock_from_bar_description),
+                                checked = autoPlayPlayerSettings.desktopDockPanelFromBarEnabled &&
+                                    autoPlayPlayerSettings.desktopMinimalHudPillsEnabled,
+                                enabled = autoPlayPlayerSettings.desktopMinimalHudPillsEnabled,
+                                isTablet = isTablet,
+                                onCheckedChange = PlayerSettingsRepository::setDesktopDockPanelFromBarEnabled,
                             )
                         }
                         SettingsGroupDivider(isTablet = isTablet)

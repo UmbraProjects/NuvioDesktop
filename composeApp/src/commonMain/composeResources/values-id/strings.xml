@@ -1730,6 +1730,8 @@
   <string name="settings_playback_hud_layout_minimal">Minimal</string>
   <string name="settings_playback_hud_layout_pills">Pil Kontrol Minimal</string>
   <string name="settings_playback_hud_layout_pills_description">Letakkan setiap grup kontrol pada pil tembus pandang tersendiri alih-alih langsung di atas gambar.</string>
+  <string name="settings_playback_hud_dock_from_bar">Panel Tumbuh dari Pil Alat</string>
+  <string name="settings_playback_hud_dock_from_bar_description">Panel subtitle, audio, dan panel pemutar lainnya terbuka dari pil alat dengan lebar yang sama, menyatu dengannya. Memerlukan Pil Kontrol Minimal.</string>
   <string name="settings_playback_seek_handle">Gagang Bilah Seek</string>
   <string name="settings_playback_seek_handle_description">Gambar gagang bulat pada bilah seek. Jika mati, hanya bilah progres berwarna yang tersisa.</string>
   <string name="settings_playback_hud_vignette">Vinyet Kontrol</string>
@@ -1769,6 +1771,18 @@
   <string name="settings_playback_info_panel_description">Tampilkan ringkasan info media saat pemutaran.</string>
   <string name="settings_playback_fine_speed_increments">Kenaikan Kecepatan Halus</string>
   <string name="settings_playback_fine_speed_increments_description">Kecepatan naik 0,1, bukan preset.</string>
+  <string name="settings_playback_scroll_zones">Zona Pemutar</string>
+  <string name="settings_playback_scroll_zones_description">Membagi video menjadi tiga bagian: taruh kursor di satu bagian, tahan tombolnya, lalu gulir. Roda mouse tidak berfungsi di YouTube.</string>
+  <string name="settings_playback_zone_input_wheel">Roda mouse</string>
+  <string name="settings_playback_zone_input_drag">Seret %1$s</string>
+  <string name="settings_playback_zone_left">Zona Kiri</string>
+  <string name="settings_playback_zone_middle">Zona Tengah</string>
+  <string name="settings_playback_zone_right">Zona Kanan</string>
+  <string name="settings_playback_zone_action_none">Tidak ada</string>
+  <string name="settings_playback_zone_action_speed">Kecepatan putar</string>
+  <string name="settings_playback_zone_action_seek">Maju/mundur</string>
+  <string name="settings_playback_zone_action_volume">Volume</string>
+  <string name="settings_playback_zone_action_fast_forward">Tahan untuk mempercepat</string>
   <string name="settings_playback_speed_toggle">Rentang Pengalih Kecepatan</string>
   <string name="settings_playback_speed_toggle_description">Tekan R untuk beralih di antara kecepatan ini.</string>
   <string name="settings_playback_desktop_verbose_mpv_logging">Log MPV Terperinci</string>

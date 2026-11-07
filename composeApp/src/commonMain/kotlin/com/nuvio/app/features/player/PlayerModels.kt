@@ -228,6 +228,76 @@ enum class DesktopLowVramMode(val labelRes: StringResource, val descriptionRes: 
     On(Res.string.player_low_vram_on_label, Res.string.player_low_vram_on_desc),
 }
 
+/**
+ * What drives the desktop player's zones (the left, middle and right thirds of the video): nothing,
+ * the mouse wheel, or a vertical drag with a mouse button held (left, right, or a side button).
+ * A drag leaves the wheel alone, so it also works on the YouTube watch page, where the wheel
+ * scrolls the page. [Drag] is the left button; its name predates the other buttons.
+ */
+enum class DesktopPlayerZoneInput(val hudKey: String, val buttonLabel: String?) {
+    Off("off", null),
+    Wheel("wheel", null),
+    Drag("drag", "LMB"),
+    RightDrag("rmb", "RMB"),
+    Back("xb1", "XB1"),
+    Forward("xb2", "XB2"),
+    ;
+
+    val isDrag: Boolean get() = buttonLabel != null
+
+    companion object {
+        fun fromStorage(value: String?): DesktopPlayerZoneInput? =
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
+    }
+}
+
+/** What one zone does. [FastForward] is the press-and-hold 2x, so it only exists for the drag inputs. */
+enum class DesktopPlayerZoneAction(val hudKey: String) {
+    None("none"),
+    Speed("speed"),
+    Seek("seek"),
+    Volume("volume"),
+    FastForward("fastforward"),
+    ;
+
+    fun availableFor(input: DesktopPlayerZoneInput): Boolean =
+        this != FastForward || input.isDrag
+
+    companion object {
+        fun fromStorage(value: String?): DesktopPlayerZoneAction? =
+            entries.firstOrNull { it.name.equals(value?.trim(), ignoreCase = true) }
+    }
+}
+
+/** The action of each zone, left to right. The default is the original Speed / Seek / Volume split. */
+data class DesktopPlayerZoneActions(
+    val left: DesktopPlayerZoneAction = DesktopPlayerZoneAction.Speed,
+    val middle: DesktopPlayerZoneAction = DesktopPlayerZoneAction.Seek,
+    val right: DesktopPlayerZoneAction = DesktopPlayerZoneAction.Volume,
+) {
+    val all: List<DesktopPlayerZoneAction> get() = listOf(left, middle, right)
+
+    fun toStorage(): String = all.joinToString(",") { it.name }
+
+    /** The HUD's list; an action the input can't perform is sent as none. */
+    fun hudValue(input: DesktopPlayerZoneInput): String =
+        all.joinToString(",") { (if (it.availableFor(input)) it else DesktopPlayerZoneAction.None).hudKey }
+
+    companion object {
+        fun fromStorage(value: String?): DesktopPlayerZoneActions {
+            val defaults = DesktopPlayerZoneActions()
+            val parts = value?.split(',').orEmpty()
+            fun at(index: Int, fallback: DesktopPlayerZoneAction) =
+                DesktopPlayerZoneAction.fromStorage(parts.getOrNull(index)) ?: fallback
+            return DesktopPlayerZoneActions(
+                left = at(0, defaults.left),
+                middle = at(1, defaults.middle),
+                right = at(2, defaults.right),
+            )
+        }
+    }
+}
+
 enum class DesktopSourceNotchPosition {
     Right,
     Left,

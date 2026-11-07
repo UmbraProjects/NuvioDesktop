@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="controls.css?v=20261105-pip-glass-track">
+  <link rel="stylesheet" href="controls.css?v=20261106-dock-panels-8">
 </head>
 <body>
   <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
@@ -446,14 +446,19 @@
           <div class="locked-label" id="lockedLabel" data-i18n="player_hud_tap_to_unlock">Tap to unlock</div>
         </div>
       </section>
-      <section class="modal-layer" id="audioModal" aria-label="Audio tracks" hidden data-i18n-aria-label="player_hud_audio_tracks">
-        <div class="track-panel">
+      <section class="modal-layer dock-modal" id="audioModal" aria-label="Audio tracks" hidden data-i18n-aria-label="player_hud_audio_tracks">
+        <div class="dock-frame"><div class="track-panel dock-panel">
+          <nav class="dock-rail" aria-label="Player panels"></nav>
+          <div class="dock-body">
           <div class="track-header" data-i18n="player_hud_audio_tracks">Audio tracks</div>
           <div class="track-list" id="audioTrackList"></div>
-        </div>
+          </div>
+        </div></div>
       </section>
-      <section class="modal-layer" id="subtitleModal" aria-label="Subtitles" hidden data-i18n-aria-label="player_hud_subtitles">
-        <div class="track-panel">
+      <section class="modal-layer dock-modal" id="subtitleModal" aria-label="Subtitles" hidden data-i18n-aria-label="player_hud_subtitles">
+        <div class="dock-frame"><div class="track-panel dock-panel">
+          <nav class="dock-rail" aria-label="Player panels"></nav>
+          <div class="dock-body">
           <div class="track-header" id="subtitlePanelTitle" data-i18n="player_hud_subtitles">Subtitles</div>
           <div class="subtitle-tabs">
             <button class="subtitle-tab selected" id="subtitleBuiltInTab" type="button" data-i18n="player_hud_built_in">Built-in</button>
@@ -463,13 +468,12 @@
           <div class="track-list" id="subtitleTrackList"></div>
           <div class="track-list" id="addonSubtitleList" hidden></div>
           <div class="style-panel" id="subtitleStylePanel" hidden>
+            <!-- One continuous sheet: sections split by a hairline, no headings. The colours sit
+                 together in their own section; Outline and Shadow are plain switch rows whose
+                 settings follow them (dimmed while off). -->
             <section class="style-group">
-              <div class="style-group-head"><span class="style-group-title">Timing</span></div>
               <div class="style-row">
                 <span class="style-label" id="subtitleDelayLabel" data-i18n="player_hud_subtitle_delay">Subtitle Delay</span>
-                <!-- mpv's sub-delay: positive shows each line later. Without this, "-" read as
-                     "delay them" and moved subtitles that were already early further ahead. -->
-                <span class="stream-subtitle" id="subtitleDelayHint">+ shows subtitles later</span>
                 <div class="delay-controls">
                   <div class="stepper">
                     <button class="round-step" id="subtitleDelayMinus" type="button">-</button>
@@ -492,10 +496,9 @@
               </div>
             </section>
             <section class="style-group">
-              <div class="style-group-head"><span class="style-group-title">Text</span></div>
               <div class="style-row">
                 <span class="style-label" id="fontFamilyLabel">Font</span>
-                <select class="style-select" id="fontFamilySelect"></select>
+                <select class="style-select" id="fontFamilySelect" data-font-preview="true"></select>
               </div>
               <div class="style-row">
                 <span class="style-label" id="fontSizeLabel" data-i18n="player_hud_font_size">Font Size</span>
@@ -529,14 +532,10 @@
                   <button class="round-step" id="blurPlus" type="button">+</button>
                 </div>
               </div>
-              <div class="swatch-section">
-                <span class="style-label" id="subtitleColorLabel" data-i18n="player_hud_color">Color</span>
-                <div class="swatch-row" id="subtitleColorSwatches"></div>
-              </div>
             </section>
             <section class="style-group" id="subtitleOutlineGroup">
-              <div class="style-group-head">
-                <span class="style-group-title" id="outlineLabel">Outline</span>
+              <div class="style-row">
+                <span class="style-label" id="outlineLabel">Outline</span>
                 <button class="style-switch" id="outlineToggle" type="button" role="switch" aria-labelledby="outlineLabel">On</button>
               </div>
               <div class="style-group-body">
@@ -548,15 +547,11 @@
                     <button class="round-step" id="outlineWidthPlus" type="button">+</button>
                   </div>
                 </div>
-                <div class="swatch-section">
-                  <span class="style-label" id="outlineColorLabel">Outline Color</span>
-                  <div class="swatch-row" id="outlineColorSwatches"></div>
-                </div>
               </div>
             </section>
             <section class="style-group" id="subtitleShadowGroup">
-              <div class="style-group-head">
-                <span class="style-group-title" id="shadowLabel">Shadow</span>
+              <div class="style-row">
+                <span class="style-label" id="shadowLabel">Shadow</span>
                 <button class="style-switch" id="shadowToggle" type="button" role="switch" aria-labelledby="shadowLabel">Off</button>
               </div>
               <div class="style-group-body">
@@ -576,20 +571,27 @@
                     <button class="round-step" id="shadowIntensityPlus" type="button">+</button>
                   </div>
                 </div>
-                <div class="swatch-section">
-                  <span class="style-label" id="shadowColorLabel">Shadow Color</span>
-                  <div class="swatch-row" id="shadowColorSwatches"></div>
-                </div>
               </div>
             </section>
-            <section class="style-group">
-              <div class="style-group-head"><span class="style-group-title" id="backgroundColorLabel">Background Color</span></div>
+            <section class="style-group style-colors">
               <div class="swatch-section">
+                <span class="style-label" id="subtitleColorLabel" data-i18n="player_hud_color">Color</span>
+                <div class="swatch-row" id="subtitleColorSwatches"></div>
+              </div>
+              <div class="swatch-section" id="outlineColorRow">
+                <span class="style-label" id="outlineColorLabel">Outline Color</span>
+                <div class="swatch-row" id="outlineColorSwatches"></div>
+              </div>
+              <div class="swatch-section" id="shadowColorRow">
+                <span class="style-label" id="shadowColorLabel">Shadow Color</span>
+                <div class="swatch-row" id="shadowColorSwatches"></div>
+              </div>
+              <div class="swatch-section">
+                <span class="style-label" id="backgroundColorLabel">Background Color</span>
                 <div class="swatch-row" id="backgroundColorSwatches"></div>
               </div>
             </section>
             <section class="style-group">
-              <div class="style-group-head"><span class="style-group-title">Position &amp; ASS/SSA</span></div>
               <div class="style-row">
                 <span class="style-label" id="bottomOffsetLabel" data-i18n="player_hud_bottom_offset">Bottom Offset</span>
                 <div class="stepper">
@@ -615,7 +617,8 @@
               <button class="panel-button" id="subtitleStyleReset" type="button" data-i18n="player_hud_reset_defaults">Reset Defaults</button>
             </div>
           </div>
-        </div>
+          </div>
+        </div></div>
       </section>
       <section class="modal-layer" id="sourceModal" aria-label="Sources" hidden data-i18n-aria-label="player_hud_sources">
         <div class="track-panel wide">
@@ -661,8 +664,10 @@
           </div>
         </div>
       </section>
-      <section class="modal-layer" id="submitIntroModal" aria-label="Submit timestamps" hidden data-i18n-aria-label="player_hud_submit_timestamps">
-        <div class="track-panel submit">
+      <section class="modal-layer dock-modal" id="submitIntroModal" aria-label="Submit timestamps" hidden data-i18n-aria-label="player_hud_submit_timestamps">
+        <div class="dock-frame"><div class="track-panel submit dock-panel">
+          <nav class="dock-rail" aria-label="Player panels"></nav>
+          <div class="dock-body">
           <div class="track-header-row">
             <div class="track-title" id="submitIntroPanelTitle" data-i18n="player_hud_submit_timestamps_2">Submit Timestamps</div>
             <div class="panel-actions">
@@ -699,7 +704,8 @@
               <button class="panel-button primary" id="submitIntroSubmitButton" type="button" data-i18n="player_hud_submit">Submit</button>
             </div>
           </div>
-        </div>
+          </div>
+        </div></div>
       </section>
       <!-- Not registered in modalByName: it floats above the subtitle panel that opened it, so
            closePlayerModal must not sweep it away with the modal underneath. -->
@@ -748,8 +754,10 @@
           <div class="track-list iptv-group-list" id="iptvGroupList" hidden></div>
         </div>
       </section>
-      <section class="modal-layer" id="partyModal" aria-label="Watch party" hidden data-i18n-aria-label="player_hud_watch_party">
-        <div class="track-panel party-panel">
+      <section class="modal-layer dock-modal" id="partyModal" aria-label="Watch party" hidden data-i18n-aria-label="player_hud_watch_party">
+        <div class="dock-frame"><div class="track-panel party-panel dock-panel">
+          <nav class="dock-rail" aria-label="Player panels"></nav>
+          <div class="dock-body">
           <div class="track-header-row">
             <div class="track-title" id="partyPanelTitle" data-i18n="player_hud_watch_party">Watch party</div>
             <div class="panel-actions">
@@ -774,10 +782,13 @@
               <button class="panel-button primary" id="partyChatSend" type="submit">Send</button>
             </form>
           </div>
-        </div>
+          </div>
+        </div></div>
       </section>
-      <section class="modal-layer" id="streamInfoModal" aria-label="Stream info" hidden>
-        <div class="track-panel stream-info-panel">
+      <section class="modal-layer dock-modal" id="streamInfoModal" aria-label="Stream info" hidden>
+        <div class="dock-frame"><div class="track-panel stream-info-panel dock-panel">
+          <nav class="dock-rail" aria-label="Player panels"></nav>
+          <div class="dock-body">
           <div class="track-header-row">
             <div class="track-title" id="streamInfoTitle">Stream info</div>
             <div class="panel-actions">
@@ -785,7 +796,8 @@
             </div>
           </div>
           <div class="stream-info-body" id="streamInfoBody"></div>
-        </div>
+          </div>
+        </div></div>
       </section>
       <section class="modal-layer" id="p2pConsentModal" aria-label="P2P streaming consent" hidden data-i18n-aria-label="player_hud_p2p_streaming_consent">
         <div class="track-panel submit">
@@ -825,6 +837,6 @@
     <div class="pip-resize-handle pip-resize-nw" data-pip-resize="8"></div>
   </div>
 
-  <script src="controls.js?v=20261105-pip-ui-scale"></script>
+  <script src="controls.js?v=20261106-dock-panels-8"></script>
 </body>
 </html>

@@ -49,6 +49,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
@@ -121,8 +122,15 @@ fun MusicPlayerHost(
         if (!state.isActive || realVideo) MusicPlayback.barCollapsed.value = false
     }
 
-    LaunchedEffect(hidden) {
-        if (hidden) player.pause()
+    // A film pauses the music through a hold, which plays it again when the player closes
+    // (Settings > Music > "Resume after playback"; off, it stays paused as it always did).
+    val musicLibrary by com.nuvio.app.features.music.library.MusicLibraryRepository.state.collectAsStateWithLifecycle()
+    val resumeAfterFilm = musicLibrary.settings.resumeAfterPlayback
+    DisposableEffect(hidden) {
+        if (!hidden) return@DisposableEffect onDispose { }
+        val owner = Any()
+        MusicAutoPause.hold(owner, resumeAfter = resumeAfterFilm)
+        onDispose { MusicAutoPause.release(owner) }
     }
     // A big view only makes sense for a real video. When the track stops having one (the next song
     // has no official video, the player closed, a film opened) it hands back to the bar, and a lyric

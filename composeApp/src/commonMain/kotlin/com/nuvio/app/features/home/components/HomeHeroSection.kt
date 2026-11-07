@@ -2,6 +2,7 @@ package com.nuvio.app.features.home.components
 
 import com.nuvio.app.core.i18n.localizedString
 import com.nuvio.app.core.ui.LocalScreenCovered
+import com.nuvio.app.core.ui.PosterZoomOverlayCoordinator
 import androidx.compose.ui.layout.onSizeChanged
 import coil3.SingletonImageLoader
 import coil3.compose.LocalPlatformContext
@@ -1427,9 +1428,41 @@ private fun DesktopHomeHeroFrame(
     val heroTrailerCovered = LocalScreenCovered.current
     // The after-playback rating prompt is drawn above every screen, so Home only hears of it through this flag.
     val ratingPromptShowing by RatingPromptRepository.isShowing.collectAsState()
+    // The poster zoom overlay (long-press / right-click on a card) is Compose, so the heavyweight
+    // trailer surface would paint straight over the zoomed poster. Opening it dismisses the trailer
+    // for this item, the same as the toggle does: it does not start again when the overlay closes.
+    val posterZoomOverlayOpen = PosterZoomOverlayCoordinator.isVisible
+    LaunchedEffect(posterZoomOverlayOpen) {
+        if (!posterZoomOverlayOpen) return@LaunchedEffect
+        if (heroTrailerFinished && heroTrailerSource == null) return@LaunchedEffect
+        heroTrailerLog.i { "trailer dismissed by poster zoom overlay for $heroTrailerFocusKey" }
+        heroTrailerSurfaceReady = false
+        heroTrailerPlaybackRequested = false
+        heroTrailerFinished = true
+        heroTrailerSource = null
+    }
+    // fork:music - the enlarged music player (the full-window lyric view, or a fullscreen music video) covers the
+    // hero, and the trailer's native surface would paint over it and play its sound on top of the music. Enlarging
+    // it stops the trailer for this item, as the poster zoom does.
+    val musicState by com.nuvio.app.features.music.MusicPlayback.player.state.collectAsState()
+    val musicNowPlayingOpen by com.nuvio.app.features.music.MusicPlayback.nowPlayingOpen.collectAsState()
+    val musicVideoView by com.nuvio.app.features.music.MusicPlayback.videoView.collectAsState()
+    val musicPlayerEnlarged = musicState.isActive &&
+        (musicNowPlayingOpen || musicVideoView == com.nuvio.app.features.music.MusicVideoView.Fullscreen)
+    LaunchedEffect(musicPlayerEnlarged) {
+        if (!musicPlayerEnlarged) return@LaunchedEffect
+        if (heroTrailerFinished && heroTrailerSource == null) return@LaunchedEffect
+        heroTrailerLog.i { "trailer dismissed by enlarged music player for $heroTrailerFocusKey" }
+        heroTrailerSurfaceReady = false
+        heroTrailerPlaybackRequested = false
+        heroTrailerFinished = true
+        heroTrailerSource = null
+    }
     val heroTrailerMounted = tvHeroActive &&
         !heroTrailerCovered &&
         !ratingPromptShowing &&
+        !posterZoomOverlayOpen &&
+        !musicPlayerEnlarged &&
         heroTrailerSource != null &&
         !heroTrailerFinished
     val heroTrailerVisible = heroTrailerMounted && heroTrailerPlaybackRequested

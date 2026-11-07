@@ -201,7 +201,6 @@ const sourceNotch = document.getElementById("sourceNotch");
 const lockedLabel = document.getElementById("lockedLabel");
 const audioModal = document.getElementById("audioModal");
 const subtitleModal = document.getElementById("subtitleModal");
-const audioPanel = audioModal ? audioModal.querySelector(".track-panel") : null;
 const audioTrackList = document.getElementById("audioTrackList");
 const subtitleTrackList = document.getElementById("subtitleTrackList");
 const subtitlePanelTitle = document.getElementById("subtitlePanelTitle");
@@ -389,6 +388,8 @@ let state = {
   resizeModeLabel: "Fit",
   playbackSpeedLabel: "1x",
   playbackSpeedFineIncrementsEnabled: false,
+  zoneInput: "off",
+  zoneActions: "speed,seek,volume",
   playbackSpeedToggleLow: 1,
   playbackSpeedToggleHigh: 2,
   subtitlesLabel: "Subs",
@@ -2535,6 +2536,268 @@ streamInfoCloseButton.addEventListener("click", event => {
   closePlayerModal();
 });
 
+// The docked panels: subtitles (tracks, addon subtitles and style as three entries), audio, stream
+// info, submit intro and the watch party open as one black glass panel standing on the control
+// row. The rail down its inner side switches between them in place; the panel keeps its spot and
+// size. It always opens in the same place: over the right end of the controls, or the left end
+// for the Official Nuvio layout (its tools sit on the left), and on Minimal with pills it grows
+// out of the tool pill itself. The user can drag its inner edges to resize it (kept per HUD
+// profile in localStorage). The layer under it takes no clicks, so the control row stays usable
+// while it is open, and a click on the bare video closes it (the pointerdown listener further down).
+const subtitleTabIndex = { BuiltIn: 0, Addons: 1, Style: 2 };
+const subtitleTabTitle = tab => {
+  const title = state.subtitlesPanelTitle || hudText("player_hud_subtitles", "Subtitles");
+  if (tab === "Addons") return `${title} · ${state.subtitleAddonsTabLabel || hudText("player_hud_addons", "Addons")}`;
+  if (tab === "Style") return `${title} · ${state.subtitleStyleTabLabel || hudText("player_hud_style", "Style")}`;
+  return title;
+};
+const dockRailEntries = [
+  { id: "subtitles", modal: "subtitles", tab: "BuiltIn", icon: "#icon-subs", label: () => subtitleTabTitle("BuiltIn") },
+  { id: "subtitleAddons", modal: "subtitles", tab: "Addons", icon: "#icon-download", label: () => subtitleTabTitle("Addons") },
+  { id: "subtitleStyle", modal: "subtitles", tab: "Style", icon: "#icon-color-profile", label: () => subtitleTabTitle("Style") },
+  { id: "audio", modal: "audio", icon: "#icon-audio", label: () => hudText("player_hud_audio_tracks", "Audio tracks") },
+  { id: "streamInfo", modal: "streamInfo", icon: "#icon-info", label: () => streamInfoTitle.textContent || "Stream info" },
+  {
+    id: "submitIntro",
+    modal: "submitIntro",
+    icon: "#icon-flag",
+    label: () => state.submitIntroLabel || hudText("player_hud_submit_intro", "Submit intro"),
+    available: () => Boolean(state.showSubmitIntro),
+  },
+  {
+    id: "party",
+    modal: "party",
+    icon: "#icon-party",
+    label: () => hudText("player_hud_watch_party", "Watch party"),
+    available: () => !partyButton.hidden,
+  },
+];
+const dockModalNames = [...new Set(dockRailEntries.map(entry => entry.modal))];
+const isDockModal = name => Boolean(name) && dockModalNames.includes(name);
+const selectedDockEntryId = () => {
+  if (activeModal !== "subtitles") return activeModal;
+  const tab = state.subtitleActiveTab || "BuiltIn";
+  const entry = dockRailEntries.find(item => item.modal === "subtitles" && item.tab === tab);
+  return entry ? entry.id : "subtitles";
+};
+let dockRailSignature = "";
+let consumeDockDismissClick = false;
+
+const renderDockRails = () => {
+  if (!isDockModal(activeModal)) return;
+  const selectedId = selectedDockEntryId();
+  const entries = dockRailEntries.filter(entry => !entry.available || entry.available() || entry.id === selectedId);
+  const signature = `${selectedId}#${entries.map(entry => `${entry.id}:${entry.label()}`).join("|")}`;
+  if (signature === dockRailSignature) return;
+  dockRailSignature = signature;
+  document.querySelectorAll(".dock-rail").forEach(rail => {
+    rail.textContent = "";
+    entries.forEach(entry => {
+      const selected = entry.id === selectedId;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = selected ? "dock-rail-button selected" : "dock-rail-button";
+      button.dataset.dockTarget = entry.id;
+      const label = entry.label();
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.setAttribute("aria-pressed", String(selected));
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+      use.setAttribute("href", entry.icon);
+      svg.appendChild(use);
+      button.appendChild(svg);
+      rail.appendChild(button);
+    });
+  });
+};
+
+const currentPanelScale = () => {
+  const raw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--panel-scale"));
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+};
+
+// Panel size, in the panel's own (unzoomed) pixels.
+const DockPanelDefaultSize = { width: 680, height: 460 };
+const DockPanelMinSize = { width: 400, height: 260 };
+const DockPanelSizeStorageKey = "nuvioDockPanelSize";
+const readStoredDockPanelSize = () => {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(DockPanelSizeStorageKey) || "null");
+    if (raw && Number(raw.width) > 0 && Number(raw.height) > 0) {
+      return { width: Number(raw.width), height: Number(raw.height) };
+    }
+  } catch (_) {
+    // Unreadable or unavailable: the default size.
+  }
+  return null;
+};
+let dockPanelSize = readStoredDockPanelSize();
+const storeDockPanelSize = size => {
+  try {
+    if (size) window.localStorage.setItem(DockPanelSizeStorageKey, JSON.stringify({
+      width: Math.round(size.width),
+      height: Math.round(size.height),
+    }));
+    else window.localStorage.removeItem(DockPanelSizeStorageKey);
+  } catch (_) {
+    // Storage unavailable: the size still applies for this session.
+  }
+};
+// The room above the controls, in panel pixels (measured by positionDockPanel).
+let dockMaxSize = { width: 1200, height: 800 };
+let dockFixedWidth = null;
+const applyDockPanelSize = () => {
+  const size = dockPanelSize || DockPanelDefaultSize;
+  const width = dockFixedWidth != null ? dockFixedWidth : Math.min(dockMaxSize.width, Math.max(Math.min(DockPanelMinSize.width, dockMaxSize.width), size.width));
+  const height = Math.min(dockMaxSize.height, Math.max(Math.min(DockPanelMinSize.height, dockMaxSize.height), size.height));
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty("--dock-w", `${Math.round(width)}px`);
+  rootStyle.setProperty("--dock-h", `${Math.round(height)}px`);
+};
+
+// Pins the open docked panel to its side of the controls. The frame around the zoomed panel is
+// not zoomed, so its offsets are screen pixels; the size limits go to the panel in its own pixels.
+const positionDockPanel = () => {
+  if (!isDockModal(activeModal)) return;
+  const rootStyle = document.documentElement.style;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const scale = currentPanelScale();
+  const leftSide = root.classList.contains("official-hud");
+  const pills = root.classList.contains("minimal-hud") && root.classList.contains("minimal-pills")
+    && Boolean(state.dockPanelFromBarEnabled);
+  const toolPill = pills ? root.querySelector(".desktop-control-row .action-row") : null;
+  const toolRect = toolPill ? toolPill.getBoundingClientRect() : null;
+  const integrated = Boolean(toolRect && toolRect.width > 0 && toolRect.height > 0);
+  root.classList.toggle("dock-side-left", leftSide && !integrated);
+  root.classList.toggle("dock-integrated", integrated);
+  let anchorRect;
+  let gap;
+  if (integrated) {
+    anchorRect = toolRect;
+    gap = 0;
+  } else {
+    const progress = root.querySelector(".progress");
+    const progressRect = progress ? progress.getBoundingClientRect() : null;
+    anchorRect = progressRect && progressRect.height > 0
+      ? progressRect
+      : { top: viewportHeight - 140, left: 24, right: viewportWidth - 24 };
+    gap = 10;
+  }
+  const top = anchorRect.top - gap;
+  rootStyle.setProperty("--dock-bottom", `${Math.round(Math.max(0, viewportHeight - top))}px`);
+  if (leftSide && !integrated) {
+    rootStyle.setProperty("--dock-left", `${Math.round(Math.max(8, anchorRect.left))}px`);
+    rootStyle.setProperty("--dock-right", "auto");
+  } else {
+    rootStyle.setProperty("--dock-left", "auto");
+    rootStyle.setProperty("--dock-right", `${Math.round(Math.max(8, viewportWidth - anchorRect.right))}px`);
+  }
+  dockMaxSize = {
+    width: Math.max(300, (viewportWidth - 24) / scale),
+    height: Math.max(200, (top - 16) / scale),
+  };
+  // Grown from the pill, the panel is exactly the pill's width (only its height drags).
+  dockFixedWidth = integrated ? toolRect.width / scale : null;
+  applyDockPanelSize();
+};
+
+// Opens a docked panel (by rail entry id) the way its action-row button does.
+const openDockModal = id => {
+  const entry = dockRailEntries.find(item => item.id === id);
+  if (!entry) return;
+  if (entry.tab) {
+    if ((state.subtitleActiveTab || "BuiltIn") !== entry.tab) selectSubtitleTab(entry.tab, subtitleTabIndex[entry.tab]);
+    if (activeModal !== "subtitles") openPlayerModal("subtitles");
+    else renderDockRails();
+    return;
+  }
+  if (entry.modal === "streamInfo") {
+    streamInfoSignature = "";
+    openPlayerModal("streamInfo");
+    send("streamInfoOpened", 0);
+    return;
+  }
+  if (entry.modal === "party") {
+    openPartyModal(partyUnreadText() ? "chat" : "party");
+    return;
+  }
+  openPlayerModal(entry.modal);
+};
+
+// Drag-to-resize: the panel is pinned by its bottom and outer side, so the top edge, the inner
+// edge and the corner between them move. Pointer travel is screen pixels; the size is panel pixels.
+let dockResize = null;
+const beginDockResize = (event, axis) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const size = dockPanelSize || DockPanelDefaultSize;
+  dockResize = {
+    pointerId: event.pointerId,
+    axis,
+    x: event.clientX,
+    y: event.clientY,
+    width: Math.min(dockMaxSize.width, size.width),
+    height: Math.min(dockMaxSize.height, size.height),
+    leftSide: root.classList.contains("dock-side-left"),
+  };
+  try {
+    event.currentTarget.setPointerCapture(event.pointerId);
+  } catch (_) {
+    // No live pointer to capture (a synthetic event): the moves still arrive on the handle.
+  }
+  root.classList.add("dock-resizing");
+};
+const moveDockResize = event => {
+  if (!dockResize || event.pointerId !== dockResize.pointerId) return;
+  const scale = currentPanelScale();
+  const dx = (dockResize.leftSide ? event.clientX - dockResize.x : dockResize.x - event.clientX) / scale;
+  const dy = (dockResize.y - event.clientY) / scale;
+  dockPanelSize = {
+    width: dockResize.axis === "y" ? dockResize.width : dockResize.width + dx,
+    height: dockResize.axis === "x" ? dockResize.height : dockResize.height + dy,
+  };
+  applyDockPanelSize();
+};
+const endDockResize = event => {
+  if (!dockResize || (event && event.pointerId !== dockResize.pointerId)) return;
+  dockResize = null;
+  root.classList.remove("dock-resizing");
+  if (dockPanelSize) {
+    dockPanelSize = {
+      width: Math.min(dockMaxSize.width, Math.max(DockPanelMinSize.width, dockPanelSize.width)),
+      height: Math.min(dockMaxSize.height, Math.max(DockPanelMinSize.height, dockPanelSize.height)),
+    };
+    storeDockPanelSize(dockPanelSize);
+  }
+  // The click that ends the drag may land outside the panel; it must not pause or close anything.
+  consumeDockDismissClick = true;
+  window.setTimeout(() => { consumeDockDismissClick = false; }, 0);
+};
+document.querySelectorAll(".dock-frame").forEach(frame => {
+  ["x", "y", "xy"].forEach(axis => {
+    const handle = document.createElement("div");
+    handle.className = `dock-resize dock-resize-${axis}`;
+    handle.setAttribute("aria-hidden", "true");
+    handle.title = "Drag to resize. Double-click to reset.";
+    handle.addEventListener("pointerdown", event => beginDockResize(event, axis));
+    handle.addEventListener("pointermove", moveDockResize);
+    handle.addEventListener("pointerup", endDockResize);
+    handle.addEventListener("pointercancel", endDockResize);
+    handle.addEventListener("lostpointercapture", endDockResize);
+    handle.addEventListener("click", event => event.stopPropagation());
+    handle.addEventListener("dblclick", event => {
+      event.stopPropagation();
+      dockPanelSize = null;
+      storeDockPanelSize(null);
+      applyDockPanelSize();
+    });
+    frame.appendChild(handle);
+  });
+});
+
 const modalByName = {
   streamInfo: streamInfoModal,
   audio: audioModal,
@@ -2586,13 +2849,9 @@ const setModalVisibility = (modal, visible, animated = true) => {
   modalCloseTimers.set(modal, timer);
 };
 
-const closePlayerModal = (notifyDismiss = false, animated = true) => {
-  closeSubtitleHexPrompt();
-  const closingModal = activeModal;
-  activeModal = "";
-  modalElements.forEach(modal => {
-    setModalVisibility(modal, false, animated);
-  });
+// What Kotlin has to hear when a panel goes away, whether it was closed or another panel took its
+// place (the docked panels switch between each other without closing).
+const notifyModalClosed = (closingModal, notifyDismiss) => {
   if (notifyDismiss && closingModal === "p2pConsent") {
     send("cancelP2pForPlayerControls", 0);
   }
@@ -2614,6 +2873,17 @@ const closePlayerModal = (notifyDismiss = false, animated = true) => {
     if (document.activeElement === iptvSearchInput) focusShortcutRoot();
     send("iptvPanelOpen", 0);
   }
+};
+
+const closePlayerModal = (notifyDismiss = false, animated = true) => {
+  closeSubtitleHexPrompt();
+  closeStyleDropdown();
+  const closingModal = activeModal;
+  activeModal = "";
+  modalElements.forEach(modal => {
+    setModalVisibility(modal, false, animated);
+  });
+  notifyModalClosed(closingModal, notifyDismiss);
   if (keyboardPanelMode && closingModal === keyboardPanelMode) {
     keyboardPanelMode = "";
     send("keyboardPanelClosed", 0);
@@ -2632,6 +2902,12 @@ const openPlayerModal = modal => {
     send("keyboardPanelClosed", 0);
   }
   const openingSources = modal === "sources" && activeModal !== "sources";
+  const previousModal = activeModal;
+  const dockSwitch = isDockModal(previousModal) && isDockModal(modal) && previousModal !== modal;
+  if (previousModal && previousModal !== modal) {
+    if (previousModal === "subtitles") closeSubtitleHexPrompt();
+    notifyModalClosed(previousModal, false);
+  }
   activeModal = modal;
   // Every opening of the Sources sheet starts at the top, whatever it was scrolled to last time.
   if (openingSources) {
@@ -2650,9 +2926,18 @@ const openPlayerModal = modal => {
     };
   }
   renderActiveModal();
+  // One docked panel replacing another is a tab change inside the same panel: no fade, no slide.
+  if (dockSwitch) {
+    targetModal.classList.add("dock-switching");
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      targetModal.classList.remove("dock-switching");
+    }));
+  }
   modalElements.forEach(modalElement => {
-    setModalVisibility(modalElement, modalElement === targetModal);
+    const visible = modalElement === targetModal;
+    setModalVisibility(modalElement, visible, visible || !dockSwitch);
   });
+  if (isDockModal(modal)) positionDockPanel();
   // Set again once visible: a scrollTop written while the sheet was still hidden is dropped.
   if (openingSources) {
     sourceList.scrollTop = 0;
@@ -3827,19 +4112,6 @@ const appendEmptyTrackState = (container, label) => {
 const renderAudioTrackList = () => {
   audioTrackList.textContent = "";
   const tracks = visibleAudioTracks();
-  if (audioPanel) {
-    const canvas = renderAudioTrackList.canvas || (renderAudioTrackList.canvas = document.createElement("canvas"));
-    const context = canvas.getContext("2d");
-    if (context) {
-      context.font = `700 15px ${uiFontStack}`;
-      const widest = tracks.reduce((width, track, index) => {
-        const label = track.label || track.language || hudFormat("player_hud_track_1_s", "Track %1$s", Number(track.index || index) + 1);
-        return Math.max(width, context.measureText(String(label)).width);
-      }, context.measureText(hudText("player_hud_audio_tracks", "Audio tracks")).width);
-      const viewportLimit = Math.max(320, window.innerWidth * .70);
-      audioPanel.style.width = `${Math.round(Math.min(viewportLimit, Math.max(360, (widest + 104) * 1.15)))}px`;
-    }
-  }
   if (tracks.length === 0) {
     appendEmptyTrackState(audioTrackList, hudText("player_hud_no_audio_tracks_available", "No audio tracks available"));
     return;
@@ -4244,11 +4516,15 @@ const renderSubtitleStylePanel = () => {
   outlineLabel.textContent = state.outlineLabel || "Outline";
   setStyleSwitch(outlineToggle, Boolean(style.outlineEnabled));
   if (subtitleOutlineGroup) subtitleOutlineGroup.classList.toggle("style-group-off", !style.outlineEnabled);
+  const outlineColorRow = document.getElementById("outlineColorRow");
+  if (outlineColorRow) outlineColorRow.classList.toggle("style-row-inert", !style.outlineEnabled);
   outlineWidthLabel.textContent = state.outlineWidthLabel || "Outline Width";
   outlineWidthValue.textContent = String(Number(style.outlineWidth) || 0);
   shadowLabel.textContent = state.shadowLabel || "Shadow";
   setStyleSwitch(shadowToggle, Boolean(style.shadowEnabled));
   if (subtitleShadowGroup) subtitleShadowGroup.classList.toggle("style-group-off", !style.shadowEnabled);
+  const shadowColorRow = document.getElementById("shadowColorRow");
+  if (shadowColorRow) shadowColorRow.classList.toggle("style-row-inert", !style.shadowEnabled);
   shadowOffsetLabel.textContent = state.shadowOffsetLabel || "Shadow Offset";
   shadowOffsetValue.textContent = (Number(style.shadowOffset) / 10).toFixed(1);
   shadowIntensityLabel.textContent = state.shadowIntensityLabel || "Shadow Intensity";
@@ -4290,7 +4566,7 @@ const renderSubtitleStylePanel = () => {
 
 const renderSubtitleModal = () => {
   const tab = state.subtitleActiveTab || "BuiltIn";
-  subtitlePanelTitle.textContent = state.subtitlesPanelTitle || "Subtitles";
+  subtitlePanelTitle.textContent = subtitleTabTitle(tab);
   subtitleBuiltInTab.textContent = state.subtitleBuiltInTabLabel || "Built-in";
   subtitleAddonsTab.textContent = state.subtitleAddonsTabLabel || "Addons";
   subtitleStyleTab.textContent = state.subtitleStyleTabLabel || "Style";
@@ -4303,7 +4579,135 @@ const renderSubtitleModal = () => {
   if (tab === "BuiltIn") renderSubtitleTrackList();
   if (tab === "Addons") renderAddonSubtitleList();
   if (tab === "Style") renderSubtitleStylePanel();
+  if (tab !== "Style") closeStyleDropdown();
+  syncStyleDropdowns();
 };
+
+// The style sheet's dropdowns. A native <select> popup is drawn by the OS from the unzoomed field,
+// so inside the zoomed panel it opened wider than its field and off to one side. Each select is
+// kept (it holds the value and fires the change the rest of the code listens for) but hidden, and
+// a field in the sheet's own style opens a list of its options exactly under it, at its width.
+const styleDropdowns = [];
+let openStyleDropdown = null;
+const styleDropdownFont = (select, option) => {
+  if (!select.dataset.fontPreview || !option || option.value === "0") return "";
+  return `"${String(option.textContent).replace(/["\\]/g, "")}", ${uiFontStack}`;
+};
+const closeStyleDropdown = () => {
+  if (!openStyleDropdown) return;
+  openStyleDropdown.menu.remove();
+  openStyleDropdown.button.classList.remove("open");
+  openStyleDropdown.button.setAttribute("aria-expanded", "false");
+  openStyleDropdown = null;
+};
+const syncStyleDropdowns = () => {
+  styleDropdowns.forEach(({ select, label }) => {
+    const option = select.options[select.selectedIndex];
+    const text = option ? option.textContent : "";
+    if (label.textContent !== text) label.textContent = text;
+    label.style.fontFamily = styleDropdownFont(select, option);
+  });
+};
+const openStyleDropdownFor = entry => {
+  closeStyleDropdown();
+  const { select, button } = entry;
+  const panel = select.closest(".track-panel");
+  if (!panel) return;
+  const menu = document.createElement("div");
+  menu.className = "style-dropdown-menu";
+  menu.setAttribute("role", "listbox");
+  Array.from(select.options).forEach((option, index) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = index === select.selectedIndex ? "style-dropdown-item selected" : "style-dropdown-item";
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-selected", String(index === select.selectedIndex));
+    item.dataset.index = String(index);
+    item.textContent = option.textContent;
+    item.style.fontFamily = styleDropdownFont(select, option);
+    menu.appendChild(item);
+  });
+  menu.addEventListener("click", event => {
+    event.stopPropagation();
+    const item = event.target.closest(".style-dropdown-item");
+    if (!item) return;
+    const index = Number(item.dataset.index);
+    closeStyleDropdown();
+    if (index === select.selectedIndex) return;
+    select.selectedIndex = index;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    syncStyleDropdowns();
+  });
+  panel.appendChild(menu);
+  // Placed in the panel's own pixels from the field's offsets, which neither the panel's zoom nor
+  // its open animation's transform distort. The list opens below the field, or above it when there
+  // is more room there, and never past the panel's edge.
+  let x = 0;
+  let y = 0;
+  let node = button;
+  while (node && node !== panel) {
+    x += node.offsetLeft;
+    y += node.offsetTop;
+    node = node.offsetParent;
+  }
+  for (let parent = button.parentElement; parent && parent !== panel; parent = parent.parentElement) {
+    x -= parent.scrollLeft;
+    y -= parent.scrollTop;
+  }
+  const fieldHeight = button.offsetHeight;
+  const below = panel.clientHeight - (y + fieldHeight) - 10;
+  const above = y - 10;
+  menu.style.left = `${x}px`;
+  menu.style.width = `${button.offsetWidth}px`;
+  if (below >= 200 || below >= above) {
+    menu.style.top = `${y + fieldHeight + 4}px`;
+    menu.style.maxHeight = `${Math.max(80, below)}px`;
+  } else {
+    menu.style.bottom = `${panel.clientHeight - y + 4}px`;
+    menu.style.maxHeight = `${Math.max(80, above)}px`;
+  }
+  const selected = menu.querySelector(".style-dropdown-item.selected");
+  if (selected) menu.scrollTop = Math.max(0, selected.offsetTop - (menu.clientHeight - selected.offsetHeight) / 2);
+  button.classList.add("open");
+  button.setAttribute("aria-expanded", "true");
+  openStyleDropdown = { ...entry, menu };
+};
+document.querySelectorAll("#subtitleStylePanel select.style-select").forEach(select => {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "style-dropdown";
+  button.setAttribute("aria-haspopup", "listbox");
+  button.setAttribute("aria-expanded", "false");
+  const labelledBy = select.closest(".style-row") && select.closest(".style-row").querySelector(".style-label");
+  if (labelledBy && labelledBy.id) button.setAttribute("aria-labelledby", labelledBy.id);
+  const label = document.createElement("span");
+  label.className = "style-dropdown-label";
+  button.appendChild(label);
+  select.classList.add("style-select-native");
+  select.tabIndex = -1;
+  select.setAttribute("aria-hidden", "true");
+  select.after(button);
+  const entry = { select, button, label };
+  styleDropdowns.push(entry);
+  button.addEventListener("click", event => {
+    event.stopPropagation();
+    if (openStyleDropdown && openStyleDropdown.select === select) closeStyleDropdown();
+    else openStyleDropdownFor(entry);
+  });
+});
+document.addEventListener("pointerdown", event => {
+  if (!openStyleDropdown) return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (target && (target.closest(".style-dropdown-menu") || target.closest(".style-dropdown"))) return;
+  closeStyleDropdown();
+}, true);
+document.addEventListener("keydown", event => {
+  if (!openStyleDropdown || event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  closeStyleDropdown();
+}, true);
+subtitleStylePanel.addEventListener("scroll", closeStyleDropdown, { passive: true });
 
 const normalizeItems = items =>
   Array.isArray(items) ? items.filter(item => item && typeof item === "object") : [];
@@ -5159,6 +5563,7 @@ const renderP2pConsentModal = () => {
 };
 
 const renderActiveModal = () => {
+  renderDockRails();
   if (activeModal === "audio") renderAudioTrackList();
   if (activeModal === "subtitles") renderSubtitleModal();
   if (activeModal === "sources") renderSourceModal();
@@ -5177,6 +5582,7 @@ window.nuvioNativeViewportChanged = () => {
     root.classList.remove("native-resizing");
   }, 180);
   if (activeModal) renderActiveModal();
+  positionDockPanel();
 };
 
 const trackListSignature = tracks =>
@@ -6014,6 +6420,7 @@ const renderChrome = () => {
   root.classList.toggle("episode-panel-open", activeModal === "episodes");
   root.classList.toggle("source-panel-open", activeModal === "sources");
   root.classList.toggle("iptv-panel-open", activeModal === "iptvChannels");
+  root.classList.toggle("dock-open", isDockModal(activeModal));
   // The layouts are exclusive; the repository never sets two at once, but the HUD must not depend
   // on it, and a stale payload mid-switch would otherwise stack two rule sets for a frame.
   const officialHud = Boolean(state.officialHudEnabled);
@@ -7220,8 +7627,13 @@ document.querySelectorAll("[data-command]").forEach(button => {
     event.stopPropagation();
     noteChromeActivity(true);
     const command = button.dataset.command;
-    if (command === "audio") {
-      openPlayerModal("audio");
+    // The docked panels: their button opens the panel standing over itself, and closes it again.
+    if (isDockModal(command)) {
+      if (activeModal === command) {
+        closePlayerModal(true);
+        return;
+      }
+      openDockModal(command);
       return;
     }
     if (command === "speed") {
@@ -7230,10 +7642,6 @@ document.querySelectorAll("[data-command]").forEach(button => {
     }
     if (command === "resize") {
       cycleAspectFromControls();
-      return;
-    }
-    if (command === "subtitles") {
-      openPlayerModal("subtitles");
       return;
     }
     if (command === "iptvChannels") {
@@ -7277,20 +7685,6 @@ document.querySelectorAll("[data-command]").forEach(button => {
       send("episodes", 0);
       return;
     }
-    if (command === "submitIntro") {
-      openPlayerModal("submitIntro");
-      return;
-    }
-    if (command === "streamInfo") {
-      streamInfoSignature = "";
-      openPlayerModal("streamInfo");
-      send("streamInfoOpened", 0);
-      return;
-    }
-    if (command === "party") {
-      openPartyModal(partyUnreadText() ? "chat" : "party");
-      return;
-    }
     send(command, 0);
   });
 });
@@ -7300,6 +7694,39 @@ openingOverlay.addEventListener("click", event => {
   if (!event.target.closest("button,input")) {
     toggleChrome();
   }
+});
+
+document.querySelectorAll(".dock-rail").forEach(rail => {
+  rail.addEventListener("click", event => {
+    const target = event.target.closest("[data-dock-target]");
+    if (!target) return;
+    event.stopPropagation();
+    noteChromeActivity(true);
+    if (target.dataset.dockTarget !== selectedDockEntryId()) openDockModal(target.dataset.dockTarget);
+  });
+});
+
+// The docked panel has no scrim, so a press on the bare video lands on the player. It closes the
+// panel instead, and the click it makes is eaten so it doesn't also pause or show/hide the HUD.
+// Presses on the HUD's own controls go through: they can switch panels with the dock open.
+document.addEventListener("pointerdown", event => {
+  consumeDockDismissClick = false;
+  if (!isDockModal(activeModal) || event.button !== 0 || contextMenuOpen) return;
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target || target.closest(".dock-frame, #subtitleHexModal, #contextMenu, #actionOverflowMenu")) return;
+  if (isChromeInteractionTarget(target)) return;
+  event.stopPropagation();
+  consumeDockDismissClick = true;
+  closePlayerModal(true);
+}, true);
+document.addEventListener("click", event => {
+  if (!consumeDockDismissClick) return;
+  consumeDockDismissClick = false;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);
+window.addEventListener("resize", () => {
+  if (isDockModal(activeModal)) positionDockPanel();
 });
 
 modalElements.forEach(modal => {
@@ -8130,28 +8557,73 @@ const HoldSpeedValue = 2;
 let holdSpeedTimer = 0;
 let holdSpeedPointerId = null;
 let holdSpeedRestoreValue = null;
+let holdSpeedButton = -1;
 let consumeHoldSpeedClick = false;
+let consumeZoneContextMenu = false;
 
-const endHoldSpeed = () => {
+// Player zones can be driven by a drag with the left (drag), right (rmb) or a side button (xb1 /
+// xb2): the zone input's event.button, or -1 for the wheel and off.
+const ZONE_INPUT_BUTTONS = { drag: 0, rmb: 2, xb1: 3, xb2: 4 };
+const zoneButton = () => ZONE_INPUT_BUTTONS[state.zoneInput] ?? -1;
+// event.buttons bit for an event.button: left 1, middle 4, right 2, back 8, forward 16.
+const mouseButtonMask = button => [1, 4, 2, 8, 16][button] ?? 0;
+
+// A press of a zone button that did something (a drag, a 2x hold) must not also do the button's own
+// job when it comes up: the left button's click (pause), the right button's context menu.
+const swallowZoneButtonRelease = button => {
+  if (button === 0) {
+    consumeHoldSpeedClick = true;
+    window.setTimeout(() => { consumeHoldSpeedClick = false; }, 500);
+  } else if (button === 2) {
+    consumeZoneContextMenu = true;
+    window.setTimeout(() => { consumeZoneContextMenu = false; }, 500);
+  }
+};
+
+// The other half: a zone press that came up unused does the button's own job after all. Only Back
+// needs this; it normally acts on press, so while it drives the zones it waits for the release.
+const zoneButtonReleasedUnused = button => {
+  if (button === 3) handleMouseBack();
+};
+
+// Capture phase on window, so it runs before the context menu's own listener on root.
+window.addEventListener("contextmenu", event => {
+  if (!consumeZoneContextMenu) return;
+  consumeZoneContextMenu = false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+const endHoldSpeed = (released = false) => {
   window.clearTimeout(holdSpeedTimer);
   holdSpeedTimer = 0;
   holdSpeedPointerId = null;
-  if (holdSpeedRestoreValue === null) return;
+  const button = holdSpeedButton;
+  holdSpeedButton = -1;
+  if (holdSpeedRestoreValue === null) {
+    if (released) zoneButtonReleasedUnused(button);
+    return;
+  }
   const restore = holdSpeedRestoreValue;
   holdSpeedRestoreValue = null;
-  consumeHoldSpeedClick = true;
-  window.setTimeout(() => { consumeHoldSpeedClick = false; }, 500);
+  swallowZoneButtonRelease(button);
   send("setPlaybackSpeed", restore);
   window.nuvioShowPresetPill(hudText("player_hud_playback_speed", "Playback speed"), `${restore.toFixed(2).replace(/\.?0+$/, "")}x`);
 };
 
 root.addEventListener("pointerdown", event => {
-  if (event.button !== 0 || event.pointerType === "touch") return;
+  if (event.pointerType === "touch") return;
+  // A fast-forward zone gives the hold to the zone button, whichever it is. With left-button zones
+  // the left hold belongs to the zones, so a press that rests before it starts dragging can't also
+  // switch to 2x; with any other zone input the left button keeps its usual hold.
+  const zoneHold = event.button === zoneButton() && zoneActionAt(event.clientX) === "fastforward";
+  if (!zoneHold && (event.button !== 0 || state.zoneInput === "drag")) return;
   if (isHeroTrailerSurface || state.heroTrailerMode || isCompactPlayerUi()) return;
   if (state.isLocked || !state.isPlaying || contextMenuOpen || activeModal || playbackErrorText()) return;
   if (event.target.closest("button,input") || isChromeInteractionTarget(event.target)) return;
   endHoldSpeed();
   holdSpeedPointerId = event.pointerId;
+  holdSpeedButton = event.button;
   holdSpeedTimer = window.setTimeout(() => {
     holdSpeedTimer = 0;
     // Re-check: the press may have outlived playback (end of file, pause from a key).
@@ -8164,10 +8636,10 @@ root.addEventListener("pointerdown", event => {
 });
 ["pointerup", "pointercancel"].forEach(type => window.addEventListener(type, event => {
   if (holdSpeedPointerId === null || event.pointerId !== holdSpeedPointerId) return;
-  endHoldSpeed();
+  endHoldSpeed(type === "pointerup");
 }, true));
 // Losing focus mid-hold (alt-tab, a native dialog) never delivers the pointerup.
-window.addEventListener("blur", endHoldSpeed);
+window.addEventListener("blur", () => endHoldSpeed());
 
 root.addEventListener("click", event => {
   if (consumeHoldSpeedClick) {
@@ -8245,6 +8717,166 @@ const panelWheelScroller = panel => {
   return best;
 };
 
+const stepVolumeFromWheel = event => {
+  const direction = event.deltaY > 0 ? -1 : event.deltaY < 0 ? 1 : 0;
+  if (direction === 0) return;
+  adjustLocalVolume(direction * 5);
+  send("volumeDelta", direction * 0.05);
+};
+
+// Player zones: the third of the window under the pointer picks the action, each third's set in
+// Settings (zoneActions, left to right: none / speed / seek / volume / fastforward).
+const zoneActionAt = clientX => {
+  const bounds = root.getBoundingClientRect();
+  const fraction = bounds.width > 0 ? (clientX - bounds.left) / bounds.width : 0.5;
+  const index = fraction < 1 / 3 ? 0 : fraction < 2 / 3 ? 1 : 2;
+  return String(state.zoneActions || "").split(",")[index]?.trim().toLowerCase() || "none";
+};
+
+// One step of a zone action, +1 up / faster / forward. volumeStep is the percent per step: a wheel
+// notch moves 5, a drag step (a few pixels) less, so dragging feels continuous.
+const applyZoneStep = (action, direction, volumeStep) => {
+  if (action === "volume") {
+    adjustLocalVolume(direction * volumeStep);
+    send("volumeDelta", direction * volumeStep / 100);
+    return;
+  }
+  // Live TV arrives in real time, so a faster speed would only run out of buffer.
+  if (action === "speed") {
+    if (!state.iptv) stepPlaybackSpeed(direction);
+    return;
+  }
+  if (action === "seek") {
+    // The seek buttons are hidden while a title opens; a stray step must not move its start point.
+    if (root.classList.contains("opening-active")) return;
+    revealChromeForPlaybackInteraction();
+    send(direction > 0 ? "seekForward" : "seekBack", 0);
+  }
+};
+
+// A mouse notch reads 120 / page zoom in wheelDeltaY, and the native side sets that zoom to
+// (192 / dpi) * UI scale, so a notch can be anything from 40 to several hundred and this page can't
+// tell which. The threshold sits just under the smallest, so every notch is exactly one step, while
+// a touchpad's smaller deltas add up first. Partial travel is dropped when the pointer changes
+// zone, the direction flips, or the wheel rests, so leftovers can't fire a step later.
+const WHEEL_UNITS_PER_STEP = 36;
+const WHEEL_REST_MS = 300;
+const createWheelStepCounter = () => {
+  let zone = "";
+  let units = 0;
+  let lastAt = 0;
+  return (nextZone, wheelUnits, now) => {
+    if (nextZone !== zone || now - lastAt > WHEEL_REST_MS || units * wheelUnits < 0) units = 0;
+    zone = nextZone;
+    lastAt = now;
+    units += wheelUnits;
+    if (Math.abs(units) < WHEEL_UNITS_PER_STEP) return 0;
+    const direction = Math.sign(units);
+    units = 0;
+    return direction;
+  };
+};
+const countWheelSteps = createWheelStepCounter();
+
+// Panels and text fields keep the wheel for themselves. Every other control follows its zone, so
+// the seek reveal can't put a dead spot under the pointer between two notches.
+const scrollZoneExcludedSelector = [
+  ".modal-layer",
+  ".locked-overlay",
+  "#actionOverflowMenu",
+  "#playlistPeek",
+  "input:not([type='range'])",
+  "textarea",
+  "select",
+  "[contenteditable='true']",
+].join(",");
+
+const handleScrollZoneWheel = event => {
+  if (activeModal || contextMenuOpen) return;
+  if (event.target.closest(scrollZoneExcludedSelector) || wheelScrollableAncestor(event.target)) return;
+  event.preventDefault();
+  const zone = event.target.closest("#playerVolumeControl") ? "volume" : zoneActionAt(event.clientX);
+  if (zone === "volume") {
+    stepVolumeFromWheel(event);
+    return;
+  }
+  // Nothing, or the drag-only fast-forward: the wheel does nothing here.
+  if (zone !== "speed" && zone !== "seek") return;
+  const direction = countWheelSteps(zone, event.wheelDeltaY, event.timeStamp);
+  if (direction !== 0) applyZoneStep(zone, direction, 5);
+};
+
+// Drag input: hold the zone button (left, right or a side button) on the bare video and move up or down. Up is louder / faster /
+// forward. A press that never travels ZONE_DRAG_START_PX stays an ordinary click (pause), and one
+// that does swallows that click. The wheel is left alone, so this works on the YouTube watch page,
+// where the wheel scrolls the page. Fast-forward zones are the hold-for-2x gesture further down.
+const ZONE_DRAG_START_PX = 8;
+const ZONE_DRAG_STEP_PX = { volume: 6, seek: 28, speed: 40 };
+const ZONE_DRAG_VOLUME_STEP = 2;
+let zoneDrag = null;
+
+const zoneDragEligible = event =>
+  event.button === zoneButton() && event.pointerType !== "touch" &&
+  !isHeroTrailerSurface && !state.heroTrailerMode && !isCompactPlayerUi() && !state.pictureInPictureActive &&
+  !state.isLocked && !contextMenuOpen && !activeModal && !playbackErrorText() &&
+  !event.target.closest("button,input") && !isChromeInteractionTarget(event.target);
+
+const endZoneDrag = (released = false) => {
+  if (!zoneDrag) return;
+  const { pointerId, active, button } = zoneDrag;
+  zoneDrag = null;
+  try {
+    if (root.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId);
+  } catch (_) {}
+  if (active) {
+    swallowZoneButtonRelease(button);
+  } else if (released) {
+    zoneButtonReleasedUnused(button);
+  }
+};
+
+root.addEventListener("pointerdown", event => {
+  if (!zoneDragEligible(event)) return;
+  const action = zoneActionAt(event.clientX);
+  if (action !== "speed" && action !== "seek" && action !== "volume") return;
+  endZoneDrag();
+  zoneDrag = {
+    pointerId: event.pointerId,
+    button: event.button,
+    action,
+    startY: event.clientY,
+    anchorY: event.clientY,
+    active: false,
+  };
+});
+
+window.addEventListener("pointermove", event => {
+  if (!zoneDrag || event.pointerId !== zoneDrag.pointerId) return;
+  // The button came up somewhere this page never heard about.
+  if ((event.buttons & mouseButtonMask(zoneDrag.button)) === 0) {
+    endZoneDrag();
+    return;
+  }
+  if (!zoneDrag.active) {
+    if (Math.abs(event.clientY - zoneDrag.startY) < ZONE_DRAG_START_PX) return;
+    zoneDrag.active = true;
+    zoneDrag.anchorY = event.clientY;
+    window.clearTimeout(tapTimer);
+    try { root.setPointerCapture(event.pointerId); } catch (_) {}
+  }
+  event.preventDefault();
+  const stepPx = ZONE_DRAG_STEP_PX[zoneDrag.action];
+  while (Math.abs(zoneDrag.anchorY - event.clientY) >= stepPx) {
+    const direction = event.clientY < zoneDrag.anchorY ? 1 : -1;
+    zoneDrag.anchorY -= direction * stepPx;
+    applyZoneStep(zoneDrag.action, direction, ZONE_DRAG_VOLUME_STEP);
+  }
+}, true);
+["pointerup", "pointercancel"].forEach(type => window.addEventListener(type, event => {
+  if (zoneDrag && event.pointerId === zoneDrag.pointerId) endZoneDrag(type === "pointerup");
+}, true));
+window.addEventListener("blur", () => endZoneDrag());
+
 root.addEventListener("wheel", event => {
   if (state.pictureInPictureActive) return;
   // The YouTube watch page: the wheel scrolls the page around the video (volume stays on the controls).
@@ -8269,12 +8901,13 @@ root.addEventListener("wheel", event => {
   }
   if (playbackErrorText()) return;
   if (state.isLocked) return;
+  if (state.zoneInput === "wheel" && !isHeroTrailerSurface && !state.heroTrailerMode) {
+    handleScrollZoneWheel(event);
+    return;
+  }
   if (isChromeInteractionTarget(event.target)) return;
   event.preventDefault();
-  const direction = event.deltaY > 0 ? -1 : event.deltaY < 0 ? 1 : 0;
-  if (direction === 0) return;
-  adjustLocalVolume(direction * 5);
-  send("volumeDelta", direction * 0.05);
+  stepVolumeFromWheel(event);
 }, { passive: false });
 
 root.addEventListener("dblclick", event => {
@@ -8291,10 +8924,9 @@ root.addEventListener("dblclick", event => {
 // Mouse "Back" side button (X1 / button 3) closes the player, mirroring Esc. WebView2 mouse events
 // don't reach the app-level AWT listener that handles Back on every other screen, so the button is
 // wired here in the HUD instead. (Button 4 / Forward is intentionally left alone.)
-document.addEventListener("mousedown", event => {
-  if (isHeroTrailerSurface || state.heroTrailerMode) return;
-  if (event.button !== 3) return;
-  event.preventDefault();
+// When Back drives the player zones, a press on the video belongs to them (pointerdown, which runs
+// first, has claimed it), and Back runs on a release that neither dragged nor held.
+function handleMouseBack() {
   if (contextMenuOpen) {
     closeContextMenu();
     return;
@@ -8305,6 +8937,14 @@ document.addEventListener("mousedown", event => {
     return;
   }
   send("back", 0);
+}
+
+document.addEventListener("mousedown", event => {
+  if (isHeroTrailerSurface || state.heroTrailerMode) return;
+  if (event.button !== 3) return;
+  event.preventDefault();
+  if (zoneDrag?.button === 3 || (holdSpeedPointerId !== null && holdSpeedButton === 3)) return;
+  handleMouseBack();
 });
 
 document.addEventListener("keydown", event => {

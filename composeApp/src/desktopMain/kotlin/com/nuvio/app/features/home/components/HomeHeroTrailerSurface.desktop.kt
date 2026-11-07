@@ -84,6 +84,8 @@ actual fun HomeHeroTrailerSurface(
     // fork:preshow - the pre-show has neither: it always plays at one fixed level.
     val effectiveVolume = if (preshow) PRESHOW_VOLUME else if (muted) 0 else volume.coerceIn(0, 100)
     val effectiveMuted = !preshow && muted // fork:preshow
+    // Music steps aside while this trailer (or theme song) is audible, and comes back after.
+    com.nuvio.app.features.music.MusicPausedWhileTrailerPlays(audible = playWhenReady && effectiveVolume > 0)
 
     if (!supported) {
         LaunchedEffect(sourceUrl) {

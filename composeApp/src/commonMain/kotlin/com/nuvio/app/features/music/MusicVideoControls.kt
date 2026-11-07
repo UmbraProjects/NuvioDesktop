@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistAdd
@@ -175,6 +176,36 @@ private fun StripButton(icon: ImageVector, label: String, enabled: Boolean = tru
                 modifier = Modifier.size(24.dp),
             )
         }
+    }
+}
+
+/**
+ * The song's seek bar with a note in front of it, the same size and spacing as [MusicVolumeControl]'s speaker, so the
+ * two sharing a row read alike: an icon, then a slider. A click, drag or Left / Right ([nudgeMs] a step) moves the song.
+ */
+@Composable
+internal fun MusicSeekControl(
+    state: MusicPlayerState,
+    player: MusicPlayer,
+    nudgeMs: Long,
+    modifier: Modifier = Modifier,
+    /** Applied to the bar itself (focus, key handling), not the row. */
+    barModifier: Modifier = Modifier,
+    tint: Color = Color.White.copy(alpha = 0.9f),
+    glass: Boolean = false,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        }
+        SeekBar(
+            fraction = if (state.durationMs > 0L) state.positionMs.toFloat() / state.durationMs else 0f,
+            onSeek = { player.seekTo((it * state.durationMs).toLong()) },
+            modifier = Modifier.weight(1f).then(barModifier),
+            enabled = state.durationMs > 0L,
+            onNudge = { d -> player.seekTo((state.positionMs + d * nudgeMs).coerceIn(0L, state.durationMs)) },
+            glass = glass,
+        )
     }
 }
 

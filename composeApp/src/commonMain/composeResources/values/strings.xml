@@ -1799,6 +1799,8 @@
     <string name="settings_playback_hud_layout_minimal">Minimal</string>
     <string name="settings_playback_hud_layout_pills">Minimal Controls Pills</string>
     <string name="settings_playback_hud_layout_pills_description">Sit each control group on its own translucent pill instead of directly on the picture.</string>
+    <string name="settings_playback_hud_dock_from_bar">Panels Grow From The Tool Pill</string>
+    <string name="settings_playback_hud_dock_from_bar_description">Subtitle, audio and the other player panels open out of the tool pill at its width, as one piece with it. Needs Minimal Controls Pills.</string>
     <string name="settings_playback_seek_handle">Seek Bar Handle</string>
     <string name="settings_playback_seek_handle_description">Draw the round handle on the seek bar. Off leaves just the coloured progress bar.</string>
     <string name="settings_playback_hud_vignette">Controls Vignette</string>
@@ -1848,6 +1850,18 @@
     <string name="settings_playback_info_panel_description">Show media info summary on playback.</string>
     <string name="settings_playback_fine_speed_increments">Fine Speed Increments</string>
     <string name="settings_playback_fine_speed_increments_description">Speed increases by 0.1, rather than presets.</string>
+    <string name="settings_playback_scroll_zones">Player Zones</string>
+    <string name="settings_playback_scroll_zones_description">Split the video into thirds, hold mouse cursor in that third and hold the button then scroll. Wheel doesn't work on YouTube.</string>
+    <string name="settings_playback_zone_input_wheel">Mouse wheel</string>
+    <string name="settings_playback_zone_input_drag">%1$s Drag</string>
+    <string name="settings_playback_zone_left">Left Zone</string>
+    <string name="settings_playback_zone_middle">Middle Zone</string>
+    <string name="settings_playback_zone_right">Right Zone</string>
+    <string name="settings_playback_zone_action_none">Nothing</string>
+    <string name="settings_playback_zone_action_speed">Playback speed</string>
+    <string name="settings_playback_zone_action_seek">Seek</string>
+    <string name="settings_playback_zone_action_volume">Volume</string>
+    <string name="settings_playback_zone_action_fast_forward">Hold to fast-forward</string>
     <string name="settings_playback_speed_toggle">Speed Toggle Range</string>
     <string name="settings_playback_speed_toggle_description">Press R to toggle between these speeds.</string>
     <string name="settings_playback_desktop_verbose_mpv_logging">Verbose MPV Logging</string>

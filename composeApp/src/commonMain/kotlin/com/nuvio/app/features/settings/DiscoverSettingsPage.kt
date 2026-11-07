@@ -278,6 +278,7 @@ internal fun LazyListScope.discoverSettingsContent(
                         continueWatchingParentKeys = WatchProgressRepository.uiState.value
                             .continueWatchingEntries
                             .mapTo(mutableSetOf()) { finishGroupKey(it.parentMetaType, it.parentMetaId) },
+                        watchedSincePaused = { com.nuvio.app.features.discover.finishEntryWatchedSincePaused(it) },
                     )
                 }
                 // Why this exists: most of this slider's range cannot match anything on a normal

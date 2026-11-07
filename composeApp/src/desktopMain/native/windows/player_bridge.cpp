@@ -582,8 +582,65 @@ void updateCompactPlayerWindowInteraction(HWND hwnd) {
     const int dx = pointer.x - interaction.initialPointer.x;
     const int dy = pointer.y - interaction.initialPointer.y;
     RECT next = interaction.initialRect;
+    // Shift held while resizing keeps the window's shape from when the drag began; a plain drag resizes
+    // freely. Read on every update, so pressing or letting go of Shift mid-drag switches between the two.
+    const bool keepAspect = interaction.edge != 0 && (GetKeyState(VK_SHIFT) & 0x8000) != 0;
     if (interaction.edge == 0) {
         OffsetRect(&next, dx, dy);
+    } else if (keepAspect) {
+        const RECT &start = interaction.initialRect;
+        const double startWidth = (double)(start.right - start.left);
+        const double startHeight = (double)(start.bottom - start.top);
+        if (startWidth <= 0.0 || startHeight <= 0.0) return;
+        const double aspect = startWidth / startHeight;
+        const int edge = interaction.edge;
+        const bool movesTop = edge == 1 || edge == 2 || edge == 8;
+        const bool movesRight = edge == 2 || edge == 3 || edge == 4;
+        const bool movesBottom = edge == 4 || edge == 5 || edge == 6;
+        const bool movesLeft = edge == 6 || edge == 7 || edge == 8;
+        const double freeWidth = startWidth + (movesRight ? dx : 0) - (movesLeft ? dx : 0);
+        const double freeHeight = startHeight + (movesBottom ? dy : 0) - (movesTop ? dy : 0);
+        const bool horizontal = movesLeft || movesRight;
+        const bool vertical = movesTop || movesBottom;
+        // A corner follows whichever direction the pointer moved further, relative to the window's size.
+        bool byWidth;
+        if (horizontal && vertical) {
+            byWidth = std::fabs(freeWidth / startWidth - 1.0) >= std::fabs(freeHeight / startHeight - 1.0);
+        } else {
+            byWidth = horizontal;
+        }
+        double width = byWidth ? freeWidth : freeHeight * aspect;
+        double height = byWidth ? freeWidth / aspect : freeHeight;
+        constexpr double minimumWidth = 320.0;
+        constexpr double minimumHeight = 180.0;
+        const double grow = std::max({1.0, minimumWidth / std::max(width, 1.0), minimumHeight / std::max(height, 1.0)});
+        width *= grow;
+        height *= grow;
+        const LONG w = (LONG)std::lround(width);
+        const LONG h = (LONG)std::lround(height);
+        // The side opposite the dragged one stays put; an edge handle grows the other axis about its middle.
+        if (movesLeft) {
+            next.right = start.right;
+            next.left = start.right - w;
+        } else if (movesRight) {
+            next.left = start.left;
+            next.right = start.left + w;
+        } else {
+            const LONG centerX = (start.left + start.right) / 2;
+            next.left = centerX - w / 2;
+            next.right = next.left + w;
+        }
+        if (movesTop) {
+            next.bottom = start.bottom;
+            next.top = start.bottom - h;
+        } else if (movesBottom) {
+            next.top = start.top;
+            next.bottom = start.top + h;
+        } else {
+            const LONG centerY = (start.top + start.bottom) / 2;
+            next.top = centerY - h / 2;
+            next.bottom = next.top + h;
+        }
     } else {
         if (interaction.edge == 1 || interaction.edge == 2 || interaction.edge == 8) next.top += dy;
         if (interaction.edge == 2 || interaction.edge == 3 || interaction.edge == 4) next.right += dx;

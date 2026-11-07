@@ -133,6 +133,40 @@ class DiscoverContinuityTest {
     }
 
     @Test
+    fun `a show watched past its part-watched episode is not unfinished`() {
+        // The report: a series watched to the end still showed, because an earlier episode stopped
+        // at the credits stayed part-watched and a finished show has no Continue Watching row.
+        val entries = listOf(
+            progress("tt0903747", videoId = "tt0903747:1:3", daysAgo = 60),
+            progress("tt0903747", videoId = "tt0903747:1:4", daysAgo = 50, positionMs = 45 * 60 * 1000),
+        )
+
+        val picked = selectFinishWhatYouStarted(
+            entries = entries,
+            continueWatchingParentKeys = emptySet(),
+            now = NOW,
+            minIdleMs = IDLE_30_DAYS,
+        )
+
+        assertTrue(picked.isEmpty())
+    }
+
+    @Test
+    fun `an episode watched since it was paused is not unfinished`() {
+        val entries = listOf(progress("tt0903747", daysAgo = 60))
+
+        val picked = selectFinishWhatYouStarted(
+            entries = entries,
+            continueWatchingParentKeys = emptySet(),
+            now = NOW,
+            minIdleMs = IDLE_30_DAYS,
+            watchedSincePaused = { true },
+        )
+
+        assertTrue(picked.isEmpty())
+    }
+
+    @Test
     fun `Trakt history rows are not playback and never qualify`() {
         val entries = listOf(
             progress("tt0903747", daysAgo = 60, source = WatchProgressSourceTraktHistory),

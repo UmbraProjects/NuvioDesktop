@@ -75,6 +75,8 @@ data class PlayerSettingsUiState(
     val desktopOfficialHudEnabled: Boolean = false,
     // Minimal layout only: each control group sits on its own translucent pill.
     val desktopMinimalHudPillsEnabled: Boolean = true,
+    // Minimal + pills only: the player panels grow out of the tool pill, at its width.
+    val desktopDockPanelFromBarEnabled: Boolean = false,
     // Draw the round handle on the seek bar; off leaves the coloured fill edge as the marker.
     val desktopSeekHandleEnabled: Boolean = true,
     // The dark top/bottom edge gradients that fade in with the HUD so its controls stay legible.
@@ -90,6 +92,10 @@ data class PlayerSettingsUiState(
     // When true, the desktop speed button / speed keyboard shortcuts step by 0.1 instead of
     // jumping between the coarse preset stages (1, 1.25, 1.5, 2, 3, 4).
     val desktopPlaybackSpeedFineIncrementsEnabled: Boolean = false,
+    // Player zones: the wheel, or a held left-button drag, acts by which third of the video the
+    // pointer is over, each third doing its own action. Off leaves the whole surface's wheel on volume.
+    val desktopPlayerZoneInput: DesktopPlayerZoneInput = DesktopPlayerZoneInput.Off,
+    val desktopPlayerZoneActions: DesktopPlayerZoneActions = DesktopPlayerZoneActions(),
     // The two speeds the "Toggle playback speed" shortcut flips between. Both are user-set, so the
     // pair can be 1.2 / 1.6 just as well as the 1x / 2x default.
     val playbackSpeedToggleLow: Float = 1f,
@@ -296,6 +302,7 @@ object PlayerSettingsRepository {
     private var desktopUltraHudEnabled = false
     private var desktopOfficialHudEnabled = false
     private var desktopMinimalHudPillsEnabled = true
+    private var desktopDockPanelFromBarEnabled = false
     private var desktopSeekHandleEnabled = true
     private var desktopHudVignetteEnabled = true
     private var desktopHiddenHudButtons: Set<String> = emptySet()
@@ -303,6 +310,8 @@ object PlayerSettingsRepository {
     private var desktopAlwaysShowClockEnabled = false
     private var desktopPauseOverlaySourceEnabled = false
     private var desktopPlaybackSpeedFineIncrementsEnabled = false
+    private var desktopPlayerZoneInput = DesktopPlayerZoneInput.Off
+    private var desktopPlayerZoneActions = DesktopPlayerZoneActions()
     private var playbackSpeedToggleLow = 1f
     private var playbackSpeedToggleHigh = 2f
     private var desktopVerboseMpvLoggingEnabled = false
@@ -450,6 +459,7 @@ object PlayerSettingsRepository {
         desktopUltraHudEnabled = false
         desktopOfficialHudEnabled = false
         desktopMinimalHudPillsEnabled = true
+        desktopDockPanelFromBarEnabled = false
         desktopSeekHandleEnabled = true
         desktopHudVignetteEnabled = true
         desktopHiddenHudButtons = emptySet()
@@ -457,6 +467,8 @@ object PlayerSettingsRepository {
         desktopAlwaysShowClockEnabled = false
         desktopPauseOverlaySourceEnabled = false
         desktopPlaybackSpeedFineIncrementsEnabled = false
+        desktopPlayerZoneInput = DesktopPlayerZoneInput.Off
+        desktopPlayerZoneActions = DesktopPlayerZoneActions()
         playbackSpeedToggleLow = 1f
         playbackSpeedToggleHigh = 2f
         desktopVerboseMpvLoggingEnabled = false
@@ -599,6 +611,7 @@ object PlayerSettingsRepository {
         desktopUltraHudEnabled = storedUltraHud ?: false
         desktopOfficialHudEnabled = storedOfficialHud ?: false
         desktopMinimalHudPillsEnabled = PlayerSettingsStorage.loadDesktopMinimalHudPillsEnabled() ?: true
+        desktopDockPanelFromBarEnabled = PlayerSettingsStorage.loadDesktopDockPanelFromBarEnabled() ?: false
         desktopSeekHandleEnabled = PlayerSettingsStorage.loadDesktopSeekHandleEnabled() ?: true
         desktopHudVignetteEnabled = PlayerSettingsStorage.loadDesktopHudVignetteEnabled() ?: true
         desktopHudButtonOrder = PlayerSettingsStorage.loadDesktopHudButtonOrder()
@@ -624,6 +637,14 @@ object PlayerSettingsRepository {
         desktopPauseOverlaySourceEnabled = PlayerSettingsStorage.loadDesktopPauseOverlaySourceEnabled() ?: false
         desktopPlaybackSpeedFineIncrementsEnabled =
             PlayerSettingsStorage.loadDesktopPlaybackSpeedFineIncrementsEnabled() ?: false
+        // Before zones had a choice of input they were a wheel-only switch; an old "on" reads as Wheel.
+        desktopPlayerZoneInput = DesktopPlayerZoneInput.fromStorage(PlayerSettingsStorage.loadDesktopPlayerZoneInput())
+            ?: if (PlayerSettingsStorage.loadDesktopPlayerScrollZonesEnabled() == true) {
+                DesktopPlayerZoneInput.Wheel
+            } else {
+                DesktopPlayerZoneInput.Off
+            }
+        desktopPlayerZoneActions = DesktopPlayerZoneActions.fromStorage(PlayerSettingsStorage.loadDesktopPlayerZoneActions())
         val toggleRange = normalizePlaybackSpeedToggleRange(
             low = PlayerSettingsStorage.loadPlaybackSpeedToggleLow() ?: 1f,
             high = PlayerSettingsStorage.loadPlaybackSpeedToggleHigh() ?: 2f,
@@ -948,6 +969,14 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveDesktopMinimalHudPillsEnabled(enabled)
     }
 
+    fun setDesktopDockPanelFromBarEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopDockPanelFromBarEnabled == enabled) return
+        desktopDockPanelFromBarEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopDockPanelFromBarEnabled(enabled)
+    }
+
     fun setDesktopSeekHandleEnabled(enabled: Boolean) {
         ensureLoaded()
         if (desktopSeekHandleEnabled == enabled) return
@@ -1030,6 +1059,22 @@ object PlayerSettingsRepository {
         desktopPlaybackSpeedFineIncrementsEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled)
+    }
+
+    fun setDesktopPlayerZoneInput(input: DesktopPlayerZoneInput) {
+        ensureLoaded()
+        if (desktopPlayerZoneInput == input) return
+        desktopPlayerZoneInput = input
+        publish()
+        PlayerSettingsStorage.saveDesktopPlayerZoneInput(input.name)
+    }
+
+    fun setDesktopPlayerZoneActions(actions: DesktopPlayerZoneActions) {
+        ensureLoaded()
+        if (desktopPlayerZoneActions == actions) return
+        desktopPlayerZoneActions = actions
+        publish()
+        PlayerSettingsStorage.saveDesktopPlayerZoneActions(actions.toStorage())
     }
 
     /**
@@ -1807,6 +1852,7 @@ object PlayerSettingsRepository {
             desktopUltraHudEnabled = desktopUltraHudEnabled,
             desktopOfficialHudEnabled = desktopOfficialHudEnabled,
             desktopMinimalHudPillsEnabled = desktopMinimalHudPillsEnabled,
+            desktopDockPanelFromBarEnabled = desktopDockPanelFromBarEnabled,
             desktopSeekHandleEnabled = desktopSeekHandleEnabled,
             desktopHudVignetteEnabled = desktopHudVignetteEnabled,
             desktopHiddenHudButtons = desktopHiddenHudButtons,
@@ -1814,6 +1860,8 @@ object PlayerSettingsRepository {
             desktopAlwaysShowClockEnabled = desktopAlwaysShowClockEnabled,
             desktopPauseOverlaySourceEnabled = desktopPauseOverlaySourceEnabled,
             desktopPlaybackSpeedFineIncrementsEnabled = desktopPlaybackSpeedFineIncrementsEnabled,
+            desktopPlayerZoneInput = desktopPlayerZoneInput,
+            desktopPlayerZoneActions = desktopPlayerZoneActions,
             playbackSpeedToggleLow = playbackSpeedToggleLow,
             playbackSpeedToggleHigh = playbackSpeedToggleHigh,
             desktopVerboseMpvLoggingEnabled = desktopVerboseMpvLoggingEnabled,
