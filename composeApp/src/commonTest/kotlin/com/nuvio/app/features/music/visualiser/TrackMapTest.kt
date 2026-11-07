@@ -9,13 +9,14 @@ import kotlin.math.sin
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class TrackMapTest {
-    private val rate = 24_000
+    private var rate = 24_000
 
     /** Sixteenth steps of each bar where the funk bass line starts a note: on the kicks (0, 8) and off them (3, 6, 11, 14). */
     private val bassSteps = setOf(0, 3, 6, 8, 11, 14)
@@ -91,6 +92,38 @@ class TrackMapTest {
             base[2 * i] += v; base[2 * i + 1] += v * 0.8f
         }
         return base
+    }
+
+    @Test
+    fun theWindowKeepsItsLengthWhateverTheSampleRate() {
+        assertEquals(2048, fftSizeFor(24_000))
+        assertEquals(4096, fftSizeFor(48_000))
+    }
+
+    @Test
+    fun aRateThatSplitsTheFrameIntoFractionsOfASampleIsRefused() {
+        assertFailsWith<IllegalArgumentException> { TrackMapBuilder(44_100) }
+    }
+
+    /** The same song analysed at 24 kHz and 48 kHz gives the same tempo, downbeat and (within a hit or two) the same kicks and snares. */
+    @Test
+    fun aHigherSampleRateFindsTheSameBeatAndHits() {
+        fun kinds(map: TrackMap, kind: Int) = (0 until map.frames).count { map.hits(it, kind) }
+        val low = build(drums(40.0, 100.0))
+        rate = 48_000
+        try {
+            val high = build(drums(40.0, 100.0))
+            val a = assertNotNull(low.beat)
+            val b = assertNotNull(high.beat)
+            assertTrue(abs(a.bpm - b.bpm) < 0.5, "bpm ${a.bpm} at 24 kHz, ${b.bpm} at 48 kHz")
+            assertTrue(abs(a.downbeatMs - b.downbeatMs) < 30.0, "downbeat ${a.downbeatMs} at 24 kHz, ${b.downbeatMs} at 48 kHz")
+            assertEquals(low.frames, high.frames)
+            for (kind in listOf(Onset.KICK, Onset.SNARE)) {
+                assertTrue(abs(kinds(low, kind) - kinds(high, kind)) <= 3, "kind $kind: ${kinds(low, kind)} at 24 kHz, ${kinds(high, kind)} at 48 kHz")
+            }
+        } finally {
+            rate = 24_000
+        }
     }
 
     @Test

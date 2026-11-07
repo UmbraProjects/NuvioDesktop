@@ -83,10 +83,12 @@ private fun musicGainPlan(source: TrailerPlaybackSource): MusicGainPlan {
 }
 
 /**
- * The decode the measurement reads: stereo at 24 kHz, two minutes at a time (the native side stops a call after 90 s, and keeps
- * what it had by then). Every window opens a new connection to the stream, and the addon's CDN refuses some of them, so fewer is better.
+ * The decode the measurement reads: stereo at 48 kHz (the rate most streams are already at, so mpv does not resample, and the
+ * analyser sees up to 24 kHz where 24 kHz sampling cut everything above 12 kHz), two minutes at a time (the native side stops a
+ * call after 90 s, and keeps what it had by then). Every window opens a new connection to the stream, and the addon's CDN refuses
+ * some of them, so fewer is better. The rate must give a whole number of samples per 25 ms map frame (see TrackMapBuilder).
  */
-private const val MEASURE_SAMPLE_RATE = 24_000
+private const val MEASURE_SAMPLE_RATE = 48_000
 private const val MEASURE_WINDOW_SECONDS = 120.0
 
 /** A track longer than this is measured over its first quarter of an hour. */

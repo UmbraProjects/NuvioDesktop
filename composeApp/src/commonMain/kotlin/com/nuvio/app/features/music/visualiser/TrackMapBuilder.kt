@@ -16,8 +16,8 @@ import kotlin.math.sqrt
 
 /*
  * fork:visualiser - builds a TrackMap from interleaved stereo float samples, fed in the order they were decoded (the
- * loudness measurement's windows). Each 25 ms frame gets an FFT of 2048 samples centred on it, which gives the 16 band
- * levels drawn by the styles.
+ * loudness measurement's windows). Each 25 ms frame gets an FFT of about 85 ms centred on it (2048 samples at 24 kHz, 4096 at
+ * 48 kHz, see [fftSizeFor]), which gives the 16 band levels drawn by the styles.
  *
  * Hits are not read off the raw spectrum: in most music the 40-130 Hz range is the bass guitar as much as the kick, and
  * every bass note would count as a kick. The spectrum is first split into what is sustained and what is struck
@@ -28,7 +28,21 @@ import kotlin.math.sqrt
  * snare, and the downbeat the beat with the kick on 1 and 3 and the backbeat on 2 and 4 (see [estimateBeat]).
  */
 
-private const val FFT_SIZE = 2048
+/**
+ * Every threshold in this file was tuned on 2048 samples at 24 kHz: a window of about 85 ms with 11.7 Hz bins. A higher sample
+ * rate therefore takes a longer FFT, not a shorter window, so the bins, the kick range and the median filters mean what they
+ * did and the only change is what lies above 12 kHz (and no resampler roll-off near the top of the hat range).
+ */
+private const val WINDOW_SECONDS = 2048.0 / 24_000.0
+
+/** The FFT length for [sampleRate]: the power of two at or above [WINDOW_SECONDS] of samples (2048 at 24 kHz, 4096 at 48 kHz). */
+internal fun fftSizeFor(sampleRate: Int): Int {
+    val wanted = (sampleRate * WINDOW_SECONDS).roundToInt()
+    var n = 256
+    while (n < wanted) n *= 2
+    return n
+}
+
 private const val MIN_HZ = 40.0
 private const val MAX_HZ = 11_000.0
 
@@ -88,14 +102,19 @@ private const val SNARE = 1
 private const val HATS = 2
 
 internal class TrackMapBuilder(private val sampleRate: Int) {
-    private val hop = sampleRate * MAP_FRAME_MS / 1_000
-    private val fft = RealFft(FFT_SIZE)
-    private val window = FloatArray(FFT_SIZE) { (0.5 - 0.5 * cos(2.0 * PI * it / FFT_SIZE)).toFloat() }
-    private val binHz = sampleRate.toDouble() / FFT_SIZE
+    // A frame must be a whole number of samples, or the map drifts against the song (44.1 kHz at 25 ms is 1102.5 samples: 0.4 s
+    // early over a quarter of an hour). 24 kHz and 48 kHz are exact.
+    private val hop = (sampleRate * MAP_FRAME_MS / 1_000).also {
+        require(it * 1_000 == sampleRate * MAP_FRAME_MS) { "sample rate $sampleRate does not give a whole sample count per ${MAP_FRAME_MS} ms frame" }
+    }
+    private val fftSize = fftSizeFor(sampleRate)
+    private val fft = RealFft(fftSize)
+    private val window = FloatArray(fftSize) { (0.5 - 0.5 * cos(2.0 * PI * it / fftSize)).toFloat() }
+    private val binHz = sampleRate.toDouble() / fftSize
     private val bandBins: List<IntRange>
     private val fineBins: List<IntRange>
     private val groupFine: List<IntRange>
-    private val reference = (FFT_SIZE / 4.0).pow(2)
+    private val reference = (fftSize / 4.0).pow(2)
 
     // Mono samples still needed by a frame not yet analysed; monoStart is the absolute index of mono[0].
     private var mono = FloatArray(1 shl 15)
@@ -128,15 +147,15 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
     private var spectraStart = 0
     private var previousStruck: FloatArray? = null
     private var previousHeld: FloatArray? = null
-    private val re = DoubleArray(FFT_SIZE)
-    private val im = DoubleArray(FFT_SIZE)
+    private val re = DoubleArray(fftSize)
+    private val im = DoubleArray(fftSize)
 
     init {
         val edges = DoubleArray(MAP_BANDS + 1) { MIN_HZ * (MAX_HZ / MIN_HZ).pow(it.toDouble() / MAP_BANDS) }
         bandBins = List(MAP_BANDS) { b ->
             val lo = kotlin.math.ceil(edges[b] / binHz).toInt()
             val hi = max(lo, kotlin.math.floor(edges[b + 1] / binHz).toInt())
-            lo..min(hi, FFT_SIZE / 2)
+            lo..min(hi, fftSize / 2)
         }
         val fine = mutableListOf<IntRange>()
         val firstBin = kotlin.math.ceil(35.0 / binHz).toInt()
@@ -146,7 +165,7 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
         while (lowHz < 11_500.0) {
             val highHz = lowHz * 2.0.pow(1.0 / 12)
             val lo = kotlin.math.ceil(lowHz / binHz).toInt()
-            val hi = max(lo, min(FFT_SIZE / 2, kotlin.math.floor(highHz / binHz).toInt()))
+            val hi = max(lo, min(fftSize / 2, kotlin.math.floor(highHz / binHz).toInt()))
             if (fine.isEmpty() || lo > fine.last().last) fine += lo..hi
             lowHz = highHz
         }
@@ -222,7 +241,7 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
 
     /** Analyses every frame whose window is fully received (or, with [flush], every frame that has started). */
     private fun analyseReady(flush: Boolean) {
-        val half = FFT_SIZE / 2
+        val half = fftSize / 2
         while (true) {
             val centre = analysed.toLong() * hop + hop / 2
             if (flush) {
@@ -242,14 +261,14 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
     }
 
     private fun analyseFrame(start: Long) {
-        for (k in 0 until FFT_SIZE) {
+        for (k in 0 until fftSize) {
             val at = start + k - monoStart
             val v = if (at >= 0 && at < monoLen) mono[at.toInt()] else 0f
             re[k] = (v * window[k]).toDouble()
             im[k] = 0.0
         }
         fft.transform(re, im)
-        val bins = FFT_SIZE / 2 + 1
+        val bins = fftSize / 2 + 1
         val power = DoubleArray(bins) { re[it] * re[it] + im[it] * im[it] }
         for (b in 0 until MAP_BANDS) {
             var sum = 0.0
@@ -260,7 +279,7 @@ internal class TrackMapBuilder(private val sampleRate: Int) {
         spectra.addLast(FloatArray(fineBins.size) { f ->
             var sum = 0.0
             for (k in fineBins[f]) sum += power[k]
-            (sqrt(sum) / (FFT_SIZE / 4.0)).toFloat()
+            (sqrt(sum) / (fftSize / 4.0)).toFloat()
         })
     }
 
