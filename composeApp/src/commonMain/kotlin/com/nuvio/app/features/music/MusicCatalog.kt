@@ -48,6 +48,16 @@ interface MusicCatalog {
     suspend fun radio(playlistId: String, videoId: String? = null, maxTracks: Int = 100): MusicPlaylistPage? = null
 
     /**
+     * fork:music-account - YouTube Music's home for the signed-in account: its shelves that hold playlists and mixes ("Mixed
+     * for you" with Discover Mix, My Supermix and the rest; featured playlists). Null when nobody is signed in or it could
+     * not be read.
+     */
+    suspend fun accountHome(): List<MusicHomeShelf>? = null
+
+    /** fork:music-account - the signed-in account's playlists (its library's Playlists, Liked Music among them). Null when nobody is signed in or it could not be read. */
+    suspend fun accountPlaylists(): List<MusicPlaylistSummary>? = null
+
+    /**
      * fork:music-home - one search for the first screen: YouTube Music's unfiltered answer read whole (its Top result,
      * songs, albums, artists, music videos). When that answer holds no songs or no albums (YouTube Music sometimes
      * sends only artists and videos), the filtered song and album searches fill them in, in parallel. Empty on failure;

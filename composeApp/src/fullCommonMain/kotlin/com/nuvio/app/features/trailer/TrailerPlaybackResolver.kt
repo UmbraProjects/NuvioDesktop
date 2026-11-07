@@ -43,4 +43,8 @@ actual object TrailerPlaybackResolver {
     /** YouTube Music's InnerTube, for the music feature. Not part of the shared `expect` surface. */
     internal suspend fun musicRequest(endpoint: String, params: Map<String, Any?>): String? =
         extractor.musicRequest(endpoint, params)
+
+    /** fork:music-account - [musicRequest] as the signed-in YouTube account; null when nobody is signed in. */
+    internal suspend fun musicRequestSigned(endpoint: String, params: Map<String, Any?>): String? =
+        extractor.musicRequestSigned(endpoint, params)
 }

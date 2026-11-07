@@ -143,4 +143,49 @@ class MusicRadioParseTest {
         assertEquals(listOf("a", "c"), queue.tracks.map { it.videoId })
         assertEquals(listOf(1, 2), queue.tracks.map { it.trackNumber })
     }
+
+    private fun card(title: String, subtitle: String, endpoint: String) =
+        """{"musicTwoRowItemRenderer":{"thumbnailRenderer":{"musicThumbnailRenderer":{"thumbnail":{"thumbnails":[{"url":"https://example.com/c.jpg","width":226,"height":226}]}}},""" +
+            """"title":{"runs":[{"text":"$title"}]},"subtitle":{"runs":[{"text":"$subtitle"}]},"navigationEndpoint":$endpoint}}"""
+
+    private fun browseTo(id: String) = """{"browseEndpoint":{"browseId":"$id"}}"""
+
+    private fun watchTo(id: String) = """{"watchPlaylistEndpoint":{"playlistId":"$id"}}"""
+
+    @Test
+    fun theHomeKeepsShelvesOfPlaylistsAndMixesAndKnowsTheMixes() {
+        val body = """{"contents":{"singleColumnBrowseResultsRenderer":{"tabs":[{"tabRenderer":{"content":{"sectionListRenderer":{"contents":[
+            {"musicCarouselShelfRenderer":{"header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Mixed for you"}]}}},"contents":[
+              ${card("My Supermix", "Leon Bridges, Nas", browseTo("VLRDTMAK5uy_supermix"))},
+              ${card("Discover Mix", "", watchTo("RDTMAK5uy_discover"))}
+            ]}},
+            {"musicCarouselShelfRenderer":{"header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"New releases"}]}}},"contents":[
+              ${card("Happiness Anytime", "Album • Leon Bridges", browseTo("MPREb_8IQuGC44mZ5"))}
+            ]}},
+            {"musicCarouselShelfRenderer":{"header":{"musicCarouselShelfBasicHeaderRenderer":{"title":{"runs":[{"text":"Featured playlists for you"}]}}},"contents":[
+              ${card("Trending 20", "Chart • YouTube Charts", browseTo("VLOLAK5uy_kUmlOeSMX6"))}
+            ]}}
+          ],"continuations":[{"nextContinuationData":{"continuation":"MORE"}}]}}}}]}}}"""
+        val page = assertNotNull(parseHomePage(body))
+        assertEquals(listOf("Mixed for you", "Featured playlists for you"), page.shelves.map { it.title })
+        assertEquals(listOf("RDTMAK5uy_supermix", "RDTMAK5uy_discover"), page.shelves[0].playlists.map { it.playlistId })
+        assertTrue(page.shelves[0].isMixes)
+        assertTrue(page.shelves[0].playlists.all { it.radio }, "mixes are made as they play")
+        assertFalse(page.shelves[1].isMixes)
+        assertEquals("MORE", page.continuation)
+    }
+
+    @Test
+    fun theLibraryListsTheAccountsPlaylistsButNotArtistsOrEpisodes() {
+        val body = """{"contents":{"gridRenderer":{"items":[
+            ${card("Liked Music", "Auto playlist", browseTo("VLLM"))},
+            ${card("Road trip", "Playlist • Mick • 8 tracks", browseTo("VLPLmine0001"))},
+            ${card("Episodes for later", "", browseTo("VLSE"))},
+            ${card("Nas", "Artist • 1.6M subscribers", browseTo("UCnas"))}
+          ],"continuations":[{"nextContinuationData":{"continuation":"NEXT"}}]}}}"""
+        val page = assertNotNull(parseLibraryPlaylists(body))
+        assertEquals(listOf("LM", "PLmine0001"), page.playlists.map { it.playlistId })
+        assertEquals("Playlist • Mick • 8 tracks", page.playlists[1].subtitle)
+        assertEquals("NEXT", page.continuation)
+    }
 }

@@ -174,17 +174,24 @@ object MusicMetadataClient {
         }.orEmpty()
     }
 
+    /**
+     * fork:music-account - a request as the signed-in account when someone is signed in (a private playlist, Liked Music, a
+     * mix made for them), else, or when that fails, as a visitor.
+     */
+    private suspend fun personal(endpoint: String, params: Map<String, Any?>): String? =
+        TrailerPlaybackResolver.musicRequestSigned(endpoint, params) ?: TrailerPlaybackResolver.musicRequest(endpoint, params)
+
     /** fork:music-playlists - see [MusicCatalog.playlist]. Not cached: an import should read the list as it is now. */
     suspend fun playlist(playlistId: String): MusicPlaylistPage? {
         val id = playlistId.trim().removePrefix("VL").ifEmpty { return null }
-        val first = TrailerPlaybackResolver.musicRequest("browse", mapOf("browseId" to "VL$id"))
+        val first = personal("browse", mapOf("browseId" to "VL$id"))
             ?.let { parsePlaylistPage(it) }
             ?: return null.also { log.w { "playlist $id: no readable page" } }
         val tracks = first.tracks.toMutableList()
         var token = first.continuation
         var pages = 1
         while (token != null && pages < MAX_PLAYLIST_PAGES) {
-            val page = TrailerPlaybackResolver.musicRequest("browse", mapOf("continuation" to token))
+            val page = personal("browse", mapOf("continuation" to token))
                 ?.let { parsePlaylistPage(it, firstNumber = tracks.size + 1) } ?: break
             if (page.tracks.isEmpty()) break
             tracks += page.tracks
@@ -204,13 +211,13 @@ object MusicMetadataClient {
             put("params", "wAEB")
             put("isAudioOnly", true)
         }
-        val first = TrailerPlaybackResolver.musicRequest("next", base)?.let { parseRadioPage(it) }
+        val first = personal("next", base)?.let { parseRadioPage(it) }
             ?: return null.also { log.w { "radio $id: no readable queue" } }
         val tracks = first.tracks.toMutableList()
         var token = first.continuation
         var pages = 1
         while (token != null && tracks.size < maxTracks && pages < MAX_RADIO_PAGES) {
-            val page = TrailerPlaybackResolver.musicRequest("next", base + ("continuation" to token))
+            val page = personal("next", base + ("continuation" to token))
                 ?.let { parseRadioPage(it, firstNumber = tracks.size + 1) } ?: break
             val fresh = page.tracks.filter { t -> tracks.none { it.videoId == t.videoId } }
             if (fresh.isEmpty()) break
@@ -220,6 +227,40 @@ object MusicMetadataClient {
         }
         log.i { "radio $id: ${tracks.size} tracks in $pages page(s)" }
         return MusicPlaylistPage(first.title, tracks.take(maxTracks), token)
+    }
+
+    /** fork:music-account - see [MusicCatalog.accountHome]. The first page and up to two more (the mixes are near the top). */
+    suspend fun accountHome(): List<MusicHomeShelf>? {
+        val first = TrailerPlaybackResolver.musicRequestSigned("browse", mapOf("browseId" to "FEmusic_home"))
+            ?.let(::parseHomePage) ?: return null
+        val shelves = first.shelves.toMutableList()
+        var token = first.continuation
+        var pages = 1
+        while (token != null && pages < 3) {
+            val page = TrailerPlaybackResolver.musicRequestSigned("browse", mapOf("continuation" to token))?.let(::parseHomePage) ?: break
+            shelves += page.shelves
+            token = page.continuation?.takeIf { it != token }
+            pages++
+        }
+        log.i { "account home: ${shelves.size} shelves with playlists (${shelves.joinToString { it.title }})" }
+        return shelves
+    }
+
+    /** fork:music-account - see [MusicCatalog.accountPlaylists]. */
+    suspend fun accountPlaylists(): List<MusicPlaylistSummary>? {
+        val first = TrailerPlaybackResolver.musicRequestSigned("browse", mapOf("browseId" to "FEmusic_liked_playlists"))
+            ?.let(::parseLibraryPlaylists) ?: return null
+        val lists = first.playlists.toMutableList()
+        var token = first.continuation
+        var pages = 1
+        while (token != null && pages < 6) {
+            val page = TrailerPlaybackResolver.musicRequestSigned("browse", mapOf("continuation" to token))?.let(::parseLibraryPlaylists) ?: break
+            lists += page.playlists.filter { p -> lists.none { it.playlistId == p.playlistId } }
+            token = page.continuation?.takeIf { it != token }
+            pages++
+        }
+        log.i { "account playlists: ${lists.size}" }
+        return lists
     }
 
     suspend fun album(browseId: String): MusicAlbum? {

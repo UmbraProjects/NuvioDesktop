@@ -95,6 +95,12 @@ data class MusicPlaylistSummary(
     val radio: Boolean get() = isRadioPlaylistId(playlistId)
 }
 
+/** fork:music-account - one shelf of YouTube Music's home for the signed-in account ("Mixed for you", "Featured playlists for you"), its playlists and mixes. */
+data class MusicHomeShelf(val title: String, val playlists: List<MusicPlaylistSummary>) {
+    /** True for the account's own mixes (My Supermix, Discover Mix, New Release Mix, Replay Mix…). */
+    val isMixes: Boolean get() = playlists.any { it.playlistId.startsWith("RDTMAK") }
+}
+
 /** True for a list YouTube Music makes as it plays (a radio or mix, `RD...`), false for a fixed one (`PL...`, `OLAK5uy...`, `RDCLAK...`). */
 fun isRadioPlaylistId(id: String): Boolean {
     val bare = id.removePrefix("VL")

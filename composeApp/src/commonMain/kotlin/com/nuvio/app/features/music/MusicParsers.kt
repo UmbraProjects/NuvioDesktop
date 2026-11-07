@@ -445,6 +445,52 @@ internal fun parseRadioPage(body: String, firstNumber: Int = 1): MusicPlaylistPa
     return MusicPlaylistPage(title, tracks, continuation)
 }
 
+/** fork:music-account - a page of YouTube Music's home: its shelves that hold playlists or mixes, and the token for more shelves. */
+internal data class MusicHomePage(val shelves: List<MusicHomeShelf>, val continuation: String?)
+
+/** fork:music-account - a page of the account's playlists (the library's Playlists), and the token for more. */
+internal data class MusicPlaylistsPage(val playlists: List<MusicPlaylistSummary>, val continuation: String?)
+
+/**
+ * A card of a home shelf or a library grid as a playlist: a link to a playlist page (`VL...`) or a card that starts a list
+ * (a mix). Albums, artists, songs and videos are not playlists; "Episodes for later" (`SE`) is not music.
+ */
+private fun JsonObject.twoRowPlaylist(): MusicPlaylistSummary? {
+    val browse = at("navigationEndpoint", "browseEndpoint", "browseId").str()
+        ?: runsOf(this["title"]).firstNotNullOfOrNull { it.runBrowseId() }
+    val id = browse?.takeIf { it.startsWith("VL") }?.removePrefix("VL")
+        ?: at("navigationEndpoint", "watchPlaylistEndpoint", "playlistId").str()
+        ?: return null
+    if (id == "SE") return null
+    val title = textOf(this["title"]).trim().ifEmpty { return null }
+    val subtitle = textOf(this["subtitle"]).trim().ifEmpty { null }
+    return MusicPlaylistSummary(id, title, subtitle, thumbnailOf(this["thumbnailRenderer"]))
+}
+
+/** fork:music-account - the shelves of a home page (or its continuation) that hold playlists or mixes, in order. */
+internal fun parseHomePage(body: String): MusicHomePage? {
+    val root = parseRoot(body) ?: return null
+    val shelves = findAll(root, "musicCarouselShelfRenderer").mapNotNull { shelf ->
+        val header = findAll(shelf["header"], "musicCarouselShelfBasicHeaderRenderer").firstOrNull()
+        val title = textOf(header?.get("title")).trim().ifEmpty { return@mapNotNull null }
+        val lists = shelf["contents"].arr().orEmpty().mapNotNull { it.obj()?.get("musicTwoRowItemRenderer")?.obj()?.twoRowPlaylist() }
+            .distinctBy { it.playlistId }
+        if (lists.isEmpty()) null else MusicHomeShelf(title, lists)
+    }
+    val continuation = findAll(root, "nextContinuationData").firstNotNullOfOrNull { it["continuation"].str() }
+        ?: findAll(root, "continuationCommand").firstNotNullOfOrNull { it["token"].str() }
+    return MusicHomePage(shelves, continuation)
+}
+
+/** fork:music-account - the account's playlists on a library page (or its continuation), Liked Music first as listed. */
+internal fun parseLibraryPlaylists(body: String): MusicPlaylistsPage? {
+    val root = parseRoot(body) ?: return null
+    val lists = findAll(root, "musicTwoRowItemRenderer").mapNotNull { it.twoRowPlaylist() }.distinctBy { it.playlistId }
+    val continuation = findAll(root, "nextContinuationData").firstNotNullOfOrNull { it["continuation"].str() }
+        ?: findAll(root, "continuationCommand").firstNotNullOfOrNull { it["token"].str() }
+    return MusicPlaylistsPage(lists, continuation)
+}
+
 /** The tracks in a watch-next ("next") response, each with its counterpart when YouTube Music links one. */
 internal fun parseWatchNext(body: String): List<MusicWatchTrack> {
     val root = parseRoot(body) ?: return emptyList()
