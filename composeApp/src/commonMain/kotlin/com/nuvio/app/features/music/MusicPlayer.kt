@@ -232,11 +232,6 @@ class MusicPlayer(
 
     fun next() {
         val q = queue ?: return
-        if (current.repeat == MusicRepeat.One && current.source != null) {
-            // The same song again, from the start.
-            _state.update { it.copy(startPositionMs = 0L, loadId = ++loadCounter, isLoading = true) }
-            return
-        }
         launchRequest {
             _state.update { it.copy(isLoading = true) }
             advanceFrom(q)
@@ -623,6 +618,11 @@ class MusicPlayer(
             _state.update {
                 it.copy(source = fallback, startPositionMs = it.positionMs, loadId = ++loadCounter, isLoading = true)
             }
+            return
+        }
+        if (current.repeat == MusicRepeat.One && current.source != null) {
+            // The same song again, from the start.
+            _state.update { it.copy(startPositionMs = 0L, loadId = ++loadCounter, isLoading = true) }
             return
         }
         launchRequest {
