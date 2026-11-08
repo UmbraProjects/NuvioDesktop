@@ -634,10 +634,11 @@ fun main(args: Array<String>) {
             state = windowState,
             icon = painterResource(NuvioDesktopIconPath),
             // An arrow no control took, often because the control holding focus left the screen: on a music page,
-            // focus goes back onto the page (see MusicKeyboard). Window-level so it also runs with nothing focused.
+            // focus goes back onto the page (see MusicKeyboard); likewise in Settings (SettingsKeyboard). Window-level so it also runs with nothing focused.
             onKeyEvent = { event ->
                 com.nuvio.app.core.ui.arrowFocusDirection(event) != null &&
-                    com.nuvio.app.features.music.MusicKeyboard.onUnhandledArrow()
+                    (com.nuvio.app.features.music.MusicKeyboard.onUnhandledArrow() ||
+                        com.nuvio.app.features.settings.SettingsKeyboard.onUnhandledArrow())
             },
         ) {
             remember {

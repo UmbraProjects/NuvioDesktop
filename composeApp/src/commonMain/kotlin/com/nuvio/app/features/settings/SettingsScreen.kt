@@ -103,6 +103,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.foundation.focusable
+import com.nuvio.app.core.ui.arrowFocusDirection
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -254,6 +256,7 @@ import com.nuvio.app.core.i18n.localizedString
 @Volatile
 internal var perfSettingsPage: String = SettingsPage.Addons.name
 
+private const val SETTINGS_FOCUS_TRIES = 12
 private val SettingsSearchRevealThreshold = 28.dp
 private const val SettingsSearchRevealAnimationMillis = 240L
 private const val SettingsSearchRevealHapticDelayMillis = 90L
@@ -296,21 +299,32 @@ fun SettingsScreen(
 ) {
     val homeKeyFocusRequester = remember { FocusRequester() }
     var settingsSearchHasFocus by remember { mutableStateOf(false) }
-    // fork:settings-arrows - true while the page itself (not one of its rows) holds focus; see arrowKeyModifier.
-    var settingsRootFocused by remember { mutableStateOf(false) }
     val settingsFocusManager = LocalFocusManager.current
     // Any editable field on the page (e.g. a Local Library catalog name) suppresses the shortcut so
     // typing "H" doesn't jump to Home. The search bar keeps its own flag for the same reason.
     val textInputActive by TextInputFocusTracker.active.collectAsStateWithLifecycle()
+    // fork:settings-arrows - the page is a focus group rather than one focusable block: requesting focus on it puts
+    // focus on its first control, so the arrow keys (and a controller's D-pad and the phone remote, which send them)
+    // have something to move from. The first fix kept the block focusable and moved on from it, and still did
+    // nothing on the TV: focus was not on the page at all when it opened (the desktop sidebar holding it leaves the
+    // screen as Settings opens, and one request on the first frame was lost), so no key reached the page.
+    val settingsKeyboardRoot = remember { SettingsKeyboard.Root(homeKeyFocusRequester) }
+    DisposableEffect(settingsKeyboardRoot) {
+        SettingsKeyboard.root = settingsKeyboardRoot
+        onDispose { if (SettingsKeyboard.root === settingsKeyboardRoot) SettingsKeyboard.root = null }
+    }
     // H returns to the home tab. onKeyEvent (bubble phase) so settings text fields,
     // which consume their own keystrokes, are never disrupted.
-    val homeKeyModifier = if (isDesktop && onNavigateToHome != null) {
+    val homeKeyModifier = if (isDesktop) {
         Modifier
-            .onFocusChanged { settingsRootFocused = it.isFocused }
+            .onFocusChanged { settingsKeyboardRoot.hasFocus = it.hasFocus }
             .focusRequester(homeKeyFocusRequester)
-            .focusable()
+            .focusGroup()
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.H && !settingsSearchHasFocus && !textInputActive) {
+                if (
+                    onNavigateToHome != null && event.type == KeyEventType.KeyDown && event.key == Key.H &&
+                    !settingsSearchHasFocus && !textInputActive
+                ) {
                     onNavigateToHome(); true
                 } else {
                     false
@@ -319,39 +333,34 @@ fun SettingsScreen(
     } else {
         Modifier
     }
-    // fork:settings-arrows - Settings had no arrow-key navigation: the page holds focus as one block (for H above),
-    // and nothing moved it on, so the arrow keys - and a controller's D-pad and the phone remote, which send them -
-    // did nothing here. This moves focus the way the setup wizard does. It runs in the bubble phase, after the rows:
-    // a text field or a slider keeps Left/Right for itself. From the page itself (nothing inside focused yet) the
-    // first press goes into the page's first or last row rather than searching outside it.
+    // fork:settings-arrows - arrows move focus between the rows and the categories, the way the setup wizard does. Bubble
+    // phase, after the rows: a text field or a slider keeps Left/Right for itself. When nothing lies that way (the end
+    // of a list), the press goes to the next or previous control in order instead.
     val arrowKeyModifier = if (isDesktop) {
         Modifier.onKeyEvent { event ->
-            if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
-            val forward = event.key == Key.DirectionDown || event.key == Key.DirectionRight
-            val direction = when (event.key) {
-                Key.DirectionUp -> FocusDirection.Up
-                Key.DirectionDown -> FocusDirection.Down
-                Key.DirectionLeft -> FocusDirection.Left
-                Key.DirectionRight -> FocusDirection.Right
-                else -> return@onKeyEvent false
-            }
-            if (settingsRootFocused) {
+            val direction = arrowFocusDirection(event) ?: return@onKeyEvent false
+            val forward = direction == FocusDirection.Down || direction == FocusDirection.Right
+            settingsFocusManager.moveFocus(direction) ||
                 settingsFocusManager.moveFocus(if (forward) FocusDirection.Next else FocusDirection.Previous)
-            } else {
-                settingsFocusManager.moveFocus(direction) ||
-                    settingsFocusManager.moveFocus(if (forward) FocusDirection.Next else FocusDirection.Previous)
-            }
         }
+            // An Enter no row used would otherwise be read by desktop Compose as "focus the first thing inside", and
+            // focus would jump (see musicKeyboardRoot).
+            .onKeyEvent { it.key == Key.Enter || it.key == Key.NumPadEnter }
     } else {
         Modifier
     }
     // Re-requested when game mode closes over Settings, not just on first composition: its library
     // holds focus while it is up, and Compose leaves nothing focused once that focusable goes —
     // which silently kills H and every other single-key shortcut until something is clicked.
+    // The page's rows arrive over a few frames, so the request is retried until something inside has focus.
     val gameModeActive by GameModeController.active.collectAsStateWithLifecycle()
     LaunchedEffect(gameModeActive) {
-        if (!gameModeActive && isDesktop && onNavigateToHome != null) {
-            runCatching { homeKeyFocusRequester.requestFocus() }
+        if (!gameModeActive && isDesktop) {
+            repeat(SETTINGS_FOCUS_TRIES) { attempt ->
+                delay(if (attempt == 0) 32L else 60L)
+                if (settingsKeyboardRoot.hasFocus) return@LaunchedEffect
+                SettingsKeyboard.focusPage()
+            }
         }
     }
 
@@ -2470,7 +2479,8 @@ private fun DesktopSettingsSidebarList(
                         label = item.label,
                         icon = item.icon,
                         selected = selected,
-                        modifier = with(this@ReorderableItem) {
+                        // fork:settings-arrows - focus lands on the open category when Settings opens.
+                        modifier = (if (selected) Modifier.focusRequester(SettingsKeyboard.entry) else Modifier).then(with(this@ReorderableItem) {
                             // The whole row is both clickable (select category) and the drag handle, so
                             // draggableHandle's immediate slop-based drag turned a click with the
                             // slightest movement into a reorder. Require a deliberate long-press before a
@@ -2480,7 +2490,7 @@ private fun DesktopSettingsSidebarList(
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                 },
                             )
-                        },
+                        }),
                         onClick = { onPageChange(item.page) },
                     )
                     // The selected category unfolds its sections underneath, so a page's headings
