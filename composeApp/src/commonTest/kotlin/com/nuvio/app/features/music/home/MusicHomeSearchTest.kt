@@ -359,13 +359,18 @@ class ArtistMatchResultsTest {
         kotlin.test.assertEquals("Gang Starr", results.rows.first().song?.artists?.firstOrNull()?.name)
         kotlin.test.assertEquals("v2", results.videos.first().videoId)
     }
+}
 
-    // Missing lengths
+/** fork:music-home - rows YouTube Music listed without a length, and filling them in. */
+class HomeResultLengthsTest {
+
+    private fun timed(id: String, title: String, artist: String, seconds: Int) =
+        MusicTrack(id, title, listOf(MusicArtistRef(artist)), seconds, 1, true)
 
     @Test
     fun rowsWithoutALengthAreLookedUpAndFilledIn() {
-        val songs = listOf(track("s1", "Ready or Not", "Fugees", 227), track("s2", "Fu-Gee-La", "Fugees", 0))
-        val videos = listOf(track("v1", "Rumble in the Jungle", "UPROXX", 0), track("v2", "No Woman, No Cry", "Fugees", 275))
+        val songs = listOf(timed("s1", "Ready or Not", "Fugees", 227), timed("s2", "Fu-Gee-La", "Fugees", 0))
+        val videos = listOf(timed("v1", "Rumble in the Jungle", "UPROXX", 0), timed("v2", "No Woman, No Cry", "Fugees", 275))
         val everything = MusicSearchEverything(null, songs, emptyList(), emptyList(), emptyList())
         val results = buildHomeResults(ParsedQuery("fugees", "fugees", null, null, null), everything, videos)
         assertEquals(listOf("s2", "v1"), results.missingLengthIds())
@@ -380,7 +385,7 @@ class ArtistMatchResultsTest {
 
     @Test
     fun onlyTheFirstRowsOfEachPanelAreLookedUp() {
-        val songs = (1..15).map { track("s$it", "Song $it", "Fugees", 0) }
+        val songs = (1..15).map { timed("s$it", "Song $it", "Fugees", 0) }
         val everything = MusicSearchEverything(null, songs, emptyList(), emptyList(), emptyList())
         val results = buildHomeResults(ParsedQuery("fugees", "fugees", null, null, null), everything, emptyList())
         assertEquals(LENGTH_LOOKUPS_PER_PANEL, results.missingLengthIds().size)
