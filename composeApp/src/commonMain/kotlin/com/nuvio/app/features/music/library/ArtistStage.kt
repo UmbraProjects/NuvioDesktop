@@ -1,6 +1,8 @@
 package com.nuvio.app.features.music.library
 // FORK UI (Spyder): Nick's artist page redesign, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -255,7 +257,25 @@ internal fun ArtistStage(
         val viewport = maxHeight
         val side = lensPanelWidth(maxWidth)
         val inset = LocalMusicBarInset.current
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        val scroll = rememberScrollState()
+        // The page is two screens: the hero, then the three panels. Whether the person was on the panels is kept with the page, so
+        // coming back to it (Back on an album opened from here) lands on the whole panel screen again. Returning focus to the
+        // album tile otherwise scrolls only far enough to show that tile, leaving the page stuck between the two screens.
+        var onPanels by rememberSaveable(artist.id) { mutableStateOf(false) }
+        // Read while composing, before the tracker below can see the page's first frame (scrolled to the top) and reset it.
+        val returnToPanels = remember(artist.id) { onPanels }
+        LaunchedEffect(scroll) {
+            snapshotFlow { scroll.maxValue.takeIf { it > 0 }?.let { scroll.value >= it / 2 } }.collect { if (it != null) onPanels = it }
+        }
+        LaunchedEffect(artist.id) {
+            if (!returnToPanels) return@LaunchedEffect
+            snapshotFlow { scroll.maxValue }.first { it > 0 }
+            scroll.scrollTo(scroll.maxValue)
+            // Focus coming back to the tile runs after the first frames and may scroll again: settle on the panels once more.
+            delay(RETURN_SETTLE_MS)
+            scroll.scrollTo(scroll.maxValue)
+        }
+        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             StageHero(
                 artist = artist,
                 discography = discography,
@@ -264,7 +284,6 @@ internal fun ArtistStage(
                 refreshing = refreshing,
                 canShuffle = canShuffle,
                 topLabel = topLabel,
-                onBack = onBack,
                 onPlayEssentials = { playEssentials() },
                 onShuffle = onShuffle,
                 onPlayTop = onPlayTop,
@@ -275,7 +294,8 @@ internal fun ArtistStage(
             )
             Row(
                 Modifier.fillMaxWidth().height(viewport)
-                    .padding(start = LENS_OUTER, end = LENS_OUTER, top = LENS_OUTER, bottom = inset + 24.dp),
+                    // The top clears the back button, which stays in the corner on both screens.
+                    .padding(start = LENS_OUTER, end = LENS_OUTER, top = BACK_CLEARANCE, bottom = inset + 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(LENS_GAP),
             ) {
                 val left = Modifier.width(side)
@@ -346,8 +366,16 @@ internal fun ArtistStage(
                 )
             }
         }
+        // Always in the top left corner, over the hero and over the panels, so Back never needs a scroll to the top first.
+        Box(Modifier.padding(start = 24.dp, top = 16.dp)) { NuvioBackButton(onClick = onBack) }
     }
 }
+
+/** How long after coming back to the page focus may still scroll it; the page settles on the panels again after that. */
+private const val RETURN_SETTLE_MS = 250L
+
+/** The panel screen's top: under the back button (16 dp down, 40 dp tall) with a small gap. */
+private val BACK_CLEARANCE = 64.dp
 
 // region hero
 
@@ -365,7 +393,6 @@ private fun StageHero(
     refreshing: String?,
     canShuffle: Boolean,
     topLabel: String?,
-    onBack: () -> Unit,
     onPlayEssentials: () -> Unit,
     onShuffle: () -> Unit,
     onPlayTop: () -> Unit,
@@ -393,8 +420,6 @@ private fun StageHero(
                 Brush.verticalGradient(0f to dark.copy(alpha = 0.35f), 0.45f to dark.copy(alpha = 0.55f), 0.92f to dark, 1f to dark),
             ),
         )
-        Box(Modifier.padding(start = 24.dp, top = 16.dp)) { NuvioBackButton(onClick = onBack) }
-
         Column(
             Modifier.align(Alignment.Center).widthIn(max = 1000.dp).padding(horizontal = 48.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
