@@ -168,6 +168,15 @@ internal object LastFmClient {
     }
 
     /**
+     * fork:story - the listener-written wiki Last.fm keeps for a track (track.getInfo), as plain text; null when there is
+     * none, the key is not set or Last.fm could not be reached. Many songs Wikipedia has no article for have one here.
+     */
+    suspend fun trackWiki(artist: String, track: String): String? {
+        val body = call("track.getInfo", mapOf("artist" to artist, "track" to track, "autocorrect" to "1")) ?: return null
+        return parseLastFmTrackWiki(body)
+    }
+
+    /**
      * An artist's tags, strongest first. Null when Last.fm could not be reached (try MusicBrainz);
      * a [LastFmTags] with no tags when the artist is unknown or untagged there.
      */
@@ -236,4 +245,24 @@ internal object MusicTagSource {
         LastFmClient.isConfigured -> "Last.fm"
         else -> "MusicBrainz web"
     }
+}
+
+
+/**
+ * fork:story - the wiki text in a track.getInfo answer, without its markup: the "Read more on Last.fm" link and the licence
+ * line Last.fm appends are dropped. The full text when there is one, else the summary. Null when there is no real text.
+ */
+internal fun parseLastFmTrackWiki(body: String): String? {
+    val root = runCatching { LASTFM_JSON.parseToJsonElement(body) }.getOrNull().obj() ?: return null
+    val wiki = root["track"].obj()?.get("wiki").obj() ?: return null
+    val raw = wiki["content"].str() ?: wiki["summary"].str() ?: return null
+    val text = raw
+        .replace(Regex("""<a [^>]*>Read more on Last\.fm</a>\.?""", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("""User-contributed text is available under the Creative Commons By-SA License;?\s*additional terms may apply\.?""", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("""<[^>]+>"""), "")
+        .replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">")
+        .replace(Regex("""[ \t]+"""), " ")
+        .replace(Regex("""\n\s*\n+"""), "\n\n")
+        .trim()
+    return text.takeIf { it.length >= 40 }
 }

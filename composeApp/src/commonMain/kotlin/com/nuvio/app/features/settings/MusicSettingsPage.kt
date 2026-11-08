@@ -24,6 +24,8 @@ import nuvio.composeapp.generated.resources.settings_music_fanart_key
 import nuvio.composeapp.generated.resources.settings_music_fanart_key_description
 import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive
 import nuvio.composeapp.generated.resources.settings_music_lastfm_key
+import nuvio.composeapp.generated.resources.settings_music_gemini_key
+import nuvio.composeapp.generated.resources.settings_music_gemini_key_description
 import nuvio.composeapp.generated.resources.settings_music_mb_offline
 import nuvio.composeapp.generated.resources.settings_music_nebula_link
 import nuvio.composeapp.generated.resources.settings_music_nebula_link_2
@@ -159,6 +161,7 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     "music-fanart-key",
                     "music-audiodb-key",
                     "music-lastfm-key",
+                    "music-gemini-key",
                     "music-where-next",
                     "music-mb-offline",
                 ),
@@ -194,6 +197,17 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     secret = true,
                     summarizeAsConfigured = true,
                     onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(lastFmApiKey = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsTextInputRow(
+                    title = stringResource(Res.string.settings_music_gemini_key),
+                    description = stringResource(Res.string.settings_music_gemini_key_description),
+                    value = settings.geminiApiKey,
+                    placeholder = "Optional",
+                    isTablet = isTablet,
+                    secret = true,
+                    summarizeAsConfigured = true,
+                    onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(geminiApiKey = it)) },
                 )
                 SettingsGroupDivider(isTablet)
                 SettingsTextInputRow(

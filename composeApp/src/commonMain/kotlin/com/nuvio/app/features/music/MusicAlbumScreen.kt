@@ -577,7 +577,7 @@ private fun AlbumContent(
         if (kept != null && (kept.ai || !aiReady)) return@LaunchedEffect
         lensStoryLoading = kept == null
         delay(LENS_STORY_REST_MS)
-        runCatching { SongStories.load(lensArtist, storyKey, wantAi = true) }.getOrNull()?.let { lensStory = it }
+        runCatching { SongStories.load(lensArtist, storyKey, wantAi = true, backup = true) }.getOrNull()?.let { lensStory = it }
         lensStoryLoading = false
     }
     // The album's own note on the song (one AI request for the whole album, or MusicBrainz's credits), for a song with no

@@ -98,6 +98,24 @@ internal fun parseSongStory(reply: String, article: String): SongStory? {
     return story.takeUnless { it.isEmpty }
 }
 
+/**
+ * fork:story - a story from Last.fm's song [wiki]: its opening paragraphs in the box (whole sentences, cut to length), and
+ * a later paragraph, when there is one, as what came after.
+ */
+internal fun lastFmSongStory(wiki: String): SongStory? {
+    val paragraphs = wiki.split(Regex("""\n\s*\n""")).map { it.replace(Regex("""\s+"""), " ").trim() }.filter { it.length >= 40 }
+    val first = paragraphs.firstOrNull() ?: return null
+    val opening = if (first.length < 250 && paragraphs.size > 1) first + " " + paragraphs[1] else first
+    val rest = paragraphs.drop(if (opening === first) 1 else 2).firstOrNull()
+    return SongStory(
+        made = cutAtSentence(opening, 600),
+        meaning = null,
+        after = rest?.let { cutAtSentence(it, 300) },
+        quotes = emptyList(),
+        ai = false,
+    )
+}
+
 /** The story with no AI: the article's own sections, cut to length. */
 internal fun extractiveSongStory(sections: Map<String, String>): SongStory? =
     SongStory(songMadeText(sections, 420), songMeaningText(sections, 300), songAfterText(sections, 300), emptyList(), ai = false).takeUnless { it.isEmpty }
@@ -141,9 +159,13 @@ internal object SongStories {
     /** What is kept for the song, never making a request, with the person's pins laid over it. */
     fun peek(artist: String, song: String): SongStory? = peekKept(artist, song).withPins(Pins.forSong(artist, song))
 
-    /** The story for the song, asking for it when nothing is kept, with the person's pins laid over it (see [loadKept]). */
-    suspend fun load(artist: String, song: String, wantAi: Boolean = false): SongStory? =
-        FactsPriority.foreground { loadKept(artist, song, wantAi) }.withPins(Pins.forSong(artist, song))
+    /**
+     * The story for the song, asking for it when nothing is kept, with the person's pins laid over it (see [loadKept]).
+     * [backup] lets Gemini write it when the main AI cannot: for a story the person opened, never the background filler,
+     * which would spend Gemini's free allowance on songs nobody looked at.
+     */
+    suspend fun load(artist: String, song: String, wantAi: Boolean = false, backup: Boolean = false): SongStory? =
+        FactsPriority.foreground { loadKept(artist, song, wantAi, backup) }.withPins(Pins.forSong(artist, song))
 
     /**
      * Whether the AI's story for the song is kept, failed a moment ago or not asked for yet (see [AlbumBookletRepository.factState]).
@@ -172,44 +194,95 @@ internal object SongStories {
         DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured }?.let { settings ->
             read(key(artist, song, aiMode(settings)))?.takeIf { it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }?.booklet?.let { return it.toStory() }
         }
-        return read(key(artist, song, "wiki"))?.takeIf { it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) }?.booklet?.toStory()
+        // fork:story - Gemini's story (kept like the main AI's), then Wikipedia's own text, then Last.fm's song wiki.
+        read(key(artist, song, GEMINI_MODE))?.takeIf { it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }?.booklet?.let { return it.toStory() }
+        read(key(artist, song, "wiki"))?.takeIf { it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) }?.booklet?.let { return it.toStory() }
+        return read(key(artist, song, LASTFM_MODE))?.takeIf { it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) }?.booklet?.toStory()
     }
+
+    private const val GEMINI_MODE = "gemini"
+    private const val LASTFM_MODE = "lastfm"
 
     /**
      * The song's story, asking for it when nothing is kept. With [wantAi], a kept Wikipedia-only story does not stop the AI
      * from being asked (once; a failed ask is remembered for its usual time), so a story kept before a key was set, or by
      * an earlier failure, is written up when it can be.
      */
-    private suspend fun loadKept(artist: String, song: String, wantAi: Boolean): SongStory? = lock.withLock {
+    private suspend fun loadKept(artist: String, song: String, wantAi: Boolean, backup: Boolean): SongStory? = lock.withLock {
+        val gemini = backup && GeminiSearch.available()
         peekKept(artist, song)?.let { kept ->
-            if (!wantAi || kept.ai || !DiscoverAiSettingsRepository.snapshot().isConfigured) return@withLock kept
+            if (!wantAi || kept.ai || !(DiscoverAiSettingsRepository.snapshot().isConfigured || gemini)) return@withLock kept
         }
         val at = now()
         val settings = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured }
         val web = settings != null && DiscoverAiClient.canSearchWeb(settings)
         val wikiKey = key(artist, song, "wiki")
-        // A recent "no article" is believed, unless the AI can search the web for the story instead.
-        if (!web && read(wikiKey)?.let { it.booklet == null && it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) } == true) return@withLock null
+        // A recent "no article" is believed, unless something can still find the story: an AI that searches the web, Gemini
+        // or Last.fm's wiki.
+        val canLookFurther = web || gemini || com.nuvio.app.features.music.library.LastFmClient.isConfigured
+        if (!canLookFurther && read(wikiKey)?.let { it.booklet == null && it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) } == true) return@withLock null
         val text = runCatching { WikipediaClient.songText(song, artist) }.getOrNull()
         val sections = text?.let(::songSections).orEmpty()
         val plain = extractiveSongStory(sections)
         if (read(wikiKey) == null || plain != null) keep(wikiKey, plain)
-        if (settings == null || (sections.isEmpty() && !web)) {
-            if (sections.isEmpty()) log.i { "no Wikipedia article for $artist - $song" }
-            return@withLock plain
+        if (sections.isEmpty()) log.i { "no Wikipedia article for $artist - $song" }
+
+        // The main AI, as before.
+        if (settings != null && (sections.isNotEmpty() || web)) {
+            val aiKey = key(artist, song, aiMode(settings))
+            val missedLately = read(aiKey)?.let { it.booklet == null && it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) } == true
+            if (!missedLately) {
+                val article = songArticleText(sections, if (web) 5_000 else 9_000)
+                val prompt = if (web) songStoryWebPrompt(song, artist, article) else songStoryPrompt(song, artist, article)
+                DiscoverAiClient.complete(settings, DiscoverAiPromptText(SONG_STORY_SYSTEM_PROMPT, prompt), webSearch = web)
+                    .onSuccess { reply ->
+                        val story = parseSongStory(reply, article)
+                        keep(aiKey, story)
+                        log.i { "story for $song (web=$web): ${story?.quotes?.size ?: 0} quotes" }
+                        if (story != null) return@withLock story
+                    }
+                    .onFailure {
+                        log.w { "story for $song failed: $it" }
+                        keep(aiKey, null)
+                    }
+            }
         }
-        val aiKey = key(artist, song, aiMode(settings))
-        if (read(aiKey)?.let { it.booklet == null && it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) } == true) return@withLock plain
-        val article = songArticleText(sections, if (web) 5_000 else 9_000)
-        val prompt = if (web) songStoryWebPrompt(song, artist, article) else songStoryPrompt(song, artist, article)
-        val reply = DiscoverAiClient.complete(settings, DiscoverAiPromptText(SONG_STORY_SYSTEM_PROMPT, prompt), webSearch = web).getOrElse {
-            log.w { "story for $song failed: $it" }
-            keep(aiKey, null)
-            return@withLock plain
+
+        // fork:story - Gemini, searching Google itself, when the main AI could not write it (out of its daily allowance,
+        // no key, or nothing to go on). Quotes are kept only when they stand in the Wikipedia article: Gemini does not hand
+        // back the pages' words to check them against.
+        if (gemini) {
+            val geminiKey = key(artist, song, GEMINI_MODE)
+            val missedLately = read(geminiKey)?.let { it.booklet == null && it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) } == true
+            if (!missedLately) {
+                val article = songArticleText(sections, 5_000)
+                GeminiSearch.complete(SONG_STORY_SYSTEM_PROMPT, songStoryWebPrompt(song, artist, article))
+                    .onSuccess { reply ->
+                        val story = parseSongStory(reply, article)
+                        keep(geminiKey, story)
+                        log.i { "story for $song from Gemini: ${if (story == null) "nothing usable" else "${story.quotes.size} quotes"}" }
+                        if (story != null) return@withLock story
+                    }
+                    .onFailure { error ->
+                        log.w { "Gemini story for $song failed: ${error.message}" }
+                        // Only a real answer that had nothing is remembered; a rate limit or a network failure asks again later.
+                    }
+            }
         }
-        val story = parseSongStory(reply, article)
-        keep(aiKey, story)
-        log.i { "story for $song (web=$web): ${story?.quotes?.size ?: 0} quotes" }
-        story ?: plain
+
+        plain?.let { return@withLock it }
+
+        // fork:story - last, Last.fm's listener-written song wiki, which covers many songs Wikipedia does not.
+        if (com.nuvio.app.features.music.library.LastFmClient.isConfigured) {
+            val lastFmKey = key(artist, song, LASTFM_MODE)
+            val kept = read(lastFmKey)?.takeIf { it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) }
+            if (kept != null) return@withLock kept.booklet?.toStory()
+            val wiki = runCatching { com.nuvio.app.features.music.library.LastFmClient.trackWiki(artist, song) }.getOrNull()
+            val story = wiki?.let(::lastFmSongStory)
+            keep(lastFmKey, story)
+            log.i { if (story != null) "story for $song from Last.fm's wiki" else "no Last.fm wiki for $artist - $song" }
+            return@withLock story
+        }
+        null
     }
 }

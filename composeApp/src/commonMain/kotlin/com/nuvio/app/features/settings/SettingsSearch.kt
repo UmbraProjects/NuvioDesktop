@@ -2685,6 +2685,7 @@ private fun settingsSearchEntries(
             PlaybackSearchRow("music-home", resolve(Res.string.settings_music_home), resolve(Res.string.settings_music_home_description), resolve(Res.string.settings_music_section_general)),
             PlaybackSearchRow("music-fanart-key", resolve(Res.string.settings_music_fanart_key), resolve(Res.string.settings_music_fanart_key_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-lastfm-key", resolve(Res.string.settings_music_lastfm_key), resolve(Res.string.settings_music_lastfm_key_description), resolve(Res.string.settings_music_section_sources)),
+            PlaybackSearchRow("music-gemini-key", resolve(Res.string.settings_music_gemini_key), resolve(Res.string.settings_music_gemini_key_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-audiodb-key", resolve(Res.string.settings_music_audiodb_key), resolve(Res.string.settings_music_audiodb_key_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-where-next", resolve(Res.string.settings_music_where_next), resolve(Res.string.settings_music_where_next_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-mb-offline", resolve(Res.string.settings_music_mb_offline), resolve(Res.string.settings_music_mb_offline_absent), resolve(Res.string.settings_music_section_sources)),

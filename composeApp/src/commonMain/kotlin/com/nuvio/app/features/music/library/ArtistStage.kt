@@ -656,7 +656,7 @@ private fun StageSongPanel(artist: LibraryArtist, row: EssentialRow, single: Boo
         if (kept != null && (kept.ai || !aiReady)) return@LaunchedEffect
         loading = kept == null
         delay(STAGE_STORY_REST_MS)
-        runCatching { SongStories.load(artist.name, row.title, wantAi = true) }.getOrNull()?.let { story = it }
+        runCatching { SongStories.load(artist.name, row.title, wantAi = true, backup = true) }.getOrNull()?.let { story = it }
         loading = false
     }
     val text = lensStoryBox(story)?.text

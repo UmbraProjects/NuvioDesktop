@@ -54,6 +54,8 @@ data class MusicLibrarySettings(
     val tabEnabled: Boolean = true,
     /** A free Last.fm API key. Set, Last.fm supplies artist tags and ladder candidates, ahead of MusicBrainz. */
     val lastFmApiKey: String = "",
+    /** fork:story - a free Gemini API key (aistudio.google.com). Set, Gemini writes a song's story from a Google search when the main AI key cannot. */
+    val geminiApiKey: String = "",
     /** The person's own music addon link (Nebula / Eclipse Music). Named "secret" so credential-free backups drop it, as they do the API keys. Empty hides the album source toggle. */
     val nebulaSecretLink: String = "",
     /** The second and third music addon links, asked after the first (see [addonLinks]). Named "secret" for the same reason. */

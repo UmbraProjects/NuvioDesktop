@@ -194,7 +194,7 @@ internal fun BookletDeck(
             return@produceState
         }
         value = SongStories.peek(request.artist, songTitle)
-        if (value == null) value = SongStories.load(request.artist, songTitle)
+        if (value == null) value = SongStories.load(request.artist, songTitle, backup = true)
     }
     val pages = remember(booklet, request, playing, story) { linerPages(booklet, request, playing, story) }
     var position by remember(request) { mutableStateOf(DeckPosition(0, 0)) }
