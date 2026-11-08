@@ -1,5 +1,13 @@
 @AGENTS.md
 
+## Where to work: Nick's PC (D:\NuvioBuild\NuvioDesktop), then push
+
+Nick builds the desktop app on his own PC with `D:\NuvioBuild\build.cmd` (it pulls Spyder, then builds into
+`D:\NuvioBuild\out\Nuvio`; `run.cmd` starts it, `test.cmd` runs the unit tests). So when the session is linked to his
+computer, make desktop changes in that checkout and commit there, then push to `Spyder` so GitHub stays the shared copy.
+Work in a cloud clone only when his computer is not linked, and push from there. The Android remote (`remote-android/`)
+is still built on GitHub (android-remote.yml), as is the Windows build that publishes Nightly; both stay on.
+
 ## Testing checklist: keep TESTING.md up to date
 
 Every feature or fix on this branch adds its checks to `TESTING.md` (one thing to try on the TV per line) in the same
