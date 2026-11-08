@@ -86,7 +86,10 @@ jobs:
       # compiled sources, so the two steps would each compile the whole app instead of sharing one compile.
       - name: Unit tests (music, pre-show, network)
         shell: pwsh
+        env:
+          WIX_PATH: ${{ runner.temp }}\wix-unused
         run: >
+          New-Item -ItemType Directory -Force $env:WIX_PATH | Out-Null;
           ./gradlew.bat :composeApp:desktopTest --no-configuration-cache "-Pcompose.desktop.application.downloadWix=false" -I .github/mirror.init.gradle
           --tests "com.nuvio.app.features.music.*"
           --tests "com.nuvio.app.features.preroll.*"
@@ -99,10 +102,14 @@ jobs:
           "-Pnuvio.windows.bundleFullRuntime=true"
           "-Pnuvio.engine.optional=true"
 
-      # Portable app folder: no WiX needed.
+      # Portable app folder: no WiX needed. With the WiX download off, the Compose plugin still asks for a WiX folder
+      # (wixToolsetDir) when it sets this task up, so WIX_PATH points it at an empty one it never uses.
       - name: Build portable distributable
         shell: pwsh
+        env:
+          WIX_PATH: ${{ runner.temp }}\wix-unused
         run: >
+          New-Item -ItemType Directory -Force $env:WIX_PATH | Out-Null;
           ./gradlew.bat :composeApp:createReleaseDistributable --no-configuration-cache "-Pcompose.desktop.application.downloadWix=false" -I .github/mirror.init.gradle
           "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
