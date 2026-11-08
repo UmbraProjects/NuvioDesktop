@@ -21,6 +21,10 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Send to Nuvio: a YouTube or YouTube Music link from the phone's share menu plays on the TV (2026-11-08)
 - [x] Movies & TV tab: library posters show; tapping one opens its details on the TV (2026-11-08)
 - [x] Music tab: albums and artists show; Play / Shuffle / Add to queue and an artist's Shuffle all / Radio play on the TV (2026-11-08)
+- [ ] Remote tab with something playing: the bottom row (Subtitles, Audio, Mute, Vol −, Vol +) and its labels show in full above the tab bar
+- [ ] The big key is the only play/pause: it shows Pause while playing and Play while paused, and matches the TV
+- [ ] Long titles and artists show in full on the now-playing card (they scroll slowly), with Previous / Next under them for music
+- [ ] The seek bar is thin with a round marker; tapping or dragging it seeks the TV once, on release
 
 ## Music playback
 

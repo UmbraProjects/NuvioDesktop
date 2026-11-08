@@ -73,8 +73,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -112,6 +110,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 
 class MainActivity : ComponentActivity() {
     private val viewModel: RemoteViewModel by viewModels()
@@ -450,41 +456,60 @@ private fun RemoteScreen(state: UiState, viewModel: RemoteViewModel) {
             NowPlayingCard(playing, state.cover, viewModel)
         }
 
-        Column(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                RoundKey(Icons.AutoMirrored.Rounded.Undo, "Back") { viewModel.press(RemoteKey.Back) }
-                RoundKey(Icons.Rounded.Home, "Home") { viewModel.press(RemoteKey.Home) }
-                RoundKey(Icons.Rounded.Search, "Search") { viewModel.press(RemoteKey.Search) }
-                RoundKey(Icons.Rounded.Keyboard, "Type", highlighted = typing) { typing = !typing }
-            }
+        // The D-pad takes whatever height the three rows of keys leave, so the bottom row and its labels always show
+        // (the now-playing card or the keyboard can take a lot of the screen). Never larger than 280 dp or the width.
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            // coerceAtMost then coerceAtLeast, never coerceIn: on a very narrow screen the cap can fall below the floor.
+            val padSize = (maxHeight - KEY_ROWS_HEIGHT).coerceAtMost(minOf(MAX_PAD, maxWidth * 0.85f)).coerceAtLeast(MIN_PAD)
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    RoundKey(Icons.AutoMirrored.Rounded.Undo, "Back") { viewModel.press(RemoteKey.Back) }
+                    RoundKey(Icons.Rounded.Home, "Home") { viewModel.press(RemoteKey.Home) }
+                    RoundKey(Icons.Rounded.Search, "Search") { viewModel.press(RemoteKey.Search) }
+                    RoundKey(Icons.Rounded.Keyboard, "Type", highlighted = typing) { typing = !typing }
+                }
 
-            DPad(viewModel, size = if (typing) 200.dp else if (playing != null) 240.dp else 280.dp)
+                DPad(viewModel, size = padSize)
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                RoundKey(Icons.Rounded.FastRewind, "Back 10s", repeat = true) { viewModel.press(RemoteKey.SeekBack) }
-                RoundKey(Icons.Rounded.PlayArrow, "Play / pause", large = true) { viewModel.press(RemoteKey.PlayPause) }
-                RoundKey(Icons.Rounded.FastForward, "Forward", repeat = true) { viewModel.press(RemoteKey.SeekForward) }
-            }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    RoundKey(Icons.Rounded.FastRewind, "Back 10s", repeat = true) { viewModel.press(RemoteKey.SeekBack) }
+                    // The one play/pause on the screen, so it shows what pressing it will do.
+                    val isPlaying = playing?.isPlaying == true
+                    RoundKey(
+                        if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        if (isPlaying) "Pause" else "Play",
+                        large = true,
+                    ) { viewModel.press(RemoteKey.PlayPause) }
+                    RoundKey(Icons.Rounded.FastForward, "Forward 10s", repeat = true) { viewModel.press(RemoteKey.SeekForward) }
+                }
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                RoundKey(Icons.Rounded.Subtitles, "Subtitles") { viewModel.press(RemoteKey.Subtitles) }
-                RoundKey(Icons.Rounded.Audiotrack, "Audio") { viewModel.press(RemoteKey.Audio) }
-                RoundKey(Icons.AutoMirrored.Rounded.VolumeOff, "Mute") { viewModel.press(RemoteKey.Mute) }
-                RoundKey(Icons.AutoMirrored.Rounded.VolumeDown, "Vol −", repeat = true) { viewModel.press(RemoteKey.VolumeDown) }
-                RoundKey(Icons.AutoMirrored.Rounded.VolumeUp, "Vol +", repeat = true) { viewModel.press(RemoteKey.VolumeUp) }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    RoundKey(Icons.Rounded.Subtitles, "Subtitles") { viewModel.press(RemoteKey.Subtitles) }
+                    RoundKey(Icons.Rounded.Audiotrack, "Audio") { viewModel.press(RemoteKey.Audio) }
+                    RoundKey(Icons.AutoMirrored.Rounded.VolumeOff, "Mute") { viewModel.press(RemoteKey.Mute) }
+                    RoundKey(Icons.AutoMirrored.Rounded.VolumeDown, "Vol −", repeat = true) { viewModel.press(RemoteKey.VolumeDown) }
+                    RoundKey(Icons.AutoMirrored.Rounded.VolumeUp, "Vol +", repeat = true) { viewModel.press(RemoteKey.VolumeUp) }
+                }
             }
         }
     }
 }
 
+/** The three rows of round keys with their labels (75 + 95 + 75 dp) plus room for the gaps between rows. */
+private val KEY_ROWS_HEIGHT = 285.dp
+private val MIN_PAD = 150.dp
+private val MAX_PAD = 280.dp
+
 /**
- * What the PC is playing: cover, title, play/pause (and previous/next for music), and a seek bar that moves on by itself
- * between the PC's updates and seeks the PC when let go.
+ * What the PC is playing: cover, the full title and artist (long ones scroll), previous and next under them for music,
+ * and a seek bar that moves on by itself between the PC's updates and seeks the PC when let go. Play/pause is the big
+ * key below, so it is not repeated here.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NowPlayingCard(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel) {
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
@@ -495,7 +520,7 @@ private fun NowPlayingCard(playing: NowPlaying, cover: Bitmap?, viewModel: Remot
             now = SystemClock.elapsedRealtime()
         }
     }
-    var dragging by remember(playing.title) { mutableStateOf<Float?>(null) }
+    var dragging by remember(playing.title) { mutableStateOf<Long?>(null) }
     val position = playing.positionAt(now)
 
     Column(
@@ -504,7 +529,7 @@ private fun NowPlayingCard(playing: NowPlaying, cover: Bitmap?, viewModel: Remot
             .padding(vertical = 6.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(Panel)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -518,50 +543,104 @@ private fun NowPlayingCard(playing: NowPlaying, cover: Bitmap?, viewModel: Remot
                 }
             }
             Spacer(Modifier.size(12.dp))
+            // The whole width beside the cover goes to the text; a title too long for it scrolls slowly instead of
+            // being cut to "If I Die 2N…".
             Column(modifier = Modifier.weight(1f)) {
-                Text(playing.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                playing.subtitle?.let {
-                    Text(it, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            if (playing.canSkip) {
-                IconButton(onClick = { viewModel.press(RemoteKey.Previous) }) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous")
-                }
-            }
-            IconButton(onClick = { viewModel.press(RemoteKey.PlayPause) }) {
-                Icon(
-                    if (playing.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = if (playing.isPlaying) "Pause" else "Play",
-                    tint = Accent,
-                    modifier = Modifier.size(32.dp),
+                Text(
+                    playing.title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    modifier = Modifier.basicMarquee(initialDelayMillis = 1_500),
                 )
-            }
-            if (playing.canSkip) {
-                IconButton(onClick = { viewModel.press(RemoteKey.Next) }) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next")
+                playing.subtitle?.let {
+                    Text(it, color = Muted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.basicMarquee(initialDelayMillis = 1_500))
                 }
             }
         }
         if (playing.hasTimeline) {
-            val shown = dragging ?: position.toFloat()
-            Slider(
-                value = shown.coerceIn(0f, playing.durationMs.toFloat()),
-                onValueChange = { dragging = it },
-                onValueChangeFinished = {
-                    dragging?.let { viewModel.seek(it.toLong()) }
+            val shown = (dragging ?: position).coerceIn(0L, playing.durationMs)
+            Spacer(Modifier.height(6.dp))
+            SeekBar(
+                fraction = shown.toFloat() / playing.durationMs.toFloat(),
+                onScrub = { fraction -> dragging = (fraction * playing.durationMs).toLong() },
+                onScrubEnd = {
+                    dragging?.let(viewModel::seek)
                     dragging = null
                 },
-                valueRange = 0f..playing.durationMs.toFloat(),
-                colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent, inactiveTrackColor = PanelRaised),
-                modifier = Modifier.height(32.dp),
             )
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Text(formatTime(shown.toLong()), color = Muted, fontSize = 12.sp)
-                Spacer(Modifier.weight(1f))
-                Text(formatTime(playing.durationMs), color = Muted, fontSize = 12.sp)
-            }
         }
+        // Times at the ends, and previous / next between them when the queue has them (music).
+        if (playing.hasTimeline || playing.canSkip) Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (playing.hasTimeline) formatTime((dragging ?: position).coerceIn(0L, playing.durationMs)) else "",
+                color = Muted,
+                fontSize = 12.sp,
+                modifier = Modifier.weight(1f),
+            )
+            if (playing.canSkip) {
+                IconButton(onClick = { viewModel.press(RemoteKey.Previous) }) {
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(28.dp))
+                }
+                Spacer(Modifier.size(16.dp))
+                IconButton(onClick = { viewModel.press(RemoteKey.Next) }) {
+                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next", modifier = Modifier.size(28.dp))
+                }
+            }
+            Text(
+                if (playing.hasTimeline) formatTime(playing.durationMs) else "",
+                color = Muted,
+                fontSize = 12.sp,
+                textAlign = TextAlign.End,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+/**
+ * A thin seek bar with a small round marker. Drawn here rather than with Material's Slider, whose current look (a
+ * tall bar for a thumb, a gap either side of it and a dot at the end) did not suit the card. Tap or drag anywhere on
+ * it; [onScrub] follows the finger and [onScrubEnd] runs on release, which is when the PC is told to seek.
+ */
+@Composable
+private fun SeekBar(fraction: Float, onScrub: (Float) -> Unit, onScrubEnd: () -> Unit) {
+    val scrub by rememberUpdatedState(onScrub)
+    val end by rememberUpdatedState(onScrubEnd)
+    val markerRadius = 7.dp
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .pointerInput(Unit) {
+                val inset = markerRadius.toPx()
+                fun at(x: Float) = ((x - inset) / (size.width - 2 * inset)).coerceIn(0f, 1f)
+                detectTapGestures(onPress = { offset ->
+                    scrub(at(offset.x))
+                    // A press that turns into a drag is cancelled here; the drag's own end does the seek then.
+                    if (tryAwaitRelease()) end()
+                })
+            }
+            .pointerInput(Unit) {
+                val inset = markerRadius.toPx()
+                fun at(x: Float) = ((x - inset) / (size.width - 2 * inset)).coerceIn(0f, 1f)
+                detectHorizontalDragGestures(
+                    onDragStart = { offset -> scrub(at(offset.x)) },
+                    onDragEnd = { end() },
+                    onDragCancel = { end() },
+                ) { change, _ ->
+                    change.consume()
+                    scrub(at(change.position.x))
+                }
+            },
+    ) {
+        val inset = markerRadius.toPx()
+        val y = size.height / 2
+        val x = inset + (size.width - 2 * inset) * fraction.coerceIn(0f, 1f)
+        val stroke = 4.dp.toPx()
+        drawLine(PanelRaised, Offset(inset, y), Offset(size.width - inset, y), strokeWidth = stroke, cap = StrokeCap.Round)
+        drawLine(Accent, Offset(inset, y), Offset(x, y), strokeWidth = stroke, cap = StrokeCap.Round)
+        drawCircle(Accent, radius = inset, center = Offset(x, y))
     }
 }
 
