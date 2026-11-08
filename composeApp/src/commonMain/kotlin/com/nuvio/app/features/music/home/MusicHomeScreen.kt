@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.home
 
+import com.nuvio.app.core.ui.KeyboardInputMode
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.Semaphore
 import androidx.compose.runtime.mutableStateMapOf
@@ -573,7 +574,12 @@ internal fun MusicHomeScreen(
                             )
                         } else {
                             LetterStrip(
-                                arranged = remember(lastPressed, likely) { arrangeStrip(lastPressed, likely) },
+                                // The likely next letters move beside the key only while the remote or the arrow keys drive the
+                                // strip (one press instead of a walk along A to Z). With the mouse the strip stays A to Z, so
+                                // nothing moves under the pointer; the likely letters are still lit either way.
+                                arranged = remember(lastPressed, likely, KeyboardInputMode.active) {
+                                    if (KeyboardInputMode.active) arrangeStrip(lastPressed, likely) else STRIP_LETTERS
+                                },
                                 likely = remember(likely) { likely.take(STRIP_PULLED).toSet() },
                                 typing = query.isNotBlank(),
                                 micFocus = tab.bodyFocus,

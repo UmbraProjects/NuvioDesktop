@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Music Home: The Letter Strip Stays Put Under The Mouse** - the strip moves the likely next letters beside the key you are on, so a remote reaches them in one press. With the mouse that made the keys jump about under the pointer. Now they only move while the remote or the arrow keys are driving it; with the mouse the strip stays A to Z, and the likely letters are still lit.
+
 - **Music Addon Tracks Start At The Right Volume** - a lossless track from the music addon that had never been measured started from a guess at its loudness and was turned down (or up) some seconds in once the background measurement finished; on a loud master like Songs For The Deaf that was a 4.6 dB dip 14 seconds into No One Knows. The addon says nothing about loudness, but YouTube publishes a figure for the same song: it is now looked up as the addon's stream is fetched (for the next track in the queue, while the one before is still playing) and the gain is set from it before the first sample. The measurement still runs and is kept, so any small difference is corrected and the next play is exact. Addon-only albums with no YouTube Music match still start from the guess.
 
 - **Now Playing Notes: Every Page Fits The Box** - the liner notes pages (Did you know?, the cover, guests, timeline, a track's story) no longer scroll a little when the text is long. A page that is too tall is drawn slightly smaller as a whole until it fits; a Did you know? page is sized as if every answer were showing, so revealing one never makes the page jump.
