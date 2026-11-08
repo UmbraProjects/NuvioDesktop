@@ -81,6 +81,8 @@ sealed interface ServerLine {
     data object Pong : ServerLine
     data class Opening(val what: String) : ServerLine
     data object CantOpen : ServerLine
+    data class VideoLibrary(val ready: Boolean, val titles: List<LibraryTitle>) : ServerLine
+    data class MusicLibrary(val ready: Boolean, val artists: List<LibraryArtistInfo>, val albums: List<LibraryAlbum>) : ServerLine
     data object Other : ServerLine
 
     companion object {
@@ -92,6 +94,7 @@ sealed interface ServerLine {
                 "CANT_OPEN" -> CantOpen
                 "OPENING" -> Opening(RemoteProtocol.decode(parts.getOrElse(1) { "" }))
                 "STATE" -> parseState(parts, nowMs)?.let(::State) ?: Other
+                "LIBRARY" -> LibraryLines.parse(line) ?: Other
                 else -> Other
             }
         }
@@ -227,6 +230,16 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
     fun seek(positionMs: Long) = send("SEEK ${positionMs.coerceAtLeast(0L)}")
 
     fun volume(level: Int) = send("VOLUME ${level.coerceAtLeast(0)}")
+
+    /** The answer comes back as a [ServerLine.VideoLibrary] or [ServerLine.MusicLibrary] through [listen]. */
+    fun requestLibrary(kind: String) = send("LIBRARY $kind")
+
+    /** Opens the title's details on the TV. The PC answers OPENING or CANT_OPEN through [listen]. */
+    fun openTitle(type: String, id: String) = send("OPEN_TITLE ${RemoteProtocol.encode(type)} ${RemoteProtocol.encode(id)}")
+
+    fun album(browseId: String, action: AlbumAction) = send("PLAY_ALBUM ${RemoteProtocol.encode(browseId)} ${action.wire}")
+
+    fun artist(artistId: String, action: ArtistAction) = send("ARTIST ${RemoteProtocol.encode(artistId)} ${action.wire}")
 
     /** Sends a shared link and waits for the PC's answer. Only on a session that is not [listen]ing. */
     fun open(text: String): ServerLine {

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,6 +42,8 @@ import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.FastForward
 import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Gamepad
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.ChevronLeft
@@ -66,6 +69,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -148,12 +154,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val Accent = Color(0xFF8AB4FF)
-private val Panel = Color(0xFF1B1D26)
-private val PanelRaised = Color(0xFF262935)
-private val Muted = Color(0xFF9AA0B4)
+internal val Accent = Color(0xFF8AB4FF)
+internal val Panel = Color(0xFF1B1D26)
+internal val PanelRaised = Color(0xFF262935)
+internal val Muted = Color(0xFF9AA0B4)
 
-private val RemoteColors = darkColorScheme(
+internal val RemoteColors = darkColorScheme(
     primary = Accent,
     onPrimary = Color(0xFF0B1730),
     background = Color(0xFF0E0F14),
@@ -170,7 +176,7 @@ private fun RemoteApp(viewModel: RemoteViewModel) {
         when (val screen = state.screen) {
             Screen.Pick -> PickScreen(state, viewModel)
             is Screen.Pair -> PairScreen(screen, state, viewModel)
-            Screen.Remote -> RemoteScreen(state, viewModel)
+            Screen.Remote -> ConnectedScreen(state, viewModel)
         }
     }
 }
@@ -362,6 +368,65 @@ private fun PairScreen(screen: Screen.Pair, state: UiState, viewModel: RemoteVie
                 } else {
                     Text("Pair")
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Connected: the remote and the library
+
+private enum class Tab(val label: String) { Remote("Remote"), Video("Movies & TV"), Music("Music") }
+
+/**
+ * Once connected: the remote, and the PC's library to browse. Choosing a title or playing an album goes back to the
+ * remote, since that is what drives the TV next (picking a source, skipping a track).
+ */
+@Composable
+private fun ConnectedScreen(state: UiState, viewModel: RemoteViewModel) {
+    var tabName by rememberSaveable { mutableStateOf(Tab.Remote.name) }
+    val tab = Tab.valueOf(tabName)
+    if (tab != Tab.Remote) BackHandler { tabName = Tab.Remote.name }
+    val toRemote = { tabName = Tab.Remote.name }
+
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            when (tab) {
+                Tab.Remote -> RemoteScreen(state, viewModel)
+                Tab.Video -> VideoLibraryScreen(state, viewModel, onOpened = toRemote)
+                Tab.Music -> MusicLibraryScreen(state, viewModel, onPlayed = toRemote)
+            }
+            state.notice?.let { notice ->
+                Text(
+                    notice,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(PanelRaised)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    fontSize = 14.sp,
+                )
+            }
+        }
+        // The screen already sits inside the safe-drawing padding; the bar must not add the system bars again.
+        NavigationBar(containerColor = Panel, windowInsets = WindowInsets(0, 0, 0, 0)) {
+            Tab.entries.forEach { item ->
+                NavigationBarItem(
+                    selected = item == tab,
+                    onClick = { tabName = item.name },
+                    icon = {
+                        Icon(
+                            when (item) {
+                                Tab.Remote -> Icons.Rounded.Gamepad
+                                Tab.Video -> Icons.Rounded.Movie
+                                Tab.Music -> Icons.Rounded.LibraryMusic
+                            },
+                            contentDescription = null,
+                        )
+                    },
+                    label = { Text(item.label, maxLines = 1) },
+                    colors = NavigationBarItemDefaults.colors(indicatorColor = Accent.copy(alpha = 0.22f)),
+                )
             }
         }
     }

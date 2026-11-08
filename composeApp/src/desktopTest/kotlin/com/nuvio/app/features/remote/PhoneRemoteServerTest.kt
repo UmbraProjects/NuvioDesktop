@@ -48,6 +48,24 @@ class PhoneRemoteServerTest {
             }
 
             override fun onOpen(url: String): String? = if ("youtu" in url) "a YouTube video".also { commands += "open $url" } else null
+
+            override fun onLibrary(kind: String): String? = when (kind) {
+                PhoneRemoteLibraryLines.VIDEO -> PhoneRemoteLibraryLines.videoLine(
+                    ready = true,
+                    titles = listOf(
+                        RemoteTitle("Movies", "movie", "tt0083658", "Blade Runner", "1982", "https://img/a,b;c.jpg", null, watched = true),
+                        RemoteTitle("Shows", "series", "tt0903747", "Breaking Bad", null, null, null, watched = false),
+                    ),
+                )
+                else -> PhoneRemoteLibraryLines.musicLine(ready = false, artists = emptyList(), albums = emptyList())
+            }
+
+            override fun onOpenTitle(type: String, id: String): String? = "Blade Runner".also { commands += "title $type $id" }
+
+            override fun onPlayAlbum(browseId: String, action: AlbumAction): String? = "Thriller".also { commands += "album $browseId ${action.wire}" }
+
+            override fun onArtist(artistId: String, action: ArtistAction): String? =
+                if (artistId == "UCknown") "Queen radio".also { commands += "artist $artistId ${action.wire}" } else null
         },
         preferredPort = 0,
         discoveryPort = discoveryPort,
@@ -195,6 +213,41 @@ class PhoneRemoteServerTest {
             phone.send("HELLO 9 - Phone")
             assertEquals("UNSUPPORTED 1", phone.receive())
         }
+    }
+
+    @Test
+    fun servesTheLibraryAndActsOnChoices() {
+        tokens += "saved"
+        Phone().use { phone ->
+            phone.send("HELLO 1 saved Phone")
+            assertEquals("WELCOME Living%20Room%20PC", phone.receive())
+
+            phone.send("LIBRARY video")
+            val video = phone.receive()!!.split(' ')
+            assertEquals(listOf("LIBRARY", "video", "1"), video.take(3))
+            assertEquals(4, video.size)
+            val records = video[3].split(';').map { record -> record.split(',').map(PhoneRemoteProtocol::decode) }
+            assertEquals(listOf("Movies", "movie", "tt0083658", "Blade Runner", "1982", "https://img/a,b;c.jpg", "-", "1"), records[0])
+            assertEquals(listOf("Shows", "series", "tt0903747", "Breaking Bad", "-", "-", "-", "0"), records[1])
+
+            phone.send("LIBRARY music")
+            assertEquals("LIBRARY music 0 - -", phone.receive())
+
+            phone.send("LIBRARY films") // unknown kind: ignored, no reply
+            phone.send("OPEN_TITLE movie tt0083658")
+            assertEquals("OPENING Blade%20Runner", phone.receive())
+            phone.send("PLAY_ALBUM ${PhoneRemoteProtocol.encode("MPREb_abc")} shuffle")
+            assertEquals("OPENING Thriller", phone.receive())
+            phone.send("PLAY_ALBUM MPREb_abc loudly") // unknown action: ignored
+            phone.send("ARTIST UCknown radio")
+            assertEquals("OPENING Queen%20radio", phone.receive())
+            phone.send("ARTIST UCnobody mix")
+            assertEquals("CANT_OPEN", phone.receive())
+        }
+        assertEquals(
+            listOf("title movie tt0083658", "album MPREb_abc shuffle", "artist UCknown radio"),
+            commands.toList(),
+        )
     }
 
     @Test

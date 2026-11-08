@@ -37,6 +37,26 @@ data class UiState(
     val nowPlaying: NowPlaying? = null,
     /** [NowPlaying.imageUrl], once fetched. */
     val cover: Bitmap? = null,
+    val video: VideoLibraryState = VideoLibraryState(),
+    val music: MusicLibraryState = MusicLibraryState(),
+    /** A short line about something just sent ("Opening Blade Runner on the TV"); clears itself. */
+    val notice: String? = null,
+)
+
+/** Where a library list stands. [problem] is set when the PC never answered (a Nuvio from before the library). */
+data class VideoLibraryState(
+    val titles: List<LibraryTitle> = emptyList(),
+    val loading: Boolean = false,
+    val loaded: Boolean = false,
+    val problem: String? = null,
+)
+
+data class MusicLibraryState(
+    val artists: List<LibraryArtistInfo> = emptyList(),
+    val albums: List<LibraryAlbum> = emptyList(),
+    val loading: Boolean = false,
+    val loaded: Boolean = false,
+    val problem: String? = null,
 )
 
 /**
@@ -261,6 +281,10 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     // --- Internals (called on io) ---
 
     private fun onConnected(pc: SavedPc) {
+        // Another PC has another library: forget the one shown.
+        if (_state.value.current?.address != pc.address) {
+            _state.update { it.copy(video = VideoLibraryState(), music = MusicLibraryState()) }
+        }
         saveAll(_state.value.saved.filterNot { it.address == pc.address } + pc)
         store.lastAddress = pc.address
         _state.update { it.copy(busy = false, message = null, screen = Screen.Remote, current = pc, link = Link.Connected) }
@@ -276,6 +300,10 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                 when (line) {
                     is ServerLine.State -> showNowPlaying(line.nowPlaying)
                     ServerLine.Idle -> _state.update { it.copy(nowPlaying = null, cover = null) }
+                    is ServerLine.VideoLibrary -> onVideoLibrary(line)
+                    is ServerLine.MusicLibrary -> onMusicLibrary(line)
+                    is ServerLine.Opening -> notify("Opening ${line.what} on the TV")
+                    ServerLine.CantOpen -> notify("Nuvio couldn't open that.")
                     else -> Unit
                 }
             },
@@ -363,7 +391,97 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(saved = list.sortedBy { pc -> pc.name.lowercase() }) }
     }
 
+    // --- The library: browsed here, opened or played on the TV. ---
+
+    private var videoTimeout: Job? = null
+    private var musicTimeout: Job? = null
+    private var videoTries = 0
+    private var musicTries = 0
+
+    /** Asks the PC for its films and shows; [force] asks again even when a list is already here. */
+    fun loadVideo(force: Boolean = false) {
+        val current = _state.value.video
+        if (current.loading || (current.loaded && !force)) return
+        videoTries = 0
+        _state.update { it.copy(video = it.video.copy(loading = true, problem = null)) }
+        askVideo()
+    }
+
+    fun loadMusic(force: Boolean = false) {
+        val current = _state.value.music
+        if (current.loading || (current.loaded && !force)) return
+        musicTries = 0
+        _state.update { it.copy(music = it.music.copy(loading = true, problem = null)) }
+        askMusic()
+    }
+
+    private fun askVideo() {
+        sendOrReconnect { it.requestLibrary(LibraryLines.VIDEO) }
+        videoTimeout?.cancel()
+        videoTimeout = viewModelScope.launch {
+            delay(LIBRARY_TIMEOUT_MS)
+            _state.update {
+                if (!it.video.loading) it else it.copy(video = it.video.copy(loading = false, problem = noAnswer()))
+            }
+        }
+    }
+
+    private fun askMusic() {
+        sendOrReconnect { it.requestLibrary(LibraryLines.MUSIC) }
+        musicTimeout?.cancel()
+        musicTimeout = viewModelScope.launch {
+            delay(LIBRARY_TIMEOUT_MS)
+            _state.update {
+                if (!it.music.loading) it else it.copy(music = it.music.copy(loading = false, problem = noAnswer()))
+            }
+        }
+    }
+
+    private fun noAnswer(): String =
+        if (_state.value.link == Link.Connected) "${_state.value.current?.name ?: "The PC"} didn't send its library. Update Nuvio on the PC, then try again."
+        else "Not connected to the PC."
+
+    /** The PC is still loading its library while `ready` is 0: what it has is shown, and it is asked again shortly. */
+    private fun onVideoLibrary(line: ServerLine.VideoLibrary) {
+        videoTimeout?.cancel()
+        val again = !line.ready && videoTries++ < LIBRARY_RETRIES
+        _state.update {
+            it.copy(video = it.video.copy(titles = line.titles, loading = again, loaded = !again, problem = null))
+        }
+        if (again) viewModelScope.launch { delay(LIBRARY_RETRY_MS); askVideo() }
+    }
+
+    private fun onMusicLibrary(line: ServerLine.MusicLibrary) {
+        musicTimeout?.cancel()
+        val again = !line.ready && musicTries++ < LIBRARY_RETRIES
+        _state.update {
+            it.copy(music = it.music.copy(artists = line.artists, albums = line.albums, loading = again, loaded = !again, problem = null))
+        }
+        if (again) viewModelScope.launch { delay(LIBRARY_RETRY_MS); askMusic() }
+    }
+
+    fun openTitle(title: LibraryTitle) = sendOrReconnect { it.openTitle(title.type, title.id) }
+
+    fun album(album: LibraryAlbum, action: AlbumAction) = sendOrReconnect { it.album(album.browseId, action) }
+
+    fun artist(artist: LibraryArtistInfo, action: ArtistAction) = sendOrReconnect { it.artist(artist.id, action) }
+
+    private var noticeJob: Job? = null
+
+    private fun notify(text: String) {
+        _state.update { it.copy(notice = text) }
+        noticeJob?.cancel()
+        noticeJob = viewModelScope.launch {
+            delay(NOTICE_MS)
+            _state.update { if (it.notice == text) it.copy(notice = null) else it }
+        }
+    }
+
     private companion object {
+        const val LIBRARY_TIMEOUT_MS = 8_000L
+        const val LIBRARY_RETRY_MS = 1_500L
+        const val LIBRARY_RETRIES = 8
+        const val NOTICE_MS = 3_500L
         /** A PC that has said nothing for this long (it answers every ping) has gone. */
         const val SILENT_MS = 12_000L
         const val PING_INTERVAL_MS = 5_000L

@@ -35,6 +35,12 @@ internal interface PhoneRemoteListener {
     fun onVolume(volume: Int) = Unit
     /** A link shared from the phone. Returns what is being opened, for the phone to say, or null if it cannot be. */
     fun onOpen(url: String): String? = null
+    /** The whole LIBRARY reply line for [kind] (see PhoneRemoteLibraryLines), or null when there is none to give. */
+    fun onLibrary(kind: String): String? = null
+    /** Each returns what is being opened, for the phone to say, or null if it cannot be. */
+    fun onOpenTitle(type: String, id: String): String? = null
+    fun onPlayAlbum(browseId: String, action: AlbumAction): String? = null
+    fun onArtist(artistId: String, action: ArtistAction): String? = null
 }
 
 /**
@@ -215,10 +221,11 @@ internal class PhoneRemoteServer(
                             }
                             is RemoteMessage.Seek -> listener.onSeek(message.positionMs)
                             is RemoteMessage.Volume -> listener.onVolume(message.volume)
-                            is RemoteMessage.Open -> {
-                                val opening = listener.onOpen(message.url)
-                                send(if (opening != null) "OPENING ${PhoneRemoteProtocol.encode(opening)}" else "CANT_OPEN")
-                            }
+                            is RemoteMessage.Open -> sendOpening(listener.onOpen(message.url))
+                            is RemoteMessage.Library -> listener.onLibrary(message.kind)?.let(::send)
+                            is RemoteMessage.OpenTitle -> sendOpening(listener.onOpenTitle(message.type, message.id))
+                            is RemoteMessage.PlayAlbum -> sendOpening(listener.onPlayAlbum(message.browseId, message.action))
+                            is RemoteMessage.Artist -> sendOpening(listener.onArtist(message.artistId, message.action))
                             else -> Unit
                         }
                     }
@@ -292,6 +299,9 @@ internal class PhoneRemoteServer(
                 close()
             }
         }
+
+        private fun sendOpening(opening: String?) =
+            send(if (opening != null) "OPENING ${PhoneRemoteProtocol.encode(opening)}" else "CANT_OPEN")
 
         @Synchronized
         private fun send(line: String) {

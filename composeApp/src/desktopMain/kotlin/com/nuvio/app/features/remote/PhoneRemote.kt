@@ -199,6 +199,12 @@ internal object PhoneRemote {
         }
 
         override fun onOpen(url: String): String? = openShared(url)
+
+        // fork:phone-remote library: browsing on the phone, choosing plays or opens on the TV.
+        override fun onLibrary(kind: String): String? = PhoneRemoteLibrary.line(kind)
+        override fun onOpenTitle(type: String, id: String): String? = PhoneRemoteLibrary.openTitle(type, id)
+        override fun onPlayAlbum(browseId: String, action: AlbumAction): String? = PhoneRemoteLibrary.playAlbum(browseId, action)
+        override fun onArtist(artistId: String, action: ArtistAction): String? = PhoneRemoteLibrary.artist(artistId, action)
     }
 
     // --- fork:phone-remote: now playing on the phone ---

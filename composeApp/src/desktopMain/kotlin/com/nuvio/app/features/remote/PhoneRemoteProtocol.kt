@@ -99,6 +99,18 @@ internal object PhoneRemoteProtocol {
             "SEEK" -> parts.getOrNull(1)?.toLongOrNull()?.takeIf { it >= 0 }?.let { RemoteMessage.Seek(it) }
             "VOLUME" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 0 }?.let { RemoteMessage.Volume(it) }
             "OPEN" -> parts.getOrNull(1)?.let(::decode)?.takeIf { it.isNotBlank() }?.let { RemoteMessage.Open(it) }
+            // fork:phone-remote library, see PhoneRemoteLibraryLines.
+            "LIBRARY" -> parts.getOrNull(1)?.takeIf { it == PhoneRemoteLibraryLines.VIDEO || it == PhoneRemoteLibraryLines.MUSIC }
+                ?.let { RemoteMessage.Library(it) }
+            "OPEN_TITLE" -> if (parts.size >= 3) {
+                RemoteMessage.OpenTitle(type = decode(parts[1]), id = decode(parts[2])).takeIf { it.type.isNotBlank() && it.id.isNotBlank() }
+            } else null
+            "PLAY_ALBUM" -> if (parts.size >= 3) {
+                AlbumAction.fromWire(parts[2])?.let { RemoteMessage.PlayAlbum(decode(parts[1]), it) }?.takeIf { it.browseId.isNotBlank() }
+            } else null
+            "ARTIST" -> if (parts.size >= 3) {
+                ArtistAction.fromWire(parts[2])?.let { RemoteMessage.Artist(decode(parts[1]), it) }?.takeIf { it.artistId.isNotBlank() }
+            } else null
             else -> null
         }
     }
@@ -114,6 +126,29 @@ internal sealed interface RemoteMessage {
     data class Seek(val positionMs: Long) : RemoteMessage
     data class Volume(val volume: Int) : RemoteMessage
     data class Open(val url: String) : RemoteMessage
+    data class Library(val kind: String) : RemoteMessage
+    data class OpenTitle(val type: String, val id: String) : RemoteMessage
+    data class PlayAlbum(val browseId: String, val action: AlbumAction) : RemoteMessage
+    data class Artist(val artistId: String, val action: ArtistAction) : RemoteMessage
+}
+
+internal enum class AlbumAction(val wire: String) {
+    Play("play"), Shuffle("shuffle"), Queue("queue");
+
+    companion object {
+        fun fromWire(wire: String): AlbumAction? = entries.firstOrNull { it.wire == wire.lowercase() }
+    }
+}
+
+internal enum class ArtistAction(val wire: String) {
+    /** The artist's albums mixed together, as Shuffle all on the artist page. */
+    Mix("mix"),
+    /** YouTube Music's radio for the artist. */
+    Radio("radio");
+
+    companion object {
+        fun fromWire(wire: String): ArtistAction? = entries.firstOrNull { it.wire == wire.lowercase() }
+    }
 }
 
 /** Every button the remote can send. The wire names are lower-case and stable. */
