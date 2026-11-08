@@ -1,4 +1,7 @@
 package com.nuvio.app.features.music.booklet
+
+import com.nuvio.app.features.discover.AI_SPEND_WINDOW_MS
+import com.nuvio.app.features.discover.AiTokenSpend
 // FORK UI (Spyder): Nick's album page facts, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
 import kotlinx.serialization.json.Json
@@ -114,11 +117,36 @@ internal const val FILL_FAIL_GAP_MS = 10_000L
 internal const val FILL_PAUSE_MS = 30L * 60L * 1_000L
 internal const val FILL_FAILS_BEFORE_PAUSE = 3
 
-/** The most tokens a minute the filler aims to use. A free Groq key allows 8,000; this leaves room for the person's own requests. */
+/**
+ * The most tokens the whole key may have spent in the last minute, the filler's next lookup included, before the filler asks.
+ * A free Groq key allows 8,000 a minute; this leaves room for a request of the person's own on top.
+ */
 internal const val FILL_TOKENS_PER_MIN = 6_000L
 
-/** How long to wait after a lookup that cost [tokens], so the average stays under [FILL_TOKENS_PER_MIN] (never less than [FILL_GAP_MS]). */
-internal fun paceMs(tokens: Long): Long = maxOf(FILL_GAP_MS, tokens.coerceAtLeast(0L) * 60_000L / FILL_TOKENS_PER_MIN)
+/**
+ * fork:ai-minute - how long to wait before a lookup expected to cost [expected] tokens fits the rolling minute: the [spends] of
+ * the last minute (every request on the key, the person's own included) plus [expected] must stay within [limit]. The answer
+ * is when enough of the oldest spends have left the minute; 0 when it fits now. A lookup expected to cost more than [limit]
+ * on its own waits for an empty minute and then goes.
+ */
+internal fun minuteRoomInMs(spends: List<AiTokenSpend>, expected: Long, limit: Long, nowMs: Long): Long {
+    val live = spends.filter { nowMs - it.atMs < AI_SPEND_WINDOW_MS }.sortedBy { it.atMs }
+    val need = expected.coerceIn(0L, limit)
+    var used = live.sumOf { it.tokens.coerceAtLeast(0L) }
+    if (used + need <= limit) return 0L
+    for (spend in live) {
+        used -= spend.tokens.coerceAtLeast(0L)
+        if (used + need <= limit) return (spend.atMs + AI_SPEND_WINDOW_MS - nowMs).coerceAtLeast(0L)
+    }
+    return 0L
+}
+
+/**
+ * What the filler expects a step of [kind] to cost: what the last one of that kind cost on this key when known (lookups of one
+ * kind cost much the same), else the usual figure.
+ */
+internal fun expectedCost(kind: FillKind, lastCost: Map<FillKind, Long>): Long =
+    lastCost[kind]?.takeIf { it > 0L } ?: estimateTokens(kind)
 
 /**
  * How long to wait before the next lookup after a failure: a few seconds when the last one worked (the free key has a per-minute limit),

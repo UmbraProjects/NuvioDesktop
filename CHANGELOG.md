@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Facts Filler: Stays Under The AI Key's Minute Limit** - the filler used to pace itself after each lookup by what that lookup cost, so one big lookup could still go over a free Groq key's 8,000 tokens a minute, and your own requests in between were not counted. It now keeps a rolling minute of everything spent on the key (your own requests too) and, before each lookup, waits until that lookup's usual cost fits under 6,000, leaving room for you. When the provider does say "try again in 7.26s" in its message rather than a header, that exact wait is used instead of a flat minute.
+
+- **Now Playing: Unsynced Lyrics Are Centred** - lyrics without timing are now centred in the pane, line by line, on the Stage and under a video, instead of hanging off the left edge.
+
 - **Artist Page: A New Artist Opens On Its Photo** - opening another artist (from Similar taste, the search or a credit) could land part way down the page, because focus first landed on a control in the panels and the page scrolled to show it. A newly opened artist now always starts on the photo screen with Play Essentials selected. Coming back to a page with Back still lands on the panels if that is where you left it, without focus pulling it up to the photo.
 
 - **Artist Page: Back Stays In The Corner, And Back From An Album Lands On The Panels** - the back arrow used to sit on the photo screen only, so from the three panels you had to scroll up to find it. It now stays in the top left corner on both screens (the panels start a little lower to clear it). Going back from an album you opened from the panels used to leave the page stopped part way between the two screens (focus returning to the album tile scrolled only far enough to show it); it now settles on the whole panel screen. Opened from the top, it still starts on the photo.

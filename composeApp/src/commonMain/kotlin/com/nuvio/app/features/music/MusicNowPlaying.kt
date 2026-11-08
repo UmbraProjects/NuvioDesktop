@@ -1001,13 +1001,15 @@ private fun Message(text: String) {
 
 @Composable
 private fun PlainLyrics(lines: List<String>) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 48.dp)) {
+    // Unsynced lyrics have no line to follow, so they read as a block centred in the pane (on the Stage and under a video alike).
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         itemsIndexed(lines) { _, line ->
             Text(
                 text = line,
                 color = Color.White.copy(alpha = 0.88f),
                 fontSize = 22.sp,
                 lineHeight = 30.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
             )
         }

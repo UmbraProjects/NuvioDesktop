@@ -50,6 +50,29 @@ object DiscoverAiClient {
     val tokensUsed: Long get() = tokenCount.value
 
     /**
+     * fork:ai-minute - the tokens each answered request cost in the last minute or so, per account and model (the key's limits
+     * are counted against that), oldest first. Every feature's requests are here, the person's own included, so the background
+     * filler can keep the whole key under its minute limit rather than only its own share.
+     */
+    private val recentSpends = MutableStateFlow<Map<String, List<AiTokenSpend>>>(emptyMap())
+
+    /** fork:ai-minute - what [settings]'s account and model spent in the last [AI_SPEND_WINDOW_MS], oldest first. */
+    fun recentTokenSpends(settings: DiscoverAiSettings): List<AiTokenSpend> {
+        val cutoff = System.currentTimeMillis() - AI_SPEND_WINDOW_MS
+        return recentSpends.value[gateKeyOf(settings)].orEmpty().filter { it.atMs > cutoff }
+    }
+
+    private fun recordSpend(settings: DiscoverAiSettings, tokens: Long) {
+        val now = System.currentTimeMillis()
+        val key = gateKeyOf(settings)
+        recentSpends.update { all ->
+            all + (key to (all[key].orEmpty().filter { it.atMs > now - AI_SPEND_WINDOW_MS } + AiTokenSpend(now, tokens)))
+        }
+    }
+
+    private fun gateKeyOf(settings: DiscoverAiSettings): String = "${settings.effectiveBaseUrl}|${settings.effectiveModel}"
+
+    /**
      * The ceiling on one request.
      *
      * Enforced by [httpRequestRaw]'s `callTimeoutMs` as well as by `withTimeoutOrNull`. The
@@ -113,7 +136,7 @@ object DiscoverAiClient {
             // fork:ai-gate - after a 429 the provider has said when to come back (Groq's daily allowance: minutes to hours), and
             // every feature used to ask anyway, one request per song, each answered with another 429. Until that time, answer
             // the same way without a request. The key is the account's model, which is what the limits are counted against.
-            val gateKey = "${settings.effectiveBaseUrl}|${settings.effectiveModel}"
+            val gateKey = gateKeyOf(settings)
             rateLimitedUntilMs.value[gateKey]?.let { until ->
                 val left = ((until - System.currentTimeMillis() + 999) / 1000).toInt()
                 if (left > 0) {
@@ -289,14 +312,17 @@ object DiscoverAiClient {
             throw DiscoverAiException(
                 when (code) {
                     401, 403 -> DiscoverAiError.Unauthorized(message)
-                    429 -> DiscoverAiError.RateLimited(retryAfterSeconds = null, detail = message)
+                    429 -> DiscoverAiError.RateLimited(retryAfterSeconds = retryAfterInMessage(message), detail = message)
                     else -> DiscoverAiError.Http(code ?: response.status, message)
                 },
             )
         }
 
         ((parsed["usage"] as? JsonObject)?.get("total_tokens") as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
-            ?.takeIf { it > 0 }?.let { used -> tokenCount.update { it + used } }
+            ?.takeIf { it > 0 }?.let { used ->
+                tokenCount.update { it + used }
+                recordSpend(settings, used)
+            }
 
         val message = (parsed["choices"] as? JsonArray)
             ?.firstNotNullOfOrNull { choice -> (choice as? JsonObject)?.get("message") as? JsonObject }
@@ -350,7 +376,7 @@ object DiscoverAiClient {
                 // or stop using a rate-capped model. Telling someone to check their key — which is
                 // what a generic HTTP error reads as — sends them to the one thing that is fine.
                 429 -> DiscoverAiError.RateLimited(
-                    retryAfterSeconds = response.retryAfterSeconds(),
+                    retryAfterSeconds = response.retryAfterSeconds() ?: retryAfterInMessage(detail),
                     detail = detail,
                 )
 
@@ -440,3 +466,23 @@ sealed interface DiscoverAiError {
 }
 
 class DiscoverAiException(val error: DiscoverAiError) : Exception(error.toString())
+
+/** fork:ai-minute - one answered request's cost: when it came back and the tokens the provider reported for it. */
+data class AiTokenSpend(val atMs: Long, val tokens: Long)
+
+/** How far back [DiscoverAiClient.recentTokenSpends] looks: the provider's minute. */
+const val AI_SPEND_WINDOW_MS = 60_000L
+
+/**
+ * fork:ai-minute - the wait a rate-limit message names when no header gave one. Groq says it in words: "Please try again in
+ * 7.26s", "in 1m30.5s", "in 2h4m", "in 860ms". Rounded up to whole seconds; null when the message names no wait.
+ */
+internal fun retryAfterInMessage(message: String): Int? {
+    val match = Regex("""try again in\s+((?:\d+(?:\.\d+)?(?:ms|h|m|s))+)""", RegexOption.IGNORE_CASE).find(message) ?: return null
+    var seconds = 0.0
+    Regex("""(\d+(?:\.\d+)?)(ms|h|m|s)""", RegexOption.IGNORE_CASE).findAll(match.groupValues[1]).forEach { part ->
+        val n = part.groupValues[1].toDouble()
+        seconds += when (part.groupValues[2].lowercase()) { "h" -> n * 3600; "m" -> n * 60; "ms" -> n / 1000; else -> n }
+    }
+    return kotlin.math.ceil(seconds).toInt().takeIf { it > 0 }
+}

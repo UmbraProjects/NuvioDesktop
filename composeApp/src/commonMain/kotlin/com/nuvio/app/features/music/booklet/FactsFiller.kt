@@ -263,6 +263,8 @@ internal object FactsFiller {
         // Tokens the provider has counted that no step has been charged for yet: stories, notes and recaps the person asked for share
         // the same daily allowance, so the budget counts them too (a free Groq key stops at 200k a day whoever spent it).
         var tokensSeen = DiscoverAiClient.tokensUsed
+        // fork:ai-minute - what the last step of each kind cost, for the minute check before the next one.
+        val lastCost = HashMap<FillKind, Long>()
         var done = order.count { FillStorage.get("done1|${it.albumId}") == model }
         _status.update { it.copy(albumsTotal = order.size, albumsDone = done) }
         // Starts from the kept list, so what failed before a restart stays listed until it is filled.
@@ -310,6 +312,17 @@ internal object FactsFiller {
                     currentCoroutineContext().ensureActive()
                     if (!_status.value.enabled) return failStreak
                 }
+                // fork:ai-minute - keep the key under its minute limit: wait until this step's usual cost fits in the last minute's
+                // spending (every request on the key counts, the person's own too).
+                while (true) {
+                    val wait = minuteRoomInMs(DiscoverAiClient.recentTokenSpends(ai), expectedCost(step.kind, lastCost), FILL_TOKENS_PER_MIN, now())
+                    if (wait <= 0L) break
+                    setActivity("Keeping under the AI key's minute limit; next lookup in ${(wait + 999) / 1_000} s")
+                    delay(wait)
+                    currentCoroutineContext().ensureActive()
+                    if (!_status.value.enabled) return failStreak
+                    waitForQuiet()
+                }
                 setActivity("Filling ${step.title}")
                 val tokensBefore = tokensSeen
                 while (!runYielding(step, request)) waitForQuiet()
@@ -320,6 +333,7 @@ internal object FactsFiller {
                 val spent = (tokensSeen - tokensBefore).takeIf { it > 0L }
                     ?: if (ai.provider == DiscoverAiProvider.Anthropic) estimateTokens(step.kind) else 0L
                 if (after == FactState.Missing) { unfillable += step.title; continue } // nothing to write from (no page); no request was made
+                if (spent > 0L) lastCost[step.kind] = spent
                 budget = budget.spend(spent, now())
                 FillStorage.put("budget", encodeBudget(budget))
                 _status.update { it.copy(used = budget.used) }
@@ -331,8 +345,8 @@ internal object FactsFiller {
                     retry[step.title] = step
                 }
                 keepRetry(retry.values.toList())
-                // Wait long enough that the minute's token limit holds, and longer after failures.
-                val gap = maxOf(nextGapMs(failStreak), paceMs(spent))
+                // A short breather between lookups, longer after failures; the minute's token limit is kept before each lookup above.
+                val gap = nextGapMs(failStreak)
                 if (failStreak >= FILL_FAILS_BEFORE_PAUSE) {
                     setActivity("Several lookups failed in a row (rate limit or key?); pausing for 30 minutes")
                     delay(gap)

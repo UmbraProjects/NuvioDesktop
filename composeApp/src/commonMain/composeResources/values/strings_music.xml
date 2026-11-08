@@ -64,7 +64,7 @@
     <string name="settings_music_facts_switch">Fill album facts in the background</string>
     <string name="settings_music_facts_switch_description">Writes Liner Notes, track notes and song stories for your whole library ahead of time, most played albums first, so an album opens with its facts already there. Uses your own AI key; nothing is sent until you switch this on. It waits while a film is playing.</string>
     <string name="settings_music_facts_cap">Daily allowance</string>
-    <string name="settings_music_facts_cap_description">The most tokens the filler uses from your AI key in 24 hours. A free Groq key allows 200,000 a day and 8,000 a minute, shared with everything else you ask it, so the default leaves some for you. Press to change. The filler also spaces its lookups to stay under the minute limit, and pauses by itself if it hits a limit.</string>
+    <string name="settings_music_facts_cap_description">The most tokens the filler uses from your AI key in 24 hours. A free Groq key allows 200,000 a day and 8,000 a minute, shared with everything else you ask it, so the default leaves some for you. Press to change. Before each lookup the filler checks what your key has spent in the last minute (your own requests included) and waits until the lookup fits under 6,000, leaving room for you. If it still hits a limit, it waits as long as the provider says.</string>
     <string name="settings_music_facts_retry">Retry what failed</string>
     <string name="settings_music_facts_retry_description">Asks again now for the lookups listed below, instead of waiting the two hours after which they are tried again by themselves.</string>
     <string name="settings_music_facts_retry_button">Retry now</string>

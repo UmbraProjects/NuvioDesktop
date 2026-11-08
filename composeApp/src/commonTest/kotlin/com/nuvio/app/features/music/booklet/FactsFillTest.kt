@@ -1,5 +1,7 @@
 package com.nuvio.app.features.music.booklet
 
+import com.nuvio.app.features.discover.AiTokenSpend
+import com.nuvio.app.features.discover.retryAfterInMessage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -35,12 +37,41 @@ class FactsFillTest {
     }
 
     @Test
-    fun pacingKeepsTheAverageUnderTheMinuteLimit() {
-        assertEquals(FILL_GAP_MS, paceMs(0))
-        assertEquals(FILL_GAP_MS, paceMs(100))
-        assertEquals(50_000L, paceMs(5_000))
-        assertEquals(60_000L, paceMs(FILL_TOKENS_PER_MIN))
+    fun aLookupGoesAtOnceWhenItFitsTheMinute() {
+        val now = 1_000_000L
+        assertEquals(0L, minuteRoomInMs(emptyList(), 5_000, FILL_TOKENS_PER_MIN, now))
+        assertEquals(0L, minuteRoomInMs(listOf(AiTokenSpend(now - 10_000, 1_000)), 5_000, FILL_TOKENS_PER_MIN, now))
+        // Spends older than a minute no longer count.
+        assertEquals(0L, minuteRoomInMs(listOf(AiTokenSpend(now - 61_000, 6_000)), 5_000, FILL_TOKENS_PER_MIN, now))
         assertTrue(FILL_TOKENS_PER_MIN < 8_000L)
+    }
+
+    @Test
+    fun aLookupWaitsUntilEnoughOfTheMinuteHasPassed() {
+        val now = 1_000_000L
+        // 3,000 at -50 s and 2,000 at -20 s: a 2,500 lookup needs the first to leave the minute, 10 s from now.
+        val spends = listOf(AiTokenSpend(now - 20_000, 2_000), AiTokenSpend(now - 50_000, 3_000))
+        assertEquals(10_000L, minuteRoomInMs(spends, 2_500, FILL_TOKENS_PER_MIN, now))
+        // A 4,500 lookup needs both gone: the newer leaves in 40 s.
+        assertEquals(40_000L, minuteRoomInMs(spends, 4_500, FILL_TOKENS_PER_MIN, now))
+        // Bigger than the limit on its own: it waits for an empty minute, then goes.
+        assertEquals(40_000L, minuteRoomInMs(spends, 9_000, FILL_TOKENS_PER_MIN, now))
+    }
+
+    @Test
+    fun theExpectedCostLearnsFromTheLastStepOfItsKind() {
+        assertEquals(estimateTokens(FillKind.Story), expectedCost(FillKind.Story, emptyMap()))
+        assertEquals(1_800L, expectedCost(FillKind.Story, mapOf(FillKind.Story to 1_800L)))
+        assertEquals(estimateTokens(FillKind.Notes), expectedCost(FillKind.Notes, mapOf(FillKind.Story to 1_800L)))
+    }
+
+    @Test
+    fun groqsRetryHintIsReadFromItsMessage() {
+        assertEquals(8, retryAfterInMessage("Rate limit reached on tokens per minute (TPM). Please try again in 7.26s. Visit…"))
+        assertEquals(91, retryAfterInMessage("Please try again in 1m30.5s."))
+        assertEquals(1, retryAfterInMessage("Please try again in 860ms."))
+        assertEquals(7_440, retryAfterInMessage("tokens per day (TPD): Please try again in 2h4m."))
+        assertNull(retryAfterInMessage("Something else went wrong"))
     }
 
     @Test
