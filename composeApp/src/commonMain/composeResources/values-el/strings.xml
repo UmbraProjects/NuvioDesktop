@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">Γίνεται εγκατάσταση • %1$s</string>
   <string name="downloads_status_failed">Απέτυχε</string>
   <string name="downloads_status_paused">Σε παύση • %1$s</string>
+  <string name="downloads_status_merging">Συνένωση τμημάτων • %1$s</string>
   <string name="downloads_status_queued">Σε αναμονή • %1$s</string>
   <string name="downloads_status_eta">Απομένουν %1$s</string>
   <string name="episodes_cd_watched">Παρακολουθήθηκε</string>
@@ -1963,6 +1964,8 @@
   <string name="settings_playback_selected_count">%1$d επιλεγμένα</string>
   <string name="settings_playback_show_loading_overlay">Εμφάνιση overlay φόρτωσης</string>
   <string name="settings_playback_show_loading_overlay_description">Εμφάνιση του αρχικού overlay φόρτωσης ενώ ξεκινά η αναπαραγωγή μιας ροής.</string>
+  <string name="settings_playback_pip_browse">Περιήγηση σε εικόνα σε εικόνα</string>
+  <string name="settings_playback_pip_browse_description">Η εικόνα σε εικόνα αποκτά ένα κουμπί που επαναφέρει την εφαρμογή με το βίντεο σε μια γωνία της, ώστε να περιηγείστε όσο παίζει. Τα τρέιλερ μένουν ανενεργά στο μεταξύ. Ισχύει από το επόμενο βίντεο.</string>
   <string name="settings_playback_subtitle_background_color">Χρώμα φόντου</string>
   <string name="settings_playback_subtitle_blur">Θόλωμα</string>
   <string name="settings_playback_subtitle_bold">Έντονα</string>
@@ -4537,6 +4540,9 @@
   <string name="player_hud_p2p_streaming_consent">Συναίνεση για ροή P2P</string>
   <string name="player_hud_pause">Παύση</string>
   <string name="player_hud_exit_picture_in_picture">Έξοδος από την εικόνα σε εικόνα</string>
+  <string name="player_hud_back_to_video">Πίσω στο βίντεο</string>
+  <string name="player_hud_pip_browse">Περιήγηση στην εφαρμογή</string>
+  <string name="player_hud_pip_pop_out">Αποσύνδεση πάνω από τα Windows</string>
   <string name="player_hud_contrast">Αντίθεση</string>
   <string name="player_hud_brightness">Φωτεινότητα</string>
   <string name="player_hud_saturation">Κορεσμός</string>

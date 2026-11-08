@@ -420,6 +420,7 @@
     <string name="downloads_status_downloading">Wird heruntergeladen • %1$s</string>
     <string name="downloads_status_failed">Fehlgeschlagen</string>
     <string name="downloads_status_paused">Pausiert • %1$s</string>
+    <string name="downloads_status_merging">Teile werden zusammengefügt • %1$s</string>
     <string name="episodes_cd_watched">Gesehen</string>
     <string name="episodes_season">Staffel %1$d</string>
     <string name="episodes_specials">Specials</string>
@@ -698,6 +699,8 @@
     <string name="settings_playback_selected_count">%1$d ausgewählt</string>
     <string name="settings_playback_show_loading_overlay">Lade-Overlay anzeigen</string>
     <string name="settings_playback_show_loading_overlay_description">Das einleitende Lade-Overlay anzeigen, während ein Stream startet.</string>
+    <string name="settings_playback_pip_browse">Im Bild-im-Bild-Modus weiterstöbern</string>
+    <string name="settings_playback_pip_browse_description">Bild-im-Bild bekommt eine Taste, die die App mit dem Video in einer Ecke zurückholt, sodass du stöbern kannst, während es läuft. Trailer bleiben solange aus. Gilt ab dem nächsten Video.</string>
     <string name="settings_playback_skip_intro_outro_recap">Intro/Outro/Rückblick überspringen</string>
     <string name="settings_playback_skip_intro_outro_recap_description">Skip-Schaltfläche bei erkannten Intro-, Outro- und Rückblick-Segmenten anzeigen.</string>
     <string name="settings_playback_source_scope">Quellbereich</string>
@@ -4537,6 +4540,9 @@
     <string name="player_hud_p2p_streaming_consent">Einwilligung zu P2P-Streaming</string>
     <string name="player_hud_pause">Pause</string>
     <string name="player_hud_exit_picture_in_picture">Bild-in-Bild beenden</string>
+    <string name="player_hud_back_to_video">Zurück zum Video</string>
+    <string name="player_hud_pip_browse">In der App stöbern</string>
+    <string name="player_hud_pip_pop_out">Über Windows lösen</string>
     <string name="player_hud_contrast">Kontrast</string>
     <string name="player_hud_brightness">Helligkeit</string>
     <string name="player_hud_saturation">Sättigung</string>

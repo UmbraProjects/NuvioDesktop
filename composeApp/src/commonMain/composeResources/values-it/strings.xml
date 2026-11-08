@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">Download in corso • %1$s</string>
   <string name="downloads_status_failed">Fallito</string>
   <string name="downloads_status_paused">In pausa • %1$s</string>
+  <string name="downloads_status_merging">Unione delle parti • %1$s</string>
   <string name="downloads_status_queued">In coda • %1$s</string>
   <string name="downloads_status_eta">%1$s rimanenti</string>
   <string name="episodes_cd_watched">Visto</string>
@@ -1963,6 +1964,8 @@
   <string name="settings_playback_selected_count">%1$d selezionati</string>
   <string name="settings_playback_show_loading_overlay">Mostra overlay di caricamento</string>
   <string name="settings_playback_show_loading_overlay_description">Mostra una schermata di caricamento all'avvio della riproduzione di un flusso.</string>
+  <string name="settings_playback_pip_browse">Naviga durante il picture-in-picture</string>
+  <string name="settings_playback_pip_browse_description">Il picture-in-picture ha un pulsante che riporta l’app con il video in un angolo, così puoi navigare mentre è in riproduzione. Nel frattempo i trailer restano disattivati. Vale dal prossimo video.</string>
   <string name="settings_playback_subtitle_background_color">Colore di sfondo</string>
   <string name="settings_playback_subtitle_blur">Sfocatura</string>
   <string name="settings_playback_subtitle_bold">Grassetto</string>
@@ -4539,6 +4542,9 @@
   <string name="player_hud_p2p_streaming_consent">Consenso allo streaming P2P</string>
   <string name="player_hud_pause">Pausa</string>
   <string name="player_hud_exit_picture_in_picture">Esci da picture in picture</string>
+  <string name="player_hud_back_to_video">Torna al video</string>
+  <string name="player_hud_pip_browse">Naviga nell’app</string>
+  <string name="player_hud_pip_pop_out">Stacca sopra Windows</string>
   <string name="player_hud_contrast">Contrasto</string>
   <string name="player_hud_brightness">Luminosità</string>
   <string name="player_hud_saturation">Saturazione</string>

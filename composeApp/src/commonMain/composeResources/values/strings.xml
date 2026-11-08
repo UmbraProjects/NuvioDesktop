@@ -1048,6 +1048,7 @@
     <string name="downloads_status_downloading">Downloading • %1$s</string>
     <string name="downloads_status_failed">Failed</string>
     <string name="downloads_status_paused">Paused • %1$s</string>
+    <string name="downloads_status_merging">Merging parts • %1$s</string>
     <string name="downloads_status_queued">Queued • %1$s</string>
     <string name="downloads_status_eta">%1$s left</string>
     <string name="episodes_cd_watched">Watched</string>
@@ -2042,6 +2043,8 @@
     <string name="settings_playback_selected_count">%1$d selected</string>
     <string name="settings_playback_show_loading_overlay">Loading Overlay</string>
     <string name="settings_playback_show_loading_overlay_description">Show loading screen until first video frame appears.</string>
+    <string name="settings_playback_pip_browse">Browse while in picture in picture</string>
+    <string name="settings_playback_pip_browse_description">Picture in picture gets a button that brings the app back with the video in a corner of it, so you can browse while it plays. Trailers stay off meanwhile. Applies from the next video.</string>
     <string name="settings_playback_subtitle_background_color">Background Color</string>
     <string name="settings_playback_subtitle_blur">Blur</string>
     <string name="settings_playback_subtitle_bold">Bold</string>
@@ -4672,6 +4675,9 @@
     <string name="player_hud_p2p_streaming_consent">P2P streaming consent</string>
     <string name="player_hud_pause">Pause</string>
     <string name="player_hud_exit_picture_in_picture">Exit picture in picture</string>
+    <string name="player_hud_back_to_video">Back to the video</string>
+    <string name="player_hud_pip_browse">Browse the app</string>
+    <string name="player_hud_pip_pop_out">Pop out over Windows</string>
     <string name="player_hud_contrast">Contrast</string>
     <string name="player_hud_brightness">Brightness</string>
     <string name="player_hud_saturation">Saturation</string>

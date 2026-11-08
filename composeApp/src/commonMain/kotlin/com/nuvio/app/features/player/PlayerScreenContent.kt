@@ -149,6 +149,7 @@ internal fun PlayerScreenContent(args: PlayerScreenArgs) {
             playerSize = runtime.layoutSize,
         )
         runtime.BindPlayerRuntimeEffects()
+        runtime.BindPlayerBrowsePip() // fork:pip-browse
         runtime.RenderPlayerRuntimeUi()
     }
 }

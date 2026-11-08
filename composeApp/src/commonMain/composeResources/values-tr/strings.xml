@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">İndiriliyor • %1$s</string>
   <string name="downloads_status_failed">Olmadı</string>
   <string name="downloads_status_paused">Duraklatıldı • %1$s</string>
+  <string name="downloads_status_merging">Parçalar birleştiriliyor • %1$s</string>
   <string name="downloads_status_queued">Sırada • %1$s</string>
   <string name="downloads_status_eta">%1$s kaldı</string>
   <string name="episodes_cd_watched">İzlendi</string>
@@ -1963,6 +1964,8 @@
   <string name="settings_playback_selected_count">%1$d seçili</string>
   <string name="settings_playback_show_loading_overlay">Yükleme ekranını göster</string>
   <string name="settings_playback_show_loading_overlay_description">Yayın başlarken açılış yükleme katmanını göster.</string>
+  <string name="settings_playback_pip_browse">Resim içinde resimdeyken gezin</string>
+  <string name="settings_playback_pip_browse_description">Resim içinde resme, uygulamayı video bir köşesinde olacak şekilde geri getiren bir düğme eklenir; böylece video oynarken gezinebilirsiniz. Bu sırada fragmanlar kapalı kalır. Bir sonraki videodan itibaren geçerlidir.</string>
   <string name="settings_playback_subtitle_background_color">Arka Plan Rengi</string>
   <string name="settings_playback_subtitle_blur">Bulanıklık</string>
   <string name="settings_playback_subtitle_bold">Kalın</string>
@@ -4537,6 +4540,9 @@
   <string name="player_hud_p2p_streaming_consent">P2P yayın onayı</string>
   <string name="player_hud_pause">Duraklat</string>
   <string name="player_hud_exit_picture_in_picture">Pencere içinde pencereden çık</string>
+  <string name="player_hud_back_to_video">Videoya dön</string>
+  <string name="player_hud_pip_browse">Uygulamada gezin</string>
+  <string name="player_hud_pip_pop_out">Windows üzerinde ayır</string>
   <string name="player_hud_contrast">Kontrast</string>
   <string name="player_hud_brightness">Parlaklık</string>
   <string name="player_hud_saturation">Doygunluk</string>

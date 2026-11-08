@@ -9,6 +9,17 @@ import kotlin.test.assertTrue
 
 class YouTubeWebClientTest {
     @Test
+    fun `the session key ignores the cookies Google rotates on every answer`() {
+        val before = "PREF=f6=40000000; SID=abc; __Secure-3PSID=def; SAPISID=ghi/x; SIDCC=one; __Secure-1PSIDTS=sidts-1"
+        val after = "PREF=f6=40000000; SID=abc; __Secure-3PSID=def; SAPISID=ghi/x; SIDCC=two; __Secure-1PSIDTS=sidts-2"
+        assertEquals(YouTubeWebClient.sessionKey(before), YouTubeWebClient.sessionKey(after))
+        // Signed in again (or as another account): a different session.
+        assertTrue(YouTubeWebClient.sessionKey(before) != YouTubeWebClient.sessionKey(before.replace("SID=abc", "SID=zzz")))
+        // Not a sign-in jar at all: the jar itself.
+        assertEquals("PREF=x", YouTubeWebClient.sessionKey("PREF=x"))
+    }
+
+    @Test
     fun `the signed-in page tells the session state, visitor id, client version and account`() {
         // Fields as youtube.com's ytcfg carries them (read live, Nov 2, 2026).
         val html = """<script>ytcfg.set({"INNERTUBE_CLIENT_VERSION":"2.20261030.02.00","LOGGED_IN":true,""" +

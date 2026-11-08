@@ -11,6 +11,10 @@ import java.net.http.HttpResponse
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.time.Duration
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.zip.CRC32
 import java.util.zip.Inflater
 
@@ -414,12 +418,14 @@ internal class HttpZipRangeSource(
             response.body().close()
             error("Server ignored the byte range (HTTP ${response.statusCode()}).")
         }
-        return response.body()
+        return StallGuardInputStream(response.body())
     }
 
     private fun send(start: Long, endExclusive: Long): HttpResponse<InputStream> {
         val request = HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofMinutes(10))
+            // Covers only the wait for the response headers; a body that stops arriving is
+            // StallGuardInputStream's job.
+            .timeout(DOWNLOAD_HEADERS_TIMEOUT)
             .header("Accept", "application/octet-stream")
             .header("Range", "bytes=$start-${endExclusive - 1}")
             .GET()
@@ -436,6 +442,80 @@ internal class HttpZipRangeSource(
         response.headers().firstValue("Content-Range").orElse(null)
             ?.substringAfterLast('/')
             ?.toLongOrNull()
+}
+
+/** How long an update download may wait for its response headers. */
+internal val DOWNLOAD_HEADERS_TIMEOUT: Duration = Duration.ofSeconds(60)
+
+/** How long a read of an update download may go without a byte before it is abandoned. */
+internal const val DOWNLOAD_STALL_MILLIS = 30_000L
+
+private val stallWatchdog: ScheduledExecutorService by lazy {
+    Executors.newSingleThreadScheduledExecutor { task ->
+        Thread(task, "nuvio-download-watchdog").apply { isDaemon = true }
+    }
+}
+
+/**
+ * Fails a read that has gone [stallMillis] without data, by closing [delegate] from a watchdog
+ * thread. Java's HttpClient times out only the wait for the response headers: once a body is
+ * streaming, a read on a connection that has gone silent blocks forever, and the updater sat on a
+ * frozen progress bar until the user restarted the app (a reporter's log, 2026-11-07). Closing the
+ * body stream unblocks that read with an IOException, which [ResumingRangeStream] answers by
+ * requesting the rest of the range again and the full-zip download reports as a failed download.
+ */
+internal class StallGuardInputStream(
+    private val delegate: InputStream,
+    private val stallMillis: Long = DOWNLOAD_STALL_MILLIS,
+) : InputStream() {
+    @Volatile private var readStartedNanos = 0L
+    @Volatile private var reading = false
+    @Volatile private var stalled = false
+    private val check: ScheduledFuture<*> = run {
+        val period = (stallMillis / 4).coerceAtLeast(10L)
+        stallWatchdog.scheduleWithFixedDelay(::checkStall, period, period, TimeUnit.MILLISECONDS)
+    }
+
+    private fun checkStall() {
+        if (!reading || stalled) return
+        if (System.nanoTime() - readStartedNanos < TimeUnit.MILLISECONDS.toNanos(stallMillis)) return
+        stalled = true
+        runCatching { delegate.close() }
+    }
+
+    private fun stallError(cause: Throwable? = null) =
+        java.net.SocketTimeoutException("No data for ${stallMillis / 1000} s; the connection stalled.")
+            .apply { cause?.let(::initCause) }
+
+    override fun read(): Int {
+        val one = ByteArray(1)
+        val read = read(one, 0, 1)
+        return if (read < 0) -1 else one[0].toInt() and 0xFF
+    }
+
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        if (stalled) throw stallError()
+        readStartedNanos = System.nanoTime()
+        reading = true
+        val read = try {
+            delegate.read(buffer, offset, length)
+        } catch (error: java.io.IOException) {
+            throw if (stalled) stallError(error) else error
+        } finally {
+            reading = false
+        }
+        // A read that returns just as the watchdog fires is thrown away too; the caller's position
+        // has not moved, so a resume re-requests those bytes.
+        if (stalled) throw stallError()
+        return read
+    }
+
+    override fun available(): Int = if (stalled) 0 else delegate.available()
+
+    override fun close() {
+        check.cancel(false)
+        delegate.close()
+    }
 }
 
 private fun InputStream.readExactly(count: Int): ByteArray {

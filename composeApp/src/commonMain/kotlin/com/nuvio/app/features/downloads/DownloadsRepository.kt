@@ -278,6 +278,7 @@ object DownloadsRepository {
                 status = DownloadStatus.Paused,
                 awaitingSlot = false,
                 bytesPerSecond = null,
+                mergeFraction = null,
                 updatedAtEpochMs = DownloadsClock.nowEpochMs(),
                 errorMessage = null,
             )
@@ -573,6 +574,20 @@ object DownloadsRepository {
                     }
                 }
             },
+            onMerging = { mergedBytes, totalBytes ->
+                mutateItem(item.id, persistChange = false) { current ->
+                    if (current.status != DownloadStatus.Downloading || totalBytes <= 0L) {
+                        current
+                    } else {
+                        current.copy(
+                            mergeFraction = (mergedBytes.toDouble() / totalBytes.toDouble())
+                                .toFloat()
+                                .coerceIn(0f, 1f),
+                            bytesPerSecond = null,
+                        )
+                    }
+                }
+            },
             onSuccess = { localFileUri, totalBytes ->
                 activeHandles.remove(item.id)
                 mutateItem(item.id) { current ->
@@ -588,6 +603,7 @@ object DownloadsRepository {
                         bytesPerSecond = null,
                         errorMessage = null,
                         failureIsTransient = false,
+                        mergeFraction = null,
                         updatedAtEpochMs = DownloadsClock.nowEpochMs(),
                     )
                 }
@@ -606,6 +622,7 @@ object DownloadsRepository {
                             bytesPerSecond = null,
                             errorMessage = message.ifBlank { runBlocking { getString(Res.string.download_failed) } },
                             failureIsTransient = isTransient,
+                            mergeFraction = null,
                             updatedAtEpochMs = DownloadsClock.nowEpochMs(),
                         )
                     }

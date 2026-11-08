@@ -133,7 +133,11 @@ private object SignedInShell {
 
     suspend fun get(cookie: String, fresh: Boolean = false): YouTubeWebShell? = lock.withLock {
         val now = System.currentTimeMillis()
-        if (!fresh && forCookie == cookie && now - readAtMs < YouTubeWebClient.SHELL_TTL_MS) return@withLock shell
+        // Keyed by the account's sign-in cookies, not the whole jar: Google rotates some cookies (SIDCC,
+        // __Secure-1PSIDTS) on nearly every answer, and keying by the jar re-read this ~1 MB page before
+        // almost every feed request (Nov 8: three reads in two seconds on opening the tab).
+        val key = YouTubeWebClient.sessionKey(cookie)
+        if (!fresh && forCookie == key && now - readAtMs < YouTubeWebClient.SHELL_TTL_MS) return@withLock shell
         val read = runCatching {
             val response = TrailerExtractionPlatform.performRequest(
                 url = "$YOUTUBE_ORIGIN/",
@@ -151,7 +155,7 @@ private object SignedInShell {
         }
         shell = read
         // The cookie may have just been refreshed by the page's answer; key the cache by what is saved now.
-        forCookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: cookie
+        forCookie = YouTubeWebClient.sessionKey(YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: cookie)
         // A page that could not be read is tried again in two minutes rather than half an hour.
         readAtMs = if (read == null) now - YouTubeWebClient.SHELL_TTL_MS + 120_000L else now
         read

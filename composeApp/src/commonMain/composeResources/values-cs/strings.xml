@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">Stahování • %1$s</string>
   <string name="downloads_status_failed">Selhalo</string>
   <string name="downloads_status_paused">Pozastaveno • %1$s</string>
+  <string name="downloads_status_merging">Spojování částí • %1$s</string>
   <string name="downloads_status_queued">Ve frontě • %1$s</string>
   <string name="downloads_status_eta">Zbývá %1$s</string>
   <string name="episodes_cd_watched">Zhlédnuto</string>
@@ -1963,6 +1964,8 @@
   <string name="settings_playback_selected_count">%1$d vybráno</string>
   <string name="settings_playback_show_loading_overlay">Načítací obrazovka</string>
   <string name="settings_playback_show_loading_overlay_description">Zobrazovat načítací obrazovku, dokud se neobjeví první snímek videa.</string>
+  <string name="settings_playback_pip_browse">Procházet během obrazu v obraze</string>
+  <string name="settings_playback_pip_browse_description">Obraz v obraze dostane tlačítko, které vrátí aplikaci s videem v jejím rohu, takže můžete procházet, zatímco video hraje. Upoutávky mezitím zůstanou vypnuté. Platí od dalšího videa.</string>
   <string name="settings_playback_subtitle_background_color">Barva pozadí</string>
   <string name="settings_playback_subtitle_blur">Rozmazání</string>
   <string name="settings_playback_subtitle_bold">Tučné</string>
@@ -4545,6 +4548,9 @@
   <string name="player_hud_p2p_streaming_consent">Souhlas se streamováním P2P</string>
   <string name="player_hud_pause">Pozastavit</string>
   <string name="player_hud_exit_picture_in_picture">Ukončit obraz v obraze</string>
+  <string name="player_hud_back_to_video">Zpět na video</string>
+  <string name="player_hud_pip_browse">Procházet aplikaci</string>
+  <string name="player_hud_pip_pop_out">Vysunout nad Windows</string>
   <string name="player_hud_contrast">Kontrast</string>
   <string name="player_hud_brightness">Jas</string>
   <string name="player_hud_saturation">Sytost</string>

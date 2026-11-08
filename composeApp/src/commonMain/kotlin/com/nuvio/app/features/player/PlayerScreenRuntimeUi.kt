@@ -1250,6 +1250,8 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
                 dismissSkipSubmitToast()
                 return true
             }
+            // fork:pip-browse - in the corner box Back belongs to the app around it; the box's X closes it.
+            if (PlayerBrowsePip.active.value) return true
             // fork:youtube-mini-player - a YouTube tab video goes to the corner, the tab around it.
             if (handleYouTubeMiniPlayerBack()) return true
             flushWatchProgress()
@@ -1327,7 +1329,13 @@ private fun PlayerScreenRuntime.handlePlayerControlsAction(action: PlayerControl
             }
         }
         PlayerControlsAction.PictureInPicture -> {
-            pictureInPictureActive = !pictureInPictureActive
+            // fork:pip-browse - PiP is always the classic one over Windows (its Browse button goes on to the
+            // corner box over the app); in the box, the same action brings the video back to fill the window.
+            if (PlayerBrowsePip.active.value) {
+                PlayerBrowsePip.requestExpand()
+            } else {
+                pictureInPictureActive = !pictureInPictureActive
+            }
             controlsVisible = false
         }
         PlayerControlsAction.HeroTrailerMute -> Unit

@@ -217,7 +217,10 @@ private fun NativePlayerSurface(
     }
     val surfaceScope = rememberCoroutineScope()
     LaunchedEffect(playbackAttemptId, sourceUrl) {
-        if (com.nuvio.app.features.youtube.YouTubeWatchLayout.pageShown) {
+        // fork:pip-browse - the next video opening in the corner box: the app stays in sight too.
+        if (com.nuvio.app.features.youtube.YouTubeWatchLayout.pageShown ||
+            com.nuvio.app.features.player.PlayerBrowsePip.active.value
+        ) {
             // fork:youtube-watch-page - the video sits in a box on the page (or the mini player's corner):
             // the page stays in sight and only the box is dark, the surface being black until a frame
             // comes. A hand-over's shield goes once the page has had a frame to draw.
@@ -478,6 +481,8 @@ private fun NativePlayerSurface(
         DesktopScreensaver.playerActive = true
         val dispatcher = KeyEventDispatcher { event ->
             if (event.id != KeyEvent.KEY_PRESSED) return@KeyEventDispatcher false
+            // fork:pip-browse - the video in its corner box over the app: the keys drive the app.
+            if (com.nuvio.app.features.player.PlayerBrowsePip.active.value) return@KeyEventDispatcher false
             if (event.isMetaDown || event.isControlDown || event.isAltDown || event.isShiftDown) {
                 return@KeyEventDispatcher false
             }
@@ -642,7 +647,18 @@ private fun NativePlayerSurface(
             true
         }
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(dispatcher)
+        // fork:pip-browse - and the pad uses its app layout meanwhile.
+        val browsePipJob = surfaceScope.launch {
+            com.nuvio.app.features.player.PlayerBrowsePip.active.collect { cornerBox ->
+                GamepadContext.playerActive = !cornerBox
+                if (cornerBox) javax.swing.SwingUtilities.getWindowAncestor(host)?.let { window ->
+                    // The HUD (a WebView2 child) had the keyboard; the app around the box takes it back.
+                    javax.swing.SwingUtilities.invokeLater { window.toFront(); window.requestFocus() }
+                }
+            }
+        }
         onDispose {
+            browsePipJob.cancel()
             GamepadContext.playerActive = false
             DesktopScreensaver.playerActive = false
             GamepadContext.animeShaderActive = false
@@ -1151,12 +1167,17 @@ private fun NativePlayerSurface(
     val youTubeTheater by com.nuvio.app.features.youtube.YouTubeFeedRepository.theaterMode.collectAsState()
     // fork:youtube-mini-player - the tab drawn around the video in its corner box: the HUD shows nothing there either.
     val youTubeBrowsing by com.nuvio.app.features.youtube.YouTubeWatchLayout.browsing.collectAsState()
-    LaunchedEffect(controller, playerControlsState, postShowBoxed, youTubeMiniPlayer, youTubePageWindowed, youTubePageAvailable, youTubeTheater, youTubeBrowsing) {
+    // fork:pip-browse - the corner box over the app wears the same controls as YouTube's corner player.
+    val browsePip by com.nuvio.app.features.player.PlayerBrowsePip.active.collectAsState()
+    val browsePipAvailable by com.nuvio.app.features.player.PlayerBrowsePip.hostedPlayerAvailable.collectAsState()
+    LaunchedEffect(controller, playerControlsState, postShowBoxed, youTubeMiniPlayer, youTubePageWindowed, youTubePageAvailable, youTubeTheater, youTubeBrowsing, browsePip, browsePipAvailable) {
+        controller.pipBrowseAvailable = browsePipAvailable && !browsePip
+        controller.pipBrowseBox = browsePip
         val youTubeBrowse = youTubePageAvailable && youTubeBrowsing
-        val youTubePage = (youTubePageAvailable && youTubePageWindowed) || youTubeBrowse
+        val youTubePage = ((youTubePageAvailable && youTubePageWindowed) || youTubeBrowse) && !browsePip
         controller.watchPage = youTubePage
-        controller.miniPlayer = (youTubeMiniPlayer && youTubePage) || youTubeBrowse
-        controller.miniPlayerClosable = youTubeBrowse
+        controller.miniPlayer = (youTubeMiniPlayer && youTubePage) || youTubeBrowse || browsePip
+        controller.miniPlayerClosable = youTubeBrowse || browsePip
         controller.updateControls(
             if (youTubePage && !youTubeTheater && !postShowBoxed) {
                 // The watch page shows the comments and related videos beside the video, larger than
