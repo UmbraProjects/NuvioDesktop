@@ -65,12 +65,15 @@ jobs:
           Expand-Archive C:\libs\webview2.zip -DestinationPath C:\libs\webview2 -Force
           if (-not (Test-Path C:\libs\webview2\build\native\include\WebView2.h)) { throw "WebView2.h missing" }
 
+      # --no-configuration-cache on every Gradle step here: storing the configuration cache fails now and then on CI
+      # ("Configuration cache state could not be cached", a Kotlin classpath snapshot provider), failing the build before
+      # anything compiles. Each run configures from scratch anyway, so CI loses nothing by not storing it. Local builds keep it.
       # innertubex=true here too, the same as the distributable below: a different value changes the
       # compiled sources, so the two steps would each compile the whole app instead of sharing one compile.
       - name: Unit tests (music, pre-show, network)
         shell: pwsh
         run: >
-          ./gradlew.bat :composeApp:desktopTest
+          ./gradlew.bat :composeApp:desktopTest --no-configuration-cache
           --tests "com.nuvio.app.features.music.*"
           --tests "com.nuvio.app.features.preroll.*"
           --tests "com.nuvio.app.core.network.*"
@@ -86,7 +89,7 @@ jobs:
       - name: Build portable distributable
         shell: pwsh
         run: >
-          ./gradlew.bat :composeApp:createReleaseDistributable
+          ./gradlew.bat :composeApp:createReleaseDistributable --no-configuration-cache
           "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
@@ -148,7 +151,7 @@ jobs:
             $wix = (Get-ChildItem "C:\Program Files (x86)\WiX Toolset*\bin" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1)
             if ($wix) { $env:PATH = "$($wix.FullName);$env:PATH" }
           }
-          ./gradlew.bat :composeApp:packageReleaseMsi --rerun-tasks `
+          ./gradlew.bat :composeApp:packageReleaseMsi --no-configuration-cache --rerun-tasks `
             "-Pnuvio.innertubex=true" `
             "-Pnuvio.webview2.dir=C:/libs/webview2" `
             "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin" `
