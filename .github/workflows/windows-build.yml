@@ -80,12 +80,14 @@ jobs:
       # --no-configuration-cache -I .github/mirror.init.gradle on every Gradle step here: storing the configuration cache fails now and then on CI
       # ("Configuration cache state could not be cached", a Kotlin classpath snapshot provider), failing the build before
       # anything compiles. Each run configures from scratch anyway, so CI loses nothing by not storing it. Local builds keep it.
+      # downloadWix=false on the test and portable steps: WiX only makes the MSI (its own step below), and its download from
+      # GitHub's release servers times out (504) at times.
       # innertubex=true here too, the same as the distributable below: a different value changes the
       # compiled sources, so the two steps would each compile the whole app instead of sharing one compile.
       - name: Unit tests (music, pre-show, network)
         shell: pwsh
         run: >
-          ./gradlew.bat :composeApp:desktopTest --no-configuration-cache -I .github/mirror.init.gradle
+          ./gradlew.bat :composeApp:desktopTest --no-configuration-cache -Pcompose.desktop.application.downloadWix=false -I .github/mirror.init.gradle
           --tests "com.nuvio.app.features.music.*"
           --tests "com.nuvio.app.features.preroll.*"
           --tests "com.nuvio.app.core.network.*"
@@ -101,7 +103,7 @@ jobs:
       - name: Build portable distributable
         shell: pwsh
         run: >
-          ./gradlew.bat :composeApp:createReleaseDistributable --no-configuration-cache -I .github/mirror.init.gradle
+          ./gradlew.bat :composeApp:createReleaseDistributable --no-configuration-cache -Pcompose.desktop.application.downloadWix=false -I .github/mirror.init.gradle
           "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
