@@ -54,6 +54,7 @@ internal actual object DownloadsPlatformDownloader {
     actual fun start(
         request: DownloadPlatformRequest,
         onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
+        onMerging: (mergedBytes: Long, totalBytes: Long) -> Unit,
         onSuccess: (localFileUri: String, totalBytes: Long?) -> Unit,
         onFailure: (message: String, isTransient: Boolean) -> Unit,
     ): DownloadsTaskHandle {
@@ -87,6 +88,7 @@ internal actual object DownloadsPlatformDownloader {
                             request = request,
                             tempFile = tempFile,
                             onProgress = onProgress,
+                            onMerging = onMerging,
                         )
                         break
                     } catch (error: CancellationException) {
@@ -201,6 +203,7 @@ internal actual object DownloadsPlatformDownloader {
         request: DownloadPlatformRequest,
         tempFile: File,
         onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
+        onMerging: (mergedBytes: Long, totalBytes: Long) -> Unit,
     ): Long? {
         var resumeFromBytes = tempFile.takeIf { it.exists() }?.length()?.coerceAtLeast(0L) ?: 0L
         var attemptedRangeRequest = resumeFromBytes > 0L
@@ -258,6 +261,7 @@ internal actual object DownloadsPlatformDownloader {
                             tempFile = tempFile,
                             totalBytes = totalBytes,
                             onProgress = onProgress,
+                            onMerging = onMerging,
                         )
                         return totalBytes
                     } catch (error: RangeDownloadRejectedException) {
@@ -389,6 +393,7 @@ internal actual object DownloadsPlatformDownloader {
         tempFile: File,
         totalBytes: Long,
         onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
+        onMerging: (mergedBytes: Long, totalBytes: Long) -> Unit,
     ) {
         val ranges = planDownloadSegments(totalBytes, SEGMENT_CONNECTION_COUNT)
         prepareSegmentFiles(
@@ -400,7 +405,13 @@ internal actual object DownloadsPlatformDownloader {
         ranges.forEachIndexed { index, range ->
             val segmentFile = segmentFiles[index]
             if (segmentFile.length() > range.length) {
-                segmentFile.delete()
+                if (index == 0) {
+                    // The merge appends the other pieces onto the first one, so an interrupted
+                    // merge leaves it long. Its own bytes are still the first range.length bytes.
+                    truncateFile(segmentFile, range.length)
+                } else {
+                    segmentFile.delete()
+                }
             }
         }
         val existingBytes = ranges.indices.sumOf { index ->
@@ -443,7 +454,7 @@ internal actual object DownloadsPlatformDownloader {
                 )
             }
         }
-        mergeSegments(tempFile, segmentFiles)
+        mergeSegments(tempFile, segmentFiles.take(ranges.size), ranges, totalBytes, onMerging)
         onProgress(totalBytes, totalBytes)
     }
 
@@ -520,29 +531,55 @@ internal actual object DownloadsPlatformDownloader {
         }
     }
 
-    private fun mergeSegments(tempFile: File, segmentFiles: List<File>) {
-        val mergeFile = mergeFile(tempFile)
-        mergeFile.delete()
-        try {
-            FileOutputStream(mergeFile, false).use { output ->
-                segmentFiles.forEach { segmentFile ->
-                    FileInputStream(segmentFile).use { input ->
-                        input.copyTo(output, DOWNLOAD_BUFFER_BYTES)
+    /**
+     * Joins the pieces into [tempFile] by appending pieces 2..n onto piece 1 and renaming it, which
+     * copies a quarter less than writing a fresh file. On a large file this still takes a while,
+     * so progress goes to [onMerging] and the copy stops promptly on pause or delete. If it is
+     * interrupted, piece 1 is trimmed back to its own range on resume and the merge runs again.
+     */
+    private suspend fun mergeSegments(
+        tempFile: File,
+        segmentFiles: List<File>,
+        ranges: List<DownloadByteRange>,
+        totalBytes: Long,
+        onMerging: (mergedBytes: Long, totalBytes: Long) -> Unit,
+    ) {
+        val first = segmentFiles.first()
+        var mergedBytes = ranges.first().length
+        onMerging(mergedBytes, totalBytes)
+        var lastProgressAtNanos = System.nanoTime()
+        FileOutputStream(first, true).use { output ->
+            val buffer = ByteArray(DOWNLOAD_BUFFER_BYTES)
+            segmentFiles.drop(1).forEach { segmentFile ->
+                FileInputStream(segmentFile).use { input ->
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        output.write(buffer, 0, read)
+                        mergedBytes += read.toLong()
+                        val nowNanos = System.nanoTime()
+                        if (nowNanos - lastProgressAtNanos >= DOWNLOAD_PROGRESS_INTERVAL_NANOS) {
+                            onMerging(mergedBytes, totalBytes)
+                            lastProgressAtNanos = nowNanos
+                        }
                     }
                 }
-                output.flush()
             }
-            tempFile.delete()
-            if (!mergeFile.renameTo(tempFile)) {
-                mergeFile.copyTo(tempFile, overwrite = true)
-                mergeFile.delete()
-            }
-            segmentFiles.forEach { it.delete() }
-            segmentMetadataFile(tempFile).delete()
-        } catch (error: Throwable) {
-            mergeFile.delete()
-            throw error
+            output.flush()
         }
+        if (first.length() != totalBytes) {
+            throw IOException("Merged download is ${first.length()} of $totalBytes bytes")
+        }
+        tempFile.delete()
+        if (!first.renameTo(tempFile)) {
+            first.copyTo(tempFile, overwrite = true)
+            first.delete()
+        }
+        onMerging(totalBytes, totalBytes)
+        segmentFiles.drop(1).forEach { it.delete() }
+        mergeFile(tempFile).delete()
+        segmentMetadataFile(tempFile).delete()
     }
 
     private fun validateSuccessfulResponse(response: Response) {
@@ -682,6 +719,10 @@ private fun segmentFiles(tempFile: File): List<File> =
 
 private fun mergeFile(tempFile: File): File =
     File("${tempFile.absolutePath}.merge")
+
+private fun truncateFile(file: File, length: Long) {
+    java.io.RandomAccessFile(file, "rw").use { it.setLength(length) }
+}
 
 private fun segmentMetadataFile(tempFile: File): File =
     File("${tempFile.absolutePath}.segments")

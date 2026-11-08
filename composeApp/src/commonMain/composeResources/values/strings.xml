@@ -1048,6 +1048,7 @@
     <string name="downloads_status_downloading">Downloading • %1$s</string>
     <string name="downloads_status_failed">Failed</string>
     <string name="downloads_status_paused">Paused • %1$s</string>
+    <string name="downloads_status_merging">Merging parts • %1$s</string>
     <string name="downloads_status_queued">Queued • %1$s</string>
     <string name="downloads_status_eta">%1$s left</string>
     <string name="episodes_cd_watched">Watched</string>

@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">Laster ned • %1$s</string>
   <string name="downloads_status_failed">Mislyktes</string>
   <string name="downloads_status_paused">Pauset • %1$s</string>
+  <string name="downloads_status_merging">Slår sammen deler • %1$s</string>
   <string name="downloads_status_queued">I kø • %1$s</string>
   <string name="downloads_status_eta">%1$s igjen</string>
   <string name="episodes_cd_watched">Sett</string>

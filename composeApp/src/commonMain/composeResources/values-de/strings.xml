@@ -420,6 +420,7 @@
     <string name="downloads_status_downloading">Wird heruntergeladen • %1$s</string>
     <string name="downloads_status_failed">Fehlgeschlagen</string>
     <string name="downloads_status_paused">Pausiert • %1$s</string>
+    <string name="downloads_status_merging">Teile werden zusammengefügt • %1$s</string>
     <string name="episodes_cd_watched">Gesehen</string>
     <string name="episodes_season">Staffel %1$d</string>
     <string name="episodes_specials">Specials</string>

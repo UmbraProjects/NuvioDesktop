@@ -475,6 +475,7 @@
     <string name="downloads_status_downloading">Téléchargement • %1$s</string>
     <string name="downloads_status_failed">Échoué</string>
     <string name="downloads_status_paused">En pause • %1$s</string>
+    <string name="downloads_status_merging">Fusion des parties • %1$s</string>
     <string name="downloads_status_queued">En attente • %1$s</string>
     <string name="downloads_status_eta">%1$s restant</string>
     <string name="episodes_cd_watched">Vu</string>

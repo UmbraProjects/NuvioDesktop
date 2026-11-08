@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">Pobieranie • %1$s</string>
   <string name="downloads_status_failed">Niepowodzenie</string>
   <string name="downloads_status_paused">Wstrzymane • %1$s</string>
+  <string name="downloads_status_merging">Łączenie części • %1$s</string>
   <string name="downloads_status_queued">W kolejce • %1$s</string>
   <string name="downloads_status_eta">Pozostało: %1$s</string>
   <string name="episodes_cd_watched">Obejrzane</string>

@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">Download in corso • %1$s</string>
   <string name="downloads_status_failed">Fallito</string>
   <string name="downloads_status_paused">In pausa • %1$s</string>
+  <string name="downloads_status_merging">Unione delle parti • %1$s</string>
   <string name="downloads_status_queued">In coda • %1$s</string>
   <string name="downloads_status_eta">%1$s rimanenti</string>
   <string name="episodes_cd_watched">Visto</string>

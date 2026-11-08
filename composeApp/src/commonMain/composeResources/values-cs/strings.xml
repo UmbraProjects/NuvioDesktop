@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">Stahování • %1$s</string>
   <string name="downloads_status_failed">Selhalo</string>
   <string name="downloads_status_paused">Pozastaveno • %1$s</string>
+  <string name="downloads_status_merging">Spojování částí • %1$s</string>
   <string name="downloads_status_queued">Ve frontě • %1$s</string>
   <string name="downloads_status_eta">Zbývá %1$s</string>
   <string name="episodes_cd_watched">Zhlédnuto</string>

@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">Γίνεται εγκατάσταση • %1$s</string>
   <string name="downloads_status_failed">Απέτυχε</string>
   <string name="downloads_status_paused">Σε παύση • %1$s</string>
+  <string name="downloads_status_merging">Συνένωση τμημάτων • %1$s</string>
   <string name="downloads_status_queued">Σε αναμονή • %1$s</string>
   <string name="downloads_status_eta">Απομένουν %1$s</string>
   <string name="episodes_cd_watched">Παρακολουθήθηκε</string>

@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">A transferir • %1$s</string>
   <string name="downloads_status_failed">Falhou</string>
   <string name="downloads_status_paused">Em pausa • %1$s</string>
+  <string name="downloads_status_merging">A juntar partes • %1$s</string>
   <string name="downloads_status_queued">Em fila • %1$s</string>
   <string name="downloads_status_eta">Faltam %1$s</string>
   <string name="episodes_cd_watched">Visto</string>

@@ -387,6 +387,7 @@
     <string name="downloads_status_downloading">Descargando • %1$s</string>
     <string name="downloads_status_failed">Falló</string>
     <string name="downloads_status_paused">Pausado • %1$s</string>
+    <string name="downloads_status_merging">Uniendo partes • %1$s</string>
     <string name="episodes_cd_watched">Visto</string>
     <string name="episodes_season">Temporada %1$d</string>
     <string name="episodes_specials">Especiales</string>

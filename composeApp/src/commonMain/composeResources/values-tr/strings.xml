@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">İndiriliyor • %1$s</string>
   <string name="downloads_status_failed">Olmadı</string>
   <string name="downloads_status_paused">Duraklatıldı • %1$s</string>
+  <string name="downloads_status_merging">Parçalar birleştiriliyor • %1$s</string>
   <string name="downloads_status_queued">Sırada • %1$s</string>
   <string name="downloads_status_eta">%1$s kaldı</string>
   <string name="episodes_cd_watched">İzlendi</string>

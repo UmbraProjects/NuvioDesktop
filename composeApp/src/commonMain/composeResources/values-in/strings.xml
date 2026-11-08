@@ -998,6 +998,7 @@
   <string name="downloads_status_downloading">Mengunduh • %1$s</string>
   <string name="downloads_status_failed">Gagal</string>
   <string name="downloads_status_paused">Dijeda • %1$s</string>
+  <string name="downloads_status_merging">Menggabungkan bagian • %1$s</string>
   <string name="downloads_status_queued">Antre • %1$s</string>
   <string name="downloads_status_eta">%1$s lagi</string>
   <string name="episodes_cd_watched">Ditonton</string>
