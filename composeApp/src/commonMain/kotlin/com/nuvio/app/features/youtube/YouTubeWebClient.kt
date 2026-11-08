@@ -52,6 +52,18 @@ internal object YouTubeWebClient {
         "accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     )
 
+    private val SESSION_COOKIE = Regex("""(?:^|;\s*)(SAPISID|__Secure-3PAPISID|SID|__Secure-3PSID)=([^;]*)""")
+
+    /**
+     * Which signed-in session [cookie] is: its long-lived sign-in cookies only. The rest of the jar
+     * (SIDCC, __Secure-1PSIDTS and the like) is rotated by Google on most answers, so it says nothing
+     * about whether the session changed. The whole jar when it has none of them.
+     */
+    fun sessionKey(cookie: String): String {
+        val parts = SESSION_COOKIE.findAll(cookie).map { "${it.groupValues[1]}=${it.groupValues[2]}" }.sorted().toList()
+        return if (parts.isEmpty()) cookie else parts.joinToString(";")
+    }
+
     /** Google's "Sorry..." page or a 429: slow down, the sign-in is not the problem. */
     fun isRefusal(status: Int, body: String): Boolean =
         status == 429 || (status == 403 && body.contains("Sorry", ignoreCase = true))

@@ -189,7 +189,9 @@ fun YouTubeTabScreen(
     var pendingReturn by remember { mutableStateOf<YouTubeReturnPoint?>(null) }
     // fork:youtube-mini-player - the tab picks up where the mini player's copy of it was left when
     // the mini player closes: same page, same pages behind it, same scroll (YouTubeTabCarryOver).
-    val carried = remember { if (opensQueueNext) YouTubeTabCarryOver.take() else null }
+    // Otherwise where the tab was last left this session (Subscriptions, a channel, scrolled down it), so
+    // coming back from a video does not always start on Home.
+    val carried = remember { (if (opensQueueNext) YouTubeTabCarryOver.take() else null) ?: YouTubeTabLastPlace.place }
     remember(carried) {
         if (carried != null) {
             selectedName = carried.selectedName
@@ -289,7 +291,15 @@ fun YouTubeTabScreen(
     }
     // The feed waits for the channel: loading it first would show the wrong channel's feed and then swap.
     LaunchedEffect(kind, auth.signedIn, channel.resolved, channel.pageId, channel.needsChoice) {
-        if (auth.signedIn && channel.resolved && !channel.needsChoice) YouTubeFeedRepository.load(kind)
+        if (auth.signedIn && channel.resolved && !channel.needsChoice) {
+            YouTubeFeedRepository.load(kind)
+            // Home and Subscriptions are a click apart: the other one is fetched alongside, so switching is instant.
+            when (kind) {
+                YouTubeFeedKind.Home -> YouTubeFeedRepository.load(YouTubeFeedKind.Subscriptions)
+                YouTubeFeedKind.Subscriptions -> YouTubeFeedRepository.load(YouTubeFeedKind.Home)
+                else -> Unit
+            }
+        }
     }
 
     val scope = rememberCoroutineScope()
@@ -435,16 +445,15 @@ fun YouTubeTabScreen(
         val back = pendingReturn?.takeIf { it.page == selectedName && !it.ownGrid }
         gridState.scrollToItem(back?.index ?: 0, back?.offset ?: 0)
     }
-    // The mini player's copy hands its place over as it goes (to the next video, or for good).
-    if (!opensQueueNext) {
-        val latestSelected by rememberUpdatedState(selectedName)
-        val latestBackStack by rememberUpdatedState(backStack)
-        androidx.compose.runtime.DisposableEffect(gridState) {
-            onDispose {
-                YouTubeTabCarryOver.put(
-                    YouTubeTabPlace(latestSelected, latestBackStack, gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset),
-                )
-            }
+    // The mini player's copy hands its place over as it goes (to the next video, or for good); either copy
+    // leaves it for the next time the tab is shown this session.
+    val latestSelected by rememberUpdatedState(selectedName)
+    val latestBackStack by rememberUpdatedState(backStack)
+    androidx.compose.runtime.DisposableEffect(gridState) {
+        onDispose {
+            val place = YouTubeTabPlace(latestSelected, latestBackStack, gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset)
+            if (!opensQueueNext) YouTubeTabCarryOver.put(place)
+            YouTubeTabLastPlace.place = place
         }
     }
     // Shown again after a while (switched to, the tab reopened, the player closed): a feed that
@@ -2252,6 +2261,15 @@ internal data class YouTubeTabPlace(val selectedName: String, val backStack: Lis
  * fork:youtube-mini-player - the mini player's copy of the tab leaves its place here as it goes; the
  * tab itself takes it the next time it comes on screen (the player closed), once.
  */
+/**
+ * Where the tab was last left this session (not saved across restarts): it opens there again, after a
+ * video as much as after another tab, rather than always on Home. A sign-in change forgets it.
+ */
+internal object YouTubeTabLastPlace {
+    @kotlin.concurrent.Volatile
+    var place: YouTubeTabPlace? = null
+}
+
 internal object YouTubeTabCarryOver {
     private var place: YouTubeTabPlace? = null
     private var putAtMs = 0L

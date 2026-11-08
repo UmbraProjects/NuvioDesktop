@@ -1676,6 +1676,12 @@ private fun MainAppContent(
         }.collectAsStateWithLifecycle()
         val liveTvTabVisible = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
         val youTubeTabVisible = com.nuvio.app.features.youtube.rememberYouTubeTabVisible() // fork:youtube-mode
+        // fork:youtube-mode - the tab's feeds fetched a little after startup, so opening it shows them at once.
+        LaunchedEffect(youTubeTabVisible) {
+            if (!youTubeTabVisible) return@LaunchedEffect
+            kotlinx.coroutines.delay(8_000)
+            com.nuvio.app.features.youtube.YouTubeFeedRepository.warm()
+        }
         val desktopAppUiScaleAppliesToDetails by remember {
             ThemeSettingsRepository.desktopAppUiScaleAppliesToDetails
         }.collectAsStateWithLifecycle()

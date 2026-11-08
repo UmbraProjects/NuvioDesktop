@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -965,6 +966,7 @@ object YouTubeFeedRepository {
     /** Forgets every feed, for a sign-in or sign-out: the old pages belong to the other session. */
     fun clear() {
         feedGeneration++
+        YouTubeTabLastPlace.place = null
         _feeds.value = YouTubeFeedKind.entries.associateWith { YouTubeFeedState() }
         _channel.value = YouTubeChannelState()
         _subscribedChannels.value = YouTubeChannelListState()
@@ -976,6 +978,22 @@ object YouTubeFeedRepository {
     private fun forgetWatchLater() {
         _watchLater.value = emptySet()
         watchLaterAsked = false
+    }
+
+    /**
+     * Gets the tab's first screen ready before it is opened: the signed-in page and the channel list
+     * (which every feed waits for), then Home and Subscriptions. Called a little after startup while the
+     * tab is in the navigation bar; each step does nothing when already done, so it costs nothing twice.
+     */
+    fun warm() {
+        if (!YouTubeMusicAuth.isSignedIn) return
+        loadChannels()
+        scope.launch {
+            val channel = _channel.first { it.resolved && !it.loading }
+            if (channel.needsChoice || channel.error != null) return@launch
+            load(YouTubeFeedKind.Home)
+            load(YouTubeFeedKind.Subscriptions)
+        }
     }
 
     /** Fetches the channel list once per session (again after a failure) and settles which channel the feeds act as. */
