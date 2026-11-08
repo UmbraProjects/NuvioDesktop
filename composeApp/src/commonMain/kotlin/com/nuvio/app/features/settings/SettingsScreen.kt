@@ -106,6 +106,8 @@ import androidx.compose.foundation.focusable
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -294,6 +296,9 @@ fun SettingsScreen(
 ) {
     val homeKeyFocusRequester = remember { FocusRequester() }
     var settingsSearchHasFocus by remember { mutableStateOf(false) }
+    // fork:settings-arrows - true while the page itself (not one of its rows) holds focus; see arrowKeyModifier.
+    var settingsRootFocused by remember { mutableStateOf(false) }
+    val settingsFocusManager = LocalFocusManager.current
     // Any editable field on the page (e.g. a Local Library catalog name) suppresses the shortcut so
     // typing "H" doesn't jump to Home. The search bar keeps its own flag for the same reason.
     val textInputActive by TextInputFocusTracker.active.collectAsStateWithLifecycle()
@@ -301,6 +306,7 @@ fun SettingsScreen(
     // which consume their own keystrokes, are never disrupted.
     val homeKeyModifier = if (isDesktop && onNavigateToHome != null) {
         Modifier
+            .onFocusChanged { settingsRootFocused = it.isFocused }
             .focusRequester(homeKeyFocusRequester)
             .focusable()
             .onKeyEvent { event ->
@@ -310,6 +316,32 @@ fun SettingsScreen(
                     false
                 }
             }
+    } else {
+        Modifier
+    }
+    // fork:settings-arrows - Settings had no arrow-key navigation: the page holds focus as one block (for H above),
+    // and nothing moved it on, so the arrow keys - and a controller's D-pad and the phone remote, which send them -
+    // did nothing here. This moves focus the way the setup wizard does. It runs in the bubble phase, after the rows:
+    // a text field or a slider keeps Left/Right for itself. From the page itself (nothing inside focused yet) the
+    // first press goes into the page's first or last row rather than searching outside it.
+    val arrowKeyModifier = if (isDesktop) {
+        Modifier.onKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+            val forward = event.key == Key.DirectionDown || event.key == Key.DirectionRight
+            val direction = when (event.key) {
+                Key.DirectionUp -> FocusDirection.Up
+                Key.DirectionDown -> FocusDirection.Down
+                Key.DirectionLeft -> FocusDirection.Left
+                Key.DirectionRight -> FocusDirection.Right
+                else -> return@onKeyEvent false
+            }
+            if (settingsRootFocused) {
+                settingsFocusManager.moveFocus(if (forward) FocusDirection.Next else FocusDirection.Previous)
+            } else {
+                settingsFocusManager.moveFocus(direction) ||
+                    settingsFocusManager.moveFocus(if (forward) FocusDirection.Next else FocusDirection.Previous)
+            }
+        }
     } else {
         Modifier
     }
@@ -324,7 +356,7 @@ fun SettingsScreen(
     }
 
     BoxWithConstraints(
-        modifier = modifier.then(homeKeyModifier).fillMaxSize(),
+        modifier = modifier.then(homeKeyModifier).then(arrowKeyModifier).fillMaxSize(),
     ) {
         val playerSettingsUiState by remember {
             PlayerSettingsRepository.ensureLoaded()
