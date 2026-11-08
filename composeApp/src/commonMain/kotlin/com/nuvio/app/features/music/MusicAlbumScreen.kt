@@ -730,15 +730,35 @@ private fun AlbumContent(
     }
     var lineageLoading by remember(album.browseId) { mutableStateOf(false) }
     var lineageAsked by remember(album.browseId) { mutableStateOf(false) }
+    // True once the AI has answered or failed, so the panel stops saying it is asking the AI.
+    var lineageAiDone by remember(album.browseId) { mutableStateOf(!lineageAiReady) }
     LaunchedEffect(lensesOn, lens, album.browseId) {
         if (!lensesOn || lens != AlbumLens.Lineage || lineageAt == null || lensArtist == null) return@LaunchedEffect
         // An open-data lineage kept from before an AI key was set still asks the AI once; the AI's answer replaces it.
         val kept = lineage
-        if (kept != null && (kept.byAi || !lineageAiReady)) return@LaunchedEffect
+        if (kept != null && (kept.byAi || !lineageAiReady)) {
+            lineageAiDone = true
+            return@LaunchedEffect
+        }
         lineageLoading = kept == null
-        lineage = (if (lineageAiReady) runCatching { LineagePicks.load(album.browseId, lensArtist, album.title, lineageAt) }.getOrNull() else null)
-            ?: kept
-            ?: runCatching { OpenLineage.load(album.browseId, lensArtist, lineageArtistId, lineageAt) }.getOrNull()
+        // Open data is looked up alongside the AI, not after it: an AI that is rate limited or slow held the panel on
+        // "Asking the AI…" for a minute. The open answer shows as soon as it arrives; the AI's, when it comes, replaces it.
+        kotlinx.coroutines.coroutineScope {
+            val open = if (kept == null) {
+                launch {
+                    val found = runCatching { OpenLineage.load(album.browseId, lensArtist, lineageArtistId, lineageAt) }.getOrNull()
+                    if (found != null && lineage?.byAi != true) lineage = found
+                }
+            } else null
+            if (lineageAiReady) {
+                val ai = runCatching { LineagePicks.load(album.browseId, lensArtist, album.title, lineageAt) }.getOrNull()
+                lineageAiDone = true
+                if (ai != null) {
+                    open?.cancel()
+                    lineage = ai
+                }
+            }
+        }
         lineageLoading = false
         lineageAsked = true
     }
@@ -762,7 +782,7 @@ private fun AlbumContent(
     val (branchRows, branchReleases) = remember(lineage, libraryState.artists) { lineageRows(lineage?.after.orEmpty()) }
     val lineageEmpty = when {
         lineageAt == null -> "This album has no year to trace from."
-        lineageLoading || (lineage == null && !lineageAsked) -> if (lineageAiReady) "Asking the AI…" else "Looking up this album's lineage…"
+        lineageLoading || (lineage == null && !lineageAsked) -> if (lineageAiReady && !lineageAiDone) "Asking the AI…" else "Looking up this album's lineage…"
         lineage == null -> "Nothing found for this album's lineage. It is looked up again tomorrow."
         else -> "Nothing found on this side."
     }

@@ -15,6 +15,11 @@ import com.nuvio.app.features.music.booklet.isFresh
 import com.nuvio.app.features.music.defaultMusicCatalog
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -57,6 +62,12 @@ private const val WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
 
 /** How many related artists' pages are read, at most, to fill the gaps. */
 private const val LINEAGE_RELATED_LOOKUPS = 10
+
+/** How many related artists' pages are fetched at once. */
+private const val RELATED_AT_ONCE = 4
+
+/** How long Wikidata's query service gets; the related artists fill in without it. */
+private const val WIKIDATA_TIMEOUT_MS = 12_000L
 
 private const val OPEN_LINEAGE_TTL_MS = 30L * 24 * 60 * 60 * 1000
 private const val OPEN_LINEAGE_MISS_TTL_MS = 24L * 60 * 60 * 1000
@@ -213,15 +224,18 @@ internal object OpenLineage {
             ?.takeIf { it.isFresh(now(), OPEN_LINEAGE_TTL_MS, OPEN_LINEAGE_MISS_TTL_MS) }
             ?.let { kept -> return@withLock kept.booklet?.intro?.let { json -> parseLineage(json, year, artist)?.copy(byAi = false, sources = lineageSources(json)) } }
 
-        val wikidata = wikidataRows(artist)
+        val startedAt = now()
+        // Wikidata and the related artists' pages are asked at the same time: one after the other took a minute.
+        val (wikidata, relatedPages) = coroutineScope {
+            val wiki = async { wikidataRows(artist) }
+            val pages = async { artistBrowseId?.let { relatedPages(it) }.orEmpty() }
+            wiki.await() to pages.await()
+        }
         val before = pickWikidataLineage(wikidata, LineageSide.Before, year, artist, LINEAGE_ROWS, "Named as an influence").toMutableList()
         val after = pickWikidataLineage(wikidata, LineageSide.After, year, artist, LINEAGE_ROWS, "Names $artist as an influence").toMutableList()
         val wikiBefore = before.size
         val wikiAfter = after.size
-
-        if (artistBrowseId != null && (before.size < LINEAGE_ROWS || after.size < LINEAGE_ROWS)) {
-            fillFromRelated(artistBrowseId, artist, year, before, after)
-        }
+        fillFromRelated(relatedPages, artist, year, before, after)
         val relatedBefore = before.size - wikiBefore
         val relatedAfter = after.size - wikiAfter
 
@@ -239,46 +253,68 @@ internal object OpenLineage {
         ).takeIf { it.before.isNotEmpty() || it.after.isNotEmpty() }
         val kept = lineage?.let { AlbumBooklet(encodeLineageJson(it), emptyList(), emptyMap(), BookletSource.Wikipedia) }
         BookletCache.put(key(albumId), encodeBookletEntry(BookletEntry(now(), kept)))
-        log.i { "open lineage for $artist ($year): before $wikiBefore wikidata + $relatedBefore related, after $wikiAfter + $relatedAfter" }
+        log.i { "open lineage for $artist ($year): before $wikiBefore wikidata + $relatedBefore related, after $wikiAfter + $relatedAfter (${now() - startedAt} ms)" }
         lineage
     }
 
     private suspend fun wikidataRows(artist: String): List<WikidataLineageRow> {
         val url = "$WIKIDATA_SPARQL?format=json&query=" + wikidataLineageQuery(artist).encodeURLParameter()
         val body = try {
-            withTimeoutOrNull(20_000L) {
+            withTimeoutOrNull(WIKIDATA_TIMEOUT_MS) {
                 httpGetTextWithHeaders(url, mapOf("User-Agent" to WIKIDATA_USER_AGENT, "Accept" to "application/sparql-results+json"))
-            }
+            }.also { if (it == null) log.i { "Wikidata lineage for $artist: no answer in ${WIKIDATA_TIMEOUT_MS / 1000}s" } }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            log.d { "Wikidata lineage for $artist failed: ${error.message}" }
+            log.i { "Wikidata lineage for $artist failed: ${error.message}" }
             null
         } ?: return emptyList()
         return parseWikidataLineage(body)
     }
 
-    /** Tops up both sides from the related artists on [artistBrowseId]'s page, each artist at most once a side. */
-    private suspend fun fillFromRelated(
-        artistBrowseId: String,
+    /**
+     * The pages of the related artists on [artistBrowseId]'s page (its "Fans might also like"), in its order, fetched a few at
+     * a time: one after another, ten pages took most of a minute.
+     */
+    private suspend fun relatedPages(artistBrowseId: String): List<com.nuvio.app.features.music.MusicArtist> {
+        val catalog = defaultMusicCatalog()
+        val related = try {
+            catalog.artist(artistBrowseId)?.related.orEmpty()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        val ids = related.take(LINEAGE_RELATED_LOOKUPS).mapNotNull { it.browseId }
+        val permits = Semaphore(RELATED_AT_ONCE)
+        return coroutineScope {
+            ids.map { id ->
+                async {
+                    permits.withPermit {
+                        try {
+                            catalog.artist(id)
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (_: Throwable) {
+                            null
+                        }
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+    }
+
+    /** Tops up both sides from [pages] (the related artists, in order), each artist at most once a side. */
+    private fun fillFromRelated(
+        pages: List<com.nuvio.app.features.music.MusicArtist>,
         artist: String,
         year: Int,
         before: MutableList<LineageRecord>,
         after: MutableList<LineageRecord>,
     ) {
-        val catalog = defaultMusicCatalog()
-        val related = runCatching { catalog.artist(artistBrowseId) }.getOrNull()?.related.orEmpty()
         val why = "Fans of $artist play them"
-        for (other in related.take(LINEAGE_RELATED_LOOKUPS)) {
+        for (page in pages) {
             if (before.size >= LINEAGE_ROWS && after.size >= LINEAGE_ROWS) break
-            val otherId = other.browseId ?: continue
-            val page = try {
-                catalog.artist(otherId)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                null
-            } ?: continue
             val who = lineageArtistKey(page.name)
             if (before.size < LINEAGE_ROWS && before.none { lineageArtistKey(it.artist) == who }) {
                 pickRelatedRecord(page.name, page.albums, LineageSide.Before, year, why)?.let(before::add)
@@ -289,3 +325,4 @@ internal object OpenLineage {
         }
     }
 }
+
