@@ -275,6 +275,10 @@ internal fun ArtistStage(
             delay(RETURN_SETTLE_MS)
             scroll.scrollTo(scroll.maxValue)
         }
+        // A new visit (another artist opened from Similar taste, the search, ...) starts on the hero. The page root's first-control
+        // focus can land on a control in the panels before Play Essentials takes it, and scrolls part way down to show it; once
+        // Play Essentials has focus the page goes back to the top.
+        val onHeroFocused: () -> Unit = { if (!returnToPanels) scope.launch { scroll.scrollTo(0) } }
         Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             StageHero(
                 artist = artist,
@@ -284,6 +288,8 @@ internal fun ArtistStage(
                 refreshing = refreshing,
                 canShuffle = canShuffle,
                 topLabel = topLabel,
+                takeFocus = !returnToPanels,
+                onHeroFocused = onHeroFocused,
                 onPlayEssentials = { playEssentials() },
                 onShuffle = onShuffle,
                 onPlayTop = onPlayTop,
@@ -393,6 +399,10 @@ private fun StageHero(
     refreshing: String?,
     canShuffle: Boolean,
     topLabel: String?,
+    /** False when coming back to the panels: Play Essentials then leaves focus where it returns, so the page is not pulled up. */
+    takeFocus: Boolean,
+    /** Called once Play Essentials has taken focus on opening the page. */
+    onHeroFocused: () -> Unit,
     onPlayEssentials: () -> Unit,
     onShuffle: () -> Unit,
     onPlayTop: () -> Unit,
@@ -476,10 +486,14 @@ private fun StageHero(
             val linkCount = groupLinks(artist.links).values.sumOf { it.size }
             val playFocus = remember(artist.id) { FocusRequester() }
             LaunchedEffect(artist.id) {
+                if (!takeFocus) return@LaunchedEffect
                 // Asked a few times: the page root's own first-control request lands first.
                 repeat(10) {
                     delay(80)
-                    if (runCatching { playFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+                    if (runCatching { playFocus.requestFocus() }.getOrDefault(false)) {
+                        onHeroFocused()
+                        return@LaunchedEffect
+                    }
                 }
             }
             FlowRow(
