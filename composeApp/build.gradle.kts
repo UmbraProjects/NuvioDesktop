@@ -2610,17 +2610,19 @@ val createNativeDistributable = tasks.register("createNativeDistributable") {
 // -Pnuvio.native.skipSmoke=true: zip without the smoke gate. Local iteration only, never a release.
 val nativeSkipSmoke = providers.gradleProperty("nuvio.native.skipSmoke").orNull.toBoolean()
 
-// Plan step 5: launches the laid-out exe 15 times (plus once as the player smoke harness) against
+// Plan step 5: launches the laid-out exe 5 times (plus once as the player smoke harness) against
 // a throwaway data directory and fails on an early exit, a missing start-screen / self-test marker,
 // a DPI-virtualised window or a native failure in the log. The gate before every nightly upload;
-// no CI can build a 1:1 release (the SVP DLLs are not in the repo). Opens real windows for ~2 min.
+// no CI can build a 1:1 release (the SVP DLLs are not in the repo). Opens real windows for under a minute.
+// Was 15 runs while the native exe was new (the skiko FontMgr race failed 1 in 3-7); cut to 5 on
+// 2026-11-08 after months without a real failure.
 val nativeSmoke = tasks.register<Exec>("nativeSmoke") {
     group = "native image"
     description = "Launches the native build repeatedly with its self-test and fails on any native failure (plan step 5)."
     notCompatibleWithConfigurationCache("Launches the host-local native image.")
     enabled = isWindowsHost
     dependsOn(createNativeDistributable)
-    val runs = providers.gradleProperty("nuvio.native.smokeRuns").orNull ?: "15"
+    val runs = providers.gradleProperty("nuvio.native.smokeRuns").orNull ?: "5"
     commandLine(
         "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
         "-File", project.file("scripts/native-smoke.ps1").absolutePath,
