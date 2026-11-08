@@ -376,6 +376,8 @@ class NextUpArtworkRefreshTest {
                 cachedCard("tt1", episodeThumbnail = "still.jpg", released = "2026-09-01"),
             ),
             todayIsoDate = "2026-09-01",
+            // The air-date re-check has its own tests; this one is about date-only precision.
+            wasAirDateRechecked = { true },
         )
 
         assertEquals(listOf("tt1"), plan.candidatesToResolve.map { it.content.id })
@@ -396,6 +398,8 @@ class NextUpArtworkRefreshTest {
                 ),
             ),
             todayIsoDate = "2026-09-01",
+            // The air-date re-check has its own tests; this one is about date-only precision.
+            wasAirDateRechecked = { true },
         )
 
         assertTrue(plan.candidatesToResolve.isEmpty())
@@ -410,6 +414,8 @@ class NextUpArtworkRefreshTest {
                 cachedCard("tt1", episodeThumbnail = "still.jpg", released = "2026-09-20"),
             ),
             todayIsoDate = "2026-09-01",
+            // The air-date re-check has its own tests; this one is about date-only precision.
+            wasAirDateRechecked = { true },
         )
 
         assertTrue(plan.candidatesToResolve.isEmpty())
@@ -424,6 +430,8 @@ class NextUpArtworkRefreshTest {
                 cachedCard("tt1", episodeThumbnail = null, released = "2026-09-01"),
             ),
             todayIsoDate = "2026-09-01",
+            // The air-date re-check has its own tests; this one is about date-only precision.
+            wasAirDateRechecked = { true },
         )
 
         assertEquals(listOf("tt1"), plan.candidatesToResolve.map { it.content.id })
@@ -458,5 +466,110 @@ class NextUpArtworkRefreshTest {
 
         assertEquals(emptySet(), plan.staleArtworkContentIds)
         assertTrue(plan.candidatesToResolve.isEmpty())
+    }
+
+    // 2026-11-08T12:00Z, the day Sweetpea's stale card was diagnosed.
+    private val sweetpeaNowMs = 1_794_139_200_000L
+
+    @Test
+    fun `a cached card for an episode still to come is re-checked once per run`() {
+        // Sweetpea S2E1: cached as 2026-11-05T21:00Z, later moved to 2026-11-26 by the addon.
+        val cards = mapOf(
+            cachedCard("tt1", episodeThumbnail = "still.jpg", released = "2026-11-26T21:00:00.000Z"),
+        )
+
+        val first = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = cards,
+            nowMs = sweetpeaNowMs,
+            wasAirDateRechecked = { false },
+        )
+        assertEquals(listOf("tt1"), first.candidatesToResolve.map { it.content.id })
+        assertEquals(setOf("tt1"), first.staleAirDateContentIds)
+
+        val again = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = cards,
+            nowMs = sweetpeaNowMs,
+            wasAirDateRechecked = { true },
+        )
+        assertTrue(again.candidatesToResolve.isEmpty())
+    }
+
+    @Test
+    fun `a cached card showing a new-episode badge is re-checked`() {
+        val plan = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = mapOf(
+                cachedCard("tt1", episodeThumbnail = "still.jpg", released = "2026-11-05T21:00:00.000Z"),
+            ),
+            nowMs = sweetpeaNowMs,
+            wasAirDateRechecked = { false },
+        )
+
+        assertEquals(setOf("tt1"), plan.staleAirDateContentIds)
+    }
+
+    @Test
+    fun `a card that aired long ago is not re-checked`() {
+        val plan = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = mapOf(
+                cachedCard("tt1", episodeThumbnail = "still.jpg", released = "2026-01-05T21:00:00.000Z"),
+            ),
+            nowMs = sweetpeaNowMs,
+            wasAirDateRechecked = { false },
+        )
+
+        assertTrue(plan.candidatesToResolve.isEmpty())
+        assertTrue(plan.staleAirDateContentIds.isEmpty())
+    }
+
+    @Test
+    fun `a fresh no-card outcome removes the cached card`() {
+        val cached = mapOf(
+            cachedCard("tt1", episodeThumbnail = "still.jpg"),
+            cachedCard("tt2", episodeThumbnail = "still.jpg"),
+        )
+
+        val merged = mergeNextUpPassResults(
+            cachedBySeries = cached,
+            definitiveNoCardContentIds = setOf("tt1"),
+            freshResults = emptyMap(),
+        )
+
+        assertEquals(setOf("tt2"), merged.keys)
+    }
+
+    @Test
+    fun `a fresh card replaces the cached one`() {
+        val fresh = cachedCard("tt1", episodeThumbnail = "new.jpg")
+        val merged = mergeNextUpPassResults(
+            cachedBySeries = mapOf(cachedCard("tt1", episodeThumbnail = "old.jpg")),
+            definitiveNoCardContentIds = emptySet(),
+            freshResults = mapOf(fresh),
+        )
+
+        assertEquals("new.jpg", merged.getValue("tt1").second.episodeThumbnail)
+    }
+
+    @Test
+    fun `a date re-check goes ahead of uncached seeds`() {
+        // 158 finished shows with no cached card used to fill the 32-a-launch budget first.
+        val uncached = (1..40).map { candidate("tt-new-$it") }
+        val plan = planNextUpResolution(
+            completedSeriesCandidates = uncached + candidate("tt1") + candidate("tt2"),
+            cachedNextUpItems = mapOf(
+                cachedCard("tt1", episodeThumbnail = null),
+                cachedCard("tt2", episodeThumbnail = "still.jpg", released = "2026-11-26T21:00:00.000Z"),
+            ),
+            nowMs = sweetpeaNowMs,
+            wasAirDateRechecked = { false },
+        )
+
+        val order = plan.candidatesToResolve.map { it.content.id }
+        assertEquals("tt2", order.first())
+        // Missing artwork still waits behind the never-resolved seeds.
+        assertEquals("tt1", order.last())
     }
 }

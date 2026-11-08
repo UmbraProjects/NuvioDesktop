@@ -1620,9 +1620,16 @@ fun HomeScreen(
                 val seedChanged = currentSeason != cached.seedSeason || currentEpisode != cached.seedEpisode
                 if (seedChanged) return@mapNotNull null
             }
+            // A pass looked at this series and kept no card for it. Since a failed fetch keeps the
+            // cached card in the pass's results, absence here means the current metadata has no
+            // card (caught up, or an air date that moved back into the future).
+            val passHasRun = if (isTraktProgressActive) {
+                watchProgressUiState.hasLoadedRemoteProgress
+            } else {
+                watchedUiState.isLoaded
+            }
             if (
-                isTraktProgressActive &&
-                watchProgressUiState.hasLoadedRemoteProgress &&
+                passHasRun &&
                 cached.contentId in processedNextUpContentIds &&
                 cached.contentId !in nextUpItemsBySeries.keys
             ) {
@@ -1970,6 +1977,8 @@ fun HomeScreen(
             val semaphore = Semaphore(NEXT_UP_RESOLUTION_CONCURRENCY)
             val freshResults = mutableMapOf<String, Pair<Long, ContinueWatchingItem>>()
             val processedFreshContentIds = mutableSetOf<String>()
+            // Cached cards a fresh resolve proved have no card any more; dropped from the merge.
+            val definitiveNoCardContentIds = mutableSetOf<String>()
             val candidateBatches = resolutionCandidates.chunked(NEXT_UP_RESOLUTION_BATCH_SIZE)
 
             for (batch in candidateBatches) {
@@ -1993,17 +2002,32 @@ fun HomeScreen(
                     }
                 }.awaitAll()
                 batch.forEach { candidate -> processedFreshContentIds += candidate.content.id }
+                NextUpAirDateRecheck.markRechecked(
+                    batch.map { it.content.id }.filter { it in plan.staleAirDateContentIds },
+                )
 
                 val resolvedBeforeBatch = freshResults.size
-                batchResults.filterNotNull().forEach { (contentId, item) ->
-                    freshResults[contentId] = item
+                val evictedBeforeBatch = definitiveNoCardContentIds.size
+                batch.zip(batchResults).forEach { (candidate, outcome) ->
+                    val card = outcome.card
+                    if (card != null) {
+                        freshResults[card.first] = card.second
+                    } else if (outcome.definitiveNoCard) {
+                        definitiveNoCardContentIds += candidate.content.id
+                    }
                 }
+                val evictedCachedCard = definitiveNoCardContentIds.size > evictedBeforeBatch &&
+                    definitiveNoCardContentIds.any { it in cachedMatchingSeed }
                 val batchResolvedCount = freshResults.size - resolvedBeforeBatch
-                if (batchResolvedCount > 0) {
-                    val progressiveResults = cachedMatchingSeed + mergeNextUpResultsWithCachedArtwork(
-                        results = freshResults,
-                        cachedArtwork = cachedNextUpArtwork,
-                        reason = "progressive-resolve",
+                if (batchResolvedCount > 0 || evictedCachedCard) {
+                    val progressiveResults = mergeNextUpPassResults(
+                        cachedBySeries = cachedMatchingSeed,
+                        definitiveNoCardContentIds = definitiveNoCardContentIds,
+                        freshResults = mergeNextUpResultsWithCachedArtwork(
+                            results = freshResults,
+                            cachedArtwork = cachedNextUpArtwork,
+                            reason = "progressive-resolve",
+                        ),
                     )
                     withContext(Dispatchers.Main) {
                         nextUpItemsBySeries = progressiveResults
@@ -2023,10 +2047,14 @@ fun HomeScreen(
             appliedArtworkRefreshVersion = cwArtworkRefreshVersion
             // The merged map is what gets saved below. A fresh result that came back without
             // artwork must not be allowed to overwrite the snapshot that still has it.
-            val results = cachedMatchingSeed + mergeNextUpResultsWithCachedArtwork(
-                results = freshResults,
-                cachedArtwork = cachedNextUpArtwork,
-                reason = if (forceArtworkMetaRefresh) "forced-artwork-refresh" else "resolve",
+            val results = mergeNextUpPassResults(
+                cachedBySeries = cachedMatchingSeed,
+                definitiveNoCardContentIds = definitiveNoCardContentIds,
+                freshResults = mergeNextUpResultsWithCachedArtwork(
+                    results = freshResults,
+                    cachedArtwork = cachedNextUpArtwork,
+                    reason = if (forceArtworkMetaRefresh) "forced-artwork-refresh" else "resolve",
+                ),
             )
             withContext(Dispatchers.Main) {
                 nextUpItemsBySeries = results
@@ -5483,7 +5511,7 @@ private suspend fun resolveHomeNextUpCandidate(
     isTraktProgressActive: Boolean,
     forceMetaRefresh: Boolean = false,
     noCardSettingsKey: String? = null,
-): Pair<String, Pair<Long, ContinueWatchingItem>>? {
+): NextUpResolveOutcome {
     // Only outcomes that hold until the seed or settings change are remembered; a failed fetch is
     // retried next launch as before.
     fun rememberNoCard() {
@@ -5511,7 +5539,7 @@ private suspend fun resolveHomeNextUpCandidate(
     }
     if (meta == null) {
         logNextUpResolutionRejected(completedEntry, "meta-fetch-failed")
-        return null
+        return NextUpResolveOutcome(card = null)
     }
 
     val resolvedProgressEntries = if (isTraktProgressActive) {
@@ -5539,7 +5567,7 @@ private suspend fun resolveHomeNextUpCandidate(
         // action at all, so the whole card disappears rather than losing only its badge.
         logNextUpResolutionRejected(completedEntry, "no-primary-action (series finished, or unaired and showUnairedNextUp=off)")
         rememberNoCard()
-        return null
+        return NextUpResolveOutcome(card = null, definitiveNoCard = true)
     }
     if (action.resumePositionMs != null &&
         resumeActionRendersAsInProgress(
@@ -5551,20 +5579,20 @@ private suspend fun resolveHomeNextUpCandidate(
         )
     ) {
         logNextUpResolutionRejected(completedEntry, "resumable-episode (renders as in-progress, not Up Next)")
-        return null
+        return NextUpResolveOutcome(card = null)
     }
 
     val nextEpisode = meta.videoForSeriesAction(action)
     if (nextEpisode == null) {
         logNextUpResolutionRejected(completedEntry, "next-episode-missing-from-meta")
         rememberNoCard()
-        return null
+        return NextUpResolveOutcome(card = null, definitiveNoCard = true)
     }
     val item = completedEntry.toContinueWatchingSeed(meta)
         .toUpNextContinueWatchingItem(nextEpisode)
     if (nextUpDismissKey(item.parentMetaId, item.nextUpSeedSeasonNumber, item.nextUpSeedEpisodeNumber) in dismissedNextUpKeys) {
         logNextUpResolutionRejected(completedEntry, "dismissed-by-user")
-        return null
+        return NextUpResolveOutcome(card = null, definitiveNoCard = true)
     }
 
     com.nuvio.app.features.watchprogress.NextUpDiagnostics.logResolvedCard(
@@ -5591,7 +5619,7 @@ private suspend fun resolveHomeNextUpCandidate(
     } else {
         completedEntry.markedAtEpochMs
     }
-    return contentId to (sortTimestamp to item)
+    return NextUpResolveOutcome(card = contentId to (sortTimestamp to item))
 }
 
 /**
@@ -5899,6 +5927,8 @@ internal data class NextUpResolutionPlan(
     val staleReleasePrecisionContentIds: Set<String> = emptySet(),
     /** Seeds already known to produce no card (NextUpNoCardCache); processed without a fetch. */
     val knownNoCardContentIds: Set<String> = emptySet(),
+    /** Cached cards re-resolved because their air date may have moved; see [needsAirDateRecheck]. */
+    val staleAirDateContentIds: Set<String> = emptySet(),
 )
 
 /** Launch/profile load starts at -1, so request version 0 still receives one real metadata read. */
@@ -5961,6 +5991,8 @@ internal fun planNextUpResolution(
     todayIsoDate: String = CurrentDateProvider.todayIsoDate(),
     hasArtworkLoadFailed: (String) -> Boolean = ContinueWatchingArtworkFailures::hasFailed,
     isKnownNoCard: (CompletedSeriesCandidate) -> Boolean = { false },
+    nowMs: Long = com.nuvio.app.features.watchprogress.WatchProgressClock.nowEpochMs(),
+    wasAirDateRechecked: (String) -> Boolean = NextUpAirDateRecheck::wasRechecked,
 ): NextUpResolutionPlan {
     val cachedBySeries = completedSeriesCandidates.mapNotNull { candidate ->
         val cached = cachedNextUpItems[candidate.content.id] ?: return@mapNotNull null
@@ -5979,21 +6011,89 @@ internal fun planNextUpResolution(
     val staleReleasePrecisionContentIds = cachedBySeries
         .filterValues { (_, item) -> item.needsReleasePrecisionRefresh(todayIsoDate) }
         .keys
-    val staleContentIds = staleArtworkContentIds + staleReleasePrecisionContentIds
+    val staleAirDateContentIds = cachedBySeries
+        .filter { (contentId, cached) ->
+            !wasAirDateRechecked(contentId) && cached.second.needsAirDateRecheck(nowMs)
+        }
+        .keys
+    val staleContentIds = staleArtworkContentIds + staleReleasePrecisionContentIds + staleAirDateContentIds
     val (knownNoCard, uncached) = completedSeriesCandidates
         .filter { candidate -> candidate.content.id !in cachedBySeries }
         .partition(isKnownNoCard)
-    val candidatesToResolve = uncached + completedSeriesCandidates.filter { candidate ->
-        candidate.content.id in staleContentIds
-    }
+    // A card on screen with a wrong date (an air date that moved, or a date-only value near the
+    // day) goes first: it is visibly wrong, and there are only ever a handful of them. Uncached seeds
+    // come next. On a long watch history most of those are finished shows working their way into
+    // NextUpNoCardCache, 32 a launch, and behind them the date re-check waited five launches
+    // (2026-11-08: 158 uncached seeds ahead of Sweetpea).
+    val dateStaleIds = staleAirDateContentIds + staleReleasePrecisionContentIds
+    val (dateStale, otherStale) = completedSeriesCandidates
+        .filter { candidate -> candidate.content.id in staleContentIds }
+        .partition { candidate -> candidate.content.id in dateStaleIds }
+    val candidatesToResolve = dateStale + uncached + otherStale
     return NextUpResolutionPlan(
         cachedBySeries = cachedBySeries,
         staleArtworkContentIds = staleArtworkContentIds,
         candidatesToResolve = candidatesToResolve,
         staleReleasePrecisionContentIds = staleReleasePrecisionContentIds,
         knownNoCardContentIds = knownNoCard.mapTo(mutableSetOf()) { it.content.id },
+        staleAirDateContentIds = staleAirDateContentIds,
     )
 }
+
+/**
+ * A cached card whose badge depends on its air date: the episode is still to come, or aired recently
+ * enough to be showing "New episode"/"New season".
+ *
+ * The snapshot is only rewritten when a card is re-resolved, and with the seed unchanged that used to
+ * mean never — so a date the provider later corrected stayed on the card. Sweetpea S2E1 was cached
+ * on 2026-11-04 as `2026-11-05T21:00Z`; the addon moved it to 2026-11-26, and the card went on
+ * claiming "New season" for an episode nobody could watch. Re-resolving rides the meta LRU, and
+ * [NextUpAirDateRecheck] holds it to once per series per app run.
+ */
+internal fun ContinueWatchingItem.needsAirDateRecheck(nowMs: Long): Boolean {
+    val releaseMs = com.nuvio.app.features.watchprogress.parseReleaseDateToEpochMs(released) ?: return false
+    return releaseMs > nowMs ||
+        nowMs - releaseMs < com.nuvio.app.features.watchprogress.ReleaseAlertWindowMs
+}
+
+/** Series whose cached Up Next card was already re-checked for a moved air date this app run. */
+internal object NextUpAirDateRecheck {
+    private val lock = Any()
+    private val rechecked = mutableSetOf<String>()
+
+    fun wasRechecked(contentId: String): Boolean = synchronized(lock) { contentId in rechecked }
+
+    fun markRechecked(contentIds: Collection<String>) {
+        if (contentIds.isEmpty()) return
+        synchronized(lock) { rechecked += contentIds }
+    }
+
+    fun clear() = synchronized(lock) { rechecked.clear() }
+}
+
+/**
+ * What one Up Next resolve produced. [definitiveNoCard] separates "this seed has no card" (series
+ * caught up, next episode unaired with unaired cards off, episode missing from the meta) from a
+ * failed fetch: only the first may remove a cached card, or a network blip would empty the shelf.
+ */
+private class NextUpResolveOutcome(
+    val card: Pair<String, Pair<Long, ContinueWatchingItem>>?,
+    val definitiveNoCard: Boolean = false,
+)
+
+/**
+ * The cards to show and save after a pass: the cached ones that still match their seed, minus those a
+ * fresh resolve proved have no card, overlaid with the fresh results.
+ *
+ * The removal is the point. `cached + fresh` alone let a fresh resolve add or replace a card but
+ * never take one away, so a card the current metadata no longer supports was saved straight back.
+ */
+internal fun mergeNextUpPassResults(
+    cachedBySeries: Map<String, Pair<Long, ContinueWatchingItem>>,
+    definitiveNoCardContentIds: Set<String>,
+    freshResults: Map<String, Pair<Long, ContinueWatchingItem>>,
+): Map<String, Pair<Long, ContinueWatchingItem>> =
+    (cachedBySeries - definitiveNoCardContentIds) + freshResults
 
 /**
  * Artwork a previous pass already proved good for a series, kept out of the seed-matching cache so
