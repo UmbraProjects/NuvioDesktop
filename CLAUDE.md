@@ -1,5 +1,12 @@
 @AGENTS.md
 
+## Testing checklist: keep TESTING.md up to date
+
+Every feature or fix on this branch adds its checks to `TESTING.md` (one thing to try on the TV per line) in the same
+commit. Nick reports results as Works / Broken / Not tried, ideally answered through clickable questions; record them
+in `TESTING.md` the way its header says, and commit. At the start of a session, offer the open checks as clickable
+questions. Never leave a "Not yet tried" CHANGELOG entry without matching checks there.
+
 ## FORK UI: warn before merging the Now Playing stage into UmbraProjects/NuvioDesktop
 
 UmbraProjects may merge from this branch (`Spyder`, Nick's HTPC fork); that is fine. But the Now Playing stage here is a
