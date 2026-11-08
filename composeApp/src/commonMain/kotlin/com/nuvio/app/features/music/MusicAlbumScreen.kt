@@ -158,6 +158,7 @@ import com.nuvio.app.features.music.library.monthYear
 import com.nuvio.app.features.music.library.whenText
 import com.nuvio.app.features.music.library.LINEAGE_ROWS
 import com.nuvio.app.features.music.library.LineageRecord
+import com.nuvio.app.features.music.library.OpenLineage
 import com.nuvio.app.features.music.library.findInLibrary
 import com.nuvio.app.features.music.library.lineageGap
 import com.nuvio.app.features.music.library.lineageYear
@@ -714,17 +715,30 @@ private fun AlbumContent(
     }
 
     // Lineage: one AI request per album (kept with the facts); each record is looked up in the library, only those found open.
+    // Without an AI key, or when the AI cannot answer, it comes from open data instead (Wikidata's influences, then the
+    // artist's related artists on YouTube Music), which needs no key.
     val lineageAt = lineageYear(album.year)
-    val lineageReady = LineagePicks.available()
+    val lineageAiReady = LineagePicks.available()
+    val lineageArtistId = album.artists.firstOrNull { lensArtist != null && it.name == lensArtist }?.browseId
+        ?: album.artists.firstOrNull()?.browseId
     var lineage by remember(album.browseId) {
-        mutableStateOf(if (lineageAt != null && lensArtist != null) LineagePicks.peek(album.browseId, lensArtist, lineageAt) else null)
+        mutableStateOf(
+            if (lineageAt != null && lensArtist != null) {
+                LineagePicks.peek(album.browseId, lensArtist, lineageAt) ?: OpenLineage.peek(album.browseId, lensArtist, lineageAt)
+            } else null,
+        )
     }
     var lineageLoading by remember(album.browseId) { mutableStateOf(false) }
     var lineageAsked by remember(album.browseId) { mutableStateOf(false) }
     LaunchedEffect(lensesOn, lens, album.browseId) {
-        if (!lensesOn || lens != AlbumLens.Lineage || lineage != null || !lineageReady || lineageAt == null || lensArtist == null) return@LaunchedEffect
-        lineageLoading = true
-        lineage = runCatching { LineagePicks.load(album.browseId, lensArtist, album.title, lineageAt) }.getOrNull()
+        if (!lensesOn || lens != AlbumLens.Lineage || lineageAt == null || lensArtist == null) return@LaunchedEffect
+        // An open-data lineage kept from before an AI key was set still asks the AI once; the AI's answer replaces it.
+        val kept = lineage
+        if (kept != null && (kept.byAi || !lineageAiReady)) return@LaunchedEffect
+        lineageLoading = kept == null
+        lineage = (if (lineageAiReady) runCatching { LineagePicks.load(album.browseId, lensArtist, album.title, lineageAt) }.getOrNull() else null)
+            ?: kept
+            ?: runCatching { OpenLineage.load(album.browseId, lensArtist, lineageArtistId, lineageAt) }.getOrNull()
         lineageLoading = false
         lineageAsked = true
     }
@@ -748,9 +762,8 @@ private fun AlbumContent(
     val (branchRows, branchReleases) = remember(lineage, libraryState.artists) { lineageRows(lineage?.after.orEmpty()) }
     val lineageEmpty = when {
         lineageAt == null -> "This album has no year to trace from."
-        !lineageReady -> "Set an AI key to trace this album's lineage."
-        lineageLoading || (lineage == null && !lineageAsked) -> "Asking the AI…"
-        lineage == null -> "The AI could not answer for this album. It is asked again in two hours."
+        lineageLoading || (lineage == null && !lineageAsked) -> if (lineageAiReady) "Asking the AI…" else "Looking up this album's lineage…"
+        lineage == null -> "Nothing found for this album's lineage. It is looked up again tomorrow."
         else -> "Nothing found on this side."
     }
 
@@ -955,14 +968,14 @@ private fun AlbumContent(
                     AlbumLens.Lineage -> LineageSidePanel(
                         after = false,
                         tint = colors.accent,
-                        pill = "AI",
+                        pill = if (lineage?.byAi == false) "DATA" else "AI",
                         title = lineageAt?.let { "Before $it" } ?: "Before",
                         subtitle = "The records this album grew out of",
                         rows = rootRows,
                         rowCount = LINEAGE_ROWS,
                         empty = lineageEmpty,
                         thread = lineage?.beforeThread ?: "What the earlier records share with this one shows here.",
-                        threadFooter = if (lineage != null) "Written by AI, may contain mistakes" else null,
+                        threadFooter = lineage?.let { if (it.byAi) "Written by AI, may contain mistakes" else it.sources },
                         button = "Play the roots",
                         buttonEnabled = rootReleases.isNotEmpty(),
                         onButton = { pathScope.launch { playTopAlbums(catalog, rootReleases, shuffled = false) } },
@@ -1214,14 +1227,14 @@ private fun AlbumContent(
                     AlbumLens.Lineage -> LineageSidePanel(
                         after = true,
                         tint = LENS_LIBRARY_TINT,
-                        pill = "AI",
+                        pill = if (lineage?.byAi == false) "DATA" else "AI",
                         title = lineageAt?.let { "After $it" } ?: "After",
                         subtitle = "Same family, later records",
                         rows = branchRows,
                         rowCount = LINEAGE_ROWS,
                         empty = lineageEmpty,
                         thread = lineage?.afterThread ?: "What the later records share with this one shows here.",
-                        threadFooter = if (lineage != null) "Written by AI, may contain mistakes" else null,
+                        threadFooter = lineage?.let { if (it.byAi) "Written by AI, may contain mistakes" else it.sources },
                         button = "Play the branches",
                         buttonEnabled = branchReleases.isNotEmpty(),
                         onButton = { pathScope.launch { playTopAlbums(catalog, branchReleases, shuffled = false) } },

@@ -369,8 +369,26 @@ internal fun parseArtist(body: String, browseId: String): MusicArtist? {
     // fork:music-radio - the header's Radio button (or Shuffle's list, which is the same kind of mix).
     val radio = findAll(header ?: root, "watchPlaylistEndpoint").mapNotNull { it["playlistId"].str() }
         .firstOrNull { it.startsWith("RDEM") || it.startsWith("RDAO") || it.startsWith("RDAMPL") }
-    return MusicArtist(browseId, name, thumbnailOf(header?.get("thumbnail")), albums, topSongsOf(root), radioPlaylistId = radio)
+    return MusicArtist(
+        browseId, name, thumbnailOf(header?.get("thumbnail")), albums, topSongsOf(root), radioPlaylistId = radio,
+        related = relatedArtistsOf(root, browseId),
+    )
 }
+
+/**
+ * fork:lenses - the artist tiles on an artist page ("Fans might also like"): every two-row tile that opens another
+ * artist's page (`UC…`), in page order.
+ */
+private fun relatedArtistsOf(root: JsonElement, selfId: String): List<MusicArtistRef> =
+    findAll(root, "musicCarouselShelfRenderer")
+        .flatMap { shelf -> findAll(shelf, "musicTwoRowItemRenderer") }
+        .mapNotNull { item ->
+            val id = (item.runBrowseId() ?: runsOf(item["title"]).firstNotNullOfOrNull { it.runBrowseId() })
+                ?.takeIf { it.startsWith("UC") && it != selfId } ?: return@mapNotNull null
+            val name = textOf(item["title"]).trim().ifEmpty { return@mapNotNull null }
+            MusicArtistRef(name, id)
+        }
+        .distinctBy { it.browseId }
 
 /**
  * fork:top-songs — the artist page's first list shelf ("Songs"), in the order YouTube Music gives: its most-played

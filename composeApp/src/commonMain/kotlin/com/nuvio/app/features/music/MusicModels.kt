@@ -84,6 +84,8 @@ data class MusicArtist(
     val topSongs: List<MusicTopSong> = emptyList(),
     /** fork:music-radio - the artist's radio (`RDEM...`/`RDAO...`) when the page offers one. */
     val radioPlaylistId: String? = null,
+    /** fork:lenses - the artists on the page's "Fans might also like" shelf, in its order (the Lineage tab's open fallback). */
+    val related: List<MusicArtistRef> = emptyList(),
 )
 
 /**

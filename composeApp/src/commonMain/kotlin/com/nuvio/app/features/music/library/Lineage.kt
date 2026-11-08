@@ -25,6 +25,10 @@ internal data class Lineage(
     val after: List<LineageRecord>,
     val beforeThread: String?,
     val afterThread: String?,
+    /** False for the open-data lineage ([OpenLineage]): Wikidata and YouTube Music, no AI. */
+    val byAi: Boolean = true,
+    /** Where an open-data lineage came from ("From Wikidata and YouTube Music"), for the panels' footer. */
+    val sources: String? = null,
 )
 
 /** "−18 yrs" for a record before the album, "+7 yrs" after it, "Same year" for neither. */
