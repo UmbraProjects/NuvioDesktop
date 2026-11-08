@@ -1,0 +1,273 @@
+package com.nuvio.app.features.remote
+
+import java.io.BufferedReader
+import java.io.IOException
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.io.Writer
+import java.net.BindException
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.SocketException
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.concurrent.thread
+
+/** Where pairing state lives. The app backs it with settings storage; tests use a map. */
+internal interface PhoneRemotePairing {
+    fun pin(): String
+    fun isKnownToken(token: String): Boolean
+    /** Called once a phone gets the PIN right. Returns the token it keeps for next time. */
+    fun issueToken(deviceName: String): String
+}
+
+/** What the server reports upward. Called on the connection threads, never on the UI thread. */
+internal interface PhoneRemoteListener {
+    fun onKey(key: RemoteKey)
+    fun onText(text: String)
+    fun onConnectedDevicesChanged(names: List<String>) = Unit
+}
+
+/**
+ * The listener the Android remote talks to: a TCP socket for the session and a UDP socket that
+ * answers discovery broadcasts. Plain threads, in the same style as `CastRelayServer`; both
+ * sockets are daemon-threaded so a forgotten [stop] can never hold the app open.
+ *
+ * Nothing reaches [PhoneRemoteListener] until a phone has proven it was paired — either a token
+ * from an earlier pairing or the PIN shown in Settings. Failed PINs are counted per address and
+ * the address is locked out for a minute after [PhoneRemoteProtocol.MAX_PIN_ATTEMPTS] misses, so
+ * a six-digit code cannot be walked from another machine on the network.
+ */
+internal class PhoneRemoteServer(
+    private val name: () -> String,
+    private val pairing: PhoneRemotePairing,
+    private val listener: PhoneRemoteListener,
+    private val log: (String) -> Unit = {},
+    private val preferredPort: Int = PhoneRemoteProtocol.DEFAULT_PORT,
+    private val discoveryPort: Int = PhoneRemoteProtocol.DISCOVERY_PORT,
+    private val readTimeoutMs: Int = 20_000,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
+    private var server: ServerSocket? = null
+    private var discovery: DatagramSocket? = null
+    private val clients = CopyOnWriteArrayList<Session>()
+    private val failures = ConcurrentHashMap<String, Failures>()
+
+    /** The TCP port in use, or null while stopped. */
+    val port: Int? get() = server?.takeUnless { it.isClosed }?.localPort
+
+    @Synchronized
+    fun start() {
+        if (server != null) return
+        val socket = openServerSocket() ?: return
+        server = socket
+        thread(isDaemon = true, name = "phone-remote-accept") { acceptLoop(socket) }
+        log("Phone remote listening on port ${socket.localPort}")
+        discovery = try {
+            DatagramSocket(null).apply {
+                reuseAddress = true
+                broadcast = true
+                bind(InetSocketAddress(discoveryPort))
+            }.also { udp -> thread(isDaemon = true, name = "phone-remote-discovery") { discoveryLoop(udp, socket.localPort) } }
+        } catch (error: SocketException) {
+            // The remote still works by typing the PC's address; only finding it automatically is lost.
+            log("Phone remote discovery unavailable on UDP $discoveryPort: ${error.message}")
+            null
+        }
+    }
+
+    @Synchronized
+    fun stop() {
+        discovery?.close()
+        discovery = null
+        server?.close()
+        server = null
+        clients.forEach { it.close() }
+        clients.clear()
+        publishClients()
+    }
+
+    /** Drops every open session, e.g. after the PIN is changed and old tokens are forgotten. */
+    fun disconnectAll() {
+        clients.forEach { it.close() }
+    }
+
+    private fun openServerSocket(): ServerSocket? {
+        val candidates = if (preferredPort == 0) listOf(0) else (0 until PhoneRemoteProtocol.PORT_ATTEMPTS).map { preferredPort + it }
+        for (candidate in candidates) {
+            val socket = ServerSocket()
+            try {
+                socket.reuseAddress = true
+                socket.bind(InetSocketAddress(candidate))
+                return socket
+            } catch (_: BindException) {
+                socket.close()
+            } catch (error: IOException) {
+                socket.close()
+                log("Phone remote could not listen on $candidate: ${error.message}")
+            }
+        }
+        log("Phone remote found no free port from $preferredPort")
+        return null
+    }
+
+    private fun acceptLoop(socket: ServerSocket) {
+        while (!socket.isClosed) {
+            val client = try {
+                socket.accept()
+            } catch (_: IOException) {
+                break
+            }
+            thread(isDaemon = true, name = "phone-remote-conn") { Session(client).run() }
+        }
+    }
+
+    private fun discoveryLoop(socket: DatagramSocket, tcpPort: Int) {
+        val buffer = ByteArray(512)
+        while (!socket.isClosed) {
+            val packet = DatagramPacket(buffer, buffer.size)
+            try {
+                socket.receive(packet)
+                val text = String(packet.data, packet.offset, packet.length, StandardCharsets.UTF_8).trim()
+                if (text != PhoneRemoteProtocol.DISCOVER_REQUEST) continue
+                val reply = PhoneRemoteProtocol.discoveryReply(tcpPort, name()).toByteArray(StandardCharsets.UTF_8)
+                socket.send(DatagramPacket(reply, reply.size, packet.address, packet.port))
+            } catch (_: IOException) {
+                if (socket.isClosed) break
+            }
+        }
+    }
+
+    private fun publishClients() {
+        listener.onConnectedDevicesChanged(clients.mapNotNull { it.deviceName })
+    }
+
+    private class Failures(var count: Int, var lockedUntil: Long)
+
+    private fun lockedOut(address: String): Boolean = (failures[address]?.lockedUntil ?: 0L) > now()
+
+    private fun recordFailure(address: String): Boolean {
+        val entry = failures.getOrPut(address) { Failures(0, 0L) }
+        synchronized(entry) {
+            entry.count += 1
+            if (entry.count >= PhoneRemoteProtocol.MAX_PIN_ATTEMPTS) {
+                entry.count = 0
+                entry.lockedUntil = now() + LOCKOUT_MS
+                return true
+            }
+        }
+        return false
+    }
+
+    private inner class Session(private val socket: Socket) {
+        @Volatile var deviceName: String? = null
+        private val address: String = (socket.inetAddress ?: InetAddress.getLoopbackAddress()).hostAddress
+        private lateinit var out: Writer
+
+        fun close() {
+            try {
+                socket.close()
+            } catch (_: IOException) {
+            }
+        }
+
+        fun run() {
+            try {
+                socket.use {
+                    socket.soTimeout = readTimeoutMs
+                    socket.tcpNoDelay = true
+                    val reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))
+                    out = OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8)
+                    val name = handshake(reader) ?: return
+                    deviceName = name
+                    clients += this
+                    publishClients()
+                    log("Phone remote connected: $name ($address)")
+                    while (!socket.isClosed) {
+                        val line = readLine(reader) ?: break
+                        when (val message = PhoneRemoteProtocol.parse(line)) {
+                            is RemoteMessage.Key -> listener.onKey(message.key)
+                            is RemoteMessage.Text -> if (message.text.isNotEmpty()) listener.onText(message.text)
+                            RemoteMessage.Ping -> send("PONG")
+                            else -> Unit
+                        }
+                    }
+                }
+            } catch (_: IOException) {
+                // The phone went away: screen off, Wi-Fi dropped, app closed.
+            } finally {
+                if (clients.remove(this)) {
+                    publishClients()
+                    log("Phone remote disconnected: $deviceName")
+                }
+            }
+        }
+
+        /** Returns the phone's name once it is trusted, or null after telling it why not. */
+        private fun handshake(reader: BufferedReader): String? {
+            val hello = PhoneRemoteProtocol.parse(readLine(reader) ?: return null) as? RemoteMessage.Hello ?: return null
+            if (hello.version != PhoneRemoteProtocol.VERSION) {
+                send("UNSUPPORTED ${PhoneRemoteProtocol.VERSION}")
+                return null
+            }
+            val deviceName = hello.deviceName.ifBlank { "Phone" }
+            if (hello.token != null && pairing.isKnownToken(hello.token)) {
+                send("WELCOME ${PhoneRemoteProtocol.encode(name())}")
+                return deviceName
+            }
+            send("PIN_REQUIRED")
+            while (true) {
+                if (lockedOut(address)) {
+                    send("LOCKED")
+                    return null
+                }
+                val pair = PhoneRemoteProtocol.parse(readLine(reader) ?: return null) as? RemoteMessage.Pair ?: return null
+                if (pair.pin == pairing.pin()) {
+                    failures.remove(address)
+                    val token = pairing.issueToken(deviceName)
+                    send("PAIRED $token ${PhoneRemoteProtocol.encode(name())}")
+                    return deviceName
+                }
+                if (recordFailure(address)) {
+                    log("Phone remote: too many wrong codes from $address, locked for a minute")
+                    send("LOCKED")
+                    return null
+                }
+                send("BAD_PIN")
+            }
+        }
+
+        /**
+         * One line, read a character at a time so a peer that never sends a newline cannot make us
+         * buffer without limit. A line this long is not something the remote sends; the connection
+         * is dropped rather than the line parsed.
+         */
+        private fun readLine(reader: BufferedReader): String? {
+            val line = StringBuilder()
+            while (true) {
+                val next = reader.read()
+                if (next == -1) return if (line.isEmpty()) null else line.toString()
+                val char = next.toChar()
+                if (char == '\n') return line.toString().trimEnd('\r')
+                if (line.length >= PhoneRemoteProtocol.MAX_LINE_CHARS) throw IOException("line too long")
+                line.append(char)
+            }
+        }
+
+        @Synchronized
+        private fun send(line: String) {
+            out.write(line)
+            out.write("\n")
+            out.flush()
+        }
+    }
+
+    private companion object {
+        const val LOCKOUT_MS = 60_000L
+    }
+}

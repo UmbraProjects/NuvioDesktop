@@ -1,0 +1,71 @@
+name: Android remote
+
+# fork:phone-remote - builds the Nuvio Remote app in remote-android/ and publishes the APK as the
+# rolling "NuvioRemote" prerelease, so the phone can download it straight from the Releases page.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [Spyder]
+    paths:
+      - 'remote-android/**'
+      - '.github/workflows/android-remote.yml'
+
+concurrency:
+  group: android-remote-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: remote-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Optional, but without it every build is signed with a throwaway key and Android refuses to
+      # install a new build over the old one (uninstall first). With these two repository secrets
+      # set, every build is signed the same way and updates in place:
+      #   NUVIO_REMOTE_KEYSTORE_B64       base64 of a .jks keystore with a key named "nuvio-remote"
+      #   NUVIO_REMOTE_KEYSTORE_PASSWORD  its password (used for the store and the key)
+      - name: Build
+        env:
+          NUVIO_REMOTE_KEYSTORE_B64: ${{ secrets.NUVIO_REMOTE_KEYSTORE_B64 }}
+          NUVIO_REMOTE_KEYSTORE_PASSWORD: ${{ secrets.NUVIO_REMOTE_KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon testReleaseUnitTest assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk NuvioRemote.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NuvioRemote
+          path: remote-android/NuvioRemote.apk
+
+      # A prerelease under its own tag: the desktop updater reads /releases/latest (never a
+      # prerelease) and the "Nightly" tag, so this release can never be mistaken for a desktop build.
+      - name: Publish NuvioRemote release
+        if: github.ref == 'refs/heads/Spyder'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse --short HEAD)
+          gh release delete NuvioRemote --cleanup-tag --yes 2>/dev/null || true
+          gh release create NuvioRemote NuvioRemote.apk \
+            --prerelease \
+            --latest=false \
+            --target "$GITHUB_SHA" \
+            --title "Nuvio Remote (Spyder $sha)" \
+            --notes "Android remote for Nuvio HTPC. Download NuvioRemote.apk on the phone and open it to install. On the PC, turn on Settings > Keyboard shortcuts > Phone remote."

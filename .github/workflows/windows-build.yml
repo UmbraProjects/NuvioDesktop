@@ -7,6 +7,9 @@ on:
     # A changelog or docs edit changes no code, so it needs no 20-minute build.
     paths-ignore:
       - '**.md'
+      # The Android remote has its own workflow (android-remote.yml) and nothing of it is in the PC build.
+      - 'remote-android/**'
+      - '.github/workflows/android-remote.yml'
 
 # A newer push makes an older run's result irrelevant: stop it instead of queueing two 20-minute builds.
 concurrency:

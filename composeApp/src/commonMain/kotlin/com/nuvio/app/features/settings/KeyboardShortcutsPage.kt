@@ -267,6 +267,8 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
     if (gamepadSupported()) {
         item(key = "keyboard-shortcuts-gamepad") { GamepadSection(isTablet = isTablet) }
     }
+    // fork:phone-remote - after the controller: the phone sends the same presses a pad does.
+    item(key = "keyboard-shortcuts-phone-remote") { PhoneRemoteSection(isTablet = isTablet) }
 }
 
 /** The desktop rows carry the 16.dp every settings row does, so they line up with the section
