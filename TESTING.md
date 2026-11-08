@@ -21,17 +21,18 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Send to Nuvio: a YouTube or YouTube Music link from the phone's share menu plays on the TV (2026-11-08)
 - [x] Movies & TV tab: library posters show; tapping one opens its details on the TV (2026-11-08)
 - [x] Music tab: albums and artists show; Play / Shuffle / Add to queue and an artist's Shuffle all / Radio play on the TV (2026-11-08)
-- [ ] Remote tab with something playing: the bottom row (Subtitles, Audio, Mute, Vol −, Vol +) and its labels show in full above the tab bar
-- [ ] The big key is the only play/pause: it shows Pause while playing and Play while paused, and matches the TV
-- [ ] Long titles and artists show in full on the now-playing card (they scroll slowly), with Previous / Next under them for music
-- [ ] The seek bar is thin with a round marker; tapping or dragging it seeks the TV once, on release
-- [ ] Glass redesign: the app wears the TV's theme (change it in Nuvio's Settings and the phone follows within a second), and opens in that colour next time
-- [ ] Remote while browsing: touchpad, swipe moves one tile per short swipe and keeps going on a long one, tap is OK; Back, Home, Search (opens the TV's search and the phone keyboard), More
-- [ ] Touchpad / D-pad switch (the tag in the panel's corner, or More) is remembered after closing the app
-- [ ] Remote during a film: Now playing card, Subtitles and Audio tiles show the current track and tap to the next, back 10s / play-pause / ahead 10s, Back / Sources / More
-- [ ] Remote during music: cover, title, artist, seek, previous / play-pause / next; the Touchpad tag switches to the pad and back
-- [ ] More sheet: Mute, Vol −, Vol +, Type, D-pad/Touchpad, Other PC
-- [ ] Watch and Music tabs in the glass style: header label, glass search, pill chips, section labels with counts, glass album sheet
+- Remote tab bottom row of five keys: dropped, the glass redesign replaced that layout (2026-11-08)
+- [x] The big key is the only play/pause: it shows Pause while playing and Play while paused, and matches the TV (2026-11-08)
+- [x] Long titles and artists show in full on the film card and the music screen (they scroll slowly) (2026-11-08)
+- [x] The seek bar is thin with a round marker; tapping or dragging it seeks the TV once, on release (2026-11-08)
+- [x] Glass redesign: the app wears the TV's theme (change it in Nuvio's Settings and the phone follows within a second), and opens in that colour next time (2026-11-08)
+- [x] Remote while browsing: touchpad, swipe moves one tile per short swipe and keeps going on a long one, tap is OK; Back, Home, Search (opens the TV's search and the phone keyboard), More (2026-11-08)
+- [ ] **BROKEN** Moving around Nuvio's Settings from the phone (2026-11-08): neither the touchpad nor the D-pad moves there, and a controller does not either, so Settings ignores the arrow and OK presses the pad layer sends
+- [x] Touchpad / D-pad switch (the tag in the panel's corner, or More) is remembered after closing the app (2026-11-08)
+- [x] Remote during a film: Now playing card, Subtitles and Audio tiles show the current track and tap to the next, back 10s / play-pause / ahead 10s, Back / Sources / More (2026-11-08)
+- [x] Remote during music: cover, title, artist, seek, previous / play-pause / next; the Touchpad tag switches to the pad and back (2026-11-08)
+- [x] More sheet: Mute, Vol −, Vol +, Type, D-pad/Touchpad, Other PC (2026-11-08)
+- [x] Watch and Music tabs in the glass style: header label, glass search, pill chips, section labels with counts, glass album sheet (2026-11-08)
 
 ## Music playback
 
