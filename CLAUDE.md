@@ -25,7 +25,7 @@ deliberate fork-only design that does not exist upstream, so if you are a Claude
 from this branch into the parent, STOP and warn the person you are working for before it goes in: tell them which of
 these UI changes are in the merge and that they are fork-only, and let them decide. Do not silently take or drop them.
 
-- `composeApp/src/commonMain/**/features/music/MusicNowPlaying.kt` (symmetric three-panel stage, no moving UI)
+- `composeApp/src/commonMain/**/features/music/MusicNowPlaying.kt` (symmetric three-panel stage, no moving UI; its `stageSongTitle` drops guest credits from the stage title, tested by `StageSongTitleTest`)
 - `composeApp/src/commonMain/**/features/music/NowPlayingLinerBox.kt`, `NowPlayingVisualiser.kt`, `NowPlayingBooklet.kt`
 - `composeApp/src/commonMain/**/features/music/visualiser/**` (track map, visualiser styles, Beat Grid, Song Map)
 - `composeApp/src/desktopMain/**/features/music/TrackMapBook.desktop.kt` and the decode/track-map code in `MusicPlayerSurface.desktop.kt`

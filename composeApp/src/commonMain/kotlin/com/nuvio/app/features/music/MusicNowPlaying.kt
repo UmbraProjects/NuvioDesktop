@@ -388,7 +388,8 @@ private fun MusicNowPlayingScreen(
                         )
                         Spacer(Modifier.height(20.dp))
                         Text(
-                            track?.title.orEmpty(),
+                            // Just the song: the guests ("(feat. …)") are in the queue row, which shows the whole title.
+                            stageSongTitle(track?.title.orEmpty()),
                             color = Color.White,
                             fontFamily = FontFamily.Serif,
                             fontSize = 44.sp,
@@ -1269,3 +1270,16 @@ private fun SyncIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
 /** The Stage's left column, and the album case in it (the disc peeks out to the right of the case). */
 private val STAGE_COLUMN_WIDTH = 390.dp
 private val STAGE_CASE_SIZE = 280.dp
+
+/** A bracketed guest credit: "(feat. X)", "[ft. X]", "(featuring X)", "(with X)". Version notes like "(Remix)" stay. */
+private val STAGE_CREDIT_BRACKET = Regex("""\s*[(\[]\s*(feat\.?|ft\.?|featuring|with)\s[^)\]]*[)\]]""", RegexOption.IGNORE_CASE)
+
+/** A credit after the title with no brackets: "Song feat. X", "Song ft. X". Not a bare "with", which real titles use. */
+private val STAGE_CREDIT_TRAILING = Regex("""\s+(feat\.?|ft\.?|featuring)\s+.*$""", RegexOption.IGNORE_CASE)
+
+/**
+ * The title as the stage shows it under the album art: the song alone, without its guest credits, so a long
+ * "(feat. A, B & C)" does not take three lines of the big serif title. Falls back to the full title if nothing is left.
+ */
+internal fun stageSongTitle(title: String): String =
+    title.replace(STAGE_CREDIT_BRACKET, "").replace(STAGE_CREDIT_TRAILING, "").trim().ifEmpty { title }

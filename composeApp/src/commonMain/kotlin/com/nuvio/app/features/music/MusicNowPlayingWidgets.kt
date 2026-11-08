@@ -241,7 +241,16 @@ private fun QueueRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         MusicCover(track.coverUrl ?: fallbackCover, track.title, size = 40.dp)
-        Text(track.title, color = Color.White, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        // The whole title, guests and all (the stage title above leaves them off): two lines inside the fixed row height.
+        Text(
+            track.title,
+            color = Color.White,
+            fontSize = 14.sp,
+            lineHeight = 17.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
         if (track.durationSeconds > 0) {
             Text(formatMusicTime(track.durationSeconds * 1_000L), color = Color.White.copy(alpha = 0.6f), fontSize = 14.sp)
         }
