@@ -5,7 +5,10 @@
 Nick builds the desktop app on his own PC with `D:\NuvioBuild\build.cmd` (it pulls Spyder, then builds into
 `D:\NuvioBuild\out\Nuvio`; `run.cmd` starts it, `test.cmd` runs the unit tests). So when the session is linked to his
 computer, make desktop changes in that checkout and commit there, then push to `Spyder` so GitHub stays the shared copy.
-Work in a cloud clone only when his computer is not linked, and push from there. The Android remote (`remote-android/`)
+Work in a cloud clone only when his computer is not linked, and push from there. The shell on his PC has no GitHub
+login, so push like this: on the PC `git bundle create .git/push.bundle origin/Spyder..HEAD`; stage that file into
+the cloud session; there `git fetch <bundle> HEAD` and `git push origin FETCH_HEAD:Spyder`; then delete the bundle and
+`git fetch` on the PC. The commits keep their hashes, so the next `build.cmd` pull is a no-op. The Android remote (`remote-android/`)
 is still built on GitHub (android-remote.yml), as is the Windows build that publishes Nightly; both stay on.
 
 ## Testing checklist: keep TESTING.md up to date
