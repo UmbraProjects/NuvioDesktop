@@ -145,6 +145,21 @@ internal object NativePlayerBridge {
         outputPath: String,
     ): Int
 
+    /**
+     * fork:loudness - [decodeAudioSpot] for a stream no player has open yet ([url], sent with [headerLines] as "Name: value"),
+     * so the next track can be measured before it starts. Needs no player handle. Windows bridge only: elsewhere it throws
+     * UnsatisfiedLinkError.
+     */
+    external fun decodeAudioUrl(
+        url: String,
+        headerLines: Array<String>,
+        startSeconds: Double,
+        durationSeconds: Double,
+        sampleRate: Int,
+        channelCount: Int,
+        outputPath: String,
+    ): Int
+
     /** fork:visualiser - makes [decodeAudioSpot] read the local file at [path] instead of the stream; null goes back to the stream. Windows bridge only. */
     external fun setAudioSpotFile(handle: Long, path: String?)
 

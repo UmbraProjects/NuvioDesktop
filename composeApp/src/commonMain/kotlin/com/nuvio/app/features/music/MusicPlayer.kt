@@ -116,6 +116,8 @@ class MusicPlayer(
     private val saveVolume: (Int) -> Unit = {},
     /** fork:nebula - called after an album's first track is shown (Play on an album, or the next queued album starting). */
     private val onAlbumStarted: (MusicAlbum) -> Unit = {},
+    /** fork:loudness - called with the next track's stream once it is resolved, so it can be measured before it plays. */
+    private val prepareAhead: (TrailerPlaybackSource) -> Unit = {},
 ) {
     private val _state = MutableStateFlow(MusicPlayerState(volume = initialVolume.coerceIn(0, 100)))
     private var volumeSave: Job? = null
@@ -802,7 +804,11 @@ class MusicPlayer(
         val mode = q.mode
         prefetch = scope.launch {
             for (track in upcoming) {
-                if (resolve(track, album, mode) is MusicResolution.Playable) break
+                val result = resolve(track, album, mode)
+                if (result is MusicResolution.Playable) {
+                    runCatching { prepareAhead(result.source) }
+                    break
+                }
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.nuvio.app.features.music
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.preroll.streamUrls
 import com.nuvio.app.features.trailer.TrailerPlaybackResolver
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import com.nuvio.app.features.trailer.sourceOrNull
@@ -205,7 +206,28 @@ object MusicResolver {
 
     private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? =
         // fork:loudness - kept under the video's id, which outlives the stream's URL.
-        openStream(videoId, needsVideo)?.copy(loudnessKey = "yt:$videoId")
+        openStream(videoId, needsVideo)?.copy(loudnessKey = "yt:$videoId")?.also { noteLoudness(videoId, it) }
+
+    /**
+     * fork:loudness - a stream that came without YouTube's loudness figure (some clients leave it out) and that has not been
+     * measured here gets the figure from one more player request, so the track starts at its level instead of a guess.
+     */
+    private suspend fun noteLoudness(videoId: String, source: TrailerPlaybackSource) {
+        if (hasKeptLoudness("yt:$videoId")) return
+        val urls = source.streamUrls()
+        if (com.nuvio.app.features.preroll.StreamLoudnessBook.lufsFor(*urls.toTypedArray()) != null) return
+        val loudnessDb = try {
+            withTimeoutOrNull(LOUDNESS_LOOKUP_TIMEOUT_MS) { TrailerPlaybackResolver.loudnessDbOf(videoId) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            null
+        }
+        com.nuvio.app.features.preroll.StreamLoudnessBook.record(urls, loudnessDb)
+        log.i { "$videoId: loudness ${loudnessDb?.let { "$it dB over YouTube's reference, from a second request" } ?: "not given by YouTube either; it will be measured first"}" }
+    }
+
+    private const val LOUDNESS_LOOKUP_TIMEOUT_MS = 2_500L
 
     private suspend fun openStream(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
         // fork:potoken-first — the resolver that carries PO tokens goes first for audio, as in BitChord.

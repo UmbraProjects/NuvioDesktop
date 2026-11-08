@@ -47,6 +47,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -81,6 +83,34 @@ private fun musicGainPlan(source: TrailerPlaybackSource): MusicGainPlan {
     val lufs = kept ?: youTube
     return MusicGainPlan(key, lufs, youTube, planGainDb(lufs, LoudnessClass.Music), measured = kept != null)
 }
+
+/**
+ * fork:loudness - the gain plan for a track about to open. With nothing known about it (no kept measurement, no figure from
+ * YouTube) it is measured first, as the next track in the queue already is while the one before plays ([LoudnessAhead]):
+ * a guess was up to 12 dB out (a quiet upload at -24 LUFS started near-silent and was turned up 11 s in), and correcting
+ * it while the song plays is the jump this is here to stop. After [MEASURE_FIRST_LIMIT_MS] it starts from the guess.
+ */
+private suspend fun musicGainPlanBeforeStart(source: TrailerPlaybackSource, onWait: () -> Unit): MusicGainPlan {
+    val plan = musicGainPlan(source)
+    if (plan.lufs != null || plan.key == null) return plan
+    onWait()
+    val startedAt = System.currentTimeMillis()
+    val measured = LoudnessAhead.measureNow(source, MEASURE_FIRST_LIMIT_MS)
+    log.i {
+        "loudness ${plan.key}: nothing known, " + if (measured != null) "measured ${formatDb(measured)} LUFS before it starts " +
+            "(waited ${System.currentTimeMillis() - startedAt}ms)" else "not measured in time; starting from the class assumption"
+    }
+    return musicGainPlan(source)
+}
+
+/** The longest a track with nothing known about its loudness is held back while it is measured. */
+private const val MEASURE_FIRST_LIMIT_MS = 30_000L
+
+/**
+ * A measurement this far from a YouTube figure the track started from is still corrected while it plays: the figure was
+ * wrong, and a song 3 dB off for its whole length is worse than one move. Smaller differences are kept for the next play.
+ */
+private const val CORRECT_YOUTUBE_FIGURE_DB = 3.0
 
 /**
  * The decode the measurement reads: stereo at 48 kHz (the rate most streams are already at, so mpv does not resample, and the
@@ -232,8 +262,8 @@ actual fun MusicPlayerSurface(
     }
     val controller = remember(host) { NativePlayerController(host) }
     var revealed by remember { mutableStateOf(false) }
-    // fork:loudness - the gain this load starts at (see MusicGainPlan).
-    val gainPlan = remember(loadId, source) { musicGainPlan(source) }
+    // fork:loudness - the gain this load starts at (see MusicGainPlan), planned by the attach below before it opens.
+    var gainPlan by remember(loadId, source) { mutableStateOf<MusicGainPlan?>(null) }
 
     DisposableEffect(host) {
         host.onFirstPaint = { }
@@ -294,6 +324,9 @@ actual fun MusicPlayerSurface(
                 ),
             ),
         )
+        // fork:loudness - the level is settled before the first sample; a track nothing is known about is measured first
+        // (the song before it is paused meanwhile, rather than playing on under a spinner).
+        val plan = gainPlan ?: musicGainPlanBeforeStart(source) { controller.pause() }.also { gainPlan = it }
         log.i { "attach load=$loadId video=${sourceUrl.take(80)} audio=${sourceAudioUrl?.take(60)} from=${startPositionMs}ms visible=$videoVisible" }
         controller.attach(
             sourceUrl = sourceUrl,
@@ -322,7 +355,7 @@ actual fun MusicPlayerSurface(
             // goes to the shared loudness, set as an init option so the first audio frame already has it.
             initMpvOptions = buildList {
                 add("volume=${volume.coerceIn(0, 100)}")
-                add("af=${loudnessAfValue(LoudnessClass.Music, gainPlan.gainDb)}")
+                add("af=${loudnessAfValue(LoudnessClass.Music, plan.gainDb)}")
                 // Set on the new instance itself (attach swaps the native player on a worker thread), so it applies to
                 // this load's open and nothing else.
                 if (openAtMs > 0L) add("start=${formatMpvSeconds(openAtMs)}")
@@ -416,7 +449,8 @@ actual fun MusicPlayerSurface(
     // fork:loudness - measure a track that has no kept measurement while it plays, keep the answer, and ease the gain to it.
     // fork:visualiser - the same decode builds the track's visualiser map when none is kept.
     LaunchedEffect(controller, loadId, forbiddenRetries) {
-        val key = gainPlan.key
+        val startPlan = androidx.compose.runtime.snapshotFlow { gainPlan }.filterNotNull().first()
+        val key = startPlan.key
         val keptMap = key?.let { TrackMapBook.get(it) }?.takeIf { it.complete }
         var knownLufs = key?.let { TrackLoudnessBook.get(it) }
         TrackMapLive.publish(LiveTrackMap(loadId, keptMap, knownLufs, analysing = keptMap == null))
@@ -426,7 +460,8 @@ actual fun MusicPlayerSurface(
                 if (id == loadId) kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { TrackMapBook.put(key, moved) }
             }
         }
-        val needLoudness = key != null && !gainPlan.measured
+        // Measured ahead since the plan was made (the wait ran out just before it finished): nothing left to measure.
+        val needLoudness = key != null && !startPlan.measured && TrackLoudnessBook.get(key) == null
         if (!needLoudness && keptMap != null) return@LaunchedEffect
         var durationMs = 0L
         var waitedMs = 0L
@@ -547,10 +582,16 @@ actual fun MusicPlayerSurface(
         TrackMapLive.state.value?.takeIf { it.loadId == loadId }?.let { TrackMapLive.publish(it.copy(lufs = lufs)) }
         log.i {
             "loudness $key: measured ${formatDb(lufs)} LUFS; started from " +
-                "${gainPlan.lufs?.let(::formatDb) ?: "the class assumption"} (YouTube said ${gainPlan.youTubeLufs?.let(::formatDb) ?: "nothing"})"
+                "${startPlan.lufs?.let(::formatDb) ?: "the class assumption"} (YouTube said ${startPlan.youTubeLufs?.let(::formatDb) ?: "nothing"})"
         }
         val wanted = planGainDb(lufs, LoudnessClass.Music)
-        gainCorrectionDb(gainPlan.gainDb, wanted)?.let { delta ->
+        gainCorrectionDb(startPlan.gainDb, wanted)?.let { delta ->
+            // fork:loudness - the volume does not move while a song plays unless it started from a guess, or from a YouTube
+            // figure that was well out. Otherwise the measurement is only kept, for the next play.
+            if (startPlan.lufs != null && kotlin.math.abs(delta) < CORRECT_YOUTUBE_FIGURE_DB) {
+                log.i { "loudness $key: ${formatDb(delta)} dB from YouTube's figure; kept for next time, not changed mid-song" }
+                return@LaunchedEffect
+            }
             log.i { "loudness $key: easing the gain by ${formatDb(delta)} dB" }
             easeVolumeGain(controller, delta)
         }
