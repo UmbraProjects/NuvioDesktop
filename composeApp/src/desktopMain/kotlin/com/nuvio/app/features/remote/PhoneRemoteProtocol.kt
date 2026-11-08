@@ -27,8 +27,10 @@ import java.nio.charset.StandardCharsets
  * ```
  * phone: SUBSCRIBE                      the PC then sends STATE or IDLE now and whenever it changes
  * pc:    STATE <kind> <playing 0|1> <positionMs> <durationMs> <volume or -> <volumeMax> <canSkip 0|1>
- *              <title> <subtitle or -> <imageUrl or ->
+ *              <title> <subtitle or -> <imageUrl or -> [<subtitleTrack or -> <audioTrack or ->]
  *    or: IDLE                           nothing is playing
+ * pc:    THEME <accent> <accentEnd or -> <background>   after the first STATE, and when the TV's theme changes
+ * phone: KEY sources                    the film player's sources panel
  * phone: SEEK <ms> | VOLUME <0..volumeMax>
  * phone: OPEN <url>                     a link from the phone's share menu
  * pc:    OPENING <what> | CANT_OPEN     (only for OPEN)
@@ -71,8 +73,20 @@ internal object PhoneRemoteProtocol {
             field(state.title.take(MAX_FIELD_CHARS)),
             field(state.subtitle?.take(MAX_FIELD_CHARS)),
             field(state.imageUrl?.takeIf { it.length <= MAX_URL_CHARS }),
+            // Added later: an older phone reads the first eleven fields and ignores these.
+            field(state.subtitleTrack?.take(MAX_FIELD_CHARS)),
+            field(state.audioTrack?.take(MAX_FIELD_CHARS)),
         ).joinToString(" ")
     }
+
+    /**
+     * `THEME <accent> <accentEnd or -> <background>`, six-digit hex without '#': the TV's theme, sent after SUBSCRIBE
+     * and whenever it changes, so the phone wears the same colours.
+     */
+    fun themeLine(accent: Int, accentEnd: Int?, background: Int): String =
+        "THEME ${hex(accent)} ${accentEnd?.let(::hex) ?: "-"} ${hex(background)}"
+
+    private fun hex(argb: Int): String = "%06X".format(argb and 0xFFFFFF)
 
     private const val MAX_FIELD_CHARS = 200
     private const val MAX_URL_CHARS = 1500
@@ -173,6 +187,8 @@ internal enum class RemoteKey(val wire: String) {
     Enter("enter"),
     Next("next"),
     Previous("previous"),
+    /** The film player's sources panel. */
+    Sources("sources"),
     ;
 
     companion object {

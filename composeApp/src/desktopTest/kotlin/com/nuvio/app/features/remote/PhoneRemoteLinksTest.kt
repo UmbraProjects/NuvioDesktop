@@ -74,13 +74,21 @@ class PhoneRemoteLinksTest {
     fun stateLinesEncodeTheirFields() {
         assertEquals("IDLE", PhoneRemoteProtocol.stateLine(null))
         assertEquals(
-            "STATE film 1 5000 7200000 80 150 0 Blade%20Runner%202049 S01E02%20%C2%B7%20Pilot https%3A%2F%2Fimg%2Fp.jpg",
+            "STATE film 1 5000 7200000 80 150 0 Blade%20Runner%202049 S01E02%20%C2%B7%20Pilot https%3A%2F%2Fimg%2Fp.jpg " +
+                "English%20SDH English%205.1",
             PhoneRemoteProtocol.stateLine(
                 RemoteNowPlaying(
                     kind = "film", title = "Blade Runner 2049", subtitle = "S01E02 · Pilot", imageUrl = "https://img/p.jpg",
                     isPlaying = true, positionMs = 5_000L, durationMs = 7_200_000L, volume = 80, volumeMax = 150,
+                    subtitleTrack = "English SDH", audioTrack = "English 5.1",
                 ),
             ),
         )
+    }
+
+    @Test
+    fun themeLinesAreSixDigitHex() {
+        assertEquals("THEME 1E88E5 - 0D0D0F", PhoneRemoteProtocol.themeLine(0xFF1E88E5.toInt(), null, 0xFF0D0D0F.toInt()))
+        assertEquals("THEME FFD700 FF8800 0B0F10", PhoneRemoteProtocol.themeLine(0xFFFFD700.toInt(), 0xFFFF8800.toInt(), 0xFF0B0F10.toInt()))
     }
 }

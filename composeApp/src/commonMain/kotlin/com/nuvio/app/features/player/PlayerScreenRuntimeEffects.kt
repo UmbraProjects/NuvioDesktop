@@ -903,7 +903,16 @@ private fun PlayerScreenRuntime.phoneRemoteNowPlaying(): com.nuvio.app.features.
         volume = level?.let { if (it.isMuted) 0 else (it.fraction * 100f).toInt().coerceIn(0, max) },
         volumeMax = max,
         canSkip = false,
+        subtitleTrack = phoneRemoteSubtitleName(),
+        audioTrack = audioTracks.firstOrNull { it.index == selectedAudioIndex }?.label?.takeIf { it.isNotBlank() },
     )
+}
+
+/** What the phone's Subtitles tile shows: an addon subtitle by its name, a built-in one by its label, else Off. */
+private fun PlayerScreenRuntime.phoneRemoteSubtitleName(): String? {
+    selectedAddonSubtitle?.let { addon -> return addon.display.ifBlank { addon.language } }
+    if (subtitleTracks.isEmpty()) return null
+    return subtitleTracks.firstOrNull { it.index == selectedSubtitleIndex }?.label?.takeIf { it.isNotBlank() } ?: "Off"
 }
 
 /**

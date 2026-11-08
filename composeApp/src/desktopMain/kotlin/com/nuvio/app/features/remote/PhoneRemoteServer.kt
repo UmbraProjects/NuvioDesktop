@@ -107,6 +107,15 @@ internal class PhoneRemoteServer(
     }
 
     /** Sends [line] (a STATE or IDLE line) to every phone that asked for it. Safe from any thread. */
+    /** The last THEME line, sent to a phone after its first STATE; null until the app has published one. */
+    @Volatile
+    private var lastTheme: String? = null
+
+    fun publishTheme(line: String) {
+        lastTheme = line
+        clients.forEach { session -> if (session.subscribed) session.trySend(line) }
+    }
+
     fun publishState(line: String) {
         lastState = line
         clients.forEach { session -> if (session.subscribed) session.trySend(line) }
@@ -218,6 +227,7 @@ internal class PhoneRemoteServer(
                             RemoteMessage.Subscribe -> {
                                 subscribed = true
                                 send(lastState)
+                                lastTheme?.let(::send)
                             }
                             is RemoteMessage.Seek -> listener.onSeek(message.positionMs)
                             is RemoteMessage.Volume -> listener.onVolume(message.volume)

@@ -78,6 +78,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -126,9 +127,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = RemoteColors) {
-                Surface(modifier = Modifier.fillMaxSize(), color = RemoteColors.background) {
-                    RemoteApp(viewModel)
+            // The TV's theme, as soon as the PC has sent it (and the last one it sent until then).
+            val theme by viewModel.state.collectAsStateWithLifecycle()
+            val glass = remember(theme.theme) { GlassColors.of(theme.theme) }
+            CompositionLocalProvider(LocalGlass provides glass) {
+                MaterialTheme(
+                    colorScheme = materialColors(glass),
+                    typography = MaterialTheme.typography.withFont(NuvioSans),
+                ) {
+                    Surface(modifier = Modifier.fillMaxSize(), color = glass.ground) {
+                        RemoteApp(viewModel)
+                    }
                 }
             }
         }
@@ -178,6 +187,7 @@ internal val RemoteColors = darkColorScheme(
 @Composable
 private fun RemoteApp(viewModel: RemoteViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    GlassGround {
     Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
         when (val screen = state.screen) {
             Screen.Pick -> PickScreen(state, viewModel)
@@ -185,7 +195,20 @@ private fun RemoteApp(viewModel: RemoteViewModel) {
             Screen.Remote -> ConnectedScreen(state, viewModel)
         }
     }
+    }
 }
+
+/** Every text style in Nuvio's typeface. */
+private fun androidx.compose.material3.Typography.withFont(family: androidx.compose.ui.text.font.FontFamily) = copy(
+    displayLarge = displayLarge.copy(fontFamily = family), displayMedium = displayMedium.copy(fontFamily = family),
+    displaySmall = displaySmall.copy(fontFamily = family), headlineLarge = headlineLarge.copy(fontFamily = family),
+    headlineMedium = headlineMedium.copy(fontFamily = family), headlineSmall = headlineSmall.copy(fontFamily = family),
+    titleLarge = titleLarge.copy(fontFamily = family), titleMedium = titleMedium.copy(fontFamily = family),
+    titleSmall = titleSmall.copy(fontFamily = family), bodyLarge = bodyLarge.copy(fontFamily = family),
+    bodyMedium = bodyMedium.copy(fontFamily = family), bodySmall = bodySmall.copy(fontFamily = family),
+    labelLarge = labelLarge.copy(fontFamily = family), labelMedium = labelMedium.copy(fontFamily = family),
+    labelSmall = labelSmall.copy(fontFamily = family),
+)
 
 // ---------------------------------------------------------------- Picking a PC
 
@@ -235,7 +258,7 @@ private fun PickScreen(state: UiState, viewModel: RemoteViewModel) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
                     IconButton(onClick = viewModel::scan) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Search again", tint = Accent)
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Search again", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
@@ -317,7 +340,7 @@ private fun PcRow(
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Rounded.Tv, contentDescription = null, tint = Accent)
+        Icon(Icons.Rounded.Tv, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.size(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontSize = 17.sp, fontWeight = FontWeight.Medium)
@@ -341,7 +364,7 @@ private fun PairScreen(screen: Screen.Pair, state: UiState, viewModel: RemoteVie
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(Icons.Rounded.Tv, contentDescription = null, tint = Accent, modifier = Modifier.size(48.dp))
+        Icon(Icons.Rounded.Tv, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(48.dp))
         Spacer(Modifier.height(16.dp))
         Text("Pair with ${screen.name}", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
@@ -376,445 +399,5 @@ private fun PairScreen(screen: Screen.Pair, state: UiState, viewModel: RemoteVie
                 }
             }
         }
-    }
-}
-
-// ---------------------------------------------------------------- Connected: the remote and the library
-
-private enum class Tab(val label: String) { Remote("Remote"), Video("Movies & TV"), Music("Music") }
-
-/**
- * Once connected: the remote, and the PC's library to browse. Choosing a title or playing an album goes back to the
- * remote, since that is what drives the TV next (picking a source, skipping a track).
- */
-@Composable
-private fun ConnectedScreen(state: UiState, viewModel: RemoteViewModel) {
-    var tabName by rememberSaveable { mutableStateOf(Tab.Remote.name) }
-    val tab = Tab.valueOf(tabName)
-    if (tab != Tab.Remote) BackHandler { tabName = Tab.Remote.name }
-    val toRemote = { tabName = Tab.Remote.name }
-
-    Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            when (tab) {
-                Tab.Remote -> RemoteScreen(state, viewModel)
-                Tab.Video -> VideoLibraryScreen(state, viewModel, onOpened = toRemote)
-                Tab.Music -> MusicLibraryScreen(state, viewModel, onPlayed = toRemote)
-            }
-            state.notice?.let { notice ->
-                Text(
-                    notice,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(PanelRaised)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    fontSize = 14.sp,
-                )
-            }
-        }
-        // The screen already sits inside the safe-drawing padding; the bar must not add the system bars again.
-        NavigationBar(containerColor = Panel, windowInsets = WindowInsets(0, 0, 0, 0)) {
-            Tab.entries.forEach { item ->
-                NavigationBarItem(
-                    selected = item == tab,
-                    onClick = { tabName = item.name },
-                    icon = {
-                        Icon(
-                            when (item) {
-                                Tab.Remote -> Icons.Rounded.Gamepad
-                                Tab.Video -> Icons.Rounded.Movie
-                                Tab.Music -> Icons.Rounded.LibraryMusic
-                            },
-                            contentDescription = null,
-                        )
-                    },
-                    label = { Text(item.label, maxLines = 1) },
-                    colors = NavigationBarItemDefaults.colors(indicatorColor = Accent.copy(alpha = 0.22f)),
-                )
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------- The remote
-
-@Composable
-private fun RemoteScreen(state: UiState, viewModel: RemoteViewModel) {
-    var typing by rememberSaveable { mutableStateOf(false) }
-
-    Column(modifier = Modifier.fillMaxSize().imePadding().padding(horizontal = 20.dp)) {
-        StatusBar(state, onSwitch = viewModel::showPicker, onRetry = viewModel::reconnect)
-
-        if (typing) {
-            TypingPanel(viewModel, onClose = { typing = false })
-        }
-
-        val playing = state.nowPlaying
-        if (playing != null && !typing) {
-            NowPlayingCard(playing, state.cover, viewModel)
-        }
-
-        // The D-pad takes whatever height the three rows of keys leave, so the bottom row and its labels always show
-        // (the now-playing card or the keyboard can take a lot of the screen). Never larger than 280 dp or the width.
-        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            // coerceAtMost then coerceAtLeast, never coerceIn: on a very narrow screen the cap can fall below the floor.
-            val padSize = (maxHeight - KEY_ROWS_HEIGHT).coerceAtMost(minOf(MAX_PAD, maxWidth * 0.85f)).coerceAtLeast(MIN_PAD)
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceEvenly,
-            ) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    RoundKey(Icons.AutoMirrored.Rounded.Undo, "Back") { viewModel.press(RemoteKey.Back) }
-                    RoundKey(Icons.Rounded.Home, "Home") { viewModel.press(RemoteKey.Home) }
-                    RoundKey(Icons.Rounded.Search, "Search") { viewModel.press(RemoteKey.Search) }
-                    RoundKey(Icons.Rounded.Keyboard, "Type", highlighted = typing) { typing = !typing }
-                }
-
-                DPad(viewModel, size = padSize)
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    RoundKey(Icons.Rounded.FastRewind, "Back 10s", repeat = true) { viewModel.press(RemoteKey.SeekBack) }
-                    // The one play/pause on the screen, so it shows what pressing it will do.
-                    val isPlaying = playing?.isPlaying == true
-                    RoundKey(
-                        if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        if (isPlaying) "Pause" else "Play",
-                        large = true,
-                    ) { viewModel.press(RemoteKey.PlayPause) }
-                    RoundKey(Icons.Rounded.FastForward, "Forward 10s", repeat = true) { viewModel.press(RemoteKey.SeekForward) }
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    RoundKey(Icons.Rounded.Subtitles, "Subtitles") { viewModel.press(RemoteKey.Subtitles) }
-                    RoundKey(Icons.Rounded.Audiotrack, "Audio") { viewModel.press(RemoteKey.Audio) }
-                    RoundKey(Icons.AutoMirrored.Rounded.VolumeOff, "Mute") { viewModel.press(RemoteKey.Mute) }
-                    RoundKey(Icons.AutoMirrored.Rounded.VolumeDown, "Vol −", repeat = true) { viewModel.press(RemoteKey.VolumeDown) }
-                    RoundKey(Icons.AutoMirrored.Rounded.VolumeUp, "Vol +", repeat = true) { viewModel.press(RemoteKey.VolumeUp) }
-                }
-            }
-        }
-    }
-}
-
-/** The three rows of round keys with their labels (75 + 95 + 75 dp) plus room for the gaps between rows. */
-private val KEY_ROWS_HEIGHT = 285.dp
-private val MIN_PAD = 150.dp
-private val MAX_PAD = 280.dp
-
-/**
- * What the PC is playing: cover, the full title and artist (long ones scroll), previous and next under them for music,
- * and a seek bar that moves on by itself between the PC's updates and seeks the PC when let go. Play/pause is the big
- * key below, so it is not repeated here.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun NowPlayingCard(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel) {
-    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
-    LaunchedEffect(playing) {
-        now = SystemClock.elapsedRealtime()
-        while (playing.isPlaying) {
-            delay(500)
-            now = SystemClock.elapsedRealtime()
-        }
-    }
-    var dragging by remember(playing.title) { mutableStateOf<Long?>(null) }
-    val position = playing.positionAt(now)
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Panel)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(PanelRaised),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (cover != null) {
-                    Image(cover.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                } else {
-                    Icon(if (playing.kind == "music") Icons.Rounded.MusicNote else Icons.Rounded.Movie, contentDescription = null, tint = Muted)
-                }
-            }
-            Spacer(Modifier.size(12.dp))
-            // The whole width beside the cover goes to the text; a title too long for it scrolls slowly instead of
-            // being cut to "If I Die 2N…".
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    playing.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    modifier = Modifier.basicMarquee(initialDelayMillis = 1_500),
-                )
-                playing.subtitle?.let {
-                    Text(it, color = Muted, fontSize = 13.sp, maxLines = 1, modifier = Modifier.basicMarquee(initialDelayMillis = 1_500))
-                }
-            }
-        }
-        if (playing.hasTimeline) {
-            val shown = (dragging ?: position).coerceIn(0L, playing.durationMs)
-            Spacer(Modifier.height(6.dp))
-            SeekBar(
-                fraction = shown.toFloat() / playing.durationMs.toFloat(),
-                onScrub = { fraction -> dragging = (fraction * playing.durationMs).toLong() },
-                onScrubEnd = {
-                    dragging?.let(viewModel::seek)
-                    dragging = null
-                },
-            )
-        }
-        // Times at the ends, and previous / next between them when the queue has them (music).
-        if (playing.hasTimeline || playing.canSkip) Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (playing.hasTimeline) formatTime((dragging ?: position).coerceIn(0L, playing.durationMs)) else "",
-                color = Muted,
-                fontSize = 12.sp,
-                modifier = Modifier.weight(1f),
-            )
-            if (playing.canSkip) {
-                IconButton(onClick = { viewModel.press(RemoteKey.Previous) }) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(28.dp))
-                }
-                Spacer(Modifier.size(16.dp))
-                IconButton(onClick = { viewModel.press(RemoteKey.Next) }) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next", modifier = Modifier.size(28.dp))
-                }
-            }
-            Text(
-                if (playing.hasTimeline) formatTime(playing.durationMs) else "",
-                color = Muted,
-                fontSize = 12.sp,
-                textAlign = TextAlign.End,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-/**
- * A thin seek bar with a small round marker. Drawn here rather than with Material's Slider, whose current look (a
- * tall bar for a thumb, a gap either side of it and a dot at the end) did not suit the card. Tap or drag anywhere on
- * it; [onScrub] follows the finger and [onScrubEnd] runs on release, which is when the PC is told to seek.
- */
-@Composable
-private fun SeekBar(fraction: Float, onScrub: (Float) -> Unit, onScrubEnd: () -> Unit) {
-    val scrub by rememberUpdatedState(onScrub)
-    val end by rememberUpdatedState(onScrubEnd)
-    val markerRadius = 7.dp
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(24.dp)
-            .pointerInput(Unit) {
-                val inset = markerRadius.toPx()
-                fun at(x: Float) = ((x - inset) / (size.width - 2 * inset)).coerceIn(0f, 1f)
-                detectTapGestures(onPress = { offset ->
-                    scrub(at(offset.x))
-                    // A press that turns into a drag is cancelled here; the drag's own end does the seek then.
-                    if (tryAwaitRelease()) end()
-                })
-            }
-            .pointerInput(Unit) {
-                val inset = markerRadius.toPx()
-                fun at(x: Float) = ((x - inset) / (size.width - 2 * inset)).coerceIn(0f, 1f)
-                detectHorizontalDragGestures(
-                    onDragStart = { offset -> scrub(at(offset.x)) },
-                    onDragEnd = { end() },
-                    onDragCancel = { end() },
-                ) { change, _ ->
-                    change.consume()
-                    scrub(at(change.position.x))
-                }
-            },
-    ) {
-        val inset = markerRadius.toPx()
-        val y = size.height / 2
-        val x = inset + (size.width - 2 * inset) * fraction.coerceIn(0f, 1f)
-        val stroke = 4.dp.toPx()
-        drawLine(PanelRaised, Offset(inset, y), Offset(size.width - inset, y), strokeWidth = stroke, cap = StrokeCap.Round)
-        drawLine(Accent, Offset(inset, y), Offset(x, y), strokeWidth = stroke, cap = StrokeCap.Round)
-        drawCircle(Accent, radius = inset, center = Offset(x, y))
-    }
-}
-
-/** 3:07 or 1:02:09. */
-private fun formatTime(ms: Long): String {
-    val total = ms.coerceAtLeast(0L) / 1000L
-    val hours = total / 3600
-    val minutes = (total % 3600) / 60
-    val seconds = (total % 60).toString().padStart(2, '0')
-    return if (hours > 0) "$hours:${minutes.toString().padStart(2, '0')}:$seconds" else "$minutes:$seconds"
-}
-
-@Composable
-private fun StatusBar(state: UiState, onSwitch: () -> Unit, onRetry: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val (dot, label) = when (state.link) {
-            Link.Connected -> Color(0xFF6FD08C) to "Connected"
-            Link.Connecting -> Color(0xFFF2C14E) to "Connecting…"
-            Link.Offline -> Color(0xFFFF7A6B) to "Offline · tap to retry"
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(enabled = state.link == Link.Offline, onClick = onRetry)
-                .padding(vertical = 6.dp),
-        ) {
-            Text(state.current?.name ?: "Nuvio", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
-                Spacer(Modifier.size(6.dp))
-                Text(label, color = Muted, fontSize = 13.sp)
-            }
-            state.message?.let { Text(it, color = Color(0xFFFFB4A9), fontSize = 13.sp) }
-        }
-        IconButton(onClick = onSwitch) {
-            Icon(Icons.Rounded.Devices, contentDescription = "Choose another PC", tint = Muted)
-        }
-    }
-}
-
-/**
- * Typing goes to the PC as you type: added letters as text, deleted ones as backspaces, so the
- * PC's search box follows the phone's exactly. Return sends Enter.
- */
-@Composable
-private fun TypingPanel(viewModel: RemoteViewModel, onClose: () -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            value = text,
-            onValueChange = { next ->
-                val common = text.commonPrefixWith(next).length
-                val removed = text.length - common
-                if (removed > 0) viewModel.backspace(removed)
-                if (next.length > common) viewModel.type(next.substring(common))
-                text = next
-            },
-            placeholder = { Text("Type into Nuvio") },
-            singleLine = true,
-            modifier = Modifier.weight(1f).focusRequester(focus),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { viewModel.press(RemoteKey.Enter) }),
-        )
-        IconButton(onClick = { viewModel.press(RemoteKey.Enter) }) {
-            Icon(Icons.AutoMirrored.Rounded.KeyboardReturn, contentDescription = "Enter", tint = Accent)
-        }
-        IconButton(onClick = {
-            text = ""
-            onClose()
-        }) {
-            Icon(Icons.Rounded.Close, contentDescription = "Close keyboard", tint = Muted)
-        }
-    }
-}
-
-@Composable
-private fun DPad(viewModel: RemoteViewModel, size: Dp) {
-    val compact = size < 240.dp
-    Box(
-        modifier = Modifier.size(size).clip(CircleShape).background(Panel),
-        contentAlignment = Alignment.Center,
-    ) {
-        val arrow = size * 0.3f
-        PressArea(Modifier.align(Alignment.TopCenter).size(arrow), repeat = true, onPress = { viewModel.press(RemoteKey.Up) }) {
-            Icon(Icons.Rounded.ExpandLess, contentDescription = "Up", modifier = Modifier.size(40.dp))
-        }
-        PressArea(Modifier.align(Alignment.BottomCenter).size(arrow), repeat = true, onPress = { viewModel.press(RemoteKey.Down) }) {
-            Icon(Icons.Rounded.ExpandMore, contentDescription = "Down", modifier = Modifier.size(40.dp))
-        }
-        PressArea(Modifier.align(Alignment.CenterStart).size(arrow), repeat = true, onPress = { viewModel.press(RemoteKey.Left) }) {
-            Icon(Icons.Rounded.ChevronLeft, contentDescription = "Left", modifier = Modifier.size(40.dp))
-        }
-        PressArea(Modifier.align(Alignment.CenterEnd).size(arrow), repeat = true, onPress = { viewModel.press(RemoteKey.Right) }) {
-            Icon(Icons.Rounded.ChevronRight, contentDescription = "Right", modifier = Modifier.size(40.dp))
-        }
-        PressArea(
-            Modifier.fillMaxSize(0.38f).aspectRatio(1f).clip(CircleShape).background(PanelRaised),
-            onPress = { viewModel.press(RemoteKey.Select) },
-        ) {
-            Text("OK", fontSize = if (compact) 18.sp else 22.sp, fontWeight = FontWeight.SemiBold)
-        }
-    }
-}
-
-@Composable
-private fun RoundKey(
-    icon: ImageVector,
-    label: String,
-    large: Boolean = false,
-    highlighted: Boolean = false,
-    repeat: Boolean = false,
-    onPress: () -> Unit,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        PressArea(
-            Modifier
-                .size(if (large) 72.dp else 56.dp)
-                .clip(CircleShape)
-                .background(if (highlighted || large) Accent.copy(alpha = if (large) 1f else 0.25f) else Panel),
-            repeat = repeat,
-            onPress = onPress,
-        ) {
-            Icon(
-                icon,
-                contentDescription = label,
-                tint = if (large) RemoteColors.onPrimary else RemoteColors.onSurface,
-                modifier = Modifier.size(if (large) 36.dp else 26.dp),
-            )
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(label, color = Muted, fontSize = 11.sp)
-    }
-}
-
-/**
- * Fires on touch-down (not release, so the remote feels immediate) with a light tick, and with
- * [repeat] keeps firing while held, the way a TV remote's arrows do.
- */
-@Composable
-private fun PressArea(
-    modifier: Modifier,
-    repeat: Boolean = false,
-    onPress: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-    Box(
-        modifier = modifier.pointerInput(repeat) {
-            detectTapGestures(onPress = {
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                onPress()
-                var repeater: Job? = null
-                if (repeat) {
-                    repeater = scope.launch {
-                        delay(400)
-                        while (true) {
-                            onPress()
-                            delay(110)
-                        }
-                    }
-                }
-                tryAwaitRelease()
-                repeater?.cancel()
-            })
-        },
-        contentAlignment = Alignment.Center,
-    ) {
-        content()
     }
 }

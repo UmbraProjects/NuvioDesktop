@@ -27,6 +27,10 @@ data class RemoteNowPlaying(
     val volumeMax: Int = 100,
     /** True when Next and Previous mean something (the music queue). */
     val canSkip: Boolean = false,
+    /** The film player's subtitle in use ("English SDH"), "Off", or null when it has none to report. */
+    val subtitleTrack: String? = null,
+    /** The film player's audio track in use ("English 5.1"), or null. */
+    val audioTrack: String? = null,
 )
 
 /** What the phone can do to the film player beyond the keys a controller sends. */

@@ -45,6 +45,8 @@ enum class RemoteKey(val wire: String) {
     Subtitles("subtitles"), Audio("audio"),
     Backspace("backspace"), Enter("enter"),
     Next("next"), Previous("previous"),
+    /** The film player's sources panel. */
+    Sources("sources"),
 }
 
 /**
@@ -65,6 +67,9 @@ data class NowPlaying(
     val subtitle: String?,
     val imageUrl: String?,
     val receivedAtMs: Long,
+    /** The film's subtitle in use ("English SDH" or "Off"); null from a PC that does not say. */
+    val subtitleTrack: String? = null,
+    val audioTrack: String? = null,
 ) {
     val hasTimeline: Boolean get() = durationMs > 0L
 
@@ -78,6 +83,8 @@ data class NowPlaying(
 sealed interface ServerLine {
     data class State(val nowPlaying: NowPlaying) : ServerLine
     data object Idle : ServerLine
+    /** The TV's theme, as ARGB colours. */
+    data class Theme(val theme: RemoteTheme) : ServerLine
     data object Pong : ServerLine
     data class Opening(val what: String) : ServerLine
     data object CantOpen : ServerLine
@@ -95,6 +102,7 @@ sealed interface ServerLine {
                 "OPENING" -> Opening(RemoteProtocol.decode(parts.getOrElse(1) { "" }))
                 "STATE" -> parseState(parts, nowMs)?.let(::State) ?: Other
                 "LIBRARY" -> LibraryLines.parse(line) ?: Other
+                "THEME" -> RemoteTheme.parse(parts)?.let(::Theme) ?: Other
                 else -> Other
             }
         }
@@ -114,6 +122,8 @@ sealed interface ServerLine {
                 subtitle = field(9),
                 imageUrl = field(10),
                 receivedAtMs = nowMs,
+                subtitleTrack = parts.getOrNull(11)?.let { if (it == "-" || it.isBlank()) null else RemoteProtocol.decode(it) },
+                audioTrack = parts.getOrNull(12)?.let { if (it == "-" || it.isBlank()) null else RemoteProtocol.decode(it) },
             )
         }
     }

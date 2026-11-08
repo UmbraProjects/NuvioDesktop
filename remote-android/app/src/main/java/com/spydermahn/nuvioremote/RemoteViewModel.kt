@@ -41,6 +41,9 @@ data class UiState(
     val music: MusicLibraryState = MusicLibraryState(),
     /** A short line about something just sent ("Opening Blade Runner on the TV"); clears itself. */
     val notice: String? = null,
+    /** The TV's theme; the phone wears it. */
+    val theme: RemoteTheme = RemoteTheme.Default,
+    val padMode: PadMode = PadMode.Touchpad,
 )
 
 /** Where a library list stands. [problem] is set when the PC never answered (a Nuvio from before the library). */
@@ -68,7 +71,13 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     private val io = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "nuvio-remote-io") }
     private val coverIo = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "nuvio-remote-covers") }
 
-    private val _state = MutableStateFlow(UiState(saved = store.saved()))
+    private val _state = MutableStateFlow(
+        UiState(
+            saved = store.saved(),
+            theme = store.last()?.let { store.theme(it.address) } ?: RemoteTheme.Default,
+            padMode = store.padMode,
+        ),
+    )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private var session: RemoteSession? = null
@@ -213,6 +222,11 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     fun press(key: RemoteKey) = sendOrReconnect { it.key(key) }
 
+    fun setPadMode(mode: PadMode) {
+        store.padMode = mode
+        _state.update { it.copy(padMode = mode) }
+    }
+
     fun type(text: String) = sendOrReconnect { it.text(text) }
 
     fun backspace(count: Int) = sendOrReconnect { session -> repeat(count) { session.key(RemoteKey.Backspace) } }
@@ -283,7 +297,9 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     private fun onConnected(pc: SavedPc) {
         // Another PC has another library: forget the one shown.
         if (_state.value.current?.address != pc.address) {
-            _state.update { it.copy(video = VideoLibraryState(), music = MusicLibraryState()) }
+            _state.update {
+                it.copy(video = VideoLibraryState(), music = MusicLibraryState(), theme = store.theme(pc.address) ?: RemoteTheme.Default)
+            }
         }
         saveAll(_state.value.saved.filterNot { it.address == pc.address } + pc)
         store.lastAddress = pc.address
@@ -300,6 +316,10 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                 when (line) {
                     is ServerLine.State -> showNowPlaying(line.nowPlaying)
                     ServerLine.Idle -> _state.update { it.copy(nowPlaying = null, cover = null) }
+                    is ServerLine.Theme -> {
+                        _state.update { it.copy(theme = line.theme) }
+                        _state.value.current?.let { pc -> store.saveTheme(pc.address, line.theme) }
+                    }
                     is ServerLine.VideoLibrary -> onVideoLibrary(line)
                     is ServerLine.MusicLibrary -> onMusicLibrary(line)
                     is ServerLine.Opening -> notify("Opening ${line.what} on the TV")

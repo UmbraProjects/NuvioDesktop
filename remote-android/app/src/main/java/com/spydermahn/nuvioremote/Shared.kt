@@ -8,6 +8,8 @@ import android.provider.Settings
 import java.net.HttpURLConnection
 import java.net.URL
 
+enum class PadMode { Touchpad, DPad }
+
 data class SavedPc(val name: String, val host: String, val port: Int, val token: String) {
     val address get() = "$host:$port"
 }
@@ -35,12 +37,28 @@ class PcStore(context: Context) {
             prefs.edit().apply { if (value == null) remove(KEY_LAST) else putString(KEY_LAST, value) }.apply()
         }
 
+    /** The theme a PC last sent, so the app opens in that TV's colours before it has connected. */
+    fun theme(address: String): RemoteTheme? = RemoteTheme.decode(prefs.getString("$KEY_THEME$address", null))
+
+    fun saveTheme(address: String, theme: RemoteTheme) {
+        prefs.edit().putString("$KEY_THEME$address", theme.encode()).apply()
+    }
+
+    /** Touchpad (the default) or the D-pad: whichever was used last. */
+    var padMode: PadMode
+        get() = runCatching { PadMode.valueOf(prefs.getString(KEY_PAD, null) ?: "") }.getOrDefault(PadMode.Touchpad)
+        set(value) {
+            prefs.edit().putString(KEY_PAD, value.name).apply()
+        }
+
     /** The PC the remote was last connected to, if it is still paired. */
     fun last(): SavedPc? = lastAddress?.let { address -> saved().firstOrNull { it.address == address } }
 
     private companion object {
         const val KEY_SAVED = "saved_pcs"
         const val KEY_LAST = "last_pc"
+        const val KEY_THEME = "theme_"
+        const val KEY_PAD = "pad_mode"
     }
 }
 

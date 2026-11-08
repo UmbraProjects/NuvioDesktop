@@ -21,6 +21,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.ui.graphics.toArgb
+import com.nuvio.app.core.ui.AppTheme
+import com.nuvio.app.core.ui.ThemeColors
+import com.nuvio.app.features.settings.ThemeSettingsRepository
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +66,7 @@ internal object PhoneRemote {
     /** Main for anything that touches a player; the state watcher runs off it. */
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var stateWatch: Job? = null
+    private var themeWatch: Job? = null
 
     @Synchronized
     fun ensureLoaded() {
@@ -120,12 +126,15 @@ internal object PhoneRemote {
         created.start()
         server = created
         watchState(created)
+        watchTheme(created)
         _state.update { it.copy(listening = created.port != null, port = created.port, addresses = localAddresses()) }
     }
 
     private fun closeServer() {
         stateWatch?.cancel()
         stateWatch = null
+        themeWatch?.cancel()
+        themeWatch = null
         server?.stop()
         server = null
         _state.update { it.copy(listening = false, port = null, connectedDevices = emptyList()) }
@@ -226,6 +235,25 @@ internal object PhoneRemote {
         }
     }
 
+    /**
+     * fork:phone-remote theme: the phone wears the TV's theme. The accent (and the second stop of a custom gradient)
+     * and the background go over as a THEME line, again whenever the theme is changed in Settings.
+     */
+    private fun watchTheme(target: PhoneRemoteServer) {
+        themeWatch?.cancel()
+        ThemeSettingsRepository.ensureLoaded()
+        themeWatch = CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            combine(ThemeSettingsRepository.selectedTheme, ThemeSettingsRepository.customTheme) { theme, custom ->
+                val palette = if (theme == AppTheme.CUSTOM) custom.palette else ThemeColors.getColorPalette(theme)
+                PhoneRemoteProtocol.themeLine(
+                    accent = palette.secondary.toArgb(),
+                    accentEnd = palette.accentGradientEnd?.toArgb(),
+                    background = palette.background.toArgb(),
+                )
+            }.distinctUntilChanged().collect(target::publishTheme)
+        }
+    }
+
     internal fun musicNowPlaying(state: MusicPlayerState): RemoteNowPlaying? {
         val track = state.track ?: return null
         val album = track.albumTitle ?: state.album?.title
@@ -304,6 +332,7 @@ internal object PhoneRemote {
             RemoteKey.SeekForward -> player(PlayerShortcutAction.SeekForward)
             RemoteKey.Mute -> player(PlayerShortcutAction.ToggleMute)
             RemoteKey.Subtitles -> player(PlayerShortcutAction.NextSubtitle)
+            RemoteKey.Sources -> player(PlayerShortcutAction.OpenSources)
             RemoteKey.Audio -> player(PlayerShortcutAction.NextAudio)
             // The player pins the up/down arrows to volume; outside it they would move the focus,
             // which is not what a volume button should do, so they are dropped there.

@@ -27,6 +27,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
@@ -46,6 +49,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -85,58 +89,88 @@ private fun matches(query: String, vararg fields: String?): Boolean {
 
 // ---------------------------------------------------------------- Shared pieces
 
+/**
+ * The top of a library tab, in Nuvio's glass style: an accent label naming where it comes from, the title, and a glass
+ * search box. [kicker] is the label ("Your library on NIMILY").
+ */
 @Composable
 private fun LibraryHeader(
     title: String,
+    kicker: String,
     query: String,
     onQuery: (String) -> Unit,
     placeholder: String,
     loading: Boolean,
     onRefresh: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp)) {
+    val g = LocalGlass.current
+    Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 20.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                GlassLabel(kicker)
+                Text(title, color = g.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            }
             if (loading) {
                 CircularProgressIndicator(modifier = Modifier.padding(12.dp).size(20.dp), strokeWidth = 2.dp)
             } else {
-                IconButton(onClick = onRefresh) { Icon(Icons.Rounded.Refresh, contentDescription = "Refresh", tint = Muted) }
+                IconButton(onClick = onRefresh) { Icon(Icons.Rounded.Refresh, contentDescription = "Refresh", tint = g.textSecondary) }
             }
         }
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQuery,
-            placeholder = { Text(placeholder) },
-            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = Muted) },
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, contentDescription = "Clear", tint = Muted) }
-                }
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            modifier = Modifier.fillMaxWidth().padding(end = 8.dp),
-        )
+        Row(
+            Modifier.fillMaxWidth().height(48.dp).glass(RoundedCornerShape(24.dp)).padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.Search, contentDescription = null, tint = g.textSecondary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.size(10.dp))
+            Box(Modifier.weight(1f)) {
+                if (query.isEmpty()) Text(placeholder, color = g.textMuted, fontSize = 15.sp)
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQuery,
+                    singleLine = true,
+                    textStyle = TextStyle(color = g.text, fontSize = 15.sp, fontFamily = NuvioSans),
+                    cursorBrush = SolidColor(g.accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, contentDescription = "Clear", tint = g.textSecondary) }
+            }
+        }
     }
 }
 
+/** A row of glass pills to narrow a list; scrolls when there are many (a library's sections). */
 @Composable
 private fun Chips(labels: List<String>, selected: String, onSelect: (String) -> Unit) {
+    val g = LocalGlass.current
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(labels, key = { it }) { label ->
-            FilterChip(
-                selected = label == selected,
-                onClick = { onSelect(label) },
-                label = { Text(label, maxLines = 1) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Accent.copy(alpha = 0.22f),
-                    selectedLabelColor = RemoteColors.onSurface,
-                ),
-            )
+            val on = label == selected
+            Box(
+                Modifier
+                    .height(36.dp)
+                    .glass(RoundedCornerShape(18.dp), fill = if (on) g.tint else g.glassFill, edge = if (on) g.tintEdge else g.glassEdge)
+                    .clickable { onSelect(label) }
+                    .padding(horizontal = 14.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, color = if (on) g.accent else Color(0xFFC9CDD2), fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+            }
         }
+    }
+}
+
+/** A section label and its count, between the parts of a list ("CONTINUE WATCHING · 3"). */
+@Composable
+private fun SectionRow(label: String, count: String?) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        GlassLabel(label, Modifier.weight(1f))
+        if (count != null) GlassTag(count)
     }
 }
 
@@ -201,7 +235,7 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
     }
 
     Column(Modifier.fillMaxSize()) {
-        LibraryHeader("Movies & TV", query, { query = it }, "Search your library", library.loading) { viewModel.loadVideo(force = true) }
+        LibraryHeader("Watch", "Your library on ${state.current?.name ?: "the PC"}", query, { query = it }, "Search your library", library.loading) { viewModel.loadVideo(force = true) }
         if (chips.size > 2) Chips(chips, activeSection) { section = it }
         if (shown.isEmpty()) {
             EmptyLibrary(
@@ -220,7 +254,7 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
                 modifier = Modifier.fillMaxSize(),
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text(countLabel(shown.size, "title"), color = Muted, fontSize = 13.sp)
+                    SectionRow(if (activeSection == ALL) "Your library" else activeSection, countLabel(shown.size, "title"))
                 }
                 items(shown, key = { it.key }) { title ->
                     PosterCell(title) {
@@ -241,7 +275,7 @@ private fun PosterCell(title: LibraryTitle, onClick: () -> Unit) {
                 url = title.poster,
                 fallback = title.posterFallback,
                 placeholder = title.name,
-                modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp)),
+                modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f).glass(RoundedCornerShape(12.dp), fill = Color.Transparent),
             )
             if (title.watched) {
                 Icon(
@@ -296,8 +330,15 @@ fun MusicLibraryScreen(state: UiState, viewModel: RemoteViewModel, onPlayed: () 
         )
     } else {
         Column(Modifier.fillMaxSize()) {
-            LibraryHeader("Music", query, { query = it }, "Search artists and albums", library.loading) { viewModel.loadMusic(force = true) }
-            Chips(listOf(ALBUMS, ARTISTS), view) { view = it }
+            LibraryHeader("Music", "Your music on ${state.current?.name ?: "the PC"}", query, { query = it }, "Search artists and albums", library.loading) { viewModel.loadMusic(force = true) }
+            PillTabs(
+                items = listOf(ALBUMS, ARTISTS),
+                selected = view,
+                label = { it },
+                onSelect = { view = it },
+                height = 38.dp,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp),
+            )
             when {
                 library.albums.isEmpty() && library.artists.isEmpty() -> EmptyLibrary(
                     loading = library.loading,
@@ -327,7 +368,7 @@ fun MusicLibraryScreen(state: UiState, viewModel: RemoteViewModel, onPlayed: () 
                         } && matches(query, album.title, artistsById[album.artistId]?.name, album.year)
                     }
                     if (kinds.size > 2) Chips(kinds, activeKind) { kind = it }
-                    AlbumGrid(shown, artistsById, header = countLabel(shown.size, "album")) { picked = it }
+                    AlbumGrid(shown, artistsById, header = if (activeKind == ALL) "All albums" else activeKind, count = countLabel(shown.size, "album")) { picked = it }
                 }
             }
         }
@@ -365,6 +406,7 @@ private fun AlbumGrid(
     albums: List<LibraryAlbum>,
     artistsById: Map<String, LibraryArtistInfo>,
     header: String?,
+    count: String? = null,
     showArtist: Boolean = true,
     top: (@Composable () -> Unit)? = null,
     onClick: (LibraryAlbum) -> Unit,
@@ -377,7 +419,7 @@ private fun AlbumGrid(
         modifier = Modifier.fillMaxSize(),
     ) {
         if (top != null) item(span = { GridItemSpan(maxLineSpan) }) { top() }
-        if (header != null) item(span = { GridItemSpan(maxLineSpan) }) { Text(header, color = Muted, fontSize = 13.sp) }
+        if (header != null) item(span = { GridItemSpan(maxLineSpan) }) { SectionRow(header, count) }
         items(albums, key = { it.artistId + "|" + it.browseId }) { album ->
             Column(Modifier.clip(RoundedCornerShape(10.dp)).clickable { onClick(album) }) {
                 Box {
@@ -448,12 +490,13 @@ private fun ArtistPage(
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
-            Text(artist.name, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            DisplayTitle(artist.name, size = 24, maxLines = 1)
         }
         AlbumGrid(
             albums = albums.sortedWith(compareBy<LibraryAlbum> { kindOrder(it.kind) }.thenByDescending { it.year ?: "" }),
             artistsById = emptyMap(),
-            header = countLabel(albums.size, "release"),
+            header = "Discography",
+            count = countLabel(albums.size, "release"),
             showArtist = false,
             top = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -477,18 +520,20 @@ private fun ArtistPage(
 
 @Composable
 private fun ActionButton(label: String, icon: ImageVector, primary: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    if (primary) {
-        Button(onClick = onClick, modifier = modifier) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.size(8.dp))
-            Text(label)
-        }
-    } else {
-        OutlinedButton(onClick = onClick, modifier = modifier, colors = ButtonDefaults.outlinedButtonColors(contentColor = RemoteColors.onSurface)) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.size(8.dp))
-            Text(label)
-        }
+    // Nuvio's glass buttons: the main one tinted in the accent (as "Play the song" on the TV), the others plain glass.
+    val g = LocalGlass.current
+    Row(
+        modifier
+            .height(if (primary) 52.dp else 46.dp)
+            .glass(RoundedCornerShape(26.dp), fill = if (primary) g.tint else g.glassFill, edge = if (primary) g.tintEdge else g.glassEdge)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 18.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = g.text, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.size(8.dp))
+        Text(label, color = g.text, fontSize = if (primary) 16.sp else 14.sp, fontWeight = if (primary) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -503,7 +548,7 @@ private fun AlbumSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = PanelRaised,
+        containerColor = Color(0xFF14151A),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -515,9 +560,9 @@ private fun AlbumSheet(
                 )
                 Spacer(Modifier.size(16.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(album.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    artist?.let { Text(it.name, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    Text(listOfNotNull(album.kind, album.year).joinToString(" · "), color = Muted, fontSize = 13.sp)
+                    GlassLabel(listOfNotNull(album.kind, album.year).joinToString(" · "))
+                    DisplayTitle(album.title, size = 22, maxLines = 2)
+                    artist?.let { Text(it.name, color = LocalGlass.current.accent, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
             }
             Spacer(Modifier.height(20.dp))

@@ -120,6 +120,7 @@ class PhoneRemoteServerTest {
     fun aSubscribedPhoneHearsTheStateAndCanSeekSetVolumeAndOpen() {
         tokens += "saved"
         server.publishState(PhoneRemoteProtocol.stateLine(RemoteNowPlaying(kind = "music", title = "Billie Jean", positionMs = 1_000L)))
+        server.publishTheme("THEME 1E88E5 - 0D0D0F")
         Phone().use { phone ->
             phone.send("HELLO 1 saved Phone")
             assertEquals("WELCOME Living%20Room%20PC", phone.receive())
@@ -127,7 +128,11 @@ class PhoneRemoteServerTest {
             phone.send("PING")
             assertEquals("PONG", phone.receive())
             phone.send("SUBSCRIBE")
-            assertEquals("STATE music 0 1000 0 - 100 0 Billie%20Jean - -", phone.receive())
+            assertEquals("STATE music 0 1000 0 - 100 0 Billie%20Jean - - - -", phone.receive())
+            // The theme published before the phone subscribed follows its first STATE, and a change is pushed.
+            assertEquals("THEME 1E88E5 - 0D0D0F", phone.receive())
+            server.publishTheme("THEME E53935 - 0D0D0D")
+            assertEquals("THEME E53935 - 0D0D0D", phone.receive())
             server.publishState(PhoneRemoteProtocol.IDLE)
             assertEquals("IDLE", phone.receive())
 
