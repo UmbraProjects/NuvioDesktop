@@ -35,15 +35,27 @@ jobs:
       # Download the wrapper distribution up front with retries so a blip doesn't fail the job.
       - name: Warm up Gradle wrapper (retry)
         shell: pwsh
+        # services.gradle.org hands the zip on to GitHub's release servers, which time out (504) at times. A mirror is tried
+        # too, alternating with the official address. Safe because gradle-wrapper.properties pins distributionSha256Sum: the
+        # wrapper refuses any download that is not byte for byte the official Gradle zip. Only this checkout's copy of the
+        # properties is rewritten; nothing is committed.
         run: |
+          $props = 'gradle/wrapper/gradle-wrapper.properties'
+          if (-not (Select-String -Path $props -Pattern '^distributionSha256Sum=[0-9a-f]{64}$' -Quiet)) { throw "distributionSha256Sum must be pinned before a mirror is used" }
+          $official = (Select-String -Path $props -Pattern '^distributionUrl=(.*)$').Matches[0].Groups[1].Value
+          $zip = [regex]::Match($official, 'gradle-[0-9.]+-bin\.zip').Value
+          $sources = @($official, "https\://mirrors.cloud.tencent.com/gradle/$zip")
           $ok = $false
-          foreach ($i in 1..5) {
+          foreach ($i in 1..6) {
+            $url = $sources[($i - 1) % $sources.Count]
+            (Get-Content $props) -replace '^distributionUrl=.*$', "distributionUrl=$url" | Set-Content $props
+            Write-Host "Gradle from $url"
             ./gradlew.bat --version
             if ($LASTEXITCODE -eq 0) { $ok = $true; break }
-            Write-Host "Gradle wrapper download failed (attempt $i/5); retrying in $($i * 10)s"
-            Start-Sleep -Seconds ($i * 10)
+            Write-Host "Gradle wrapper download failed (attempt $i/6); retrying in $($i * 5)s"
+            Start-Sleep -Seconds ($i * 5)
           }
-          if (-not $ok) { throw "Could not download the Gradle wrapper after 5 attempts" }
+          if (-not $ok) { throw "Could not download the Gradle wrapper after 6 attempts" }
 
       # libmpv + ffmpeg DLLs. The build auto-detects C:/msys64/ucrt64/bin, which the
       # runner image already has; we only need to install mpv into it.
