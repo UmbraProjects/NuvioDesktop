@@ -56,7 +56,7 @@ private const val WIKIDATA_USER_AGENT = "NuvioDesktop/1.0 (https://github.com/Um
 private const val WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
 
 /** How many related artists' pages are read, at most, to fill the gaps. */
-private const val RELATED_LOOKUPS = 10
+private const val LINEAGE_RELATED_LOOKUPS = 10
 
 private const val OPEN_LINEAGE_TTL_MS = 30L * 24 * 60 * 60 * 1000
 private const val OPEN_LINEAGE_MISS_TTL_MS = 24L * 60 * 60 * 1000
@@ -269,7 +269,7 @@ internal object OpenLineage {
         val catalog = defaultMusicCatalog()
         val related = runCatching { catalog.artist(artistBrowseId) }.getOrNull()?.related.orEmpty()
         val why = "Fans of $artist play them"
-        for (other in related.take(RELATED_LOOKUPS)) {
+        for (other in related.take(LINEAGE_RELATED_LOOKUPS)) {
             if (before.size >= LINEAGE_ROWS && after.size >= LINEAGE_ROWS) break
             val otherId = other.browseId ?: continue
             val page = try {
