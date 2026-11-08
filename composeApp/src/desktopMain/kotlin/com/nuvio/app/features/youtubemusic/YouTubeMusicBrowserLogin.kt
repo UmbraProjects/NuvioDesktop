@@ -133,6 +133,9 @@ internal object YouTubeMusicBrowserLogin {
             runCatching { cdp?.call("Browser.close") }
             cdp?.close()
             reader?.let { stop(it) }
+            // A browser the launch handed over to is not a child of [reader]: one left running would take the next
+            // sign-in window (see releaseProfile).
+            releaseProfile(profileDir)
         }
     }
 
@@ -188,6 +191,9 @@ internal object YouTubeMusicBrowserLogin {
         }
     }
 
+    /** After the launched process exits, how long the browser it handed over to gets to take the profile. */
+    private const val HANDOFF_GRACE_MS = 2_000L
+
     /** How long a browser asked (or made) to close gets to let go of the profile. */
     private const val RELEASE_WAIT_MS = 5_000L
 
@@ -226,6 +232,9 @@ internal object YouTubeMusicBrowserLogin {
             runCatching { cdp?.call("Browser.close") }
             cdp?.close()
             reader?.let { stop(it) }
+            // A browser the launch handed over to is not a child of [reader]: one left running would take the next
+            // sign-in window (see releaseProfile).
+            releaseProfile(profileDir)
         }
     }
 
@@ -327,14 +336,29 @@ internal object YouTubeMusicBrowserLogin {
         if (!process.waitFor(15, TimeUnit.SECONDS)) process.destroyForcibly()
     }
 
+    /**
+     * The DevTools address the browser on [profileDir] writes once it is up. The launched [process] need not be the
+     * browser: on some PCs msedge.exe hands the launch to another process and exits at once with code 0 (a pending
+     * Edge update relaunching itself does this), and the browser it started writes the port a moment later. So the
+     * wait goes on while the launched process is alive or, after it has exited, while the profile is held by the
+     * browser it handed over to; it gives up when neither is the case for a couple of seconds.
+     */
     private fun awaitDevToolsEndpoint(profileDir: Path, process: Process): String? {
         val file = profileDir.resolve("DevToolsActivePort")
         val deadline = System.currentTimeMillis() + DEVTOOLS_PORT_TIMEOUT_MS
-        while (System.currentTimeMillis() < deadline && process.isAlive) {
+        var idleSince: Long? = null
+        while (System.currentTimeMillis() < deadline) {
             val lines = runCatching { Files.readAllLines(file) }.getOrNull().orEmpty()
             val port = lines.getOrNull(0)?.trim()?.toIntOrNull()
             val path = lines.getOrNull(1)?.trim()?.takeIf { it.startsWith("/") }
             if (port != null && path != null) return "ws://127.0.0.1:$port$path"
+            val running = process.isAlive || profileInUse(profileDir)
+            if (running) {
+                idleSince = null
+            } else {
+                val since = idleSince ?: System.currentTimeMillis().also { idleSince = it }
+                if (System.currentTimeMillis() - since > HANDOFF_GRACE_MS) return null
+            }
             Thread.sleep(200)
         }
         return null
