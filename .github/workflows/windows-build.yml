@@ -87,7 +87,7 @@ jobs:
       - name: Unit tests (music, pre-show, network)
         shell: pwsh
         run: >
-          ./gradlew.bat :composeApp:desktopTest --no-configuration-cache -Pcompose.desktop.application.downloadWix=false -I .github/mirror.init.gradle
+          ./gradlew.bat :composeApp:desktopTest --no-configuration-cache "-Pcompose.desktop.application.downloadWix=false" -I .github/mirror.init.gradle
           --tests "com.nuvio.app.features.music.*"
           --tests "com.nuvio.app.features.preroll.*"
           --tests "com.nuvio.app.core.network.*"
@@ -103,7 +103,7 @@ jobs:
       - name: Build portable distributable
         shell: pwsh
         run: >
-          ./gradlew.bat :composeApp:createReleaseDistributable --no-configuration-cache -Pcompose.desktop.application.downloadWix=false -I .github/mirror.init.gradle
+          ./gradlew.bat :composeApp:createReleaseDistributable --no-configuration-cache "-Pcompose.desktop.application.downloadWix=false" -I .github/mirror.init.gradle
           "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
