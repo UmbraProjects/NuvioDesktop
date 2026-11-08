@@ -1,0 +1,7 @@
+// CI: libraries from Google's mirror of Maven Central first. Maven Central sends some large jars (the Kotlin compiler)
+// on to GitHub's release servers, and when those time out (504) the build fails before compiling anything.
+def mirror = 'https://maven-central.storage-download.googleapis.com/maven2/'
+beforeSettings { settings ->
+    settings.pluginManagement.repositories { maven { url = mirror } }
+    settings.dependencyResolutionManagement.repositories { maven { url = mirror } }
+}
