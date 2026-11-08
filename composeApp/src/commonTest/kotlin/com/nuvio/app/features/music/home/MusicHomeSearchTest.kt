@@ -359,4 +359,30 @@ class ArtistMatchResultsTest {
         kotlin.test.assertEquals("Gang Starr", results.rows.first().song?.artists?.firstOrNull()?.name)
         kotlin.test.assertEquals("v2", results.videos.first().videoId)
     }
+
+    // Missing lengths
+
+    @Test
+    fun rowsWithoutALengthAreLookedUpAndFilledIn() {
+        val songs = listOf(track("s1", "Ready or Not", "Fugees", 227), track("s2", "Fu-Gee-La", "Fugees", 0))
+        val videos = listOf(track("v1", "Rumble in the Jungle", "UPROXX", 0), track("v2", "No Woman, No Cry", "Fugees", 275))
+        val everything = MusicSearchEverything(null, songs, emptyList(), emptyList(), emptyList())
+        val results = buildHomeResults(ParsedQuery("fugees", "fugees", null, null, null), everything, videos)
+        assertEquals(listOf("s2", "v1"), results.missingLengthIds())
+
+        val filled = results.withLengths(mapOf("s2" to 260, "v1" to 0))
+        assertEquals(260, filled.rows.first { it.song?.videoId == "s2" }.song?.durationSeconds)
+        // A known length is never overwritten, and a zero answer leaves the row unknown.
+        assertEquals(227, filled.rows.first { it.song?.videoId == "s1" }.song?.durationSeconds)
+        assertEquals(0, filled.videos.first { it.videoId == "v1" }.durationSeconds)
+        assertTrue(filled.missingLengthIds() == listOf("v1"))
+    }
+
+    @Test
+    fun onlyTheFirstRowsOfEachPanelAreLookedUp() {
+        val songs = (1..15).map { track("s$it", "Song $it", "Fugees", 0) }
+        val everything = MusicSearchEverything(null, songs, emptyList(), emptyList(), emptyList())
+        val results = buildHomeResults(ParsedQuery("fugees", "fugees", null, null, null), everything, emptyList())
+        assertEquals(LENGTH_LOOKUPS_PER_PANEL, results.missingLengthIds().size)
+    }
 }

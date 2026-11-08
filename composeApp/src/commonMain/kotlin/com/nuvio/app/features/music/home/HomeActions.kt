@@ -62,6 +62,7 @@ import com.nuvio.app.features.music.loadPlaylistQueue
 import com.nuvio.app.features.music.loadSongRadio
 import com.nuvio.app.features.music.MusicPlayback
 import com.nuvio.app.features.music.MusicTopResult
+import com.nuvio.app.features.music.MusicPlayMode
 import com.nuvio.app.features.music.MusicTrack
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import com.nuvio.app.features.music.rememberMusicMenu
@@ -105,17 +106,22 @@ internal class HomeRunner(
         artistPage(browseId)
     }
 
-    private fun start(album: MusicAlbum, how: PlayHow, label: String) {
+    private fun start(album: MusicAlbum, how: PlayHow, label: String, mode: MusicPlayMode? = null) {
         onCommit()
         when (how) {
-            PlayHow.Now -> player.play(album)
+            PlayHow.Now -> if (mode != null) player.play(album, mode = mode) else player.play(album)
             PlayHow.Shuffled -> player.play(album, shuffled = true)
             PlayHow.Next -> if (player.playNext(album)) NuvioToastController.show("Playing next: $label")
             PlayHow.Queue -> if (player.enqueue(album)) NuvioToastController.show("Queued $label")
         }
     }
 
-    fun track(track: MusicTrack, how: PlayHow) = start(youTubeSingleAlbum(track), how, track.title)
+    /**
+     * One song or video from the search. Played now, a picked video opens as video (the Stage shows the picture) and a
+     * song as audio (the Stage), whatever the last track played as. Next and Queue join the queue in its mode.
+     */
+    fun track(track: MusicTrack, how: PlayHow) =
+        start(youTubeSingleAlbum(track), how, track.title, mode = if (track.isVideo) MusicPlayMode.Video else MusicPlayMode.Audio)
 
     /** fork:music-radio - a playlist or station: a fixed list in full, a radio about 100 tracks ahead. */
     fun playlist(playlistId: String, title: String, how: PlayHow, cover: String? = null) {
@@ -299,7 +305,10 @@ internal class HomeRunner(
 
 /** The top match as a track, for a song or video match. */
 internal fun topTrack(top: MusicTopResult, videoId: String) =
-    MusicTrack(videoId = videoId, title = top.title, artists = top.artists, durationSeconds = 0, trackNumber = 1, isAvailable = true, coverUrl = top.thumbnailUrl)
+    MusicTrack(
+        videoId = videoId, title = top.title, artists = top.artists, durationSeconds = 0, trackNumber = 1, isAvailable = true,
+        coverUrl = top.thumbnailUrl, isVideo = top.kind.equals("Video", ignoreCase = true),
+    )
 
 private fun HomeAction.icon(): ImageVector = when (this) {
     HomeAction.PlayEssentials, HomeAction.PlayAlbum, HomeAction.PlayTrack, HomeAction.PlayAll, HomeAction.PlayList -> Icons.Rounded.PlayArrow

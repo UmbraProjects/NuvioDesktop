@@ -76,6 +76,12 @@ interface MusicCatalog {
      * "yelawolf best friend"...), lower case, in its order. Empty on failure; the default is empty for test fakes.
      */
     suspend fun searchSuggestions(typed: String): List<String> = emptyList()
+
+    /**
+     * fork:music-home - the length in seconds of one song or video, for a search row YouTube Music listed with a play or
+     * view count instead of its length. Null when unknown; the default is null for test fakes.
+     */
+    suspend fun lengthOf(videoId: String): Int? = null
 }
 
 /** The catalog the app uses: [MusicMetadataClient] on desktop. */

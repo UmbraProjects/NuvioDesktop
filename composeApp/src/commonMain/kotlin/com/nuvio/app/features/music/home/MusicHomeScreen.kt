@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music.home
 
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.sync.Semaphore
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -316,9 +319,25 @@ internal fun MusicHomeScreen(
             }
         }
     }
-    val results = remember(answeredQuery, musicAnswer, youtubeAnswer) {
+    val answered = remember(answeredQuery, musicAnswer, youtubeAnswer) {
         answeredQuery?.let { buildHomeResults(it, musicAnswer ?: MusicSearchEverything.EMPTY, youtubeAnswer.orEmpty()) }
     }
+    // fork:music-home - YouTube Music's newer search rows carry a play or view count where the length was, so those rows
+    // read "–:––". Their lengths are looked up once the results have sat still a moment (a few at a time, cached, so
+    // typing does not fire a burst) and filled in as each one comes back. Kept for the session: a length never changes.
+    val lengths = remember { mutableStateMapOf<String, Int>() }
+    LaunchedEffect(answered) {
+        val wanted = answered?.missingLengthIds()?.filter { it !in lengths } ?: return@LaunchedEffect
+        if (wanted.isEmpty()) return@LaunchedEffect
+        delay(LENGTH_LOOKUP_PAUSE_MS)
+        val gate = Semaphore(LENGTH_LOOKUPS_AT_ONCE)
+        coroutineScope {
+            wanted.forEach { id ->
+                launch { gate.withPermit { catalog.lengthOf(id)?.let { lengths[id] = it } } }
+            }
+        }
+    }
+    val results = answered?.withLengths(lengths)
     val musicState = when {
         musicAnswer == null -> PanelState.Loading
         musicAnswer?.failed == true -> PanelState.Failed
@@ -327,7 +346,7 @@ internal fun MusicHomeScreen(
     val youtubeState = if (youtubeAnswer == null) PanelState.Loading else PanelState.Ready
 
     // Enter in the line (or a spoken search) sends the keyboard to the results once they are in.
-    LaunchedEffect(results, tab.focusResultsWhenReady) {
+    LaunchedEffect(answered, tab.focusResultsWhenReady) {
         if (!tab.focusResultsWhenReady || results == null) return@LaunchedEffect
         tab.focusResultsWhenReady = false
         withFrameNanos { }
@@ -1166,6 +1185,10 @@ private fun ArtistRow(artist: MusicArtistSummary, modifier: Modifier, runner: Ho
 }
 
 private const val MATCH_SONGS_SHOWN = 6
+
+/** How long the results sit still before missing lengths are looked up, and how many lookups run at once. */
+private const val LENGTH_LOOKUP_PAUSE_MS = 400L
+private const val LENGTH_LOOKUPS_AT_ONCE = 3
 
 private const val NO_LENGTH_LABEL = "–:––"
 

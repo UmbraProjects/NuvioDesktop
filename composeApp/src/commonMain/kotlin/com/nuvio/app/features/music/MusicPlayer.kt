@@ -748,7 +748,8 @@ class MusicPlayer(
         }
     }
 
-    private fun cacheKey(track: MusicTrack, mode: MusicPlayMode) = "${track.videoId}|$mode"
+    // A picked video resolves differently from the same id listed as a song (see MusicTrack.isVideo), so it is kept apart.
+    private fun cacheKey(track: MusicTrack, mode: MusicPlayMode) = "${track.videoId}|$mode" + if (track.isVideo) "|picked" else ""
 
     /**
      * Resolves [track] once however many callers ask: the prefetch started it, and [MusicQueue] asks

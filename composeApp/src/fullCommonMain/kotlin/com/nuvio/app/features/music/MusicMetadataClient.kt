@@ -352,9 +352,23 @@ object MusicMetadataClient {
      * The music video that goes with the audio track [videoId], or null when YouTube Music links
      * none. A miss here means "ask the ranker", not "there is no video".
      */
-    suspend fun counterpartOf(videoId: String): MusicCounterpart? {
+    suspend fun counterpartOf(videoId: String): MusicCounterpart? =
+        watchNext(videoId)?.let { counterpartIn(it, videoId) }
+
+    /**
+     * fork:music-home - the length in seconds of [videoId] as YouTube Music's player lists it, or null when unknown. For
+     * search rows whose answer carried a play or view count instead of a length. Shares [counterpartOf]'s request, so
+     * a row looked up here and then played costs one request, not two. Nothing is asked while YouTube is refusing us.
+     */
+    suspend fun lengthOf(videoId: String): Int? {
+        if (videoId.length != 11 || MusicRateLimit.isBlocked()) return null
+        return watchNext(videoId)?.firstOrNull { it.videoId == videoId }?.durationSeconds?.takeIf { it > 0 }
+    }
+
+    /** The watch-next queue that starts at [videoId] (the track itself first, with its counterpart), cached. */
+    private suspend fun watchNext(videoId: String): List<MusicWatchTrack>? {
         if (videoId.length != 11) return null
-        return cached("counterpart:$videoId") {
+        return cached("next:$videoId") {
             val body = TrailerPlaybackResolver.musicRequest(
                 "next",
                 mapOf(
@@ -364,7 +378,7 @@ object MusicMetadataClient {
                     "tunerSettingValue" to "AUTOMIX_SETTING_NORMAL",
                 ),
             )
-            body?.let { parseCounterpart(it, videoId) }
+            body?.let(::parseWatchNext)
         }
     }
 }

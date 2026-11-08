@@ -92,7 +92,8 @@ object MusicResolver {
      * that video, the art track is the one to play in audio mode. Any failure keeps the listed id.
      */
     private suspend fun albumAudioId(track: MusicTrack): String =
-        try {
+        // fork:music-home - a picked video heard as audio keeps its own soundtrack (a live cut, a remix), not the album's.
+        if (track.isVideo) track.videoId else try {
             MusicMetadataClient.counterpartOf(track.videoId)
                 ?.takeIf { it.videoType == MusicVideoType.ArtTrack && it.videoId != track.videoId && it.videoId.length == 11 }
                 ?.videoId
@@ -110,6 +111,14 @@ object MusicResolver {
             ?: if (audioId != track.videoId) open(track.videoId, needsVideo = false) else null
 
     private suspend fun video(track: MusicTrack, album: MusicAlbum): MusicResolution {
+        // fork:music-home - a video the person picked plays as itself: not a linked video or a search hit for its title.
+        // When it will not open, the usual hunt below still finds the song's official video or its lyric picture.
+        if (track.isVideo) {
+            open(track.videoId, needsVideo = true)?.let {
+                return MusicResolution.Playable(track, MusicPlayMode.Video, track.videoId, it, viaCounterpart = false)
+            }
+            log.w { "picked video ${track.videoId} (\"${track.title}\") would not open; looking for its official video" }
+        }
         withTimeoutOrNull(VIDEO_LOOKUP_TIMEOUT_MS) { findVideo(track, album) }?.let { return it }
         log.i { "no official video for \"${track.title}\"; playing it as a lyric video" }
         val audioId = albumAudioId(track)

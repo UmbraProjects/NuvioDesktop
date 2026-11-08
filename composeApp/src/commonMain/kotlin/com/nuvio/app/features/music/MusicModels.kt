@@ -50,6 +50,11 @@ data class MusicTrack(
     val coverUrl: String? = null,
     val albumTitle: String? = null,
     val albumBrowseId: String? = null,
+    /**
+     * fork:music-home - picked as a video (the home's YouTube panel, a YouTube Music video row): it plays as this very
+     * video, picture and all, rather than the album audio or a "best official video" found for its title.
+     */
+    val isVideo: Boolean = false,
 )
 
 data class MusicAlbum(

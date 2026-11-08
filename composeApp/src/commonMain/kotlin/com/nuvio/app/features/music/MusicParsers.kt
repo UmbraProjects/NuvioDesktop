@@ -501,8 +501,11 @@ internal fun parseWatchNext(body: String): List<MusicWatchTrack> {
  * The counterpart of [videoId] in a watch-next response: the linked video when there is one, or the
  * track itself when it already is an official video. Null when neither.
  */
-internal fun parseCounterpart(body: String, videoId: String): MusicCounterpart? {
-    val track = parseWatchNext(body).firstOrNull { it.videoId == videoId } ?: return null
+internal fun parseCounterpart(body: String, videoId: String): MusicCounterpart? = counterpartIn(parseWatchNext(body), videoId)
+
+/** [parseCounterpart] on an already parsed watch-next queue, so one request answers both the counterpart and the length. */
+internal fun counterpartIn(queue: List<MusicWatchTrack>, videoId: String): MusicCounterpart? {
+    val track = queue.firstOrNull { it.videoId == videoId } ?: return null
     track.counterpart?.let {
         return MusicCounterpart(videoId, it.videoId, it.videoType, it.title, it.durationSeconds)
     }
@@ -684,7 +687,7 @@ internal fun parseSearchEverything(body: String): MusicSearchEverything {
     for ((row, shelf) in rows) {
         when (row.searchRowKind(shelf)) {
             SearchRowKind.Song -> row.toSearchTrack(songs.size + 1)?.let { songs += it }
-            SearchRowKind.Video -> row.toSearchTrack(videos.size + 1)?.let { videos += it }
+            SearchRowKind.Video -> row.toSearchTrack(videos.size + 1)?.let { videos += it.copy(isVideo = true) }
             SearchRowKind.Album -> row.toAlbumSummary()?.let { albums += it }
             SearchRowKind.Artist -> row.toSearchArtist()?.let { artists += it }
             SearchRowKind.Other -> row.toPlaylistSummary()?.let { playlists += it }

@@ -423,6 +423,29 @@ fun recentSearchLabel(typed: String, topTitle: String?): String {
     return if (last.length < full.length) title else line
 }
 
+/** How many rows of each panel have a missing length looked up (the ones on screen, give or take). */
+const val LENGTH_LOOKUPS_PER_PANEL = 10
+
+/**
+ * fork:music-home - the songs and videos in the centre and right panels that YouTube Music listed without a length (its
+ * newer search rows give a play or view count instead), the first [perPanel] of each panel, centre first.
+ */
+fun HomeResults.missingLengthIds(perPanel: Int = LENGTH_LOOKUPS_PER_PANEL): List<String> =
+    (rows.mapNotNull { it.playable }.filter { it.durationSeconds <= 0 }.take(perPanel) +
+        videos.filter { it.durationSeconds <= 0 }.take(perPanel))
+        .map { it.videoId }.distinct()
+
+/** [this] with the lengths looked up since (video id to seconds) filled in wherever a row had none. */
+fun HomeResults.withLengths(lengths: Map<String, Int>): HomeResults {
+    if (lengths.isEmpty()) return this
+    fun MusicTrack.filled(): MusicTrack =
+        if (durationSeconds > 0) this else lengths[videoId]?.takeIf { it > 0 }?.let { copy(durationSeconds = it) } ?: this
+    return copy(
+        rows = rows.map { it.copy(song = it.song?.filled(), video = it.video?.filled()) },
+        videos = videos.map { it.filled() },
+    )
+}
+
 fun topKeyOf(top: MusicTopResult): String = top.albumBrowseId ?: top.artists.firstOrNull()?.browseId ?: top.videoId ?: top.title
 
 fun buildHomeResults(query: ParsedQuery, everything: MusicSearchEverything, youtube: List<MusicTrack>): HomeResults {
