@@ -518,7 +518,7 @@ fun classifyAnimeContent(
     originCountries: Iterable<String> = emptyList(),
 ): AnimeContentKind {
     val normalized = genres.map { it.trim().lowercase() }
-    if (normalized.none { it == "anime" || it == "animation" }) return AnimeContentKind.NotAnimation
+    if (normalized.none { it == "anime" || isAnimationGenreName(it) }) return AnimeContentKind.NotAnimation
     if (normalized.any { it == "anime" }) return AnimeContentKind.Anime
     return if (hasNonJapaneseProvenance(originalLanguage, originCountries)) {
         AnimeContentKind.WesternAnimation
@@ -542,6 +542,50 @@ private fun hasNonJapaneseProvenance(
     if (countries.any { it in JAPAN_COUNTRY_CODES }) return false
     return true
 }
+
+/**
+ * True for the Animation genre in any language TMDB names it in. TMDB enrichment returns genre
+ * *names* in the user's TMDB language, so a Spanish setup sees "Animación" where an English one sees
+ * "Animation"; comparing against the English word alone left every non-English user without
+ * animation detection (reported 2026-11-08 on Rick and Morty: isAnime=false with Western animation
+ * on). Names are TMDB's own for genre 16; matching one too many is harmless, since only animation
+ * carries these words.
+ */
+internal fun isAnimationGenreName(genre: String): Boolean =
+    genre.trim().lowercase() in ANIMATION_GENRE_NAMES
+
+private val ANIMATION_GENRE_NAMES = setOf(
+    "animation", // en, fr, de, da
+    "animación", // es
+    "animació", // ca
+    "animação", // pt
+    "animazione", // it
+    "animatie", // nl
+    "animacja", // pl
+    "animovaný", // cs, sk
+    "animasjon", // nb, no
+    "animerat", // sv
+    "animaatio", // fi
+    "animasyon", // tr
+    "animasi", // id, ms
+    "animációs", "animáció", // hu
+    "animație", "animaţie", // ro
+    "animacija", "анимација", // hr, sr, lt, sl
+    "animācija", // lv
+    "animatsioon", // et
+    "κινούμενα σχέδια", // el
+    "мультфильм", "анимация", // ru, bg
+    "мультфільм", // uk
+    "אנימציה", // he
+    "رسوم متحركة", // ar
+    "انیمیشن", // fa
+    "एनिमेशन", // hi
+    "แอนิเมชัน", "แอนนิเมชั่น", // th
+    "phim hoạt hình", "hoạt hình", // vi
+    "アニメーション", // ja
+    "애니메이션", // ko
+    "动画", "動畫", "動畫片", // zh
+)
 
 private val JAPANESE_LANGUAGE_CODES = setOf("ja", "jpn", "ja-jp")
 private val JAPAN_COUNTRY_CODES = setOf("jp", "jpn", "japan")

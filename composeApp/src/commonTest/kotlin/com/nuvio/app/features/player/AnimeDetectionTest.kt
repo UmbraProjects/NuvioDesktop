@@ -216,4 +216,38 @@ class IncludeWesternAnimationPreferenceTest {
         assertFalse(kind.isAnime(treatAnimationAsAnime = false))
         assertTrue(kind.isAnime(treatAnimationAsAnime = true))
     }
+
+    @Test
+    fun `a western cartoon tagged in spanish is western animation`() {
+        // Reported 2026-11-08: Rick and Morty (tt2861424) on a Spanish setup, where TMDB returns the
+        // genre as "Animación". Matched against the English word only, it was NotAnimation, so
+        // "Include Western Animation" could never apply.
+        val kind = classifyAnimeContent(
+            genres = listOf("Animación", "Comedia", "Sci-Fi & Fantasy"),
+            originalLanguage = "en",
+            originCountries = listOf("US"),
+        )
+        assertEquals(AnimeContentKind.WesternAnimation, kind)
+        assertTrue(kind.isAnime(treatAnimationAsAnime = true))
+    }
+
+    @Test
+    fun `japanese animation tagged in another language is still anime`() {
+        // The same lookup cost real anime its detection too when no anime-native id was present.
+        listOf("Animación", "Animação", "Animazione", "Animacja", "Animasyon", "アニメーション", "애니메이션").forEach { genre ->
+            assertEquals(
+                AnimeContentKind.Anime,
+                classifyAnimeContent(listOf(genre), originalLanguage = "ja", originCountries = listOf("JP")),
+                genre,
+            )
+        }
+    }
+
+    @Test
+    fun `localized names of other genres are not animation`() {
+        assertEquals(
+            AnimeContentKind.NotAnimation,
+            classifyAnimeContent(listOf("Comedia", "Drama", "Animales"), originalLanguage = "es"),
+        )
+    }
 }
