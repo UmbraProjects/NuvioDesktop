@@ -1963,6 +1963,8 @@
   <string name="settings_playback_selected_count">%1$d selecionados</string>
   <string name="settings_playback_show_loading_overlay">Sobreposição de carregamento</string>
   <string name="settings_playback_show_loading_overlay_description">Mostra o ecrã de carregamento até que surja o primeiro fotograma do vídeo.</string>
+  <string name="settings_playback_pip_browse">Navegar em imagem em imagem</string>
+  <string name="settings_playback_pip_browse_description">A imagem em imagem ganha um botão que traz de volta a app com o vídeo num canto, para poder navegar enquanto reproduz. Os trailers ficam desligados entretanto. Aplica-se a partir do próximo vídeo.</string>
   <string name="settings_playback_subtitle_background_color">Cor de fundo</string>
   <string name="settings_playback_subtitle_blur">Desfoque</string>
   <string name="settings_playback_subtitle_bold">Negrito</string>
@@ -4537,6 +4539,9 @@
   <string name="player_hud_p2p_streaming_consent">Consentimento de streaming P2P</string>
   <string name="player_hud_pause">Pausa</string>
   <string name="player_hud_exit_picture_in_picture">Sair de imagem em imagem</string>
+  <string name="player_hud_back_to_video">Voltar ao vídeo</string>
+  <string name="player_hud_pip_browse">Navegar na app</string>
+  <string name="player_hud_pip_pop_out">Destacar sobre o Windows</string>
   <string name="player_hud_contrast">Contraste</string>
   <string name="player_hud_brightness">Brilho</string>
   <string name="player_hud_saturation">Saturação</string>

@@ -528,10 +528,44 @@ internal class NativePlayerController(
     var miniPlayerClosable = false
     private var lastSentMiniPlayerClosable = false
 
+    /** fork:pip-browse - classic PiP shows its Browse button: on to the corner box over the app. */
+    var pipBrowseAvailable = false
+    private var lastSentPipBrowseAvailable = false
+
+    /** fork:pip-browse - this is the corner box over the app (not YouTube's corner player): it shows Pop out. */
+    var pipBrowseBox = false
+    private var lastSentPipBrowseBox = false
+
     /**
      * The pointer on screen, in AWT's scaled units, which are Compose's dp. Read from the OS rather than
      * the HUD's events: the HUD moves with the box under the pointer while it is dragged.
      */
+    /** fork:pip-browse - this player is the one in the corner box over the app (not YouTube's corner player). */
+    private fun browsePipActive(): Boolean = com.nuvio.app.features.player.PlayerBrowsePip.active.value
+
+    private var lastCompactPressMs = 0L
+    private var lastCompactPressPoint: java.awt.Point? = null
+
+    /**
+     * A press that starts moving PiP's window or the corner box, and whether it is the second of a
+     * double-click: within the OS's double-click time of the last one and a few pixels from it. Judged
+     * here from the pointer's real position because the HUD's own timing missed it (the picture moves
+     * under the pointer while it is dragged).
+     */
+    private fun compactDoublePress(): Boolean {
+        val now = System.currentTimeMillis()
+        val point = runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull()
+        val interval = (java.awt.Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval") as? Int)
+            ?.coerceIn(200, 900) ?: 500
+        val last = lastCompactPressPoint
+        val double = point != null && last != null && now - lastCompactPressMs <= interval &&
+            kotlin.math.abs(point.x - last.x) <= 8 && kotlin.math.abs(point.y - last.y) <= 8
+        lastCompactPressMs = if (double) 0L else now
+        lastCompactPressPoint = if (double) null else point
+        if (double) compactPressLog.i { "double-click on the compact player (interval ${interval}ms)" }
+        return double
+    }
+
     private fun miniPlayerPointer(): Pair<Float, Float>? =
         runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull()?.let { it.x.toFloat() to it.y.toFloat() }
 
@@ -570,11 +604,14 @@ internal class NativePlayerController(
             )
         }
         if (structureKey == lastSentControlsStructureKey && miniPlayer == lastSentMiniPlayer && watchPage == lastSentWatchPage &&
-            miniPlayerClosable == lastSentMiniPlayerClosable
+            miniPlayerClosable == lastSentMiniPlayerClosable && pipBrowseAvailable == lastSentPipBrowseAvailable &&
+            pipBrowseBox == lastSentPipBrowseBox
         ) return
         lastSentControlsStructureKey = structureKey
         lastSentMiniPlayer = miniPlayer
         lastSentMiniPlayerClosable = miniPlayerClosable
+        lastSentPipBrowseAvailable = pipBrowseAvailable
+        lastSentPipBrowseBox = pipBrowseBox
         lastSentWatchPage = watchPage
         AppShortcutsRepository.ensureLoaded()
         PlayerShortcutsRepository.ensureLoaded()
@@ -593,6 +630,8 @@ internal class NativePlayerController(
             ),
             miniPlayer = miniPlayer,
             miniPlayerClosable = miniPlayerClosable,
+            pipBrowseAvailable = pipBrowseAvailable,
+            pipBrowseBox = pipBrowseBox,
             watchPage = watchPage,
         )
         val payload = if (hudLabelsSent) controlsJson else controlsJson.withHudLabels()
@@ -1405,6 +1444,8 @@ internal class NativePlayerController(
                 } else if (PostShowController.active.value) {
                     // Escape closes the post-show cards instead of leaving the player.
                     PostShowController.press(PostShowKey.Back)
+                } else if (browsePipActive()) {
+                    // fork:pip-browse - the corner box: Escape is the app's, not the video's.
                 } else if (com.nuvio.app.features.youtube.handleYouTubeEscape(SwingUtilities.getWindowAncestor(host))) {
                     // Back to the YouTube watch page the video was filling the screen from.
                 } else if (escapeShouldGoWindowed()) {
@@ -1414,26 +1455,95 @@ internal class NativePlayerController(
                 }
             }
             // The YouTube watch page's corner player was clicked: back up to the video.
-            "miniPlayerClick" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.requestBackToVideo()
+            // fork:pip-browse - the same box over the app (PlayerBrowsePip) when that is what is up.
+            "miniPlayerClick" -> if (browsePipActive()) {
+                com.nuvio.app.features.player.PlayerBrowsePip.requestExpand()
+            } else {
+                com.nuvio.app.features.youtube.YouTubeWatchLayout.requestBackToVideo()
+            }
             // fork:youtube-mini-player - the corner player's X, and PiP's move/resize gestures on its box.
-            "miniPlayerClose" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.requestCloseFromCorner()
-            "beginMiniPlayerInteraction" -> miniPlayerPointer()?.let { (x, y) ->
-                com.nuvio.app.features.youtube.YouTubeWatchLayout.beginMiniInteraction(value.toInt(), x, y)
+            "miniPlayerClose" -> if (browsePipActive()) {
+                com.nuvio.app.features.player.PlayerBrowsePip.requestClose()
+            } else {
+                com.nuvio.app.features.youtube.YouTubeWatchLayout.requestCloseFromCorner()
+            }
+            // A second press on the box straight after the first: as its exit button.
+            "beginMiniPlayerInteraction" -> if (value.toInt() == 1 && compactDoublePress()) {
+                handlePlayerEvent("miniPlayerClick", 0.0)
+            } else miniPlayerPointer()?.let { (x, y) ->
+                if (browsePipActive()) {
+                    com.nuvio.app.features.player.PlayerBrowsePip.beginInteraction(value.toInt(), x, y)
+                } else {
+                    com.nuvio.app.features.youtube.YouTubeWatchLayout.beginMiniInteraction(value.toInt(), x, y)
+                }
             }
             "updateMiniPlayerInteraction" -> miniPlayerPointer()?.let { (x, y) ->
-                com.nuvio.app.features.youtube.YouTubeWatchLayout.updateMiniInteraction(x, y)
+                if (browsePipActive()) {
+                    com.nuvio.app.features.player.PlayerBrowsePip.updateInteraction(x, y)
+                } else {
+                    com.nuvio.app.features.youtube.YouTubeWatchLayout.updateMiniInteraction(x, y)
+                }
             }
-            "endMiniPlayerInteraction" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.endMiniInteraction()
+            "endMiniPlayerInteraction" -> {
+                com.nuvio.app.features.player.PlayerBrowsePip.endInteraction()
+                com.nuvio.app.features.youtube.YouTubeWatchLayout.endMiniInteraction()
+            }
+            // fork:pip-browse - classic PiP's X: out of PiP first, then the player closes as Back would.
+            // Closing straight from PiP tore mpv's surface down in the same moment the window went from
+            // the small PiP window back to borderless fullscreen; on Nov 8 that was followed by the TV
+            // flipping SDR/HDR and re-handshaking HDMI. Leaving PiP and then closing, a moment apart, is
+            // the order every earlier close went in (the exit button, then Back), which never did that.
+            "pictureInPictureClose" -> if (desktopPictureInPictureState.value) {
+                if (!onAction(PlayerControlsAction.PictureInPicture)) {
+                    setDesktopPictureInPicture(false, SwingUtilities.getWindowAncestor(host))
+                }
+                compactPressLog.i { "PiP close: leaving PiP, closing in ${PIP_CLOSE_SETTLE_MS}ms" }
+                javax.swing.Timer(PIP_CLOSE_SETTLE_MS) { if (!disposed) handlePlayerEvent("back", 0.0) }
+                    .apply { isRepeats = false }
+                    .start()
+            } else {
+                handlePlayerEvent("back", 0.0)
+            }
+            // fork:pip-browse - the corner box's Pop out: back to filling the window, then classic PiP over Windows.
+            "miniPlayerPopOut" -> if (browsePipActive()) com.nuvio.app.features.player.PlayerBrowsePip.requestPopOut()
+            // fork:pip-browse - classic PiP's Browse button: out of PiP (the window gets its size back,
+            // Main.kt) and on to the corner box, the app around it.
+            "pictureInPictureBrowse" -> if (
+                desktopPictureInPictureState.value &&
+                com.nuvio.app.features.player.PlayerBrowsePip.hostedPlayerAvailable.value
+            ) {
+                if (!onAction(PlayerControlsAction.PictureInPicture)) {
+                    setDesktopPictureInPicture(false, SwingUtilities.getWindowAncestor(host))
+                }
+                com.nuvio.app.features.player.PlayerBrowsePip.requestEnter()
+            }
             // The wheel over the video on the watch page, in the page's pixels: the page scrolls by it.
             "watchPageScroll" -> com.nuvio.app.features.youtube.YouTubeWatchLayout.requestScroll(value.toFloat())
+            // A double-click on the bare video, as on most video sites: the YouTube watch page's
+            // default view goes to theater; everywhere else (theater, filling the screen, any other
+            // video) goes to PiP, and in PiP it comes back out to whatever it left (Main.kt restores
+            // the window; the watch page and its theater setting were never touched).
+            "videoDoubleClick" -> {
+                val youTube = com.nuvio.app.features.youtube.YouTubeFeedRepository
+                if (!desktopPictureInPictureState.value && watchPage && !miniPlayer && !youTube.theaterMode.value) {
+                    youTube.setTheaterMode(true)
+                } else {
+                    handlePlayerEvent("pictureInPicture", 0.0)
+                }
+            }
             "pictureInPicture" -> {
                 val actionHandled = onAction(PlayerControlsAction.PictureInPicture)
                 if (!actionHandled) setDesktopPictureInPicture(!desktopPictureInPictureState.value, SwingUtilities.getWindowAncestor(host))
             }
-            "beginPictureInPictureInteraction" -> beginNativeCompactPlayerWindowInteraction(
-                window = SwingUtilities.getWindowAncestor(host),
-                mode = value.toInt(),
-            )
+            // A second press on the PiP picture straight after the first: back to where PiP was entered from.
+            "beginPictureInPictureInteraction" -> if (value.toInt() == 1 && compactDoublePress()) {
+                handlePlayerEvent("videoDoubleClick", 0.0)
+            } else {
+                beginNativeCompactPlayerWindowInteraction(
+                    window = SwingUtilities.getWindowAncestor(host),
+                    mode = value.toInt(),
+                )
+            }
             "updatePictureInPictureInteraction" -> updateNativeCompactPlayerWindowInteraction(
                 SwingUtilities.getWindowAncestor(host),
             )
@@ -1443,6 +1553,11 @@ internal class NativePlayerController(
             "cursorVisibility" -> {
                 val current = handle.takeIf { it != 0L } ?: return
                 val hide = value == 0.0
+                // fork:pip-browse - the box over the app never hides the pointer the app is being used with.
+                if (hide && browsePipActive()) {
+                    NativePlayerBridge.setCursorHidden(current, false)
+                    return
+                }
                 // fork:youtube-watch-page - on the watch page the video is only part of the window and the
                 // controls' idle timer only sees movement over it: the cursor is hidden only while it is
                 // over the video, and moving over the page shows it again.
@@ -2553,6 +2668,10 @@ private fun String.toPlayerControlsAction(): PlayerControlsAction? =
 private val controlsJsonLog = Logger.withTag("PlayerControlsJson")
 
 private val audioPassthroughLog = Logger.withTag("PlayerAudioPassthrough")
+private val compactPressLog = Logger.withTag("PlayerPip")
+
+/** How long PiP's X waits after giving the window back its size before closing the player. */
+private const val PIP_CLOSE_SETTLE_MS = 400
 
 private val episodeArtworkLog = Logger.withTag("PlayerEpisodeArtwork")
 
@@ -2607,6 +2726,8 @@ internal fun PlayerControlsState.toControlsJson(
     miniPlayer: Boolean = false,
     watchPage: Boolean = false,
     miniPlayerClosable: Boolean = false,
+    pipBrowseAvailable: Boolean = false,
+    pipBrowseBox: Boolean = false,
 ): String =
     buildString {
         append('{')
@@ -2669,6 +2790,10 @@ internal fun PlayerControlsState.toControlsJson(
         appendJsonField("miniPlayer", miniPlayer)
         append(',')
         appendJsonField("miniPlayerClosable", miniPlayerClosable)
+        append(',')
+        appendJsonField("pipBrowseAvailable", pipBrowseAvailable)
+        append(',')
+        appendJsonField("pipBrowseBox", pipBrowseBox)
         append(',')
         appendJsonField("watchPage", watchPage)
         append(',')

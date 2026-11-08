@@ -163,12 +163,13 @@ actual object AppUpdaterPlatform {
             partial.delete()
 
             val request = HttpRequest.newBuilder(URI.create(assetUrl))
-                .timeout(Duration.ofMinutes(10))
+                .timeout(DOWNLOAD_HEADERS_TIMEOUT)
                 .header("Accept", "application/octet-stream")
                 .GET()
                 .build()
             val response = updaterHttpClient.send(request, HttpResponse.BodyHandlers.ofInputStream())
             check(response.statusCode() in 200..299) {
+                response.body().close()
                 localizedString(Res.string.updater_download_http_failed, response.statusCode())
             }
 
@@ -178,7 +179,7 @@ actual object AppUpdaterPlatform {
             // Hash while streaming to disk — no re-read of the (potentially large) archive.
             val digest = MessageDigest.getInstance("SHA-256")
             var downloadedBytes = 0L
-            response.body().use { input ->
+            StallGuardInputStream(response.body()).use { input ->
                 FileOutputStream(partial).use { output ->
                     val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                     while (true) {

@@ -1075,6 +1075,18 @@ private fun PlaybackSettingsSection(
                         onCheckedChange = PlayerSettingsRepository::setShowLoadingOverlay,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
+                    // fork:pip-browse - PiP as a corner box over the app instead of a shrunken window.
+                    if (isDesktop) {
+                        val browsePipEnabled by com.nuvio.app.features.player.PlayerBrowsePip.enabled.collectAsStateWithLifecycle()
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_pip_browse),
+                            description = stringResource(Res.string.settings_playback_pip_browse_description),
+                            checked = browsePipEnabled,
+                            isTablet = isTablet,
+                            onCheckedChange = com.nuvio.app.features.player.PlayerBrowsePip::setEnabled,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                    }
                     // Player preference picker: Internal / External
                     SettingsChoiceRow(
                         title = stringResource(Res.string.settings_playback_player_preference),

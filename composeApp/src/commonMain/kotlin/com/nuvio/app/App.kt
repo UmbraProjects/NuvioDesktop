@@ -458,6 +458,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -1522,6 +1523,36 @@ private fun MainAppContent(
             previousDestinationWasTabs = destinationIsTabs
         }
         var lastPlayerExitBackMark by remember { mutableStateOf<TimeMark?>(null) }
+        // fork:pip-browse - the player drawn outside the navigation graph (PlayerHostLayer), which can
+        // outlive its route in the corner box while the app is used around it.
+        var hostedPlayer by remember { mutableStateOf<com.nuvio.app.features.player.HostedPlayer?>(null) }
+        // A video handed over to from one in the corner box (the YouTube queue, a related pick): its
+        // route opens the player straight into the box and goes again, the app staying on screen.
+        var pendingBoxLaunchId by remember { mutableStateOf<Long?>(null) }
+        val endDetachedPlayer: (com.nuvio.app.features.player.HostedPlayer) -> Unit = remember {
+            { player ->
+                if (player.detached) {
+                    lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
+                    ResumePromptRepository.markPlayerExitedNormally()
+                    PlayerLaunchStore.remove(player.launchId)
+                }
+                if (hostedPlayer === player) hostedPlayer = null
+                com.nuvio.app.features.player.PlayerBrowsePip.setActive(false)
+            }
+        }
+        // The corner box's exit button: the same launch's route again, which picks the running player up.
+        LaunchedEffect(navController) {
+            com.nuvio.app.features.player.PlayerBrowsePip.expandRequests.drop(1).collect {
+                val player = hostedPlayer?.takeIf { it.detached } ?: return@collect
+                if (PlayerLaunchStore.get(player.launchId) == null) {
+                    endDetachedPlayer(player)
+                    return@collect
+                }
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) return@collect
+                navController.navigate(PlayerRoute(launchId = player.launchId))
+            }
+        }
+        val browsePipActive by com.nuvio.app.features.player.PlayerBrowsePip.active.collectAsStateWithLifecycle()
         BindDiscordBrowsingPresence(
             currentBackStackEntry = currentBackStackEntry,
             selectedTab = selectedTab,
@@ -3278,7 +3309,8 @@ private fun MainAppContent(
                 selectedPosterActionTarget != null || selectedContinueWatchingForActions != null,
             )
             // fork:music - a film on screen pauses the music player and takes its bar away.
-            val musicPlayerHidden = currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true
+            // fork:pip-browse - and so does the film in its corner box over the app.
+            val musicPlayerHidden = currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true || browsePipActive
             val musicBarInset = com.nuvio.app.features.music.rememberMusicBarInset(musicPlayerHidden)
             // The album and artist pages paint under the bar themselves, so the shell must not pad them.
             val musicPageTakesInset = currentBackStackEntry?.destination?.isMusicFullBleedPage() == true
@@ -3573,12 +3605,72 @@ private fun MainAppContent(
                         Box(modifier = Modifier.fillMaxSize())
                         return@composable
                     }
-                    DisposableEffect(route.launchId) {
-                        PlayerHandoff.routeEntered()
-                        com.nuvio.app.features.librarypvr.LibraryPvrScheduler.setPlaybackActive(true)
-                        onDispose {
-                            com.nuvio.app.features.librarypvr.LibraryPvrScheduler.setPlaybackActive(false)
-                            PlayerHandoff.routeLeft()
+                    // fork:pip-browse - a video left playing in the corner box ends when another opens:
+                    // closed as its X would (progress saved), before this one (or its pre-show) starts.
+                    val replacingCornerPlayer = hostedPlayer?.let { it.detached && it.launchId != route.launchId } == true
+                    if (replacingCornerPlayer) {
+                        LaunchedEffect(Unit) {
+                            com.nuvio.app.features.player.PlayerBrowsePip.requestClose()
+                            kotlinx.coroutines.delay(1_000)
+                            hostedPlayer?.takeIf { it.detached && it.launchId != route.launchId }?.let(endDetachedPlayer)
+                        }
+                        Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+                        return@composable
+                    }
+                    // fork:pip-browse - with the setting on, the player is drawn outside the graph
+                    // (PlayerHostLayer) so PiP can take this route away and leave it playing. Decided
+                    // once per launch; coming back from the corner box picks the same player up.
+                    val reattachingHostedPlayer = remember(route.launchId) { hostedPlayer?.launchId == route.launchId }
+                    val openInBox = remember(route.launchId) { pendingBoxLaunchId == route.launchId }
+                    val hosted = remember(route.launchId) {
+                        when {
+                            reattachingHostedPlayer -> hostedPlayer
+                            openInBox -> com.nuvio.app.features.player.HostedPlayer(route.launchId).also { it.detached = true }
+                            com.nuvio.app.features.player.PlayerBrowsePip.enabled.value &&
+                                launch.autoPlayMode != PlayerAutoPlayMode.Playlist ->
+                                com.nuvio.app.features.player.HostedPlayer(route.launchId)
+                            else -> null
+                        }
+                    }
+                    if (hosted == null) {
+                        DisposableEffect(route.launchId) {
+                            PlayerHandoff.routeEntered()
+                            com.nuvio.app.features.librarypvr.LibraryPvrScheduler.setPlaybackActive(true)
+                            onDispose {
+                                com.nuvio.app.features.librarypvr.LibraryPvrScheduler.setPlaybackActive(false)
+                                PlayerHandoff.routeLeft()
+                            }
+                        }
+                    } else {
+                        // Back on screen from the corner box: the player fills the window again.
+                        LaunchedEffect(hosted) {
+                            if (reattachingHostedPlayer && hosted.detached) {
+                                hosted.detached = false
+                                com.nuvio.app.features.player.PlayerBrowsePip.setActive(false)
+                            }
+                        }
+                        // Handed over to from the box: published as detached (below), so this route can go at once.
+                        if (openInBox) {
+                            LaunchedEffect(hosted) {
+                                pendingBoxLaunchId = null
+                                com.nuvio.app.features.player.PlayerBrowsePip.endHandoff(stillActive = true)
+                                if (navController.currentBackStackEntry?.id == backStackEntry.id) navController.popBackStack()
+                            }
+                        }
+                        // The player's PiP button: this route goes and the player plays on in the corner.
+                        LaunchedEffect(hosted) {
+                            com.nuvio.app.features.player.PlayerBrowsePip.enterRequests.drop(1).collect {
+                                if (navController.currentBackStackEntry?.id != backStackEntry.id) return@collect
+                                hosted.detached = true
+                                com.nuvio.app.features.player.PlayerBrowsePip.setActive(true)
+                                navController.popBackStack()
+                            }
+                        }
+                        // Left any other way (Back, the end, a screen pushed over it) the player goes with it.
+                        DisposableEffect(hosted) {
+                            onDispose {
+                                if (!hosted.detached && hostedPlayer === hosted) hostedPlayer = null
+                            }
                         }
                     }
                     LaunchedEffect(launch.videoId) {
@@ -3654,9 +3746,12 @@ private fun MainAppContent(
                         }
                     }
                     // fork:preroll - the pre-show owns the screen until it finishes (module hook, no re-indent).
-                    if (!com.nuvio.app.features.preroll.prerollGateCleared(route.launchId.toString(), launch)) {
+                    // fork:pip-browse - not again for the player coming back from the corner box.
+                    if (!reattachingHostedPlayer && !openInBox && !com.nuvio.app.features.preroll.prerollGateCleared(route.launchId.toString(), launch)) {
                         return@composable
                     }
+                    // fork:pip-browse - drawn here, or handed to PlayerHostLayer (see `hosted` above).
+                    val playerContent: @Composable (Modifier) -> Unit = { playerModifier ->
                     PlayerScreen(
                         title = launch.title,
                         sourceUrl = launch.sourceUrl,
@@ -3706,8 +3801,45 @@ private fun MainAppContent(
                         },
                         onOpenPartyMedia = ::openPartyMedia,
                         stream = launch.stream,
-                        onBack = onBackFromPlayer,
+                        // fork:pip-browse - from the corner box there is no route to pop: the player just ends.
+                        onBack = if (hosted == null) {
+                            onBackFromPlayer
+                        } else {
+                            { if (hosted.detached) endDetachedPlayer(hosted) else onBackFromPlayer() }
+                        },
                         onPlaybackCompleted = completed@{
+                            if (hosted != null && hosted.detached) {
+                                // fork:pip-browse - in the corner box the YouTube queue (or a related pick)
+                                // carries on in the box; anything else just ends there.
+                                val boxYouTubeId = launch.parentMetaId
+                                    .takeIf { launch.parentMetaType == com.nuvio.app.features.youtube.YOUTUBE_META_TYPE }
+                                    ?.removePrefix(com.nuvio.app.features.youtube.YOUTUBE_META_ID_PREFIX)
+                                if (boxYouTubeId == null || !com.nuvio.app.features.youtube.YouTubePlayQueue.followsOn(boxYouTubeId)) {
+                                    endDetachedPlayer(hosted)
+                                    return@completed
+                                }
+                                com.nuvio.app.features.player.PlayerBrowsePip.beginHandoff()
+                                coroutineScope.launch {
+                                    val next = com.nuvio.app.features.youtube.YouTubePlayQueue.handOffNext(boxYouTubeId)
+                                    // Closed from the box meanwhile: nothing to hand over from.
+                                    if (hostedPlayer !== hosted) {
+                                        com.nuvio.app.features.player.PlayerBrowsePip.endHandoff(stillActive = false)
+                                        return@launch
+                                    }
+                                    endDetachedPlayer(hosted)
+                                    if (next == null) {
+                                        com.nuvio.app.features.player.PlayerBrowsePip.endHandoff(stillActive = false)
+                                        return@launch
+                                    }
+                                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                                        PlayerHandoff.activeRoutes.first { it == 0 }
+                                    }
+                                    val nextId = PlayerLaunchStore.put(next)
+                                    pendingBoxLaunchId = nextId
+                                    navController.navigate(PlayerRoute(launchId = nextId))
+                                }
+                                return@completed
+                            }
                             lastPlayerExitBackMark = TimeSource.Monotonic.markNow()
                             ResumePromptRepository.markPlayerExitedNormally()
                             PlayerLaunchStore.remove(route.launchId)
@@ -3808,8 +3940,20 @@ private fun MainAppContent(
                                 }
                             }
                         },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = playerModifier,
                     )
+                    }
+                    if (hosted == null) {
+                        playerContent(Modifier.fillMaxSize())
+                    } else {
+                        // fork:pip-browse - PlayerHostLayer draws it; this route holds the screen behind it.
+                        SideEffect {
+                            hosted.content = playerContent
+                            if (hostedPlayer !== hosted) hostedPlayer = hosted
+                        }
+                        // Opening straight into the box, this route is gone in a frame: nothing to black out.
+                        if (!openInBox) Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+                    }
                 }
                 composable<CatalogRoute> { backStackEntry ->
                     val route = backStackEntry.toRoute<CatalogRoute>()
@@ -4394,6 +4538,17 @@ private fun MainAppContent(
                         }
                     }
                 }
+                // fork:pip-browse - the player drawn outside the graph: over the screens as its route
+                // was, or in its corner box over the app once PiP took the route away.
+                val currentPlayerLaunchId = remember(currentBackStackEntry) {
+                    currentBackStackEntry
+                        ?.takeIf { it.destination.hasRoute<PlayerRoute>() }
+                        ?.let { runCatching { it.toRoute<PlayerRoute>().launchId }.getOrNull() }
+                }
+                com.nuvio.app.features.player.PlayerHostLayer(
+                    hosted = hostedPlayer,
+                    currentPlayerLaunchId = currentPlayerLaunchId,
+                )
                 }
                 }
             }
@@ -5741,7 +5896,7 @@ private fun MainAppContent(
             // finishes, which during a binge is mid auto-play into the next episode.
             RatingPromptHost(
                 isSuppressed = currentBackStackEntry?.destination?.hasRoute<PlayerRoute>() == true ||
-                    streamPickerRequest != null,
+                    streamPickerRequest != null || browsePipActive, // fork:pip-browse
             )
 
             MusicRootHosts(

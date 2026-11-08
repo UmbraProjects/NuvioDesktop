@@ -1963,6 +1963,8 @@
   <string name="settings_playback_selected_count">%1$d wybranych</string>
   <string name="settings_playback_show_loading_overlay">Pokaż nakładkę ładowania</string>
   <string name="settings_playback_show_loading_overlay_description">Pokaż nakładkę ładowania podczas uruchamiania strumienia.</string>
+  <string name="settings_playback_pip_browse">Przeglądanie w trybie obrazu w obrazie</string>
+  <string name="settings_playback_pip_browse_description">Obraz w obrazie zyskuje przycisk, który przywraca aplikację z wideo w jej rogu, dzięki czemu możesz przeglądać w trakcie odtwarzania. Zwiastuny są w tym czasie wyłączone. Działa od następnego wideo.</string>
   <string name="settings_playback_subtitle_background_color">Kolor tła</string>
   <string name="settings_playback_subtitle_blur">Rozmycie</string>
   <string name="settings_playback_subtitle_bold">Pogrubienie</string>
@@ -4545,6 +4547,9 @@
   <string name="player_hud_p2p_streaming_consent">Zgoda na strumieniowanie P2P</string>
   <string name="player_hud_pause">Pauza</string>
   <string name="player_hud_exit_picture_in_picture">Zamknij obraz w obrazie</string>
+  <string name="player_hud_back_to_video">Wróć do wideo</string>
+  <string name="player_hud_pip_browse">Przeglądaj aplikację</string>
+  <string name="player_hud_pip_pop_out">Odepnij nad Windows</string>
   <string name="player_hud_contrast">Kontrast</string>
   <string name="player_hud_brightness">Jasność</string>
   <string name="player_hud_saturation">Nasycenie</string>

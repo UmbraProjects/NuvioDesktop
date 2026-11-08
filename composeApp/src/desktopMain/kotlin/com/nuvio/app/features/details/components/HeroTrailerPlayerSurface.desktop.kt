@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,9 @@ actual fun HeroTrailerPlayerSurface(
     onVolumeChange: (Int) -> Unit,
     onReclaimFocus: () -> Unit,
 ) {
+    // fork:pip-browse - no trailer over a film playing on in the corner box; the hero keeps its artwork.
+    val browsePip by com.nuvio.app.features.player.PlayerBrowsePip.active.collectAsState()
+    if (browsePip) return
     val supported = DesktopHostOs.current == DesktopHostOs.WINDOWS ||
         DesktopHostOs.current == DesktopHostOs.MACOS
     val latestOnReady = rememberUpdatedState(onReady)

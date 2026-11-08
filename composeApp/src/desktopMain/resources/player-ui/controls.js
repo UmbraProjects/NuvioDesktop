@@ -33,6 +33,20 @@ const root = document.getElementById("playerRoot");
 // resize; see the pip-ui class). Its exit button goes back up to the video and its X closes it; any
 // other click on the picture does nothing, as in PiP, so a drag never also starts something.
 root.addEventListener("click", event => {
+  // fork:pip-browse - classic PiP's X closes the video straight away, without filling the screen first.
+  if (state.pictureInPictureActive && event.target.closest("#miniPlayerCloseButton")) {
+    event.preventDefault();
+    event.stopPropagation();
+    send("pictureInPictureClose", 0);
+    return;
+  }
+  // fork:pip-browse - classic PiP's Browse button: the window back to its size, the video in its corner.
+  if (state.pictureInPictureActive && event.target.closest("#pictureInPictureBrowseButton")) {
+    event.preventDefault();
+    event.stopPropagation();
+    send("pictureInPictureBrowse", 0);
+    return;
+  }
   if (!state.miniPlayer || state.pictureInPictureActive) return;
   if (event.target.closest("#pictureInPictureExitButton")) {
     event.preventDefault();
@@ -44,6 +58,13 @@ root.addEventListener("click", event => {
     event.preventDefault();
     event.stopPropagation();
     send("miniPlayerClose", 0);
+    return;
+  }
+  // fork:pip-browse - the corner box over the app: Pop out goes back to PiP over Windows.
+  if (event.target.closest("#miniPlayerPopOutButton")) {
+    event.preventDefault();
+    event.stopPropagation();
+    send("miniPlayerPopOut", 0);
     return;
   }
   if (event.target.closest("button,input")) return;
@@ -2652,7 +2673,9 @@ const applyDockPanelSize = () => {
   const width = dockFixedWidth != null ? dockFixedWidth : Math.min(dockMaxSize.width, Math.max(Math.min(DockPanelMinSize.width, dockMaxSize.width), size.width));
   const height = Math.min(dockMaxSize.height, Math.max(Math.min(DockPanelMinSize.height, dockMaxSize.height), size.height));
   const rootStyle = document.documentElement.style;
-  rootStyle.setProperty("--dock-w", `${Math.round(width)}px`);
+  // Grown from the pill, the width is the pill's to the sub-pixel: rounded in the panel's zoomed
+  // pixels it came back up to a pixel or two off the pill's edges once zoomed.
+  rootStyle.setProperty("--dock-w", dockFixedWidth != null ? `${width.toFixed(3)}px` : `${Math.round(width)}px`);
   rootStyle.setProperty("--dock-h", `${Math.round(height)}px`);
 };
 
@@ -2686,13 +2709,15 @@ const positionDockPanel = () => {
     gap = 10;
   }
   const top = anchorRect.top - gap;
-  rootStyle.setProperty("--dock-bottom", `${Math.round(Math.max(0, viewportHeight - top))}px`);
+  // Grown from the pill, the panel's foot and right side sit exactly on the pill's (fractional) edges.
+  const px = value => integrated ? `${value.toFixed(3)}px` : `${Math.round(value)}px`;
+  rootStyle.setProperty("--dock-bottom", px(Math.max(0, viewportHeight - top)));
   if (leftSide && !integrated) {
     rootStyle.setProperty("--dock-left", `${Math.round(Math.max(8, anchorRect.left))}px`);
     rootStyle.setProperty("--dock-right", "auto");
   } else {
     rootStyle.setProperty("--dock-left", "auto");
-    rootStyle.setProperty("--dock-right", `${Math.round(Math.max(8, viewportWidth - anchorRect.right))}px`);
+    rootStyle.setProperty("--dock-right", px(Math.max(integrated ? 0 : 8, viewportWidth - anchorRect.right)));
   }
   dockMaxSize = {
     width: Math.max(300, (viewportWidth - 24) / scale),
@@ -6416,7 +6441,10 @@ const renderChrome = () => {
   root.classList.toggle("locked", Boolean(state.isLocked));
   root.classList.toggle("mini-player", Boolean(state.miniPlayer));
   root.classList.toggle("pip-ui", pictureInPictureActive || Boolean(state.miniPlayer));
-  root.classList.toggle("mini-player-closable", isMiniPlayerUi() && Boolean(state.miniPlayerClosable));
+  // fork:pip-browse - PiP has the X too (it closes the video; see the click handler at the top).
+  root.classList.toggle("mini-player-closable", (isMiniPlayerUi() && Boolean(state.miniPlayerClosable)) || pictureInPictureActive);
+  root.classList.toggle("pip-browse-available", pictureInPictureActive && Boolean(state.pipBrowseAvailable));
+  root.classList.toggle("pip-browse-box", isMiniPlayerUi() && Boolean(state.pipBrowseBox));
   root.classList.toggle("episode-panel-open", activeModal === "episodes");
   root.classList.toggle("source-panel-open", activeModal === "sources");
   root.classList.toggle("iptv-panel-open", activeModal === "iptvChannels");
@@ -8531,12 +8559,42 @@ root.addEventListener("pointerup", endPipPointerInteraction, true);
 root.addEventListener("pointercancel", endPipPointerInteraction, true);
 root.addEventListener("lostpointercapture", endPipPointerInteraction, true);
 
+// Every press on the PiP picture (or the corner box) starts moving it. A double-click - back to the
+// mode PiP was entered from, or the corner box back to filling the window - is spotted by Kotlin from
+// two of these presses in a row (NativePlayerController.compactDoublePress), against the OS's own
+// double-click time and the pointer's real position, so it does not depend on this page's timestamps.
+// A press that comes up where it went down is a click: play/pause, as the full player's click is. Held
+// back a moment, as there, so the second press of a double-click (Kotlin's) cancels it.
+const PipClickSlopPx = 5;
+const PipClickMaxMs = 400;
+const PipClickDelayMs = 260;
+let pipPress = null;
+let pipTapTimer = 0;
+// When the last press on the compact player came: the browser's own dblclick follows the second
+// release, by which time PiP may already have been left; it must not count as one on the full video.
+let lastCompactPressAt = -Infinity;
+
 root.addEventListener("pointerdown", event => {
   if (!isCompactPlayerUi() || event.button !== 0) return;
   if (event.target.closest("button,input,.pip-resize-handle")) return;
   event.preventDefault();
   event.stopImmediatePropagation();
+  window.clearTimeout(pipTapTimer);
+  lastCompactPressAt = event.timeStamp;
+  pipPress = { pointerId: event.pointerId, x: event.screenX, y: event.screenY, time: event.timeStamp };
   beginPipPointerInteraction(event, 1);
+}, true);
+
+root.addEventListener("pointerup", event => {
+  const press = pipPress;
+  if (!press || event.pointerId !== press.pointerId) return;
+  pipPress = null;
+  const moved = Math.hypot(event.screenX - press.x, event.screenY - press.y) >= PipClickSlopPx;
+  if (moved || event.timeStamp - press.time > PipClickMaxMs || !isCompactPlayerUi()) return;
+  pipTapTimer = window.setTimeout(() => {
+    if (!isCompactPlayerUi()) return;
+    send("toggle", 0);
+  }, PipClickDelayMs);
 }, true);
 
 pictureInPictureResizeHandles.forEach(handleElement => {
@@ -8657,7 +8715,9 @@ root.addEventListener("click", event => {
     window.clearTimeout(tapTimer);
     return;
   }
-  if (isCompactPlayerUi()) return;
+  // fork:pip-browse - a click that began on PiP or the corner box (they pause on their own release),
+  // landing after a double-click took the video back to full size.
+  if (isCompactPlayerUi() || event.timeStamp - lastCompactPressAt < 1000) return;
   if (playbackErrorText()) return;
   if (event.target.closest("button,input")) return;
   const onVideoSurface = !isChromeInteractionTarget(event.target);
@@ -8913,12 +8973,20 @@ root.addEventListener("wheel", event => {
 root.addEventListener("dblclick", event => {
   if (playbackErrorText()) return;
   if (event.target.closest("button,input")) return;
-  // Only the bare video surface toggles fullscreen — double-clicking the control bar or the top
-  // navbar band shouldn't fling in/out of fullscreen.
+  // Only the bare video surface takes a double-click — double-clicking the control bar or the top
+  // navbar band shouldn't fling the window about.
   if (isChromeInteractionTarget(event.target)) return;
   event.preventDefault();
   window.clearTimeout(tapTimer);
-  send("toggleFullscreen", 0);
+  if (isHeroTrailerSurface || state.heroTrailerMode) {
+    send("toggleFullscreen", 0);
+    return;
+  }
+  // PiP's and the corner box's double-clicks are spotted by Kotlin from their presses. This dblclick
+  // comes after the second release, often once PiP has already been left: still theirs, not the video's.
+  if (isCompactPlayerUi() || event.timeStamp - lastCompactPressAt < 1000) return;
+  // As on most video sites: the YouTube watch page goes to theater, anything else to PiP (Kotlin decides).
+  send("videoDoubleClick", 0);
 });
 
 // Mouse "Back" side button (X1 / button 3) closes the player, mirroring Esc. WebView2 mouse events

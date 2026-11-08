@@ -180,6 +180,63 @@ class ZipDeltaTest {
         }
     }
 
+    @Test
+    fun aReadThatStallsFailsInsteadOfHangingForever() {
+        val guarded = StallGuardInputStream(HangingStream(), stallMillis = 200)
+        val started = System.nanoTime()
+        assertFailsWith<java.net.SocketTimeoutException> { guarded.read(ByteArray(16), 0, 16) }
+        val waitedMs = (System.nanoTime() - started) / 1_000_000
+        assertTrue(waitedMs in 150..5_000, "waited $waitedMs ms")
+        guarded.close()
+    }
+
+    @Test
+    fun aStalledRangeIsResumedFromWhereItStopped() {
+        val exe = Random(8).nextBytes(400_000)
+        val zip = zipOf("Nuvio.exe" to exe)
+        val index = ZipDelta.readIndex(CountingSource(zip))
+        val plan = assertNotNull(ZipDelta.plan(index.entries, tempDir(), "Nuvio.exe"))
+        val staging = tempDir()
+        val reopenStarts = mutableListOf<Long>()
+        var opened = 0
+        // The first connection serves 100 kB and then goes silent, like the reporter's.
+        val source = object : ZipRangeSource {
+            override val length: Long get() = zip.size.toLong()
+            override fun open(start: Long, endExclusive: Long): InputStream {
+                if (opened++ > 0) reopenStarts += start
+                val body = ByteArrayInputStream(zip, start.toInt(), (endExclusive - start).toInt())
+                val stream = if (opened == 1) HangingStream(body, hangAfterBytes = 100_000) else body
+                return StallGuardInputStream(stream, stallMillis = 200)
+            }
+        }
+
+        ZipDelta.fetchChanged(source, index, plan, staging) { _, _ -> }
+
+        assertContentEquals(exe, File(staging, "Nuvio.exe").readBytes())
+        assertEquals(1, reopenStarts.size)
+        assertTrue(reopenStarts.single() > 0, "reopened at $reopenStarts")
+    }
+
+    /** Serves [hangAfterBytes] of [body], then blocks every read until closed, like a dead socket. */
+    private class HangingStream(
+        private val body: InputStream = ByteArrayInputStream(ByteArray(0)),
+        private val hangAfterBytes: Int = 0,
+    ) : InputStream() {
+        private val closed = java.util.concurrent.CountDownLatch(1)
+        private var served = 0
+        override fun read(): Int = throw UnsupportedOperationException()
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            if (served < hangAfterBytes) {
+                val read = body.read(buffer, offset, minOf(length, hangAfterBytes - served))
+                if (read > 0) served += read
+                return read
+            }
+            check(closed.await(30, java.util.concurrent.TimeUnit.SECONDS)) { "never closed" }
+            throw java.io.IOException("closed")
+        }
+        override fun close() = closed.countDown()
+    }
+
     private fun zipOf(vararg entries: Pair<String, ByteArray?>, stored: Set<String> = emptySet()): ByteArray {
         val output = ByteArrayOutputStream()
         ZipOutputStream(output).use { zip ->

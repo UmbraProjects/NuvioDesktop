@@ -5230,7 +5230,7 @@ svg {
 .pip-play-button:hover { background: rgba(0, 0, 0, .92); }
 .player:not(.pip-ui) .pip-exit-button,
 .player:not(.pip-ui) .pip-play-button { display: none; }
-.player.pip-ui > :not(.pip-exit-button):not(.pip-play-button):not(.pip-close-button):not(.pip-resize-handle):not(.pip-seek) {
+.player.pip-ui > :not(.pip-exit-button):not(.pip-play-button):not(.pip-close-button):not(.pip-browse-button):not(.pip-resize-handle):not(.pip-seek) {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
@@ -7748,10 +7748,12 @@ svg {
  * so they win over both sizings of the PiP controls above. Right to left: the corner player's X (when
  * it is over the YouTube tab), back to full size, play/pause.
  */
-.pip-close-button { display: none; }
+.pip-close-button,
+.pip-browse-button { display: none; }
 .pip-exit-button,
 .pip-play-button,
-.pip-close-button {
+.pip-close-button,
+.pip-browse-button {
   position: absolute;
   z-index: 200;
   top: calc(var(--pip-ui-scale, 1) * 12px);
@@ -7775,9 +7777,30 @@ svg {
 .pip-play-button { right: calc(var(--pip-ui-scale, 1) * 50px); }
 .player.mini-player-closable .pip-exit-button { right: calc(var(--pip-ui-scale, 1) * 50px); }
 .player.mini-player-closable .pip-play-button { right: calc(var(--pip-ui-scale, 1) * 88px); }
+/* fork:pip-browse - classic PiP's Browse button (on to the corner box over the app), left of play/pause. */
+.pip-browse-button { right: calc(var(--pip-ui-scale, 1) * 126px); }
+.player.pip-active.pip-browse-available .pip-browse-button { display: grid; cursor: pointer; }
+.player.pip-active.pip-browse-available:hover .pip-browse-button,
+.player.pip-active.pip-browse-available .pip-browse-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.pip-browse-button:hover { background: rgba(255, 255, 255, .22); }
+/* The corner box over the app takes the same place for Pop out (back to PiP over Windows). */
+.player.pip-active .pip-popout-button,
+.player.pip-active.pip-browse-available .pip-popout-button { display: none; }
+.player.pip-browse-box:not(.pip-active) .pip-popout-button { display: grid; cursor: pointer; }
+.player.pip-browse-box:not(.pip-active):hover .pip-popout-button,
+.player.pip-browse-box:not(.pip-active) .pip-popout-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
 .pip-exit-button svg,
 .pip-play-button svg,
-.pip-close-button svg {
+.pip-close-button svg,
+.pip-browse-button svg {
   width: calc(var(--pip-ui-scale, 1) * 17px);
   height: calc(var(--pip-ui-scale, 1) * 17px);
 }
@@ -8275,6 +8298,22 @@ svg {
 .player.dock-integrated .dock-resize-x,
 .player.dock-integrated .dock-resize-xy { display: none; }
 .player.dock-integrated .dock-resize-y { left: 20px; right: 20px; }
+/* Panel and pill share one denser glass, so the seek bar running behind the panel's foot no longer
+ * shows through as a stray line, and the rail stops being a darker block that ends square on the
+ * pill: it takes the panel's own fill and its divider fades out before the seam. */
+.player.dock-integrated :is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .track-panel.dock-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, 0) 50%),
+    rgba(8, 8, 11, .95);
+}
+.player.minimal-hud.minimal-pills.dock-integrated.dock-open .desktop-control-row .action-row {
+  background: rgba(8, 8, 11, .95);
+}
+.player.dock-integrated .dock-rail {
+  background: transparent;
+  border-right: 1px solid transparent;
+  border-image: linear-gradient(180deg, rgba(255, 255, 255, .08) 70%, rgba(255, 255, 255, 0)) 1;
+}
 
 /* Episodes shelf: one gap above the season pills, between them and the cards, and under the
  * cards, so the rows sit evenly in the shelf; square along its lower edge like the top. */

@@ -1521,6 +1521,12 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_playback_show_loading_overlay),
                 resolve(Res.string.settings_playback_show_loading_overlay_description),
             ),
+            // fork:pip-browse
+            PlaybackSearchRow(
+                "pip-browse",
+                resolve(Res.string.settings_playback_pip_browse),
+                resolve(Res.string.settings_playback_pip_browse_description),
+            ),
             PlaybackSearchRow(
                 "external-player",
                 resolve(Res.string.settings_playback_external_player),

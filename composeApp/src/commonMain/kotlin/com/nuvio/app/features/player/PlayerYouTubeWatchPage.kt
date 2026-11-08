@@ -148,7 +148,9 @@ internal fun PlayerScreenRuntime.YouTubeWatchFrame(player: @Composable (Modifier
     val windowed by YouTubeWatchLayout.windowed.collectAsState()
     // fork:youtube-mini-player - the tab around the video in its corner (YouTubeWatchLayout.browsing).
     val browsing by YouTubeWatchLayout.browsing.collectAsState()
-    val pageShown = (windowed || browsing) && !pictureInPictureActive
+    // fork:pip-browse - nor in the corner box over the app: the video just fills the box.
+    val inBrowsePipBox by PlayerBrowsePip.active.collectAsState()
+    val pageShown = (windowed || browsing) && !pictureInPictureActive && !inBrowsePipBox
     var frameOrigin by remember { mutableStateOf(Offset.Zero) }
     var videoBox by remember { mutableStateOf<Rect?>(null) }
     val mini by YouTubeWatchLayout.mini.collectAsState()
