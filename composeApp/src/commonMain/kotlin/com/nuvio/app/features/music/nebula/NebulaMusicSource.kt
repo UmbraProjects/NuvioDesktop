@@ -34,6 +34,9 @@ internal sealed interface NebulaAlbumLookup {
  * What several addons' answers for one album come to, asked in order: the first that has the album wins; "not found" only
  * when every addon said so; and when none has it but one could not be asked, that failure (so it is retried, not remembered).
  */
+/** How long the start of an addon track waits for YouTube's loudness figure before going with the usual guess. */
+private const val YOUTUBE_LOUDNESS_TIMEOUT_MS = 2_500L
+
 internal fun firstAddonAnswer(answers: List<NebulaAlbumLookup>): NebulaAlbumLookup =
     answers.firstOrNull { it is NebulaAlbumLookup.Found }
         ?: answers.firstOrNull { it is NebulaAlbumLookup.Failed }
@@ -481,6 +484,30 @@ internal object NebulaMusicSource {
         },
     )
 
+    /**
+     * fork:loudness - the addon says nothing about how loud a file is, so a track never played here started from a guess and was
+     * eased to its measured level some seconds in (an audible dip on a loud master). YouTube publishes a loudness figure for
+     * the same song: looked up here as the stream is fetched (for the next track, while the one before plays), it is noted for
+     * [streamUrl] so the gain is right from the first second. Skipped when the track has already been measured, when the
+     * addon track stands in for no YouTube Music song, and after [YOUTUBE_LOUDNESS_TIMEOUT_MS] (the guess then stands).
+     */
+    private suspend fun noteYouTubeLoudness(addonVideoId: String, streamUrl: String) {
+        if (hasKeptLoudness("addon:$addonVideoId")) return
+        val youTubeId = youTubeTracks[addonVideoId]?.first?.videoId?.takeIf { it.length == 11 } ?: return
+        val known = youTubeLoudness
+        val loudnessDb = if (youTubeId in known) known[youTubeId] else {
+            kotlinx.coroutines.withTimeoutOrNull(YOUTUBE_LOUDNESS_TIMEOUT_MS) {
+                com.nuvio.app.features.trailer.TrailerPlaybackResolver.loudnessDbOf(youTubeId)
+            }.also { found -> youTubeLoudness = youTubeLoudness + (youTubeId to found) }
+        } ?: return
+        com.nuvio.app.features.preroll.StreamLoudnessBook.record(listOf(streamUrl), loudnessDb)
+        log.i { "loudness for addon track $addonVideoId taken from YouTube ($youTubeId): ${loudnessDb} dB over its reference" }
+    }
+
+    /** YouTube's loudness figure by YouTube id, null for one that had none; for this session. */
+    @Volatile
+    private var youTubeLoudness: Map<String, Double?> = emptyMap()
+
     /** The YouTube Music track (and its album) each addon track stands in for, by the addon track's id. */
     private val youTubeTracks = HashMap<String, Pair<MusicTrack, MusicAlbum>>()
 
@@ -550,6 +577,7 @@ internal object NebulaMusicSource {
             }
             streamStatus = null
             nebulaQualityLabel(stream.format, stream.quality)?.let { qualities[track.videoId] = it }
+            noteYouTubeLoudness(track.videoId, stream.url)
             MusicResolution.Playable(
                 track = track,
                 mode = mode,

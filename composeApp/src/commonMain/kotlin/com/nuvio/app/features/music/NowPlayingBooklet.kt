@@ -1,6 +1,11 @@
 package com.nuvio.app.features.music
 // FORK UI (Spyder): Nick's Now Playing stage, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -293,10 +298,16 @@ internal fun BookletDeck(
             label = "linerPage",
         ) { index ->
             val shown = pages.getOrElse(index) { LinerPage.Cover }
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            // fork:stage - each page is shrunk as a whole until it fits the box, so nothing scrolls. A facts page is sized as if every
+            // answer were showing, so revealing one never makes the page jump to a smaller size.
+            FitToHeight(Modifier.fillMaxSize()) { measuring ->
                 when (shown) {
                     LinerPage.Cover -> CoverPage(album, request, booklet.intro, accent)
-                    is LinerPage.Facts -> FactsPage(shown, revealed, accent) { index -> revealed = revealed + index }
+                    is LinerPage.Facts -> FactsPage(
+                        shown,
+                        if (measuring) revealed + shown.facts.indices.map { shown.startIndex + it } else revealed,
+                        accent,
+                    ) { index -> revealed = revealed + index }
                     is LinerPage.Guests -> GuestsPage(shown, position.cursor, album.tracks.size, accent) { at ->
                         position = position.copy(cursor = at)
                         shown.guests.getOrNull(at)?.let { guestTrack(it, album.tracks.size) }?.let { onJumpToTrack(it - 1) }
@@ -400,6 +411,51 @@ private fun CoverPage(album: MusicAlbum, request: BookletRequest, intro: String,
                     if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
+        }
+    }
+}
+
+/** The smallest a notes page is drawn at (of its own size). A page still too tall at this scrolls instead. */
+private const val FIT_MIN_SCALE = 0.62f
+
+/**
+ * fork:stage - [content] laid out as a column and zoomed out (text, spacing and all, evenly) just enough to fit the height it is
+ * given, so a page never needs scrolling. [content] is told when it is only being measured, so it can size itself for its
+ * largest state. The zoom is found by halving the gap between a scale that fits and one that does not; a page that does not
+ * fit even at [FIT_MIN_SCALE] is drawn at that and scrolls.
+ */
+@Composable
+internal fun FitToHeight(modifier: Modifier = Modifier, content: @Composable (measuring: Boolean) -> Unit) {
+    val base = LocalDensity.current
+    SubcomposeLayout(modifier) { constraints ->
+        val maxHeight = constraints.maxHeight
+        val loose = constraints.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity)
+        fun heightAt(scale: Float): Int =
+            subcompose("measure:$scale") {
+                CompositionLocalProvider(LocalDensity provides Density(base.density * scale, base.fontScale)) {
+                    Column { content(true) }
+                }
+            }.maxOfOrNull { it.measure(loose).height } ?: 0
+        val scale = when {
+            !constraints.hasBoundedHeight || heightAt(1f) <= maxHeight -> 1f
+            heightAt(FIT_MIN_SCALE) > maxHeight -> FIT_MIN_SCALE
+            else -> {
+                var fits = FIT_MIN_SCALE
+                var tooBig = 1f
+                repeat(5) {
+                    val mid = (fits + tooBig) / 2f
+                    if (heightAt(mid) <= maxHeight) fits = mid else tooBig = mid
+                }
+                fits
+            }
+        }
+        val placeables = subcompose("shown") {
+            CompositionLocalProvider(LocalDensity provides Density(base.density * scale, base.fontScale)) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { content(false) }
+            }
+        }.map { it.measure(constraints) }
+        layout(constraints.maxWidth, if (constraints.hasBoundedHeight) maxHeight else placeables.maxOfOrNull { it.height } ?: 0) {
+            placeables.forEach { it.place(0, 0) }
         }
     }
 }

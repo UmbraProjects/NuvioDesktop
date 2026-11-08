@@ -309,6 +309,24 @@ class InAppYouTubeExtractor internal constructor(
     suspend fun extractSingleUrl(youtubeUrl: String): String? =
         (extract(youtubeUrl, singleUrl = true) as? TrailerResolution.Available)?.source?.videoUrl
 
+    /**
+     * fork:loudness - YouTube's overall `loudnessDb` for [videoId] from one player request (the first client only), or null.
+     * Nothing is asked while YouTube is refusing this address: the figure is a nicety, the stream plays without it.
+     */
+    suspend fun loudnessDbOf(videoId: String): Double? = withContext(Dispatchers.Default) {
+        if (videoId.length != 11 || MusicRateLimit.isBlocked()) return@withContext null
+        try {
+            val config = ensureWatchConfig(videoId, forceRefresh = false)
+            val response = fetchPlayerResponse(config.apiKey, videoId, CLIENTS.first(), config.visitorData)
+            response.objectValue("playerConfig")?.objectValue("audioConfig")?.numberValue("loudnessDb")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.w { "loudness lookup for $videoId failed: ${e.message}" }
+            null
+        }
+    }
+
     /** fork:innertube - the shared session for the search / YouTube Music requests in YouTubeInnerTube.kt. */
     internal suspend fun innerTubeSession(): InnerTubeSession =
         ensureWatchConfig(INNERTUBE_SEED_VIDEO_ID, forceRefresh = false).let { InnerTubeSession(it.apiKey, it.visitorData) }

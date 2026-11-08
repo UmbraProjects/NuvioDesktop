@@ -25,6 +25,8 @@ actual object TrailerPlaybackResolver {
             .any { it == com.nuvio.app.features.music.ProbeVerdict.Refused }
     }
 
+    actual suspend fun loudnessDbOf(videoId: String): Double? = extractor.loudnessDbOf(videoId)
+
     /** Forgets the cached YouTube session so the next lookup starts a fresh one. Not part of the shared `expect` surface. */
     internal suspend fun forgetSession() = extractor.forgetSession()
 
