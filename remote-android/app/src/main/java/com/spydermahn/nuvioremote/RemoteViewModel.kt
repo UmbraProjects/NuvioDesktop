@@ -1,9 +1,8 @@
 package com.spydermahn.nuvioremote
 
 import android.app.Application
-import android.content.Context
-import android.os.Build
-import android.provider.Settings
+import android.graphics.Bitmap
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
@@ -16,10 +15,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.util.concurrent.Executors
-
-data class SavedPc(val name: String, val host: String, val port: Int, val token: String) {
-    val address get() = "$host:$port"
-}
 
 sealed interface Screen {
     data object Pick : Screen
@@ -38,6 +33,10 @@ data class UiState(
     val message: String? = null,
     val current: SavedPc? = null,
     val link: Link = Link.Offline,
+    /** What the PC is playing; null when nothing is, or while offline. */
+    val nowPlaying: NowPlaying? = null,
+    /** [NowPlaying.imageUrl], once fetched. */
+    val cover: Bitmap? = null,
 )
 
 /**
@@ -45,23 +44,21 @@ data class UiState(
  * order they were made and the session is never used from two threads at once.
  */
 class RemoteViewModel(application: Application) : AndroidViewModel(application) {
-    private val prefs = application.getSharedPreferences("nuvio_remote", Context.MODE_PRIVATE)
+    private val store = PcStore(application)
     private val io = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "nuvio-remote-io") }
+    private val coverIo = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "nuvio-remote-covers") }
 
-    private val _state = MutableStateFlow(UiState(saved = loadSaved()))
+    private val _state = MutableStateFlow(UiState(saved = store.saved()))
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     private var session: RemoteSession? = null
     private var keepAlive: Job? = null
     private var foreground = false
 
-    private val deviceName: String =
-        Settings.Global.getString(application.contentResolver, "device_name")?.takeIf { it.isNotBlank() }
-            ?: Build.MODEL ?: "Android phone"
+    private val deviceName: String = phoneName(application)
 
     init {
-        val last = prefs.getString(KEY_LAST, null)
-        val lastPc = _state.value.saved.firstOrNull { it.address == last }
+        val lastPc = store.last()
         if (lastPc != null) {
             _state.update { it.copy(screen = Screen.Remote, current = lastPc, link = Link.Connecting) }
         } else {
@@ -86,6 +83,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     override fun onCleared() {
         io.execute { closeSession() }
         io.shutdown()
+        coverIo.shutdown()
     }
 
     // --- Picking a PC ---
@@ -116,14 +114,18 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     fun forget(pc: SavedPc) {
         saveAll(_state.value.saved - pc)
-        if (prefs.getString(KEY_LAST, null) == pc.address) prefs.edit().remove(KEY_LAST).apply()
+        if (store.lastAddress == pc.address) {
+            store.lastAddress = null
+            NowPlayingService.stop(getApplication())
+        }
     }
 
     fun showPicker() {
         keepAlive?.cancel()
         io.execute { closeSession() }
-        prefs.edit().remove(KEY_LAST).apply()
-        _state.update { it.copy(screen = Screen.Pick, link = Link.Offline, message = null, busy = false) }
+        store.lastAddress = null
+        NowPlayingService.stop(getApplication())
+        _state.update { it.copy(screen = Screen.Pick, link = Link.Offline, message = null, busy = false, nowPlaying = null, cover = null) }
         scan()
     }
 
@@ -195,12 +197,21 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     fun backspace(count: Int) = sendOrReconnect { session -> repeat(count) { session.key(RemoteKey.Backspace) } }
 
+    /** Seeks the PC's player; the card shows the new position at once rather than waiting for the PC. */
+    fun seek(positionMs: Long) {
+        _state.update { state ->
+            state.copy(nowPlaying = state.nowPlaying?.copy(positionMs = positionMs, receivedAtMs = SystemClock.elapsedRealtime()))
+        }
+        sendOrReconnect { it.seek(positionMs) }
+    }
+
     fun reconnect() {
         val pc = _state.value.current ?: return
         if (!foreground) return
         _state.update { it.copy(link = Link.Connecting) }
         io.execute {
-            if (session?.isOpen == true && session?.ping() == true) {
+            val alive = session?.let { it.isOpen && it.silentFor(SystemClock.elapsedRealtime()) < SILENT_MS && it.ping() } == true
+            if (alive) {
                 _state.update { it.copy(link = Link.Connected) }
                 startKeepAlive()
                 return@execute
@@ -251,9 +262,60 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun onConnected(pc: SavedPc) {
         saveAll(_state.value.saved.filterNot { it.address == pc.address } + pc)
-        prefs.edit().putString(KEY_LAST, pc.address).apply()
+        store.lastAddress = pc.address
         _state.update { it.copy(busy = false, message = null, screen = Screen.Remote, current = pc, link = Link.Connected) }
+        session?.let(::listenTo)
         startKeepAlive()
+    }
+
+    /** From here on the PC's lines (now playing, pongs) arrive on the session's own thread. */
+    private fun listenTo(opened: RemoteSession) {
+        opened.listen(
+            clock = SystemClock::elapsedRealtime,
+            onLine = { line ->
+                when (line) {
+                    is ServerLine.State -> showNowPlaying(line.nowPlaying)
+                    ServerLine.Idle -> _state.update { it.copy(nowPlaying = null, cover = null) }
+                    else -> Unit
+                }
+            },
+            onClosed = {
+                onIo {
+                    // Only the session in use going away matters; one closed on purpose has already been replaced.
+                    if (session === opened) {
+                        closeSession()
+                        _state.update { it.copy(link = Link.Offline) }
+                        viewModelScope.launch { reconnect() }
+                    }
+                }
+            },
+        )
+        runCatching { opened.subscribe() }
+    }
+
+    /** After [onCleared] the executor refuses work; a socket closing late must not crash the app. */
+    private fun onIo(work: () -> Unit) {
+        try {
+            io.execute(work)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+        }
+    }
+
+    private fun showNowPlaying(playing: NowPlaying) {
+        val previousUrl = _state.value.nowPlaying?.imageUrl
+        _state.update { state ->
+            state.copy(nowPlaying = playing, cover = if (playing.imageUrl == previousUrl) state.cover else playing.imageUrl?.let(Covers::cached))
+        }
+        val url = playing.imageUrl
+        if (url != null && url != previousUrl && Covers.cached(url) == null) {
+            runCatching { coverIo.execute {
+                val bitmap = Covers.load(url) ?: return@execute
+                _state.update { state -> if (state.nowPlaying?.imageUrl == url) state.copy(cover = bitmap) else state }
+            } }
+        }
+        // The lock screen and the notification take over while something plays; started from here, in the
+        // foreground, as Android only lets a foreground app start one.
+        if (foreground) NowPlayingService.start(getApplication())
     }
 
     private fun fail(reason: String) {
@@ -264,6 +326,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     private fun closeSession() {
         session?.close()
         session = null
+        _state.update { it.copy(nowPlaying = null, cover = null) }
     }
 
     /** A ping every few seconds, so a PC that went to sleep shows as offline before the next press. */
@@ -273,7 +336,8 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
             while (isActive) {
                 delay(PING_INTERVAL_MS)
                 io.execute {
-                    val alive = session?.ping() == true
+                    val current = session
+                    val alive = current != null && current.silentFor(SystemClock.elapsedRealtime()) < SILENT_MS && current.ping()
                     if (!alive && _state.value.link == Link.Connected) {
                         closeSession()
                         _state.update { it.copy(link = Link.Offline) }
@@ -294,22 +358,14 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // --- Storage: "host|port|token|name" per paired PC. ---
-
-    private fun loadSaved(): List<SavedPc> = prefs.getStringSet(KEY_SAVED, emptySet()).orEmpty().mapNotNull { entry ->
-        val parts = entry.split('|', limit = 4)
-        if (parts.size < 4) return@mapNotNull null
-        SavedPc(RemoteProtocol.decode(parts[3]), parts[0], parts[1].toIntOrNull() ?: return@mapNotNull null, parts[2])
-    }.sortedBy { it.name.lowercase() }
-
     private fun saveAll(list: List<SavedPc>) {
-        prefs.edit().putStringSet(KEY_SAVED, list.map { "${it.host}|${it.port}|${it.token}|${RemoteProtocol.encode(it.name)}" }.toSet()).apply()
+        store.saveAll(list)
         _state.update { it.copy(saved = list.sortedBy { pc -> pc.name.lowercase() }) }
     }
 
     private companion object {
-        const val KEY_SAVED = "saved_pcs"
-        const val KEY_LAST = "last_pc"
+        /** A PC that has said nothing for this long (it answers every ping) has gone. */
+        const val SILENT_MS = 12_000L
         const val PING_INTERVAL_MS = 5_000L
         const val RETRY_MS = 3_000L
     }

@@ -19,6 +19,7 @@ import kotlin.test.assertTrue
 class PhoneRemoteServerTest {
     private val keys = CopyOnWriteArrayList<RemoteKey>()
     private val texts = CopyOnWriteArrayList<String>()
+    private val commands = CopyOnWriteArrayList<String>()
     private val tokens = mutableSetOf<String>()
     private val discoveryPort = DatagramSocket(0).use { it.localPort }
 
@@ -37,6 +38,16 @@ class PhoneRemoteServerTest {
             override fun onText(text: String) {
                 texts += text
             }
+
+            override fun onSeek(positionMs: Long) {
+                commands += "seek $positionMs"
+            }
+
+            override fun onVolume(volume: Int) {
+                commands += "volume $volume"
+            }
+
+            override fun onOpen(url: String): String? = if ("youtu" in url) "a YouTube video".also { commands += "open $url" } else null
         },
         preferredPort = 0,
         discoveryPort = discoveryPort,
@@ -85,6 +96,32 @@ class PhoneRemoteServerTest {
         waitFor { texts.isNotEmpty() }
         assertEquals(listOf(RemoteKey.Up, RemoteKey.Select), keys.toList())
         assertEquals(listOf("blade runner 2049"), texts.toList())
+    }
+
+    @Test
+    fun aSubscribedPhoneHearsTheStateAndCanSeekSetVolumeAndOpen() {
+        tokens += "saved"
+        server.publishState(PhoneRemoteProtocol.stateLine(RemoteNowPlaying(kind = "music", title = "Billie Jean", positionMs = 1_000L)))
+        Phone().use { phone ->
+            phone.send("HELLO 1 saved Phone")
+            assertEquals("WELCOME Living%20Room%20PC", phone.receive())
+            // Nothing is pushed before the phone asks for it, so an older remote never sees a line it does not know.
+            phone.send("PING")
+            assertEquals("PONG", phone.receive())
+            phone.send("SUBSCRIBE")
+            assertEquals("STATE music 0 1000 0 - 100 0 Billie%20Jean - -", phone.receive())
+            server.publishState(PhoneRemoteProtocol.IDLE)
+            assertEquals("IDLE", phone.receive())
+
+            phone.send("SEEK 93000")
+            phone.send("VOLUME 40")
+            phone.send("SEEK -5")
+            phone.send("OPEN ${PhoneRemoteProtocol.encode("https://youtu.be/dQw4w9WgXcQ")}")
+            assertEquals("OPENING a%20YouTube%20video", phone.receive())
+            phone.send("OPEN ${PhoneRemoteProtocol.encode("https://example.com/page")}")
+            assertEquals("CANT_OPEN", phone.receive())
+        }
+        assertEquals(listOf("seek 93000", "volume 40", "open https://youtu.be/dQw4w9WgXcQ"), commands.toList())
     }
 
     @Test

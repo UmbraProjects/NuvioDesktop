@@ -44,6 +44,76 @@ enum class RemoteKey(val wire: String) {
     VolumeUp("volup"), VolumeDown("voldown"), Mute("mute"),
     Subtitles("subtitles"), Audio("audio"),
     Backspace("backspace"), Enter("enter"),
+    Next("next"), Previous("previous"),
+}
+
+/**
+ * What the PC is playing, from its STATE line. The PC does not send position ticks: [positionAt] moves the position on
+ * from when the line arrived ([receivedAtMs], on the phone's elapsed-time clock).
+ */
+data class NowPlaying(
+    /** "film" (the film and YouTube player) or "music". */
+    val kind: String,
+    val isPlaying: Boolean,
+    val positionMs: Long,
+    /** 0 when unknown, or for live TV. */
+    val durationMs: Long,
+    val volume: Int?,
+    val volumeMax: Int,
+    val canSkip: Boolean,
+    val title: String,
+    val subtitle: String?,
+    val imageUrl: String?,
+    val receivedAtMs: Long,
+) {
+    val hasTimeline: Boolean get() = durationMs > 0L
+
+    fun positionAt(nowMs: Long): Long {
+        val moved = if (isPlaying) positionMs + (nowMs - receivedAtMs).coerceAtLeast(0L) else positionMs
+        return if (hasTimeline) moved.coerceAtMost(durationMs) else moved
+    }
+}
+
+/** A line the PC sends after the handshake. */
+sealed interface ServerLine {
+    data class State(val nowPlaying: NowPlaying) : ServerLine
+    data object Idle : ServerLine
+    data object Pong : ServerLine
+    data class Opening(val what: String) : ServerLine
+    data object CantOpen : ServerLine
+    data object Other : ServerLine
+
+    companion object {
+        fun parse(line: String, nowMs: Long): ServerLine {
+            val parts = line.trim().split(' ')
+            return when (parts[0]) {
+                "PONG" -> Pong
+                "IDLE" -> Idle
+                "CANT_OPEN" -> CantOpen
+                "OPENING" -> Opening(RemoteProtocol.decode(parts.getOrElse(1) { "" }))
+                "STATE" -> parseState(parts, nowMs)?.let(::State) ?: Other
+                else -> Other
+            }
+        }
+
+        private fun parseState(parts: List<String>, nowMs: Long): NowPlaying? {
+            if (parts.size < 11) return null
+            fun field(index: Int) = parts[index].takeUnless { it == "-" || it.isBlank() }?.let(RemoteProtocol::decode)
+            return NowPlaying(
+                kind = parts[1],
+                isPlaying = parts[2] == "1",
+                positionMs = parts[3].toLongOrNull() ?: return null,
+                durationMs = parts[4].toLongOrNull() ?: return null,
+                volume = parts[5].toIntOrNull(),
+                volumeMax = parts[6].toIntOrNull()?.coerceAtLeast(1) ?: 100,
+                canSkip = parts[7] == "1",
+                title = field(8) ?: return null,
+                subtitle = field(9),
+                imageUrl = field(10),
+                receivedAtMs = nowMs,
+            )
+        }
+    }
 }
 
 data class FoundPc(val name: String, val host: String, val port: Int)
@@ -152,10 +222,61 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
         if (text.isNotEmpty()) send("TEXT ${RemoteProtocol.encode(text)}")
     }
 
-    /** True if the PC answered; false means the session is dead and should be reopened. */
+    fun subscribe() = send("SUBSCRIBE")
+
+    fun seek(positionMs: Long) = send("SEEK ${positionMs.coerceAtLeast(0L)}")
+
+    fun volume(level: Int) = send("VOLUME ${level.coerceAtLeast(0)}")
+
+    /** Sends a shared link and waits for the PC's answer. Only on a session that is not [listen]ing. */
+    fun open(text: String): ServerLine {
+        send("OPEN ${RemoteProtocol.encode(text)}")
+        val reply = readLine() ?: return ServerLine.Other
+        return ServerLine.parse(reply, 0L)
+    }
+
+    @Volatile
+    private var listening = false
+
+    /** When the PC last said anything, on the elapsed-time clock; only kept while [listen]ing. */
+    @Volatile
+    var lastHeardAtMs: Long = 0L
+        private set
+
+    /**
+     * Hands every line from the PC to [onLine] on a thread of its own, until the session closes ([onClosed] then runs
+     * once). After this, [ping] no longer waits for its answer: a PONG arrives as a line, and a session that has been
+     * silent too long ([silentFor]) is dead.
+     */
+    fun listen(clock: () -> Long, onLine: (ServerLine) -> Unit, onClosed: () -> Unit) {
+        listening = true
+        lastHeardAtMs = clock()
+        // The keep-alive notices a dead PC; the reader just blocks, so a timeout cannot cut a line in half.
+        runCatching { socket.soTimeout = 0 }
+        Thread({
+            try {
+                while (!socket.isClosed) {
+                    val line = reader.readLine() ?: break
+                    lastHeardAtMs = clock()
+                    onLine(ServerLine.parse(line, clock()))
+                }
+            } catch (_: IOException) {
+            } finally {
+                close()
+                onClosed()
+            }
+        }, "nuvio-remote-reader").apply { isDaemon = true }.start()
+    }
+
+    fun silentFor(nowMs: Long): Long = nowMs - lastHeardAtMs
+
+    /**
+     * True if the PC answered; false means the session is dead and should be reopened. While [listen]ing it only sends
+     * the PING (the answer comes through the listener) and reports whether that worked.
+     */
     fun ping(): Boolean = try {
         send("PING")
-        readLine() == "PONG"
+        if (listening) true else readLine() == "PONG"
     } catch (_: IOException) {
         false
     }

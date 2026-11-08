@@ -1,0 +1,88 @@
+package com.spydermahn.nuvioremote
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.os.Build
+import android.provider.Settings
+import java.net.HttpURLConnection
+import java.net.URL
+
+data class SavedPc(val name: String, val host: String, val port: Int, val token: String) {
+    val address get() = "$host:$port"
+}
+
+/**
+ * The paired PCs and which one was used last, shared by the remote screen, the lock-screen controls and the share
+ * menu. Stored as "host|port|token|name" per PC.
+ */
+class PcStore(context: Context) {
+    private val prefs = context.applicationContext.getSharedPreferences("nuvio_remote", Context.MODE_PRIVATE)
+
+    fun saved(): List<SavedPc> = prefs.getStringSet(KEY_SAVED, emptySet()).orEmpty().mapNotNull { entry ->
+        val parts = entry.split('|', limit = 4)
+        if (parts.size < 4) return@mapNotNull null
+        SavedPc(RemoteProtocol.decode(parts[3]), parts[0], parts[1].toIntOrNull() ?: return@mapNotNull null, parts[2])
+    }.sortedBy { it.name.lowercase() }
+
+    fun saveAll(list: List<SavedPc>) {
+        prefs.edit().putStringSet(KEY_SAVED, list.map { "${it.host}|${it.port}|${it.token}|${RemoteProtocol.encode(it.name)}" }.toSet()).apply()
+    }
+
+    var lastAddress: String?
+        get() = prefs.getString(KEY_LAST, null)
+        set(value) {
+            prefs.edit().apply { if (value == null) remove(KEY_LAST) else putString(KEY_LAST, value) }.apply()
+        }
+
+    /** The PC the remote was last connected to, if it is still paired. */
+    fun last(): SavedPc? = lastAddress?.let { address -> saved().firstOrNull { it.address == address } }
+
+    private companion object {
+        const val KEY_SAVED = "saved_pcs"
+        const val KEY_LAST = "last_pc"
+    }
+}
+
+fun phoneName(context: Context): String =
+    Settings.Global.getString(context.contentResolver, "device_name")?.takeIf { it.isNotBlank() }
+        ?: Build.MODEL ?: "Android phone"
+
+/**
+ * Cover art for the now-playing card and the lock screen: fetched on the caller's thread, scaled down, and the last few
+ * kept so a pause or a seek never fetches again.
+ */
+object Covers {
+    private const val MAX_SIDE = 512
+    private val kept = object : LinkedHashMap<String, Bitmap>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > 4
+    }
+
+    @Synchronized
+    fun cached(url: String): Bitmap? = kept[url]
+
+    /** Blocking; call off the main thread. Null when there is no picture to be had. */
+    fun load(url: String): Bitmap? {
+        cached(url)?.let { return it }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return null
+        val bytes = runCatching {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = 6_000
+            connection.readTimeout = 8_000
+            connection.instanceFollowRedirects = true
+            try {
+                if (connection.responseCode !in 200..299) null else connection.inputStream.use { it.readBytes() }
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrNull() ?: return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= MAX_SIDE && bounds.outHeight / (sample * 2) >= MAX_SIDE) sample *= 2
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: return null
+        synchronized(this) { kept[url] = bitmap }
+        return bitmap
+    }
+}

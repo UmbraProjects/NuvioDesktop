@@ -1,12 +1,15 @@
 package com.spydermahn.nuvioremote
 
+import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -45,6 +48,11 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.automirrored.rounded.KeyboardReturn
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Subtitles
@@ -59,6 +67,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,6 +77,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -77,6 +88,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -365,6 +380,11 @@ private fun RemoteScreen(state: UiState, viewModel: RemoteViewModel) {
             TypingPanel(viewModel, onClose = { typing = false })
         }
 
+        val playing = state.nowPlaying
+        if (playing != null && !typing) {
+            NowPlayingCard(playing, state.cover, viewModel)
+        }
+
         Column(
             modifier = Modifier.weight(1f).fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -377,7 +397,7 @@ private fun RemoteScreen(state: UiState, viewModel: RemoteViewModel) {
                 RoundKey(Icons.Rounded.Keyboard, "Type", highlighted = typing) { typing = !typing }
             }
 
-            if (!typing) DPad(viewModel) else DPad(viewModel, compact = true)
+            DPad(viewModel, size = if (typing) 200.dp else if (playing != null) 240.dp else 280.dp)
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 RoundKey(Icons.Rounded.FastRewind, "Back 10s", repeat = true) { viewModel.press(RemoteKey.SeekBack) }
@@ -394,6 +414,99 @@ private fun RemoteScreen(state: UiState, viewModel: RemoteViewModel) {
             }
         }
     }
+}
+
+/**
+ * What the PC is playing: cover, title, play/pause (and previous/next for music), and a seek bar that moves on by itself
+ * between the PC's updates and seeks the PC when let go.
+ */
+@Composable
+private fun NowPlayingCard(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel) {
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(playing) {
+        now = SystemClock.elapsedRealtime()
+        while (playing.isPlaying) {
+            delay(500)
+            now = SystemClock.elapsedRealtime()
+        }
+    }
+    var dragging by remember(playing.title) { mutableStateOf<Float?>(null) }
+    val position = playing.positionAt(now)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Panel)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(PanelRaised),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (cover != null) {
+                    Image(cover.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                } else {
+                    Icon(if (playing.kind == "music") Icons.Rounded.MusicNote else Icons.Rounded.Movie, contentDescription = null, tint = Muted)
+                }
+            }
+            Spacer(Modifier.size(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(playing.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                playing.subtitle?.let {
+                    Text(it, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (playing.canSkip) {
+                IconButton(onClick = { viewModel.press(RemoteKey.Previous) }) {
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous")
+                }
+            }
+            IconButton(onClick = { viewModel.press(RemoteKey.PlayPause) }) {
+                Icon(
+                    if (playing.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = if (playing.isPlaying) "Pause" else "Play",
+                    tint = Accent,
+                    modifier = Modifier.size(32.dp),
+                )
+            }
+            if (playing.canSkip) {
+                IconButton(onClick = { viewModel.press(RemoteKey.Next) }) {
+                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next")
+                }
+            }
+        }
+        if (playing.hasTimeline) {
+            val shown = dragging ?: position.toFloat()
+            Slider(
+                value = shown.coerceIn(0f, playing.durationMs.toFloat()),
+                onValueChange = { dragging = it },
+                onValueChangeFinished = {
+                    dragging?.let { viewModel.seek(it.toLong()) }
+                    dragging = null
+                },
+                valueRange = 0f..playing.durationMs.toFloat(),
+                colors = SliderDefaults.colors(thumbColor = Accent, activeTrackColor = Accent, inactiveTrackColor = PanelRaised),
+                modifier = Modifier.height(32.dp),
+            )
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(formatTime(shown.toLong()), color = Muted, fontSize = 12.sp)
+                Spacer(Modifier.weight(1f))
+                Text(formatTime(playing.durationMs), color = Muted, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+/** 3:07 or 1:02:09. */
+private fun formatTime(ms: Long): String {
+    val total = ms.coerceAtLeast(0L) / 1000L
+    val hours = total / 3600
+    val minutes = (total % 3600) / 60
+    val seconds = (total % 60).toString().padStart(2, '0')
+    return if (hours > 0) "$hours:${minutes.toString().padStart(2, '0')}:$seconds" else "$minutes:$seconds"
 }
 
 @Composable
@@ -466,13 +579,13 @@ private fun TypingPanel(viewModel: RemoteViewModel, onClose: () -> Unit) {
 }
 
 @Composable
-private fun DPad(viewModel: RemoteViewModel, compact: Boolean = false) {
-    val size = if (compact) 200.dp else 280.dp
+private fun DPad(viewModel: RemoteViewModel, size: Dp) {
+    val compact = size < 240.dp
     Box(
         modifier = Modifier.size(size).clip(CircleShape).background(Panel),
         contentAlignment = Alignment.Center,
     ) {
-        val arrow = if (compact) 60.dp else 84.dp
+        val arrow = size * 0.3f
         PressArea(Modifier.align(Alignment.TopCenter).size(arrow), repeat = true, onPress = { viewModel.press(RemoteKey.Up) }) {
             Icon(Icons.Rounded.ExpandLess, contentDescription = "Up", modifier = Modifier.size(40.dp))
         }

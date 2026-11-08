@@ -31,6 +31,10 @@ internal interface PhoneRemoteListener {
     fun onKey(key: RemoteKey)
     fun onText(text: String)
     fun onConnectedDevicesChanged(names: List<String>) = Unit
+    fun onSeek(positionMs: Long) = Unit
+    fun onVolume(volume: Int) = Unit
+    /** A link shared from the phone. Returns what is being opened, for the phone to say, or null if it cannot be. */
+    fun onOpen(url: String): String? = null
 }
 
 /**
@@ -57,6 +61,10 @@ internal class PhoneRemoteServer(
     private var discovery: DatagramSocket? = null
     private val clients = CopyOnWriteArrayList<Session>()
     private val failures = ConcurrentHashMap<String, Failures>()
+
+    /** The last STATE or IDLE line, sent to a phone as soon as it subscribes. */
+    @Volatile
+    private var lastState: String = PhoneRemoteProtocol.IDLE
 
     /** The TCP port in use, or null while stopped. */
     val port: Int? get() = server?.takeUnless { it.isClosed }?.localPort
@@ -90,6 +98,12 @@ internal class PhoneRemoteServer(
         clients.forEach { it.close() }
         clients.clear()
         publishClients()
+    }
+
+    /** Sends [line] (a STATE or IDLE line) to every phone that asked for it. Safe from any thread. */
+    fun publishState(line: String) {
+        lastState = line
+        clients.forEach { session -> if (session.subscribed) session.trySend(line) }
     }
 
     /** Drops every open session, e.g. after the PIN is changed and old tokens are forgotten. */
@@ -166,6 +180,7 @@ internal class PhoneRemoteServer(
 
     private inner class Session(private val socket: Socket) {
         @Volatile var deviceName: String? = null
+        @Volatile var subscribed: Boolean = false
         private val address: String = (socket.inetAddress ?: InetAddress.getLoopbackAddress()).hostAddress
         private lateinit var out: Writer
 
@@ -194,6 +209,16 @@ internal class PhoneRemoteServer(
                             is RemoteMessage.Key -> listener.onKey(message.key)
                             is RemoteMessage.Text -> if (message.text.isNotEmpty()) listener.onText(message.text)
                             RemoteMessage.Ping -> send("PONG")
+                            RemoteMessage.Subscribe -> {
+                                subscribed = true
+                                send(lastState)
+                            }
+                            is RemoteMessage.Seek -> listener.onSeek(message.positionMs)
+                            is RemoteMessage.Volume -> listener.onVolume(message.volume)
+                            is RemoteMessage.Open -> {
+                                val opening = listener.onOpen(message.url)
+                                send(if (opening != null) "OPENING ${PhoneRemoteProtocol.encode(opening)}" else "CANT_OPEN")
+                            }
                             else -> Unit
                         }
                     }
@@ -256,6 +281,15 @@ internal class PhoneRemoteServer(
                 if (char == '\n') return line.toString().trimEnd('\r')
                 if (line.length >= PhoneRemoteProtocol.MAX_LINE_CHARS) throw IOException("line too long")
                 line.append(char)
+            }
+        }
+
+        /** A push from another thread: a phone that has gone away is closed, and its own thread cleans up. */
+        fun trySend(line: String) {
+            try {
+                send(line)
+            } catch (_: IOException) {
+                close()
             }
         }
 

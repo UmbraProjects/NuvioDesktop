@@ -2395,6 +2395,23 @@ private fun MainAppContent(
             }
         }
 
+        // fork:phone-remote - a YouTube video sent from the phone's share menu opens in the player, replacing one already open.
+        LaunchedEffect(navController) {
+            com.nuvio.app.features.remote.RemotePlayerHub.youTubeOpens.collectLatest { request ->
+                val launch = com.nuvio.app.features.youtube.youTubeRemoteLaunch(request) ?: return@collectLatest
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    PlayerHandoff.holdShield()
+                    com.nuvio.app.features.youtube.YouTubeWatchLayout.stopBrowsing()
+                    ResumePromptRepository.markPlayerExitedNormally()
+                    navController.popBackStack()
+                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                        PlayerHandoff.activeRoutes.first { it == 0 }
+                    }
+                }
+                navController.navigateToPlayer(launch)
+            }
+        }
+
         // Direct media open: local file drag/drop or an HTTP(S) stream pasted with Ctrl+V.
         if (isDesktop) {
             LaunchedEffect(navController) {

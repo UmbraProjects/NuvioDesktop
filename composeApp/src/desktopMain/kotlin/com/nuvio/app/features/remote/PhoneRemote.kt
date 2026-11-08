@@ -9,6 +9,19 @@ import com.nuvio.app.features.input.GamepadKeyInjector
 import com.nuvio.app.features.input.GamepadTarget
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.PlayerShortcutAction
+import com.nuvio.app.core.ui.NuvioToastController
+import com.nuvio.app.features.music.MusicPlayback
+import com.nuvio.app.features.music.MusicPlayerState
+import com.nuvio.app.features.music.coverUrl
+import com.nuvio.app.features.music.defaultMusicCatalog
+import com.nuvio.app.features.music.loadPlaylistQueue
+import com.nuvio.app.features.music.loadSongRadio
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,6 +57,10 @@ internal object PhoneRemote {
     private var loaded = false
     private var started = false
     private var server: PhoneRemoteServer? = null
+
+    /** Main for anything that touches a player; the state watcher runs off it. */
+    private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var stateWatch: Job? = null
 
     @Synchronized
     fun ensureLoaded() {
@@ -102,10 +119,13 @@ internal object PhoneRemote {
         )
         created.start()
         server = created
+        watchState(created)
         _state.update { it.copy(listening = created.port != null, port = created.port, addresses = localAddresses()) }
     }
 
     private fun closeServer() {
+        stateWatch?.cancel()
+        stateWatch = null
         server?.stop()
         server = null
         _state.update { it.copy(listening = false, port = null, connectedDevices = emptyList()) }
@@ -157,6 +177,104 @@ internal object PhoneRemote {
         override fun onConnectedDevicesChanged(names: List<String>) {
             _state.update { it.copy(connectedDevices = names) }
         }
+
+        override fun onSeek(positionMs: Long) {
+            mainScope.launch {
+                val film = RemotePlayerHub.filmControls
+                when {
+                    film != null -> film.seekTo(positionMs)
+                    musicActive() -> MusicPlayback.player.seekTo(positionMs)
+                }
+            }
+        }
+
+        override fun onVolume(volume: Int) {
+            mainScope.launch {
+                val film = RemotePlayerHub.filmControls
+                when {
+                    film != null -> film.setVolume(volume)
+                    musicActive() -> MusicPlayback.player.setVolume(volume.coerceIn(0, 100))
+                }
+            }
+        }
+
+        override fun onOpen(url: String): String? = openShared(url)
+    }
+
+    // --- fork:phone-remote: now playing on the phone ---
+
+    private fun musicActive(): Boolean = MusicPlayback.player.state.value.isActive
+
+    /** The film player while it is open, else the music player while it has a track, else nothing. */
+    private fun watchState(target: PhoneRemoteServer) {
+        stateWatch?.cancel()
+        val throttle = RemoteStateThrottle()
+        // Read here, on the caller's (main) thread: the music player is created on first use.
+        val musicState = MusicPlayback.player.state
+        stateWatch = CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            combine(RemotePlayerHub.film, musicState) { film, music ->
+                if (RemotePlayerHub.filmControls != null) film else musicNowPlaying(music)
+            }.collect { state ->
+                if (throttle.shouldSend(state)) target.publishState(PhoneRemoteProtocol.stateLine(state))
+            }
+        }
+    }
+
+    internal fun musicNowPlaying(state: MusicPlayerState): RemoteNowPlaying? {
+        val track = state.track ?: return null
+        val album = track.albumTitle ?: state.album?.title
+        return RemoteNowPlaying(
+            kind = "music",
+            title = track.title,
+            subtitle = listOfNotNull(
+                track.artists.joinToString(", ") { it.name }.takeIf { it.isNotBlank() },
+                album?.takeIf { it.isNotBlank() },
+            ).joinToString(" · ").takeIf { it.isNotBlank() },
+            imageUrl = state.coverUrl,
+            isPlaying = state.isPlaying,
+            positionMs = state.positionMs,
+            durationMs = state.durationMs.takeIf { it > 0L } ?: track.durationSeconds * 1000L,
+            volume = state.volume,
+            volumeMax = 100,
+            canSkip = true,
+        )
+    }
+
+    /** A link from the phone's share menu. Returns what is opening, for the phone to show, or null if it cannot be. */
+    private fun openShared(text: String): String? {
+        val link = PhoneRemoteLinks.parse(text) ?: return null
+        log.i { "Phone remote: opening a shared link ($link)" }
+        when (link) {
+            is SharedLink.YouTubeVideo -> {
+                RemotePlayerHub.openYouTube(RemoteYouTubeOpen(link.videoId, link.startSeconds))
+                return "a YouTube video"
+            }
+            is SharedLink.MusicSong -> mainScope.launch {
+                NuvioToastController.show("Playing a song from your phone…")
+                val queue = loadSongRadio(defaultMusicCatalog(), link.videoId, "Song")
+                val first = queue?.tracks?.firstOrNull()
+                if (queue == null || first == null) {
+                    NuvioToastController.show("Couldn't play the song from your phone")
+                } else {
+                    MusicPlayback.player.play(queue.copy(title = "${first.title} radio", artists = first.artists))
+                }
+            }
+            is SharedLink.MusicList -> mainScope.launch {
+                NuvioToastController.show("Playing a playlist from your phone…")
+                val queue = loadPlaylistQueue(defaultMusicCatalog(), link.playlistId, "Playlist")
+                if (queue == null) NuvioToastController.show("Couldn't play the playlist from your phone")
+                else MusicPlayback.player.play(queue)
+            }
+            is SharedLink.App -> mainScope.launch { com.nuvio.app.core.deeplink.handleAppUrl(link.url) }
+            is SharedLink.Stream -> mainScope.launch { com.nuvio.app.features.player.LocalFileDrop.emit(link.url) }
+        }
+        return when (link) {
+            is SharedLink.MusicSong -> "a song"
+            is SharedLink.MusicList -> "a playlist"
+            is SharedLink.App -> "a Nuvio link"
+            is SharedLink.Stream -> "a stream"
+            is SharedLink.YouTubeVideo -> "a YouTube video"
+        }
     }
 
     /**
@@ -184,6 +302,8 @@ internal object PhoneRemote {
             // The player pins the up/down arrows to volume; outside it they would move the focus,
             // which is not what a volume button should do, so they are dropped there.
             RemoteKey.VolumeUp, RemoteKey.VolumeDown -> null
+            // Only the music queue has a next and previous; the film player has no shortcut for them.
+            RemoteKey.Next, RemoteKey.Previous -> null
         }
     }
 
@@ -200,12 +320,51 @@ internal object PhoneRemote {
     }
 
     private fun dispatch(key: RemoteKey) {
+        // The music player, when no film is up, takes the transport keys directly: they work with Nuvio in the
+        // background too (the phone's lock screen), and outside the film player there are no shortcuts for them.
+        if (RemotePlayerHub.filmControls == null && musicActive() && dispatchToMusic(key)) return
         val inPlayer = GamepadContext.playerActive
         val sent = keyCodeFor(key, inPlayer)?.let(GamepadKeyInjector::sendKeyCode)
             ?: targetFor(key, inPlayer)?.let(GamepadKeyInjector::send)
             ?: false
-        if (!sent) log.d { "Phone remote: ${key.wire} did nothing (unbound, or Nuvio is not the focused window)" }
+        if (sent) return
+        // Nuvio is not the focused window: the transport keys still reach the film player directly.
+        val film = RemotePlayerHub.filmControls
+        if (film != null && dispatchToFilm(key, film)) return
+        log.d { "Phone remote: ${key.wire} did nothing (unbound, or Nuvio is not the focused window)" }
     }
+
+    private fun dispatchToMusic(key: RemoteKey): Boolean {
+        val player = MusicPlayback.player
+        val action: (() -> Unit)? = when (key) {
+            RemoteKey.PlayPause -> player::togglePlayback
+            RemoteKey.Next -> player::next
+            RemoteKey.Previous -> player::previous
+            RemoteKey.SeekBack -> { { player.seekTo((player.state.value.positionMs - SEEK_STEP_MS).coerceAtLeast(0L)) } }
+            RemoteKey.SeekForward -> { { player.seekTo(player.state.value.positionMs + SEEK_STEP_MS) } }
+            RemoteKey.VolumeUp -> { { player.setVolume(player.state.value.volume + VOLUME_STEP) } }
+            RemoteKey.VolumeDown -> { { player.setVolume(player.state.value.volume - VOLUME_STEP) } }
+            else -> null
+        }
+        action ?: return false
+        mainScope.launch { action() }
+        return true
+    }
+
+    private fun dispatchToFilm(key: RemoteKey, film: RemoteFilmControls): Boolean {
+        val action: (() -> Unit)? = when (key) {
+            RemoteKey.PlayPause -> { { if (RemotePlayerHub.film.value?.isPlaying == true) film.pause() else film.play() } }
+            RemoteKey.SeekBack -> { { film.seekBy(-SEEK_STEP_MS) } }
+            RemoteKey.SeekForward -> { { film.seekBy(SEEK_STEP_MS) } }
+            else -> null
+        }
+        action ?: return false
+        mainScope.launch { action() }
+        return true
+    }
+
+    private const val SEEK_STEP_MS = 10_000L
+    private const val VOLUME_STEP = 5
 
     private fun computerName(): String =
         System.getenv("COMPUTERNAME")?.takeIf { it.isNotBlank() }

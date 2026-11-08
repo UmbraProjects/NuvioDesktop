@@ -23,6 +23,18 @@ import java.nio.charset.StandardCharsets
  * phone: KEY <name> | TEXT <text> | PING
  * pc:    PONG                           (only for PING; keys and text get no reply)
  * ```
+ * Added later, still version 1 (an older PC ignores them, an older phone never sends them):
+ * ```
+ * phone: SUBSCRIBE                      the PC then sends STATE or IDLE now and whenever it changes
+ * pc:    STATE <kind> <playing 0|1> <positionMs> <durationMs> <volume or -> <volumeMax> <canSkip 0|1>
+ *              <title> <subtitle or -> <imageUrl or ->
+ *    or: IDLE                           nothing is playing
+ * phone: SEEK <ms> | VOLUME <0..volumeMax>
+ * phone: OPEN <url>                     a link from the phone's share menu
+ * pc:    OPENING <what> | CANT_OPEN     (only for OPEN)
+ * ```
+ * The phone moves the position on by itself while playing; the PC re-sends STATE when anything but the position
+ * changes, when the position jumps (a seek), and every few seconds as a check.
  * Every free-text field (names, text) is URL-encoded so a space or a newline can never split a line.
  */
 internal object PhoneRemoteProtocol {
@@ -42,6 +54,29 @@ internal object PhoneRemoteProtocol {
         text
     }
 
+    const val IDLE = "IDLE"
+
+    fun stateLine(state: com.nuvio.app.features.remote.RemoteNowPlaying?): String {
+        if (state == null) return IDLE
+        fun field(text: String?) = text?.takeIf { it.isNotBlank() }?.let(::encode) ?: "-"
+        return listOf(
+            "STATE",
+            state.kind,
+            if (state.isPlaying) "1" else "0",
+            state.positionMs.coerceAtLeast(0L).toString(),
+            state.durationMs.coerceAtLeast(0L).toString(),
+            state.volume?.toString() ?: "-",
+            state.volumeMax.toString(),
+            if (state.canSkip) "1" else "0",
+            field(state.title.take(MAX_FIELD_CHARS)),
+            field(state.subtitle?.take(MAX_FIELD_CHARS)),
+            field(state.imageUrl?.takeIf { it.length <= MAX_URL_CHARS }),
+        ).joinToString(" ")
+    }
+
+    private const val MAX_FIELD_CHARS = 200
+    private const val MAX_URL_CHARS = 1500
+
     fun discoveryReply(tcpPort: Int, name: String) = "NUVIO_REMOTE $VERSION $tcpPort ${encode(name)}"
 
     /** Parses one line from the phone. Null for anything malformed or unknown. */
@@ -60,6 +95,10 @@ internal object PhoneRemoteProtocol {
             "KEY" -> parts.getOrNull(1)?.let { RemoteKey.fromWire(it) }?.let { RemoteMessage.Key(it) }
             "TEXT" -> parts.getOrNull(1)?.let { RemoteMessage.Text(decode(it)) }
             "PING" -> RemoteMessage.Ping
+            "SUBSCRIBE" -> RemoteMessage.Subscribe
+            "SEEK" -> parts.getOrNull(1)?.toLongOrNull()?.takeIf { it >= 0 }?.let { RemoteMessage.Seek(it) }
+            "VOLUME" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 0 }?.let { RemoteMessage.Volume(it) }
+            "OPEN" -> parts.getOrNull(1)?.let(::decode)?.takeIf { it.isNotBlank() }?.let { RemoteMessage.Open(it) }
             else -> null
         }
     }
@@ -71,6 +110,10 @@ internal sealed interface RemoteMessage {
     data class Key(val key: RemoteKey) : RemoteMessage
     data class Text(val text: String) : RemoteMessage
     data object Ping : RemoteMessage
+    data object Subscribe : RemoteMessage
+    data class Seek(val positionMs: Long) : RemoteMessage
+    data class Volume(val volume: Int) : RemoteMessage
+    data class Open(val url: String) : RemoteMessage
 }
 
 /** Every button the remote can send. The wire names are lower-case and stable. */
@@ -93,6 +136,8 @@ internal enum class RemoteKey(val wire: String) {
     Audio("audio"),
     Backspace("backspace"),
     Enter("enter"),
+    Next("next"),
+    Previous("previous"),
     ;
 
     companion object {

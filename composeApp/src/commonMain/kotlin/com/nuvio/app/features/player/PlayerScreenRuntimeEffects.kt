@@ -507,6 +507,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     BindPlayerMetadataAndSkipEffects()
     BindPartyEffects()
     BindDiscordRichPresenceEffect()
+    BindPhoneRemoteNowPlayingEffect() // fork:phone-remote
     BindLightsEffect()
     BindYouTubeWatchTimeEffect() // fork:youtube-mode
     BindYouTubeRelatedEffect() // fork:youtube-mode
@@ -836,6 +837,73 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
             DiscordRichPresenceController.setPlaybackActivity(null)
         }
     }
+}
+
+/**
+ * fork:phone-remote — tells the phone remote what this player is showing, and lets it seek, pause and set the volume
+ * directly (the phone's seek bar, the lock screen's buttons and its volume keys work even when Nuvio is not the
+ * focused window, which the keystroke path needs).
+ */
+@Composable
+private fun PlayerScreenRuntime.BindPhoneRemoteNowPlayingEffect() {
+    val runtime = this
+    DisposableEffect(Unit) {
+        val controls = object : com.nuvio.app.features.remote.RemoteFilmControls {
+            override fun seekTo(positionMs: Long) {
+                runtime.playerController?.seekTo(positionMs.coerceAtLeast(0L))
+            }
+            override fun seekBy(offsetMs: Long) {
+                runtime.playerController?.seekBy(offsetMs)
+            }
+            override fun play() {
+                runtime.playerController?.play()
+            }
+            override fun pause() {
+                runtime.playerController?.pause()
+            }
+            override fun setVolume(percent: Int) {
+                val controller = runtime.playerController ?: return
+                controller.setVolume((percent / 100f).coerceIn(0f, controller.maxVolumeFraction))
+            }
+        }
+        com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(null, controls)
+        onDispose { com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(null, null) }
+    }
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { phoneRemoteNowPlaying() }.collect { state ->
+            com.nuvio.app.features.remote.RemotePlayerHub.filmControls?.let { controls ->
+                com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(state, controls)
+            }
+        }
+    }
+}
+
+private fun PlayerScreenRuntime.phoneRemoteNowPlaying(): com.nuvio.app.features.remote.RemoteNowPlaying? {
+    val snapshot = playbackSnapshot
+    if (snapshot.isEnded || isProviderDiagnosticVideoPlayback) return null
+    val youTube = if (isYouTubeVideoPlayback) youTubeDetails else null
+    val shownTitle = youTube?.title?.takeIf { it.isNotBlank() }
+        ?: discordPresenceTitle()
+        ?: title.takeIf { it.isNotBlank() }
+        ?: return null
+    val episodeLine = listOfNotNull(
+        discordPresenceEpisodeLabel(),
+        activeEpisodeTitle?.trim()?.takeIf { it.isNotBlank() },
+    ).joinToString(" · ").takeIf { it.isNotBlank() }
+    val level = playerController?.getVolume()
+    val max = ((playerController?.maxVolumeFraction ?: 1f) * 100f).toInt().coerceAtLeast(100)
+    return com.nuvio.app.features.remote.RemoteNowPlaying(
+        kind = "film",
+        title = shownTitle,
+        subtitle = youTube?.channelName ?: episodeLine,
+        imageUrl = listOf(poster, adHocArtworkImageUrl, background).firstOrNull { !it.isNullOrBlank() },
+        isPlaying = snapshot.isPlaying && !snapshot.isLoading,
+        positionMs = if (isIptvPlayback) 0L else snapshot.positionMs.coerceAtLeast(0L),
+        durationMs = if (isIptvPlayback) 0L else snapshot.durationMs.coerceAtLeast(0L),
+        volume = level?.let { if (it.isMuted) 0 else (it.fraction * 100f).toInt().coerceIn(0, max) },
+        volumeMax = max,
+        canSkip = false,
+    )
 }
 
 /**
