@@ -280,6 +280,9 @@ fun MusicPlayerHost(
             onSnapshot = { id, snapshot -> if (id == player.state.value.loadId) player.onSnapshot(snapshot) },
             onEnded = { id -> if (id == player.state.value.loadId) player.onSurfaceEnded() },
             onError = { id -> if (id == player.state.value.loadId) player.onSurfaceError() },
+            nextSource = state.gaplessNext,
+            continued = state.continuedLoadId == state.loadId,
+            onNextStarted = player::onGaplessStarted,
         )
         // The bar and the card wear the app's own glass and accent, like the rest of the app.
         run {

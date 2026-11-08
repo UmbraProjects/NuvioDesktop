@@ -6457,12 +6457,87 @@ public:
     // a wide mix from a narrow one, which is 1 to 4 LU of error.
     void setSpotFile(const std::string &path) { spotFilePath = path; }
 
+    // fork:gapless - the stream the decode above reads once the player has moved on to a queued track: the URL it was
+    // opened with is the first track's. Empty goes back to that.
+    std::mutex spotSourceMutex;
+    std::string spotSourceUrl;
+    std::vector<std::string> spotSourceHeaders;
+
+    void setSpotSource(const std::string &url, const std::vector<std::string> &headerLines) {
+        std::lock_guard<std::mutex> lock(spotSourceMutex);
+        spotSourceUrl = url;
+        spotSourceHeaders = headerLines;
+    }
+
+    // fork:gapless - queues the next track behind the one playing, in this same mpv, so it starts the moment this one
+    // ends: no new player, no new connection at the boundary (prefetch-playlist opens it near the end of this one).
+    // Anything queued before is dropped first; an empty url only drops it. options are "name=value" per-file options
+    // (the track's own af with its gain); headerLines go with its requests.
+    void queueNext(const std::string &url, const std::vector<std::string> &headerLines, const std::vector<std::string> &options) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        MpvApi &api = mpvApi();
+        const char *clear[] = {"playlist-clear", nullptr};
+        api.command(mpv, clear);
+        if (url.empty()) {
+            nuvioBridgeLog("gapless: queue cleared");
+            return;
+        }
+        api.setPropertyString(mpv, "prefetch-playlist", "yes");
+        api.setPropertyString(mpv, "gapless-audio", "weak");
+        std::string perFile;
+        auto add = [&perFile](const std::string &name, const std::string &value) {
+            if (name.empty()) return;
+            if (!perFile.empty()) perFile.push_back(',');
+            // Length-quoted (%n%), so commas and brackets inside the value stay in it.
+            perFile += name + "=%" + std::to_string(value.size()) + "%" + value;
+        };
+        if (!headerLines.empty()) {
+            std::string headers;
+            for (size_t index = 0; index < headerLines.size(); ++index) {
+                if (index > 0) headers.push_back(',');
+                for (char character : headerLines[index]) {
+                    if (character == '\\' || character == ',') headers.push_back('\\');
+                    headers.push_back(character);
+                }
+            }
+            add("http-header-fields", headers);
+        }
+        for (const auto &option : options) {
+            const size_t equals = option.find('=');
+            if (equals == std::string::npos) continue;
+            add(option.substr(0, equals), option.substr(equals + 1));
+        }
+        // mpv 0.38+ takes an index before the options; older builds take the options third.
+        const char *withIndex[] = {"loadfile", url.c_str(), "append", "-1", perFile.c_str(), nullptr};
+        int result = api.command(mpv, withIndex);
+        if (result < 0) {
+            const char *withoutIndex[] = {"loadfile", url.c_str(), "append", perFile.c_str(), nullptr};
+            result = api.command(mpv, withoutIndex);
+        }
+        nuvioBridgeLog(result >= 0 ? std::string("gapless: next track queued")
+                                   : std::string("gapless: queueing refused: ") + api.errorText(result));
+    }
+
     int decodeAudioSpot(double startSeconds, double durationSeconds, const std::string &outputPath,
                         int sampleRate, int channelCount) {
         // A separate audio stream (YouTube video plus its own audio) is the audio being heard, and it
         // is a complete file on its own, so that is what gets decoded; the video URL has no sound.
         const bool separateAudio = !externalAudioUrl.empty();
         const std::string localCopy = spotFilePath;
+        std::string movedOnUrl;
+        std::vector<std::string> movedOnHeaders;
+        {
+            std::lock_guard<std::mutex> lock(spotSourceMutex);
+            movedOnUrl = spotSourceUrl;
+            movedOnHeaders = spotSourceHeaders;
+        }
+        if (localCopy.empty() && !movedOnUrl.empty()) {
+            // fork:gapless - a queued track now playing: its own stream, its own headers.
+            if (shuttingDown.load()) return -1;
+            return decodeAudioUrlToFile(movedOnUrl, movedOnHeaders, std::string(), startSeconds, durationSeconds, outputPath,
+                                        sampleRate, channelCount, &shuttingDown);
+        }
         const std::string spotUrl = !localCopy.empty() ? localCopy : (separateAudio ? externalAudioUrl : thumbnailSourceUrl);
         if (shuttingDown.load() || spotUrl.empty()) return -1;
         const std::string aid = mirroredString("aid", "");
@@ -6482,6 +6557,8 @@ public:
             api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_FLAG);
         }
         api.observeProperty(mpv, propertyMirrorReplyId, "track-list/count", MPV_FORMAT_INT64);
+        // fork:gapless - which playlist entry is playing, so the music player sees a queued track start.
+        api.observeProperty(mpv, propertyMirrorReplyId, "playlist-pos", MPV_FORMAT_INT64);
         for (const char *name : {"aid", "sid", "current-tracks/sub/id"}) {
             api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_STRING);
         }
@@ -7808,6 +7885,47 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeAudioSpot(
     auto player = playerFromHandle(handle);
     if (!player) return -1;
     return player->decodeAudioSpot(startSeconds, durationSeconds, jstringToUtf8(env, outputPath), sampleRate, channelCount);
+}
+
+// fork:gapless - see queueNext / setSpotSource above.
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_queueNext(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring url,
+    jobjectArray headerLines,
+    jobjectArray options
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->postMpvCall([p = player.get(), urlText = jstringToUtf8(env, url), headers = jstringArrayToVector(env, headerLines),
+                         opts = jstringArrayToVector(env, options)]() {
+        p->queueNext(urlText, headers, opts);
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSpotSource(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring url,
+    jobjectArray headerLines
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->setSpotSource(url ? jstringToUtf8(env, url) : std::string(), jstringArrayToVector(env, headerLines));
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_playlistPos(
+    JNIEnv *,
+    jobject,
+    jlong handle
+) {
+    auto player = playerFromHandle(handle);
+    return player ? (jlong)player->mirroredDouble("playlist-pos", -1.0) : -1;
 }
 
 // fork:loudness - the decode above for a stream no player has open yet (the next track in the queue), so it can be

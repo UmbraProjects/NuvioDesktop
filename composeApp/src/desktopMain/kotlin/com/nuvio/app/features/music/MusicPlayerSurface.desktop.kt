@@ -211,14 +211,23 @@ private suspend fun decodeTrack(
     return true
 }
 
-/** Eases mpv's `volume-gain` by [deltaDb] over about three seconds, so a correction is not a step. */
-private suspend fun easeVolumeGain(controller: NativePlayerController, deltaDb: Double) {
+/** Eases mpv's `volume-gain` from [fromDb] by [deltaDb] over about three seconds, so a correction is not a step. */
+private suspend fun easeVolumeGain(controller: NativePlayerController, fromDb: Double, deltaDb: Double) {
     val steps = 20
     for (step in 1..steps) {
-        controller.setMpvProperty("volume-gain", formatDb(deltaDb * step / steps))
+        controller.setMpvProperty("volume-gain", formatDb(fromDb + deltaDb * step / steps))
         delay(150L)
     }
 }
+
+/** fork:gapless - a track queued behind the playing one: its stream, the gain plan it was queued with, and the volume-gain then. */
+private data class QueuedTrack(val source: TrailerPlaybackSource, val plan: MusicGainPlan, val atVolumeGainDb: Double)
+
+/** How long a load stays quiet after its queued track started, waiting for the player to move on to it. */
+private const val MOVE_ON_GRACE_MS = 3_000L
+
+/** How long queueing the next track waits for its loudness to be measured (it is normally done minutes before it is needed). */
+private const val QUEUE_MEASURE_LIMIT_MS = 120_000L
 
 @Composable
 actual fun MusicPlayerSurface(
@@ -236,11 +245,15 @@ actual fun MusicPlayerSurface(
     onSnapshot: (loadId: Long, snapshot: PlayerPlaybackSnapshot) -> Unit,
     onEnded: (loadId: Long) -> Unit,
     onError: (loadId: Long) -> Unit,
+    nextSource: TrailerPlaybackSource?,
+    continued: Boolean,
+    onNextStarted: (loadId: Long) -> Unit,
 ) {
     val supported = DesktopHostOs.current == DesktopHostOs.WINDOWS || DesktopHostOs.current == DesktopHostOs.MACOS
     val latestOnSnapshot = rememberUpdatedState(onSnapshot)
     val latestOnEnded = rememberUpdatedState(onEnded)
     val latestOnError = rememberUpdatedState(onError)
+    val latestOnNextStarted = rememberUpdatedState(onNextStarted)
     // A video-mode source plays its picture and its separate audio stream; an audio-mode source only
     // needs the audio stream. A muxed or HLS source has no separate audio and plays as it is.
     val sourceUrl = if (videoVisible) source.videoUrl else source.audioUrl?.takeIf { it.isNotBlank() } ?: source.videoUrl
@@ -264,6 +277,14 @@ actual fun MusicPlayerSurface(
     var revealed by remember { mutableStateOf(false) }
     // fork:loudness - the gain this load starts at (see MusicGainPlan), planned by the attach below before it opens.
     var gainPlan by remember(loadId, source) { mutableStateOf<MusicGainPlan?>(null) }
+    // fork:gapless - the track queued behind this one in the same player, with the gain it was queued at; it outlives the
+    // load, because the next load is that track carrying on.
+    var queued by remember { mutableStateOf<QueuedTrack?>(null) }
+    // fork:gapless - the queued track once it has started, for the load that carries on with it.
+    var startedQueued by remember { mutableStateOf<QueuedTrack?>(null) }
+    // fork:loudness - mpv's volume-gain (a correction eased in while a song played). It stays with the player, and so with a
+    // queued track that follows: that track's own gain is queued net of it. A new player starts at 0.
+    var appliedVolumeGainDb by remember { mutableStateOf(0.0) }
 
     DisposableEffect(host) {
         host.onFirstPaint = { }
@@ -312,7 +333,19 @@ actual fun MusicPlayerSurface(
     }
 
     LaunchedEffect(controller, loadId, forbiddenRetries) {
+        // fork:gapless - the player already moved on to this track (it was queued behind the last one): nothing to open.
+        // The audio decode follows it to its stream, and the gain it was queued at is the plan.
+        if (continued && forbiddenRetries == 0) {
+            val carried = startedQueued?.takeIf { it.source == source }
+            startedQueued = null
+            gainPlan = carried?.plan ?: musicGainPlan(source)
+            controller.setSpotSource(sourceUrl, source.headers)
+            log.i { "load $loadId: carried on gaplessly into ${source.loudnessKey ?: sourceUrl.take(60)}" }
+            return@LaunchedEffect
+        }
         revealed = false
+        queued = null
+        appliedVolumeGainDb = 0.0
         controller.updateControls(
             PlayerControlsState(
                 isLoading = true,
@@ -444,6 +477,44 @@ actual fun MusicPlayerSurface(
     LaunchedEffect(controller, loadId, forbiddenRetries, volume) {
         controller.setMpvProperty("volume", volume.coerceIn(0, 100).toString())
         controller.setHeroTrailerVolume(volume.coerceIn(0, 100))
+    }
+
+    // fork:gapless - the next track goes into this same player behind the one playing, once this one is playing and the
+    // next one's level is known (measured ahead if YouTube gave no figure), with its own gain as its own audio filter. mpv
+    // opens it near the end of this one and starts it the moment this one ends. Audio only: a video, an HLS stream or a
+    // separate audio stream opens as before.
+    LaunchedEffect(controller, loadId, forbiddenRetries, nextSource, appliedVolumeGainDb) {
+        val next = nextSource
+        val canQueue = controller.supportsQueueing && !videoVisible && sourceAudioUrl == null && "/manifest/" !in sourceUrl
+        if (next == null || !canQueue) {
+            if (queued != null) {
+                controller.queueNext(null, emptyMap(), emptyList())
+                queued = null
+            }
+            return@LaunchedEffect
+        }
+        if (queued?.source == next && queued?.atVolumeGainDb == appliedVolumeGainDb) return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { revealed }.first { it }
+        var plan = musicGainPlan(next)
+        if (plan.lufs == null && plan.key != null) {
+            LoudnessAhead.measureNow(next, QUEUE_MEASURE_LIMIT_MS)
+            plan = musicGainPlan(next)
+        }
+        val afGainDb = plan.gainDb - appliedVolumeGainDb
+        controller.queueNext(
+            next.videoUrl,
+            next.headers,
+            listOf(
+                "af=${loudnessAfValue(LoudnessClass.Music, afGainDb)}",
+                // A start option this load was opened with is a player-wide option: the next track starts at its start.
+                "start=0",
+            ),
+        )
+        queued = QueuedTrack(next, plan, appliedVolumeGainDb)
+        log.i {
+            "load $loadId: next track queued gaplessly (${next.loudnessKey ?: "no key"}, gain ${formatDb(plan.gainDb)} dB from " +
+                "${plan.lufs?.let { "${formatDb(it)} LUFS" } ?: "the class assumption"})"
+        }
     }
 
     // fork:loudness - measure a track that has no kept measurement while it plays, keep the answer, and ease the gain to it.
@@ -593,7 +664,9 @@ actual fun MusicPlayerSurface(
                 return@LaunchedEffect
             }
             log.i { "loudness $key: easing the gain by ${formatDb(delta)} dB" }
-            easeVolumeGain(controller, delta)
+            val from = appliedVolumeGainDb
+            easeVolumeGain(controller, from, delta)
+            appliedVolumeGainDb = from + delta
         }
     }
 
@@ -626,7 +699,31 @@ actual fun MusicPlayerSurface(
         // the player on a frozen frame (or a spinner) for good. No progress for a while is treated as
         // a failed open, so the player tries the stream's fallback or moves on to the next track.
         val stallWatchdog = TrailerStallWatchdog()
+        // fork:gapless - the playlist entry playing at the last poll: a step forward while a track is queued is that track
+        // starting (dropping the entry before it, when the next one is queued, is a step back).
+        var lastPlaylistPos = -1L
+        var movedOnAt = 0L
         while (true) {
+            val playlistPos = if (controller.supportsQueueing) withContext(Dispatchers.IO) { controller.playlistPos() } else -1L
+            val started = queued
+            if (movedOnAt == 0L && started != null && lastPlaylistPos >= 0L && playlistPos > lastPlaylistPos) {
+                movedOnAt = System.currentTimeMillis()
+                startedQueued = started
+                queued = null
+                log.i { "load $loadId: the queued track started (playlist entry $playlistPos)" }
+                latestOnNextStarted.value(loadId)
+            }
+            lastPlaylistPos = playlistPos
+            if (movedOnAt > 0L) {
+                // The next load takes over from here; this one's position and end belong to the track that finished. If the
+                // player does not move on (a skip pressed at that moment), this load reports again and its end advances as before.
+                if (System.currentTimeMillis() - movedOnAt < MOVE_ON_GRACE_MS) {
+                    delay(POLL_MS)
+                    continue
+                }
+                log.w { "load $loadId: no new load after the queued track started; reporting it as this one" }
+                movedOnAt = -1L
+            }
             val snapshot = controller.snapshotOffUiThread()
             if (snapshot.isPlaying && snapshot.positionMs >= 150L) {
                 revealed = true

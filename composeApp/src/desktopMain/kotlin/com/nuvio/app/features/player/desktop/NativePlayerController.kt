@@ -2074,6 +2074,49 @@ internal class NativePlayerController(
     }
 
     /** fork:visualiser - the audio decodes read this local copy instead of opening the stream again; null goes back to the stream. A build without the native call just keeps reading the stream. */
+    /**
+     * fork:gapless - queues [url] behind what is playing, in this same player, with [options] for it alone ("af=...").
+     * Null drops whatever was queued. Calls that need a native bridge without it (macOS) do nothing.
+     */
+    fun queueNext(url: String?, headers: Map<String, String>, options: List<String>) {
+        val current = handle.takeIf { it != 0L } ?: return
+        try {
+            NativePlayerBridge.queueNext(
+                current,
+                url.orEmpty(),
+                if (url == null) emptyArray() else headers.withDefaultPlaybackUserAgent(url).toHeaderLines().toTypedArray(),
+                options.toTypedArray(),
+            )
+        } catch (_: UnsatisfiedLinkError) {
+        }
+    }
+
+    /** fork:gapless - points the audio decode (loudness, track map) at the queued stream that is now playing. */
+    fun setSpotSource(url: String?, headers: Map<String, String>) {
+        val current = handle.takeIf { it != 0L } ?: return
+        try {
+            NativePlayerBridge.setSpotSource(
+                current,
+                url,
+                if (url == null) emptyArray() else headers.withDefaultPlaybackUserAgent(url).toHeaderLines().toTypedArray(),
+            )
+        } catch (_: UnsatisfiedLinkError) {
+        }
+    }
+
+    /** fork:gapless - the playlist entry playing, or -1 (no player, or a bridge without it). */
+    fun playlistPos(): Long {
+        val current = handle.takeIf { it != 0L } ?: return -1L
+        return try {
+            NativePlayerBridge.playlistPos(current)
+        } catch (_: UnsatisfiedLinkError) {
+            -1L
+        }
+    }
+
+    /** True when this player can queue a track behind the current one (the Windows bridge). */
+    val supportsQueueing: Boolean get() = DesktopHostOs.current == DesktopHostOs.WINDOWS
+
     fun setAudioSpotFile(path: String?) {
         val current = handle.takeIf { it != 0L } ?: return
         try {

@@ -65,6 +65,14 @@ data class MusicPlayerState(
     val notice: String? = null,
     /** The YouTube id behind [source]: the song's audio, or its video in Video mode. Its SponsorBlock segments are skipped. */
     val videoId: String? = null,
+    /**
+     * fork:gapless - the next track's stream, resolved and ready to be queued behind [source] in the same player so it starts
+     * the moment this one ends. Null when the next track cannot follow that way (video, an intro to skip, Repeat one, the
+     * end of the album) or is not resolved yet.
+     */
+    val gaplessNext: TrailerPlaybackSource? = null,
+    /** fork:gapless - the [loadId] that the player moved on to by itself (the queued track): the surface does not reopen it. */
+    val continuedLoadId: Long = -1L,
 ) {
     val isActive: Boolean get() = track != null
     val isPlaying: Boolean get() = isActive && playWhenReady && !isLoading
@@ -133,6 +141,11 @@ class MusicPlayer(
     private var loadCounter = 0L
 
     private class Cached(val result: Deferred<MusicResolution>, val createdAtMs: Long)
+
+    /** fork:gapless - the track [MusicPlayerState.gaplessNext] is for, and the queue it is next in. */
+    private class GaplessCandidate(val queue: MusicQueue, val source: TrailerPlaybackSource)
+
+    private var gaplessCandidate: GaplessCandidate? = null
 
     private val cache = HashMap<String, Cached>()
 
@@ -337,7 +350,16 @@ class MusicPlayer(
     }
 
     fun setRepeat(mode: MusicRepeat) {
+        val was = _state.value.repeat
         _state.update { it.copy(repeat = mode) }
+        // fork:gapless - Repeat one plays the same song again, so nothing is queued behind it; leaving it queues again.
+        if (mode == MusicRepeat.One) dropGapless() else if (was == MusicRepeat.One) queue?.let(::prefetchNext)
+    }
+
+    /** fork:gapless - forgets the track queued behind the playing one (the surface drops it from the player). */
+    private fun dropGapless() {
+        gaplessCandidate = null
+        if (_state.value.gaplessNext != null) _state.update { it.copy(gaplessNext = null) }
     }
 
     /** Takes [track] out of what is queued after the one playing (the playing album's rest, or a queued album's). */
@@ -527,6 +549,7 @@ class MusicPlayer(
         queue = null
         following = emptyList()
         cache.clear()
+        gaplessCandidate = null
         _state.update { MusicPlayerState(volume = it.volume) }
     }
 
@@ -608,6 +631,29 @@ class MusicPlayer(
 
     // endregion
 
+    /**
+     * fork:gapless - the surface's player moved on to [MusicPlayerState.gaplessNext] by itself, without a gap: the queue
+     * advances to that track and shows it as playing, and the surface carries on with the stream it is already playing.
+     */
+    fun onGaplessStarted(loadId: Long) {
+        if (_state.value.loadId != loadId) return
+        val candidate = gaplessCandidate ?: return
+        val q = queue ?: return
+        if (candidate.queue !== q) return
+        gaplessCandidate = null
+        launchRequest {
+            val album = q.album
+            val found = q.advance { track -> resolve(track, album, q.mode) }
+            if (found == null) {
+                startFollowingAlbum(q, null)
+                return@launchRequest
+            }
+            val same = found.playable.source == candidate.source
+            if (!same) log.w { "gapless: the queue's next track is not the one queued; opening it instead" }
+            show(q, found, startPositionMs = 0L, skipped = found.skipped.size, continued = same)
+        }
+    }
+
     /** The track reached its end, or the stream stopped serving partway. */
     fun onSurfaceEnded() {
         val current = _state.value
@@ -670,6 +716,8 @@ class MusicPlayer(
 
     private fun launchRequest(block: suspend () -> Unit) {
         request?.cancel()
+        // fork:gapless - a skip, a jump or a failure: what was queued behind the track is not what comes next any more.
+        dropGapless()
         request = scope.launch { block() }
     }
 
@@ -707,10 +755,18 @@ class MusicPlayer(
         stop()
     }
 
-    private fun show(q: MusicQueue, found: NextPlayable, startPositionMs: Long, skipped: Int, notice: String? = null) {
+    private fun show(
+        q: MusicQueue,
+        found: NextPlayable,
+        startPositionMs: Long,
+        skipped: Int,
+        notice: String? = null,
+        /** fork:gapless - the surface is already playing this track (it was queued behind the last one). */
+        continued: Boolean = false,
+    ) {
         val track = found.playable.track
         // A non-music intro already known for this video: open the song where the music starts.
-        val intro = if (startPositionMs == 0L && MusicLibraryRepository.state.value.settings.skipNonMusic) {
+        val intro = if (!continued && startPositionMs == 0L && MusicLibraryRepository.state.value.settings.skipNonMusic) {
             MusicSponsorBlock.cached(found.playable.videoId)?.let { musicIntroSegment(it, track.durationSeconds * 1000L) }
         } else {
             null
@@ -720,8 +776,10 @@ class MusicPlayer(
         val source = found.playable.source.forOpeningAt(startPositionMs)
         val start = startOnShow
         startOnShow = false
+        val newLoadId = ++loadCounter
         _state.update {
             it.copy(
+                continuedLoadId = if (continued) newLoadId else it.continuedLoadId,
                 playWhenReady = it.playWhenReady || start,
                 album = q.album,
                 track = track,
@@ -731,7 +789,7 @@ class MusicPlayer(
                 source = source,
                 videoId = found.playable.videoId,
                 startPositionMs = startPositionMs,
-                loadId = ++loadCounter,
+                loadId = newLoadId,
                 isLoading = true,
                 lyricVideo = found.playable.lyricVideo,
                 videoCutPlaying = false,
@@ -798,6 +856,8 @@ class MusicPlayer(
     /** Starts resolving the track that will follow the current one, and the one after it if that fails. */
     private fun prefetchNext(q: MusicQueue) {
         prefetch?.cancel()
+        // fork:gapless - whatever was queued behind the playing track may not be next any more.
+        dropGapless()
         val upcoming = q.upNext.filter { it.isAvailable }.take(PREFETCH_TRIES)
         if (upcoming.isEmpty()) return
         val album = q.album
@@ -807,10 +867,32 @@ class MusicPlayer(
                 val result = resolve(track, album, mode)
                 if (result is MusicResolution.Playable) {
                     runCatching { prepareAhead(result.source) }
+                    if (queue === q && canFollowGaplessly(q, result)) {
+                        gaplessCandidate = GaplessCandidate(q, result.source)
+                        _state.update { it.copy(gaplessNext = result.source) }
+                    }
                     break
                 }
             }
         }
+    }
+
+    /**
+     * fork:gapless - whether [next] can be queued behind the playing track in the same player: audio after audio (a video,
+     * or a video's stream playing on with its picture hidden, opens as before), from its start (no non-music intro to open
+     * past), and not on Repeat one (the same song comes again instead).
+     */
+    private fun canFollowGaplessly(q: MusicQueue, next: MusicResolution.Playable): Boolean {
+        val now = _state.value
+        if (q.mode != MusicPlayMode.Audio || now.videoCutPlaying || now.repeat == MusicRepeat.One) return false
+        val source = next.source
+        if (!source.audioUrl.isNullOrBlank()) return false
+        if ("/manifest/" in source.videoUrl || ".m3u8" in source.videoUrl) return false
+        if (MusicLibraryRepository.state.value.settings.skipNonMusic) {
+            val intro = MusicSponsorBlock.cached(next.videoId)?.let { musicIntroSegment(it, next.track.durationSeconds * 1000L) }
+            if (intro != null) return false
+        }
+        return true
     }
 
     // endregion
