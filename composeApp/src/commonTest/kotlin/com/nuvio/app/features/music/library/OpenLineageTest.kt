@@ -83,8 +83,17 @@ class OpenLineageTest {
     }
 
     @Test
-    fun theQueryEscapesTheName() {
-        assertTrue("\"Guns N' \\\"Roses\\\"\"@en" in wikidataLineageQuery("Guns N' \"Roses\""))
+    fun theQueryTakesOnlyItemIds() {
+        val query = wikidataLineageQuery(listOf("Q261", "Q1}; DROP", "Q42"))
+        assertTrue("VALUES ?artist { wd:Q261 wd:Q42 }" in query)
+        assertFalse("DROP" in query)
+    }
+
+    @Test
+    fun wikidataSearchGivesItemIdsInOrder() {
+        val body = """{"search":[{"id":"Q261","label":"Linkin Park"},{"id":"Q123456","label":"Linkin Park discography"},{"id":"P31"}]}"""
+        assertEquals(listOf("Q261", "Q123456"), parseWikidataSearch(body))
+        assertTrue(parseWikidataSearch("nope").isEmpty())
     }
 
     @Test

@@ -15,6 +15,9 @@ import com.nuvio.app.features.music.booklet.isFresh
 import com.nuvio.app.features.music.defaultMusicCatalog
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -59,6 +62,10 @@ internal enum class LineageSide { Before, After }
 /** Wikidata's policy asks every client to name itself. */
 private const val WIKIDATA_USER_AGENT = "NuvioDesktop/1.0 (https://github.com/UmbraProjects/NuvioDesktop) lineage"
 private const val WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
+private const val WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+
+/** How many of Wikidata's search hits for the name are tried (the query keeps the ones that are musicians). */
+private const val WIKIDATA_SEARCH_HITS = 5
 
 /** How many related artists' pages are read, at most, to fill the gaps. */
 private const val LINEAGE_RELATED_LOOKUPS = 10
@@ -73,15 +80,17 @@ private const val OPEN_LINEAGE_TTL_MS = 30L * 24 * 60 * 60 * 1000
 private const val OPEN_LINEAGE_MISS_TTL_MS = 24L * 60 * 60 * 1000
 
 /**
- * The query for [artist] (matched by its English label among entries with a MusicBrainz artist id, so a film or a
- * person who is not a musician never matches): the albums of everyone it names as an influence, and of everyone who
- * names it, with their release dates and sitelink counts.
+ * The query for the artists [ids] (Wikidata item ids, as Wikidata's search found them for the name; only those with a
+ * MusicBrainz artist id count, so a film or a person who is not a musician never matches): the albums of everyone they
+ * name as an influence, and of everyone who names them, with their release dates and sitelink counts. Matching the name
+ * inside the query instead made the service search every label in Wikidata, and it gave up at 60 s every time.
  */
-internal fun wikidataLineageQuery(artist: String): String {
-    val name = artist.trim().replace("\\", "\\\\").replace("\"", "\\\"")
+internal fun wikidataLineageQuery(ids: List<String>): String {
+    val values = ids.filter { WIKIDATA_ID.matches(it) }.joinToString(" ") { "wd:$it" }
     return """
         SELECT ?dir ?infName ?albumName ?date ?links WHERE {
-          ?artist rdfs:label "$name"@en ; wdt:P434 ?mbid .
+          VALUES ?artist { $values }
+          ?artist wdt:P434 ?mbid .
           { ?artist wdt:P737 ?inf . BIND("before" AS ?dir) } UNION { ?inf wdt:P737 ?artist . BIND("after" AS ?dir) }
           ?inf rdfs:label ?infName . FILTER(LANG(?infName) = "en")
           VALUES ?type { wd:Q482994 wd:Q208569 }
@@ -89,6 +98,15 @@ internal fun wikidataLineageQuery(artist: String): String {
           ?album rdfs:label ?albumName . FILTER(LANG(?albumName) = "en")
         } LIMIT 3000
     """.trimIndent()
+}
+
+private val WIKIDATA_ID = Regex("Q[0-9]+")
+
+/** The item ids Wikidata's search (wbsearchentities) gives for a name, best match first; the query then keeps the musicians. */
+internal fun parseWikidataSearch(body: String): List<String> {
+    val root = runCatching { WIKIDATA_JSON.parseToJsonElement(body) }.getOrNull() as? JsonObject ?: return emptyList()
+    val hits = (root["search"] as? JsonArray).orEmpty()
+    return hits.mapNotNull { ((it as? JsonObject)?.get("id") as? JsonPrimitive)?.content?.takeIf(WIKIDATA_ID::matches) }
 }
 
 /** The query service's JSON answer as rows; rows missing a name, title or year are dropped. */
@@ -258,18 +276,35 @@ internal object OpenLineage {
     }
 
     private suspend fun wikidataRows(artist: String): List<WikidataLineageRow> {
-        val url = "$WIKIDATA_SPARQL?format=json&query=" + wikidataLineageQuery(artist).encodeURLParameter()
-        val body = try {
-            withTimeoutOrNull(WIKIDATA_TIMEOUT_MS) {
-                httpGetTextWithHeaders(url, mapOf("User-Agent" to WIKIDATA_USER_AGENT, "Accept" to "application/sparql-results+json"))
-            }.also { if (it == null) log.i { "Wikidata lineage for $artist: no answer in ${WIKIDATA_TIMEOUT_MS / 1000}s" } }
+        val headers = mapOf("User-Agent" to WIKIDATA_USER_AGENT)
+        val search = "$WIKIDATA_API?action=wbsearchentities&type=item&language=en&limit=$WIKIDATA_SEARCH_HITS&format=json&search=" +
+            artist.trim().encodeURLParameter()
+        val ids = wikidataGet(search, headers, "search for $artist")?.let(::parseWikidataSearch).orEmpty()
+        if (ids.isEmpty()) return emptyList()
+        val url = "$WIKIDATA_SPARQL?format=json&query=" + wikidataLineageQuery(ids).encodeURLParameter()
+        val body = wikidataGet(url, headers + ("Accept" to "application/sparql-results+json"), "lineage for $artist") ?: return emptyList()
+        return parseWikidataLineage(body)
+    }
+
+    /** Lets a Wikidata request run on its own, so a slow one cannot hold the related artists back: the request blocks and cannot be cancelled. */
+    private val wikidataScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * [url]'s body, or null after [WIKIDATA_TIMEOUT_MS]. The request goes on in the background past that (the HTTP call blocks
+     * its thread and cannot be cancelled), but nothing waits for it any more.
+     */
+    private suspend fun wikidataGet(url: String, headers: Map<String, String>, what: String): String? {
+        val request = wikidataScope.async { httpGetTextWithHeaders(url, headers) }
+        return try {
+            withTimeoutOrNull(WIKIDATA_TIMEOUT_MS) { request.await() }
+                .also { if (it == null) { request.cancel(); log.i { "Wikidata $what: no answer in ${WIKIDATA_TIMEOUT_MS / 1000}s" } } }
         } catch (error: CancellationException) {
+            request.cancel()
             throw error
         } catch (error: Throwable) {
-            log.i { "Wikidata lineage for $artist failed: ${error.message}" }
+            log.i { "Wikidata $what failed: ${error.message}" }
             null
-        } ?: return emptyList()
-        return parseWikidataLineage(body)
+        }
     }
 
     /**
