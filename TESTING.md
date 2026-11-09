@@ -40,7 +40,7 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 ### Phone remote: Dark mode and the demo TV (phase 2)
 
-- [ ] Dark mode: the Dark key (film or music screen, or More) turns the phone black and dim, hides the status and navigation bars, and the screen stays on
+- [ ] Dark mode: the Dark key (film or music screen, or More) turns the phone black and dims it to 15% (low, but the hints are readable), hides the status and navigation bars, and the screen stays on
 - [ ] Dark mode hints (tap, swipe, hold) show for a few seconds and fade; Back brings them back instead of leaving
 - [ ] Dark mode, a film: tap is play/pause, swipe left/right is 10 s back/ahead per step with a tick each, swipe up/down is volume; each shows faintly in the middle
 - [ ] Dark mode, music: swipe left/right is the previous/next song (one per swipe)

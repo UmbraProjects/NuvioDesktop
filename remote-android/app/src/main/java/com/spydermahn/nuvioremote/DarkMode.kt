@@ -53,7 +53,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 /**
- * Dark mode, for watching in a dark room: the whole phone goes black and dim, the screen stays on, and the remote is
+ * Dark mode, for watching in a dark room: the whole phone goes black and dimmed to 15% (low, not the lowest: at 2% the hints could not be read), the screen stays on, and the remote is
  * gestures anywhere on the glass, with a tick under the thumb for each step.
  *
  * - Tap: play / pause.
@@ -192,7 +192,7 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
             },
     ) {
         holdAt?.let { at ->
-            val ringColor = Color.White.copy(alpha = 0.22f)
+            val ringColor = Color.White.copy(alpha = 0.40f)
             Canvas(Modifier.fillMaxSize()) {
                 val radius = 44.dp.toPx()
                 drawArc(
@@ -210,7 +210,7 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
         flash?.let {
             Text(
                 it,
-                color = Color.White.copy(alpha = 0.32f),
+                color = Color.White.copy(alpha = 0.55f),
                 fontSize = 26.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.align(Alignment.Center),
@@ -223,7 +223,7 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
             exit = fadeOut(tween(1_200)),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp, start = 32.dp, end = 32.dp),
         ) {
-            val dim = Color.White.copy(alpha = 0.30f)
+            val dim = Color.White.copy(alpha = 0.50f)
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("DARK MODE", color = dim, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
                 Text("Tap  ·  play / pause", color = dim, fontSize = 15.sp)
@@ -235,7 +235,7 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
                 Text("Swipe ↑ ↓  ·  volume", color = dim, fontSize = 15.sp)
                 Text("Hold anywhere  ·  leave", color = dim, fontSize = 15.sp)
                 when {
-                    link != Link.Connected -> Text("Not connected to the PC", color = Color(0x66FF8A80), fontSize = 13.sp, textAlign = TextAlign.Center)
+                    link != Link.Connected -> Text("Not connected to the PC", color = Color(0x99FF8A80), fontSize = 13.sp, textAlign = TextAlign.Center)
                     playing == null -> Text("Nothing is playing", color = dim, fontSize = 13.sp)
                 }
             }
@@ -248,7 +248,7 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
                     .align(Alignment.TopCenter)
                     .padding(top = 24.dp)
                     .size(6.dp)
-                    .background(Color(0x55FF5252), androidx.compose.foundation.shape.CircleShape),
+                    .background(Color(0x88FF5252), androidx.compose.foundation.shape.CircleShape),
             )
         }
     }
@@ -290,4 +290,4 @@ private const val HOLD_MS = 1_000L
 private const val HOLD_RING_DELAY_MS = 200L
 private const val HINT_MS = 4_000L
 private const val FLASH_MS = 700L
-private const val DIM_BRIGHTNESS = 0.02f
+private const val DIM_BRIGHTNESS = 0.15f
