@@ -48,6 +48,8 @@ data class UiState(
     val queue: ServerLine.Queue? = null,
     /** The playing song's lyrics, while the lyric view is open. */
     val lyrics: ServerLine.LyricsText? = null,
+    /** The season list of the show sheet that is open, once the PC has sent it. */
+    val episodes: ServerLine.Episodes? = null,
     /** The songs of the album sheet that is open, once the PC has sent them. */
     val albumTracks: ServerLine.AlbumTracks? = null,
     /** The PC can be woken from the phone (it told the app its network card); offered while it is offline. */
@@ -408,6 +410,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     is ServerLine.Queue -> _state.update { it.copy(queue = line) }
                     is ServerLine.LyricsText -> _state.update { it.copy(lyrics = line) }
                     is ServerLine.AlbumTracks -> _state.update { it.copy(albumTracks = line) }
+                    is ServerLine.Episodes -> _state.update { it.copy(episodes = line) }
                     is ServerLine.Wake -> _state.value.current?.let { pc ->
                         store.saveWake(pc.address, line)
                         _state.update { it.copy(canWake = line.macs.isNotEmpty()) }
@@ -582,6 +585,16 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     fun loadContinue() = sendOrReconnect { it.requestContinue() }
 
     // --- The music queue and lyrics (phase 8) ---
+
+    /** A show's season list, for its sheet. */
+    fun loadEpisodes(title: LibraryTitle) {
+        val known = _state.value.episodes
+        if (known != null && known.id == title.id && known.found) return
+        _state.update { it.copy(episodes = null) }
+        sendOrReconnect { it.episodes(title.type, title.id) }
+    }
+
+    fun playEpisode(title: LibraryTitle, episode: EpisodeInfo) = sendOrReconnect { it.playEpisode(title.type, title.id, episode.videoId) }
 
     /** The album sheet's song list. */
     fun loadAlbumTracks(album: LibraryAlbum) {

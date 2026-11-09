@@ -2834,6 +2834,26 @@ private fun MainAppContent(
                 )
             }
 
+        // fork:phone-remote episodes - an episode picked in the phone's season list plays as the details page's episode
+        // does (its sources, then the player). A player already open is closed first.
+        LaunchedEffect(navController) {
+            com.nuvio.app.features.remote.RemotePlayerHub.episodePlays.collectLatest { play ->
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    PlayerHandoff.holdShield()
+                    ResumePromptRepository.markPlayerExitedNormally()
+                    navController.popBackStack()
+                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                        PlayerHandoff.activeRoutes.first { it == 0 }
+                    }
+                }
+                onPlay(
+                    play.type, play.videoId, play.parentMetaId, play.parentMetaType, play.title, play.logo, play.poster,
+                    play.background, play.seasonNumber, play.episodeNumber, play.episodeTitle, play.episodeThumbnail,
+                    play.pauseDescription, play.resumePositionMs,
+                )
+            }
+        }
+
         val onPlayAlternate: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, String?, Long?) -> Unit =
             { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, pauseDescription, resumePositionMs ->
                 launchPlaybackWithDownloadPreference(

@@ -571,6 +571,35 @@ object DemoTv {
                         broadcastState()
                     }
                 }
+                "EPISODES" -> {
+                    val type = parts.getOrElse(1) { "-" }
+                    val id = RemoteProtocol.decode(parts.getOrElse(2) { "" })
+                    val show = DEMO_TITLES.firstOrNull { it.id == id && it.type == "series" }
+                    note("Episodes of ${show?.name ?: id} asked for")
+                    fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+                    val episodes = if (show == null) "-" else (1..2).flatMap { season -> (1..6).map { season to it } }
+                        .joinToString(";") { (season, episode) ->
+                            val watched = if (season == 1 && episode <= 3) 1000 else if (season == 1 && episode == 4) 400 else 0
+                            listOf(
+                                season.toString(), episode.toString(), f("Chapter ${season * 10 + episode}"), f("$id:$season:$episode"),
+                                f("https://picsum.photos/seed/${id}e$season$episode/320/180"), f("202${season}-0$episode-01"), watched.toString(),
+                            ).joinToString(",")
+                        }
+                    send("EPISODES $type ${parts.getOrElse(2) { "-" }} ${if (show == null) 0 else 1} $episodes")
+                }
+                "PLAY_EPISODE" -> {
+                    val id = RemoteProtocol.decode(parts.getOrElse(2) { "" })
+                    val video = RemoteProtocol.decode(parts.getOrElse(3) { "" })
+                    val show = DEMO_TITLES.firstOrNull { it.id == id }
+                    val bits = video.split(':')
+                    if (show == null || bits.size != 3) {
+                        send("CANT_OPEN")
+                    } else {
+                        send("OPENING ${RemoteProtocol.encode("${show.name} S${bits[1]} E${bits[2]}")}")
+                        note("Episode S${bits[1]} E${bits[2]} of ${show.name}: its sources")
+                        showSources(show.name, "S${bits[1]} E${bits[2]} · Chapter ${bits[1].toInt() * 10 + bits[2].toInt()}")
+                    }
+                }
                 "QUEUE" -> send(queueLine())
                 "QUEUE_PLAY", "QUEUE_NEXT", "QUEUE_REMOVE" -> {
                     val id = RemoteProtocol.decode(parts.getOrElse(1) { "" })

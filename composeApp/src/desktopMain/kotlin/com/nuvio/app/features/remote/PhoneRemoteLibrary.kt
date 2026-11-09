@@ -15,6 +15,9 @@ import com.nuvio.app.features.music.library.shelfAlbumsOf
 import com.nuvio.app.features.music.library.shelfSortKey
 import com.nuvio.app.features.music.loadArtistRadio
 import com.nuvio.app.features.watched.WatchedRepository
+import com.nuvio.app.features.details.effectiveEpisodeNumber
+import com.nuvio.app.features.details.effectiveSeasonNumber
+import com.nuvio.app.features.details.streamVideoIdForPlayback
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import kotlinx.coroutines.CancellationException
@@ -38,6 +41,7 @@ internal object PhoneRemoteLibrary {
     private val log = Logger.withTag("PhoneRemote")
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private const val MAX_CONTINUE = 20
+    private const val MAX_EPISODES = 600
     private const val MAX_SEARCH_RESULTS = 120
     private const val SEARCH_TIMEOUT_MS = 30_000L
     private const val SEARCH_THROTTLE_MS = 300L
@@ -211,6 +215,72 @@ internal object PhoneRemoteLibrary {
                 }
             }
         }
+    }
+
+    // --- A show's episodes: the phone's season list, and playing one as the details page does. ---
+
+    private val metas = java.util.concurrent.ConcurrentHashMap<String, com.nuvio.app.features.details.MetaDetails>()
+
+    private suspend fun meta(type: String, id: String): com.nuvio.app.features.details.MetaDetails? =
+        metas["$type:$id"] ?: runCatching { com.nuvio.app.features.details.MetaDetailsRepository.fetch(type, id) }.getOrNull()
+            ?.also { metas["$type:$id"] = it }
+
+    /** The id the details page plays [video] by (the same steps as its episode click). */
+    private fun playbackId(meta: com.nuvio.app.features.details.MetaDetails, video: com.nuvio.app.features.details.MetaVideo): String {
+        val id = com.nuvio.app.features.watchprogress.buildPlaybackVideoId(
+            parentMetaId = meta.id,
+            seasonNumber = video.effectiveSeasonNumber(),
+            episodeNumber = video.effectiveEpisodeNumber(),
+            fallbackVideoId = video.id,
+        )
+        return video.streamVideoIdForPlayback(meta.id, id)
+    }
+
+    fun episodes(type: String, id: String, reply: (String) -> Unit) {
+        mainScope.launch {
+            val meta = withTimeoutOrNull(20_000L) { meta(type, id) }
+            WatchProgressRepository.ensureLoaded()
+            val progress = WatchProgressRepository.uiState.value.byVideoId
+            val episodes = meta?.videos.orEmpty()
+                .filter { (it.season ?: 1) >= 0 }
+                .map { video ->
+                    val playId = playbackId(meta!!, video)
+                    val saved = progress[playId]
+                    RemoteEpisode(
+                        season = video.effectiveSeasonNumber(),
+                        episode = video.effectiveEpisodeNumber(),
+                        title = video.title,
+                        videoId = playId,
+                        thumbnail = video.thumbnail,
+                        released = video.released,
+                        progressPermille = when {
+                            saved == null -> 0
+                            saved.isEffectivelyCompleted -> 1000
+                            else -> (saved.progressFraction * 1000f).toInt()
+                        },
+                    )
+                }
+            val line = PhoneRemoteLibraryLines.episodesLine(type, id, meta != null, episodes.take(MAX_EPISODES))
+            withContext(Dispatchers.Default) { reply(line) }
+        }
+    }
+
+    fun playEpisode(type: String, id: String, videoId: String): String? {
+        val meta = metas["$type:$id"] ?: return null
+        val video = meta.videos.firstOrNull { playbackId(meta, it) == videoId } ?: return null
+        val saved = WatchProgressRepository.uiState.value.byVideoId[videoId]?.takeUnless { it.isCompleted }
+        val season = video.effectiveSeasonNumber()
+        val episode = video.effectiveEpisodeNumber()
+        log.i { "Phone remote: playing ${meta.name} S${season}E$episode" }
+        RemotePlayerHub.playEpisode(
+            RemoteEpisodePlay(
+                type = meta.type, videoId = videoId, parentMetaId = meta.id, parentMetaType = meta.type, title = meta.name,
+                logo = meta.logo, poster = meta.poster, background = meta.background, seasonNumber = season,
+                episodeNumber = episode, episodeTitle = video.title, episodeThumbnail = video.thumbnail,
+                pauseDescription = video.overview, resumePositionMs = saved?.lastPositionMs,
+            ),
+        )
+        return listOfNotNull(meta.name, if (season != null && episode != null) "S$season E$episode" else null).joinToString(" ")
     }
 
     /** Opens the title's details on the TV, as clicking its poster in the Library does. */

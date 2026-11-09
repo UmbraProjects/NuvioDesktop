@@ -143,3 +143,24 @@ class PhoneRemoteAlbumTracksTest {
         assertNull(PhoneRemoteProtocol.parse("PLAY_TRACK MPREb_1 -1"))
     }
 }
+
+class PhoneRemoteEpisodesTest {
+    @Test
+    fun aShowsEpisodesTravelAsOneLine() {
+        assertEquals(
+            "EPISODES series tt0903747 1 1,1,Pilot,tt0903747%3A1%3A1,https%3A%2F%2Fimg%2Fe.jpg,2008-01-20,1000;2,-,Untitled,x,-,-,250",
+            PhoneRemoteLibraryLines.episodesLine(
+                "series", "tt0903747", found = true,
+                episodes = listOf(
+                    RemoteEpisode(1, 1, "Pilot", "tt0903747:1:1", "https://img/e.jpg", "2008-01-20T00:00:00.000Z", 1000),
+                    RemoteEpisode(2, null, "Untitled", "x", null, null, 250),
+                ),
+            ),
+        )
+        assertEquals(RemoteMessage.Episodes("series", "tt0903747"), PhoneRemoteProtocol.parse("EPISODES series tt0903747"))
+        assertEquals(
+            RemoteMessage.PlayEpisode("series", "tt0903747", "tt0903747:1:1"),
+            PhoneRemoteProtocol.parse("PLAY_EPISODE series tt0903747 tt0903747%3A1%3A1"),
+        )
+    }
+}

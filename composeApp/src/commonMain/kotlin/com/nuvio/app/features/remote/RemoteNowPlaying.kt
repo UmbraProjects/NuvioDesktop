@@ -77,6 +77,33 @@ object RemotePlayerHub {
     fun resume(item: com.nuvio.app.features.watchprogress.ContinueWatchingItem) {
         _resumes.tryEmit(item)
     }
+
+    private val _episodePlays = MutableSharedFlow<RemoteEpisodePlay>(extraBufferCapacity = 2)
+
+    /** Episodes the phone asked to play (its season list): the app root plays them as the details page's episode does. */
+    val episodePlays: SharedFlow<RemoteEpisodePlay> = _episodePlays.asSharedFlow()
+
+    fun playEpisode(play: RemoteEpisodePlay) {
+        _episodePlays.tryEmit(play)
+    }
 }
+
+/** What the details page hands its play handler for an episode, picked on the phone instead. */
+data class RemoteEpisodePlay(
+    val type: String,
+    val videoId: String,
+    val parentMetaId: String,
+    val parentMetaType: String,
+    val title: String,
+    val logo: String?,
+    val poster: String?,
+    val background: String?,
+    val seasonNumber: Int?,
+    val episodeNumber: Int?,
+    val episodeTitle: String?,
+    val episodeThumbnail: String?,
+    val pauseDescription: String?,
+    val resumePositionMs: Long?,
+)
 
 data class RemoteYouTubeOpen(val videoId: String, val startSeconds: Int? = null)

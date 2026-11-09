@@ -226,6 +226,16 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
     }
     val library = state.video
     var resumePicked by remember { mutableStateOf<ResumeItem?>(null) }
+    // A show opens its season list here (episodes play on the TV from it); a film opens its page on the TV.
+    var showPicked by remember { mutableStateOf<LibraryTitle?>(null) }
+    val pick: (LibraryTitle) -> Unit = { title ->
+        if (title.type == "series" || title.type == "anime" || title.type == "tv") {
+            showPicked = title
+        } else {
+            viewModel.openTitle(title)
+            onOpened()
+        }
+    }
     var query by rememberSaveable { mutableStateOf("") }
     var section by rememberSaveable { mutableStateOf(ALL) }
 
@@ -299,10 +309,7 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
                     }
                 }
                 items(shown, key = { it.key }) { title ->
-                    PosterCell(title) {
-                        viewModel.openTitle(title)
-                        onOpened()
-                    }
+                    PosterCell(title) { pick(title) }
                 }
                 if (search != null) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "search-header") {
@@ -317,14 +324,30 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
                         }
                     }
                     items(found, key = { "search-" + it.key }) { title ->
-                        PosterCell(title) {
-                            viewModel.openTitle(title)
-                            onOpened()
-                        }
+                        PosterCell(title) { pick(title) }
                     }
                 }
             }
         }
+    }
+
+    showPicked?.let { show ->
+        LaunchedEffect(show.key) { viewModel.loadEpisodes(show) }
+        ShowSheet(
+            show = show,
+            episodes = state.episodes?.takeIf { it.id == show.id },
+            onEpisode = { episode ->
+                showPicked = null
+                viewModel.playEpisode(show, episode)
+                onOpened()
+            },
+            onDetails = {
+                showPicked = null
+                viewModel.openTitle(show)
+                onOpened()
+            },
+            onDismiss = { showPicked = null },
+        )
     }
 
     resumePicked?.let { item ->
@@ -342,6 +365,110 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
                 onOpened()
             },
         )
+    }
+}
+
+/**
+ * A show's seasons and episodes, from the TV's details: pick a season, tap an episode and the TV plays it (its source
+ * list comes up on the remote), as clicking the episode on the TV's details page does.
+ */
+@Composable
+private fun ShowSheet(
+    show: LibraryTitle,
+    episodes: ServerLine.Episodes?,
+    onEpisode: (EpisodeInfo) -> Unit,
+    onDetails: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val g = LocalGlass.current
+    val seasons = remember(episodes) {
+        episodes?.episodes.orEmpty().map { it.season ?: 1 }.distinct().sortedWith(compareBy({ it == 0 }, { it }))
+    }
+    // Opens on the first season with an episode not yet watched through, as the TV's details page does.
+    var season by remember(episodes) {
+        mutableStateOf(
+            episodes?.episodes.orEmpty().firstOrNull { (it.season ?: 1) != 0 && it.progress < 0.95f }?.season
+                ?: seasons.firstOrNull { it != 0 } ?: seasons.firstOrNull() ?: 1,
+        )
+    }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Color(0xFF14151A),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RemoteImage(show.poster, show.posterFallback, show.name, Modifier.size(width = 64.dp, height = 96.dp).clip(RoundedCornerShape(10.dp)))
+                Spacer(Modifier.size(16.dp))
+                Column(Modifier.weight(1f)) {
+                    GlassLabel(listOfNotNull("Show", show.year).joinToString(" · "))
+                    DisplayTitle(show.name, size = 22, maxLines = 2)
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            ActionButton("Details on the TV", Icons.Rounded.Info, modifier = Modifier.fillMaxWidth(), onClick = onDetails)
+            when {
+                episodes == null -> Row(Modifier.padding(vertical = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.size(10.dp))
+                    Text("Asking the TV for the episodes…", color = g.textSecondary)
+                }
+                !episodes.found || episodes.episodes.isEmpty() -> Text(
+                    "The TV couldn't list this show's episodes. Details on the TV opens it there.",
+                    color = g.textSecondary,
+                    modifier = Modifier.padding(vertical = 20.dp),
+                )
+                else -> {
+                    if (seasons.size > 1) {
+                        LazyRow(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(seasons) { s ->
+                                GlassTag(if (s == 0) "Specials" else "Season $s", accent = s == season, onClick = { season = s })
+                            }
+                        }
+                    }
+                    val shown = episodes.episodes.filter { (it.season ?: 1) == season }
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(shown, key = { it.videoId }) { episode ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onEpisode(episode) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(Modifier.size(width = 112.dp, height = 63.dp).clip(RoundedCornerShape(8.dp))) {
+                                    RemoteImage(episode.thumbnail, show.poster, "E${episode.episode ?: ""}", Modifier.fillMaxSize())
+                                    if (episode.progress > 0f) {
+                                        ProgressLine(episode.progress, Modifier.align(Alignment.BottomCenter).padding(horizontal = 6.dp, vertical = 5.dp))
+                                    }
+                                }
+                                Spacer(Modifier.size(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        listOfNotNull(episode.episode?.let { "E$it" }, episode.title.takeIf { it.isNotBlank() }).joinToString(" · "),
+                                        color = if (episode.progress >= 0.95f) g.textMuted else g.text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    val note = when {
+                                        episode.progress >= 0.95f -> "Watched"
+                                        episode.progress > 0f -> "${(episode.progress * 100).toInt()}% watched"
+                                        else -> episode.released
+                                    }
+                                    note?.let { Text(it, color = g.textSecondary, fontSize = 12.sp, maxLines = 1) }
+                                }
+                                if (episode.progress >= 0.95f) {
+                                    Icon(Icons.Rounded.CheckCircle, contentDescription = "Watched", tint = Color(0xFF6FD08C), modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

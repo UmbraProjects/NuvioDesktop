@@ -75,6 +75,18 @@ data class SourceInfo(
 
 data class SourceList(val title: String, val loading: Boolean, val sources: List<SourceInfo>)
 
+/** An episode in a show's season list (`EPISODES` line); [videoId] is what PLAY_EPISODE sends back. */
+data class EpisodeInfo(
+    val season: Int?,
+    val episode: Int?,
+    val title: String,
+    val videoId: String,
+    val thumbnail: String?,
+    val released: String?,
+    /** 0..1; 1 when watched. */
+    val progress: Float,
+)
+
 /** A track in the music player's queue on the PC (`QUEUE` line). */
 data class QueueTrack(val videoId: String, val title: String, val artist: String, val seconds: Int, val cover: String?, val upcoming: Boolean)
 
@@ -203,6 +215,25 @@ object LibraryLines {
             query = RemoteProtocol.decode(parts[2]),
             titles = titles(parts.getOrNull(3)),
         )
+    }
+
+    /** `EPISODES <type> <id> <found> <episodes>`; mirrors `episodesLine` in the PC's PhoneRemoteLibraryLines.kt. */
+    fun parseEpisodes(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 4 || parts[0] != "EPISODES") return null
+        val episodes = records(parts.getOrNull(4)).mapNotNull { f ->
+            if (f.size < 7) return@mapNotNull null
+            EpisodeInfo(
+                season = f[0]?.toIntOrNull(),
+                episode = f[1]?.toIntOrNull(),
+                title = f[2].orEmpty(),
+                videoId = f[3] ?: return@mapNotNull null,
+                thumbnail = f[4],
+                released = f[5],
+                progress = ((f[6]?.toIntOrNull() ?: 0) / 1000f).coerceIn(0f, 1f),
+            )
+        }
+        return ServerLine.Episodes(RemoteProtocol.decode(parts[1]), RemoteProtocol.decode(parts[2]), parts[3] == "1", episodes)
     }
 
     /** `QUEUE <playing> <tracks>`; mirrors `queueLine` in the PC's PhoneRemoteLibraryLines.kt. */

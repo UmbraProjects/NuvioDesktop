@@ -95,6 +95,20 @@ class DemoTvTest {
     }
 
     @Test
+    fun readsThePcsEpisodesLine() {
+        // The line PhoneRemoteEpisodesTest on the PC side produces.
+        val line = ServerLine.parse(
+            "EPISODES series tt0903747 1 1,1,Pilot,tt0903747%3A1%3A1,https%3A%2F%2Fimg%2Fe.jpg,2008-01-20,1000;2,-,Untitled,x,-,-,250",
+            0L,
+        ) as ServerLine.Episodes
+        assertEquals("tt0903747", line.id)
+        assertTrue(line.found)
+        assertEquals(EpisodeInfo(1, 1, "Pilot", "tt0903747:1:1", "https://img/e.jpg", "2008-01-20", 1f), line.episodes[0])
+        assertEquals(null, line.episodes[1].episode)
+        assertEquals(0.25f, line.episodes[1].progress, 0.001f)
+    }
+
+    @Test
     fun readsThePcsSearchLine() {
         // The exact line PhoneRemoteSearchTest on the PC side produces.
         val line = ServerLine.parse(
@@ -202,6 +216,17 @@ class DemoTvTest {
         assertEquals("Copper Sky", lines.next<ServerLine.Opening>().what)
         var playingNow = lines.next<ServerLine.State>().nowPlaying
         while (playingNow.title != "Copper Sky") playingNow = lines.next<ServerLine.State>().nowPlaying
+
+        // A show's season list, and an episode from it opening its sources.
+        session.episodes("series", "demo-s1")
+        val show = lines.next<ServerLine.Episodes>()
+        assertTrue(show.found)
+        assertEquals(12, show.episodes.size)
+        assertEquals(1f, show.episodes[0].progress)
+        session.playEpisode("series", "demo-s1", show.episodes[7].videoId)
+        assertEquals("Harbour Lights S2 E2", lines.next<ServerLine.Opening>().what)
+        assertEquals("Harbour Lights", lines.next<ServerLine.Sources>().list!!.title)
+        session.key(RemoteKey.Back)
 
         // Back closes the player; a theme change reaches the phone.
         session.key(RemoteKey.Back)

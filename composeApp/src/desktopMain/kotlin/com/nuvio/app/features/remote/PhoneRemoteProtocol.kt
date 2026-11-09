@@ -141,6 +141,14 @@ internal object PhoneRemoteProtocol {
             "QUEUE_PLAY", "QUEUE_NEXT", "QUEUE_REMOVE" -> parts.getOrNull(1)?.let(::decode)?.takeIf { it.isNotBlank() }
                 ?.let { RemoteMessage.QueueAction(parts[0].removePrefix("QUEUE_").lowercase(), it) }
             "LYRICS" -> RemoteMessage.LyricsRequest
+            // fork:phone-remote episodes: a show's season list, and playing one of its episodes.
+            "EPISODES" -> if (parts.size >= 3) {
+                RemoteMessage.Episodes(decode(parts[1]), decode(parts[2])).takeIf { it.type.isNotBlank() && it.id.isNotBlank() }
+            } else null
+            "PLAY_EPISODE" -> if (parts.size >= 4) {
+                RemoteMessage.PlayEpisode(decode(parts[1]), decode(parts[2]), decode(parts[3]))
+                    .takeIf { it.type.isNotBlank() && it.id.isNotBlank() && it.videoId.isNotBlank() }
+            } else null
             "ALBUM_TRACKS" -> parts.getOrNull(1)?.let(::decode)?.takeIf { it.isNotBlank() }?.let { RemoteMessage.AlbumTracks(it) }
             "PLAY_TRACK" -> if (parts.size >= 3) {
                 parts[2].toIntOrNull()?.takeIf { it >= 0 }?.let { RemoteMessage.PlayTrack(decode(parts[1]), it) }?.takeIf { it.browseId.isNotBlank() }
@@ -178,6 +186,8 @@ internal sealed interface RemoteMessage {
     data object Queue : RemoteMessage
     data class QueueAction(val action: String, val videoId: String) : RemoteMessage
     data object LyricsRequest : RemoteMessage
+    data class Episodes(val type: String, val id: String) : RemoteMessage
+    data class PlayEpisode(val type: String, val id: String, val videoId: String) : RemoteMessage
     data class AlbumTracks(val browseId: String) : RemoteMessage
     data class PlayTrack(val browseId: String, val index: Int) : RemoteMessage
 }

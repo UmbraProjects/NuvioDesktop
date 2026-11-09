@@ -231,6 +231,8 @@ internal object PhoneRemote {
         override fun onQueueAction(action: String, videoId: String, reply: (String) -> Unit) =
             PhoneRemoteMusic.queueAction(action, videoId, reply)
         override fun onLyrics(reply: (String) -> Unit) = PhoneRemoteMusic.lyrics(reply)
+        override fun onEpisodes(type: String, id: String, reply: (String) -> Unit) = PhoneRemoteLibrary.episodes(type, id, reply)
+        override fun onPlayEpisode(type: String, id: String, videoId: String): String? = PhoneRemoteLibrary.playEpisode(type, id, videoId)
         override fun onAlbumTracks(browseId: String, reply: (String) -> Unit) = PhoneRemoteMusic.albumTracks(browseId, reply)
         override fun onPlayTrack(browseId: String, index: Int): String? = PhoneRemoteMusic.playTrack(browseId, index)
     }

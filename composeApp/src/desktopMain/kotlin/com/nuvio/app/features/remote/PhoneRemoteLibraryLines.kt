@@ -68,6 +68,18 @@ internal data class RemoteQueueTrack(
     val upcoming: Boolean,
 )
 
+/** An episode of a show, for the phone's season list. [videoId] is the id the details page plays it by. */
+internal data class RemoteEpisode(
+    val season: Int?,
+    val episode: Int?,
+    val title: String,
+    val videoId: String,
+    val thumbnail: String?,
+    val released: String?,
+    /** 0..1000 through it; 1000 when watched. */
+    val progressPermille: Int,
+)
+
 internal data class RemoteArtist(val id: String, val name: String, val photo: String?, val starred: Boolean)
 
 internal data class RemoteAlbum(
@@ -141,6 +153,19 @@ internal object PhoneRemoteLibraryLines {
         }
 
     private const val MAX_LYRIC_LINES = 400
+
+    /**
+     * `EPISODES <type> <id> <found 0|1> <episodes>`: a show's episodes for the phone's season list, each season,
+     * episode, title, videoId, thumbnail, released and progress (0..1000). The phone plays one with
+     * `PLAY_EPISODE <type> <id> <videoId>`.
+     */
+    fun episodesLine(type: String, id: String, found: Boolean, episodes: List<RemoteEpisode>): String =
+        "EPISODES ${text(type)} ${text(id)} ${flag(found)} " + records(episodes) { e ->
+            listOf(
+                e.season?.toString() ?: "-", e.episode?.toString() ?: "-", text(e.title), text(e.videoId), url(e.thumbnail),
+                text(e.released?.take(10)), e.progressPermille.coerceIn(0, 1000).toString(),
+            )
+        }
 
     fun musicLine(ready: Boolean, artists: List<RemoteArtist>, albums: List<RemoteAlbum>): String =
         "LIBRARY $MUSIC ${flag(ready)} " +

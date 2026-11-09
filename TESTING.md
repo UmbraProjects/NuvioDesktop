@@ -118,6 +118,14 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] The List / Loud tag in the lyrics' corner switches to the scrolling list and back
 - [ ] Demo TV: an album's queue and pretend timed lyrics
 
+### Phone remote: a show's episodes on the phone
+
+- [ ] Watch tab: tapping a show (not a film) opens its sheet on the phone with season tags and the episodes (picture, number, title, how far watched), instead of only opening it on the TV
+- [ ] It opens on the first season with an episode not yet watched through
+- [ ] Tapping an episode plays it on the TV as its details page would: its source list comes up on the remote to pick from
+- [ ] Details on the TV in the sheet still opens the show's page on the TV; a film still opens straight on the TV
+- [ ] Demo TV: Harbour Lights shows two seasons of six episodes, the first three watched
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)
