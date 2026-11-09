@@ -1178,7 +1178,8 @@ val externalDesktopResources = listOf(
     // fork:visualiser - the Beat This! beat grid models (about 11 MB).
     "beat-tracking/**",
     "anime-list-mini.json",
-    // Third-party licence texts, so they ship beside the binaries they cover (<install>esources\licenses).
+    // Third-party licence texts, so they ship beside the binaries they cover (<install>
+esources\licenses).
     "licenses/**",
 )
 val desktopResourcesSourceDir = layout.projectDirectory.dir("src/desktopMain/resources").asFile
@@ -1863,6 +1864,8 @@ kotlin {
                 // Automatic hero backdrop framing (U2-Netp saliency + YuNet faces). The packaged jar
                 // is trimmed to its win-x64 natives; see trimOnnxRuntimeJar.
                 implementation("com.microsoft.onnxruntime:onnxruntime:1.31.0")
+                // fork:phone-remote - the QR code in Settings that the phone scans to pair (ZXing's encoder, Apache 2.0).
+                implementation("com.google.zxing:core:3.5.3")
             }
         }
         commonMain.dependencies {

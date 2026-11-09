@@ -77,6 +77,7 @@ internal object PhoneRemote {
                 enabled = store.getBoolean(KEY_ENABLED) ?: false,
                 pin = store.getString(KEY_PIN).orEmpty(),
                 pairedDevices = pairedEntries().map { entry -> entry.second }.sorted(),
+                pcName = computerName(),
             )
         }
     }

@@ -67,6 +67,15 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Details on the TV opens the title's page on the TV
 - [x] Demo TV: Resume plays a pretend title from its saved place (2026-11-09, from Nick's screenshots)
 
+### Phone remote: QR pairing (phase 4)
+
+- [ ] Nuvio's Settings › Keyboard shortcuts › Phone remote shows a QR code ("Or scan to pair") under the pairing code, while Phone remote is on
+- [ ] In the app, "Scan the TV's code" on the PC list opens Google's scanner (no camera permission asked); scanning the TV's code pairs and connects with no typing
+- [ ] The phone's own camera app, pointed at the code, offers to open Nuvio Remote, which then pairs
+- [ ] "Scan the TV's code instead" on the code screen works the same
+- [ ] New code on the PC changes the QR code too; an old QR then says the code isn't right
+- [ ] Demo TV: scanning the demo QR picture (sent in the chat) pairs with Demo TV
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)

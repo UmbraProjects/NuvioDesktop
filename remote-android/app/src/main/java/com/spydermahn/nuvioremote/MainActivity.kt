@@ -56,6 +56,7 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Subtitles
@@ -126,6 +127,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (savedInstanceState == null) openPairingLink(intent)
         setContent {
             // The TV's theme, as soon as the PC has sent it (and the last one it sent until then).
             val theme by viewModel.state.collectAsStateWithLifecycle()
@@ -146,6 +148,19 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         viewModel.onForeground()
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        openPairingLink(intent)
+    }
+
+    /** Opened from the QR code in Nuvio's Settings by the phone's camera: pair with what it holds. */
+    private fun openPairingLink(intent: android.content.Intent?) {
+        val link = PairingLink.parse(intent?.dataString) ?: return
+        // Once only: a rotation or a return to the app must not pair again.
+        intent?.data = null
+        viewModel.pairWith(link)
     }
 
     override fun onStop() {
@@ -235,7 +250,7 @@ private fun PickScreen(state: UiState, viewModel: RemoteViewModel) {
             Text("Nuvio Remote", fontSize = 28.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(6.dp))
             Text(
-                "On the PC, turn on Settings › Keyboard shortcuts › Phone remote. Your phone needs to be on the same Wi-Fi.",
+                "On the PC, turn on Settings › Keyboard shortcuts › Phone remote, then scan the code it shows. Your phone needs to be on the same Wi-Fi.",
                 color = Muted,
                 fontSize = 14.sp,
             )
@@ -243,6 +258,8 @@ private fun PickScreen(state: UiState, viewModel: RemoteViewModel) {
                 Spacer(Modifier.height(10.dp))
                 Text(it, color = Color(0xFFFFB4A9), fontSize = 14.sp)
             }
+            Spacer(Modifier.height(14.dp))
+            ScanButton(viewModel, enabled = !state.busy)
         }
 
         if (state.saved.isNotEmpty()) {
@@ -336,6 +353,27 @@ private fun PickScreen(state: UiState, viewModel: RemoteViewModel) {
     }
 }
 
+/** Pairs by scanning the QR code in Nuvio's Settings › Phone remote: no code to type, no address to find. */
+@Composable
+private fun ScanButton(viewModel: RemoteViewModel, enabled: Boolean) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Button(
+        onClick = { QrScan.start(context, viewModel::pairWith, viewModel::showMessage) },
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(Icons.Rounded.QrCodeScanner, contentDescription = null)
+        Spacer(Modifier.size(10.dp))
+        Text("Scan the TV's code")
+    }
+    Spacer(Modifier.height(6.dp))
+    Text(
+        "Nuvio shows it under Settings › Keyboard shortcuts › Phone remote. The phone's camera can open it too.",
+        color = Muted,
+        fontSize = 13.sp,
+    )
+}
+
 @Composable
 private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(
@@ -416,7 +454,14 @@ private fun PairScreen(screen: Screen.Pair, state: UiState, viewModel: RemoteVie
             Spacer(Modifier.height(12.dp))
             Text(it, color = Color(0xFFFFB4A9), textAlign = TextAlign.Center)
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
+        val context = androidx.compose.ui.platform.LocalContext.current
+        TextButton(onClick = { QrScan.start(context, viewModel::pairWith, viewModel::showMessage) }, enabled = !state.busy) {
+            Icon(Icons.Rounded.QrCodeScanner, contentDescription = null)
+            Spacer(Modifier.size(8.dp))
+            Text("Scan the TV's code instead")
+        }
+        Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = viewModel::cancelPairing) { Text("Cancel") }
             Spacer(Modifier.size(12.dp))

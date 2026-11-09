@@ -1,6 +1,19 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.nuvio.app.features.remote.phoneRemoteQrModules
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,6 +70,44 @@ internal fun PhoneRemoteSection(isTablet: Boolean) {
                         text = "New code",
                         onClick = { resetPhoneRemotePairing() },
                     )
+                }
+                // fork:phone-remote QR pairing: the code and the address in one picture for the phone to scan.
+                val link = state.pairingLink()
+                val modules = remember(link) { link?.let(::phoneRemoteQrModules) }
+                if (modules != null) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsActionRow(
+                        title = "Or scan to pair",
+                        description = "In Nuvio Remote, tap Scan the TV's code, or point the phone's camera at it. " +
+                            "It holds the pairing code, so New code makes a new one too.",
+                        isTablet = isTablet,
+                    ) {
+                        PairingQr(modules)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Black modules on white, with the quiet zone scanners need around them, whatever the theme. */
+@Composable
+private fun PairingQr(modules: List<BooleanArray>) {
+    Canvas(
+        Modifier
+            .size(172.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.White)
+            .padding(12.dp),
+    ) {
+        val count = modules.size
+        if (count == 0) return@Canvas
+        val cell = size.minDimension / count
+        modules.forEachIndexed { y, row ->
+            row.forEachIndexed { x, dark ->
+                if (dark) {
+                    // A hair over a cell, so neighbouring modules join without seams.
+                    drawRect(Color.Black, topLeft = Offset(x * cell, y * cell), size = Size(cell + 0.5f, cell + 0.5f))
                 }
             }
         }

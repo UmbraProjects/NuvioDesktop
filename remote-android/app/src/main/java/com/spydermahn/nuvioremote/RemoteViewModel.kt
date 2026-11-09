@@ -193,36 +193,76 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         val target = _state.value.screen as? Screen.Pair ?: return
         _state.update { it.copy(busy = true, message = null) }
         io.execute {
-            // A fresh session for every attempt: the PC drops a connection that sits idle for 20
-            // seconds, which is less time than it can take to walk over and read the code.
-            closeSession()
-            val result = try {
-                val opened = RemoteSession.open(target.host, target.port)
-                session = opened
-                when (val hello = opened.hello(null, deviceName)) {
-                    HelloResult.PinRequired -> opened.pair(pin)
-                    is HelloResult.Welcome -> PairResult.Failed("Unexpected reply from the PC.")
-                    is HelloResult.Refused -> PairResult.Failed(hello.reason)
-                }
-            } catch (_: IOException) {
-                PairResult.Failed("Couldn't reach ${target.name}. Check the PC is on and on the same Wi-Fi.")
+            val result = attemptPair(target.host, target.port, pin)
+                ?: PairResult.Failed("Couldn't reach ${target.name}. Check the PC is on and on the same Wi-Fi.")
+            onPairResult(result, target.host, target.port)
+        }
+    }
+
+    /**
+     * QR pairing: the code from Nuvio's Settings, scanned (or opened from the phone's camera). Each of the PC's
+     * addresses is tried in turn until one answers, then it pairs with the code in it, no typing.
+     */
+    fun pairWith(link: PairingLink) {
+        if (link.hosts.any { it == DemoTv.HOST } && link.port == DemoTv.PORT) io.execute { DemoTv.startAndWait() }
+        _state.update { it.copy(busy = true, message = null, screen = Screen.Pair(link.name, link.hosts.first(), link.port)) }
+        io.execute {
+            for (host in link.hosts) {
+                val result = attemptPair(host, link.port, link.pin) ?: continue
+                // The target this pairs with is the address that answered, so it is the one kept.
+                _state.update { it.copy(screen = Screen.Pair(link.name, host, link.port)) }
+                onPairResult(result, host, link.port)
+                return@execute
             }
-            when (result) {
-                is PairResult.Paired -> onConnected(SavedPc(result.pcName, target.host, target.port, result.token))
-                PairResult.WrongPin -> _state.update { it.copy(busy = false, message = "That code isn't right. Check Settings › Keyboard shortcuts › Phone remote on the PC.") }
-                PairResult.Locked -> {
-                    closeSession()
-                    _state.update { it.copy(busy = false, message = "Too many wrong codes. Wait a minute, then try again.") }
-                }
-                is PairResult.Failed -> {
-                    closeSession()
-                    _state.update { it.copy(busy = false, message = result.reason) }
-                }
+            closeSession()
+            _state.update {
+                it.copy(
+                    busy = false,
+                    message = "Couldn't reach ${link.name} at ${link.hosts.joinToString(" or ")}. Check the phone is on the same Wi-Fi as the PC.",
+                )
+            }
+        }
+    }
+
+    /** Says the code to the PC on a fresh session. Null when the PC could not be reached at all. On [io]. */
+    private fun attemptPair(host: String, port: Int, pin: String): PairResult? {
+        // A fresh session for every attempt: the PC drops a connection that sits idle for 20
+        // seconds, which is less time than it can take to walk over and read the code.
+        closeSession()
+        return try {
+            val opened = RemoteSession.open(host, port)
+            session = opened
+            when (val hello = opened.hello(null, deviceName)) {
+                HelloResult.PinRequired -> opened.pair(pin)
+                is HelloResult.Welcome -> PairResult.Failed("Unexpected reply from the PC.")
+                is HelloResult.Refused -> PairResult.Failed(hello.reason)
+            }
+        } catch (_: IOException) {
+            null
+        }
+    }
+
+    private fun onPairResult(result: PairResult, host: String, port: Int) {
+        when (result) {
+            is PairResult.Paired -> onConnected(SavedPc(result.pcName, host, port, result.token))
+            PairResult.WrongPin -> _state.update { it.copy(busy = false, message = "That code isn't right. Check Settings › Keyboard shortcuts › Phone remote on the PC.") }
+            PairResult.Locked -> {
+                closeSession()
+                _state.update { it.copy(busy = false, message = "Too many wrong codes. Wait a minute, then try again.") }
+            }
+            is PairResult.Failed -> {
+                closeSession()
+                _state.update { it.copy(busy = false, message = result.reason) }
             }
         }
     }
 
     fun cancelPairing() = showPicker()
+
+    /** A line under the PC list or the code box, such as why a scan did not work. */
+    fun showMessage(text: String) {
+        _state.update { it.copy(message = text) }
+    }
 
     // --- Debug mode: the pretend TV inside the app (DemoTv), for testing away from the PC. ---
 
