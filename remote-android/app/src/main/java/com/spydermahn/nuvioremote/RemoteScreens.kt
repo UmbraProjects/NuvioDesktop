@@ -362,8 +362,8 @@ private fun FilmBody(
     // header): on a phone there was no room left for a usable one under all of this.
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-            NowPlayingPanel(playing, cover, viewModel, Modifier.padding(top = 8.dp))
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            NowPlayingPanel(playing, cover, viewModel, Modifier.padding(top = 4.dp), compact = true)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Tap: the next one. Hold: the list of every subtitle the file and the add-ons have.
                 StatTile("Subtitles", playing.subtitleTrack ?: "Tap for next · hold for list", Modifier.weight(1f), onLongClick = onSubtitles) {
                     viewModel.press(RemoteKey.Subtitles)
@@ -372,8 +372,24 @@ private fun FilmBody(
                     viewModel.press(RemoteKey.Audio)
                 }
             }
-            Transport(playing, viewModel, Modifier.padding(top = 18.dp))
-            FilmExtras(playing, viewModel, Modifier.padding(top = 16.dp, bottom = 8.dp))
+            // Speed and Sleep sit with the other tiles, a tap steps through their choices: no sheet, no scrolling to find them.
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val speed = playing.speedPercent
+                if (speed != null) {
+                    StatTile("Speed", speedLabel(speed), Modifier.weight(1f)) {
+                        val next = nextSpeed(speed)
+                        viewModel.control("SPEED $next") { it.copy(speedPercent = next) }
+                    }
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                StatTile("Sleep timer", if (playing.sleepMinutes > 0) "${playing.sleepMinutes} min left" else "Off", Modifier.weight(1f)) {
+                    val next = nextSleep(playing.sleepMinutes)
+                    viewModel.control("SLEEP $next") { it.copy(sleepMinutes = next) }
+                }
+            }
+            Transport(playing, viewModel, Modifier.padding(top = 12.dp))
+            FilmExtras(playing, viewModel, Modifier.padding(top = 12.dp, bottom = 4.dp))
         }
         BottomKeys {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 56.dp) { viewModel.press(RemoteKey.Back) }
@@ -802,15 +818,15 @@ private fun QueueSheet(queue: ServerLine.Queue?, viewModel: RemoteViewModel, onD
 
 /** What is playing, for a film: poster, the serif title, the line under it and the seek bar. */
 @Composable
-private fun NowPlayingPanel(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
+private fun NowPlayingPanel(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel, modifier: Modifier = Modifier, compact: Boolean = false) {
     val g = LocalGlass.current
     Column(
-        modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier.fillMaxWidth().glass(RoundedCornerShape(24.dp)).padding(horizontal = 16.dp, vertical = if (compact) 10.dp else 14.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.width(52.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp)).background(Color(0xFF2A3540)),
+                Modifier.width(if (compact) 40.dp else 52.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(8.dp)).background(Color(0xFF2A3540)),
                 contentAlignment = Alignment.Center,
             ) {
                 if (cover != null) {
@@ -825,7 +841,7 @@ private fun NowPlayingPanel(playing: NowPlaying, cover: Bitmap?, viewModel: Remo
                     GlassLabel("Now playing", Modifier.weight(1f), icon = Icons.Rounded.AutoAwesome)
                     if (!playing.hasTimeline) GlassTag("Live")
                 }
-                DisplayTitle(playing.title, size = 22, maxLines = 2)
+                DisplayTitle(playing.title, size = if (compact) 19 else 22, maxLines = if (compact) 1 else 2)
                 playing.subtitle?.let {
                     Text(it, color = g.textSecondary, fontSize = 13.sp, maxLines = 1, modifier = Modifier.basicMarquee(initialDelayMillis = 1_500))
                 }
@@ -868,12 +884,12 @@ private fun Seek(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modi
 
 /**
  * Under the film's transport: a Skip button while an intro, recap or credits part plays, Next episode when there is
- * one, then the TV's volume, the speed and the sleep timer. Each part only shows what the PC says it can do.
+ * one, and the TV's volume as a slim slider. Each part only shows what the PC says it can do.
  */
 @Composable
 private fun FilmExtras(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
     val g = LocalGlass.current
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (playing.skipLabel != null || playing.canNextEpisode) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 playing.skipLabel?.let { label ->
@@ -886,37 +902,44 @@ private fun FilmExtras(playing: NowPlaying, viewModel: RemoteViewModel, modifier
                 }
             }
         }
-        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            playing.volume?.let { level ->
-                val max = playing.volumeMax.coerceAtLeast(1)
-                var dragging by remember { mutableStateOf<Int?>(null) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.AutoMirrored.Rounded.VolumeUp, contentDescription = "TV volume", tint = g.textSecondary, modifier = Modifier.size(20.dp))
-                    SeekBar(
-                        fraction = (dragging ?: level).toFloat() / max,
-                        onScrub = { fraction -> dragging = (fraction * max).toInt().coerceIn(0, max) },
-                        onScrubEnd = {
-                            dragging?.let(viewModel::setVolume)
-                            dragging = null
-                        },
-                        modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
-                    )
-                    Text("${dragging ?: level}", color = g.textSecondary, fontSize = 13.sp, modifier = Modifier.width(30.dp), textAlign = TextAlign.End)
-                }
+        playing.volume?.let { level ->
+            val max = playing.volumeMax.coerceAtLeast(1)
+            var dragging by remember { mutableStateOf<Int?>(null) }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Rounded.VolumeUp, contentDescription = "TV volume", tint = g.textSecondary, modifier = Modifier.size(20.dp))
+                SeekBar(
+                    fraction = (dragging ?: level).toFloat() / max,
+                    onScrub = { fraction -> dragging = (fraction * max).toInt().coerceIn(0, max) },
+                    onScrubEnd = {
+                        dragging?.let(viewModel::setVolume)
+                        dragging = null
+                    },
+                    modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
+                )
+                Text("${dragging ?: level}", color = g.textSecondary, fontSize = 13.sp, modifier = Modifier.width(30.dp), textAlign = TextAlign.End)
             }
-            playing.speedPercent?.let { speed ->
-                ChipRow("Speed") {
-                    listOf(75 to "0.75x", 100 to "1x", 125 to "1.25x", 150 to "1.5x", 200 to "2x").forEach { (percent, label) ->
-                        GlassTag(label, accent = speed == percent, onClick = {
-                            viewModel.control("SPEED $percent") { it.copy(speedPercent = percent) }
-                        })
-                    }
-                }
-            }
-            SleepChips(playing, viewModel)
         }
     }
 }
+
+private val SPEED_STEPS = listOf(100, 125, 150, 200, 75)
+
+/** "1x", "1.25x", "0.75x". */
+private fun speedLabel(percent: Int): String = when {
+    percent % 100 == 0 -> "${percent / 100}x"
+    percent % 10 == 0 -> "%.1fx".format(percent / 100.0)
+    else -> "%.2fx".format(percent / 100.0)
+}
+
+/** The next speed in 1x, 1.25x, 1.5x, 2x, 0.75x; any other current speed goes to the first step above it, else back to 1x. */
+internal fun nextSpeed(current: Int): Int {
+    val at = SPEED_STEPS.indexOf(current)
+    if (at >= 0) return SPEED_STEPS[(at + 1) % SPEED_STEPS.size]
+    return SPEED_STEPS.filter { it > current }.minOrNull() ?: SPEED_STEPS.first()
+}
+
+/** Off goes to 15 minutes; a running timer goes up to the next of 15, 30, 60, and the last one turns it off. */
+internal fun nextSleep(minutesLeft: Int): Int = listOf(15, 30, 60).firstOrNull { it > minutesLeft } ?: 0
 
 /** A label, then chips that scroll sideways when they do not fit. */
 @Composable
