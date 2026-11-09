@@ -319,6 +319,21 @@ object DemoTv {
         }
     }
 
+    /** Pretend catalog results: the library's titles that match, and a couple more from "the addons". */
+    private fun searchLine(query: String, loading: Boolean): String {
+        fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+        val words = query.lowercase().split(' ').filter { it.isNotBlank() }
+        val extra = if (loading) emptyList() else listOf(
+            DemoTitle("Movies · Demo catalog", "movie", "demo-x1", "${query.replaceFirstChar { it.uppercase() }}: The Film", "2020", false),
+            DemoTitle("Series · Demo catalog", "series", "demo-x2", "${query.replaceFirstChar { it.uppercase() }} Stories", "2024", false),
+        )
+        val matches = DEMO_TITLES.filter { t -> words.all { it in t.name.lowercase() } }
+            .map { it.copy(section = "Movies · Demo catalog") } + extra
+        return "SEARCH_RESULTS ${if (loading) 1 else 0} ${f(query)} " + if (matches.isEmpty()) "-" else matches.joinToString(";") { t ->
+            listOf(f(t.section), f(t.type), f(t.id), f(t.name), f(t.year), f(poster(t.name)), "-", if (t.watched) "1" else "0").joinToString(",")
+        }
+    }
+
     private fun continueLine(): String {
         fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
         return "CONTINUE " + DEMO_CONTINUE.joinToString(";") { c ->
@@ -417,6 +432,7 @@ object DemoTv {
                 "OPEN_TITLE" -> {
                     val id = RemoteProtocol.decode(parts.getOrElse(2) { "" })
                     val title = DEMO_TITLES.firstOrNull { it.id == id }
+                        ?: if (id.startsWith("demo-x")) DemoTitle("Found by search", "movie", id, "A search result", null, false) else null
                     if (title == null) {
                         send("CANT_OPEN")
                     } else {
@@ -456,6 +472,12 @@ object DemoTv {
                             playFilm(resume.title, resume.episode ?: "Resumed", resume.durationMs, resume.positionMs)
                         }, 2, TimeUnit.SECONDS)
                     }
+                }
+                "SEARCH" -> {
+                    val query = RemoteProtocol.decode(parts.getOrElse(1) { "" }).trim()
+                    note("Search for \"$query\"")
+                    send(searchLine(query, loading = true))
+                    ticker.schedule({ send(searchLine(query, loading = false)) }, 1, TimeUnit.SECONDS)
                 }
                 "PICK_SOURCE" -> {
                     val number = parts.getOrNull(1)?.toIntOrNull() ?: return

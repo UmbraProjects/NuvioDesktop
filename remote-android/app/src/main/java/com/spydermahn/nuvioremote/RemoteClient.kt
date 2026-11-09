@@ -94,6 +94,8 @@ sealed interface ServerLine {
     data class Continue(val items: List<ResumeItem>) : ServerLine
     /** The source list on the TV; null once it closes. */
     data class Sources(val list: SourceList?) : ServerLine
+    /** What Nuvio's search found for [query] in the addons' catalogs, so far while [loading]. */
+    data class SearchResults(val loading: Boolean, val query: String, val titles: List<LibraryTitle>) : ServerLine
     data object Other : ServerLine
 
     companion object {
@@ -108,6 +110,7 @@ sealed interface ServerLine {
                 "LIBRARY" -> LibraryLines.parse(line) ?: Other
                 "CONTINUE" -> LibraryLines.parseContinue(line) ?: Other
                 "SOURCES" -> LibraryLines.parseSources(line) ?: Other
+                "SEARCH_RESULTS" -> LibraryLines.parseSearch(line) ?: Other
                 "THEME" -> RemoteTheme.parse(parts)?.let(::Theme) ?: Other
                 else -> Other
             }
@@ -261,6 +264,9 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     /** Plays the source at [number] (from 1) in the list on the TV. The PC answers OPENING or CANT_OPEN. */
     fun pickSource(number: Int) = send("PICK_SOURCE $number")
+
+    /** Nuvio's catalog search; answers come back as [ServerLine.SearchResults] while it fills. */
+    fun search(query: String) = send("SEARCH ${RemoteProtocol.encode(query)}")
 
     fun album(browseId: String, action: AlbumAction) = send("PLAY_ALBUM ${RemoteProtocol.encode(browseId)} ${action.wire}")
 

@@ -97,22 +97,7 @@ object LibraryLines {
         if (parts.size < 3 || parts[0] != "LIBRARY") return null
         val ready = parts[2] == "1"
         return when (parts[1]) {
-            VIDEO -> ServerLine.VideoLibrary(
-                ready = ready,
-                titles = records(parts.getOrNull(3)).mapNotNull { f ->
-                    if (f.size < 8) return@mapNotNull null
-                    LibraryTitle(
-                        section = f[0] ?: "Library",
-                        type = f[1] ?: return@mapNotNull null,
-                        id = f[2] ?: return@mapNotNull null,
-                        name = f[3] ?: return@mapNotNull null,
-                        year = f[4],
-                        poster = f[5],
-                        posterFallback = f[6],
-                        watched = f[7] == "1",
-                    )
-                },
-            )
+            VIDEO -> ServerLine.VideoLibrary(ready = ready, titles = titles(parts.getOrNull(3)))
             MUSIC -> ServerLine.MusicLibrary(
                 ready = ready,
                 artists = records(parts.getOrNull(3)).mapNotNull { f ->
@@ -184,6 +169,31 @@ object LibraryLines {
         }
         val title = parts.getOrNull(3)?.takeUnless { it == "-" }?.let(RemoteProtocol::decode) ?: "Sources"
         return ServerLine.Sources(SourceList(title, loading = parts[2] == "1", sources = sources))
+    }
+
+    private fun titles(field: String?): List<LibraryTitle> = records(field).mapNotNull { f ->
+        if (f.size < 8) return@mapNotNull null
+        LibraryTitle(
+            section = f[0] ?: "Library",
+            type = f[1] ?: return@mapNotNull null,
+            id = f[2] ?: return@mapNotNull null,
+            name = f[3] ?: return@mapNotNull null,
+            year = f[4],
+            poster = f[5],
+            posterFallback = f[6],
+            watched = f[7] == "1",
+        )
+    }
+
+    /** `SEARCH_RESULTS <loading> <query> <titles>`; mirrors `searchLine` in the PC's PhoneRemoteLibraryLines.kt. */
+    fun parseSearch(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 3 || parts[0] != "SEARCH_RESULTS") return null
+        return ServerLine.SearchResults(
+            loading = parts[1] == "1",
+            query = RemoteProtocol.decode(parts[2]),
+            titles = titles(parts.getOrNull(3)),
+        )
     }
 
     /** Each record's fields, decoded; `-` becomes null. */

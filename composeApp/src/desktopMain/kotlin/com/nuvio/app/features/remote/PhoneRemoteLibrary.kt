@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 
 /**
  * fork:phone-remote — the libraries the phone browses, and what it asks for from them. Reads the same repositories the
@@ -37,6 +38,9 @@ internal object PhoneRemoteLibrary {
     private val log = Logger.withTag("PhoneRemote")
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private const val MAX_CONTINUE = 20
+    private const val MAX_SEARCH_RESULTS = 120
+    private const val SEARCH_TIMEOUT_MS = 30_000L
+    private const val SEARCH_THROTTLE_MS = 300L
 
     /** The repositories are loaded the first time a phone asks; a phone asks again while `ready` is 0. */
     private fun onMain(work: () -> Unit) {
@@ -154,13 +158,68 @@ internal object PhoneRemoteLibrary {
         return entry.title
     }
 
+    // --- Search (phase 6): Nuvio's own catalog search, run for the phone. ---
+
+    private var searchJob: kotlinx.coroutines.Job? = null
+
+    /** Names of what the phone was last shown by a search, so opening one says its name. */
+    private val searchNames = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * Runs Nuvio's search (the same as typing [query] into the Search tab) and sends what it finds as it arrives, a few
+     * times a second at most, and once more when every catalog has answered. A new search from the phone replaces one
+     * still running.
+     */
+    fun search(query: String, reply: (String) -> Unit) {
+        searchJob?.cancel()
+        searchJob = mainScope.launch {
+            com.nuvio.app.features.addons.AddonRepository.initialize()
+            WatchedRepository.ensureLoaded()
+            com.nuvio.app.features.search.SearchRepository.search(
+                query = query,
+                addons = com.nuvio.app.features.addons.AddonRepository.uiState.value.addons,
+            )
+            withTimeoutOrNull(SEARCH_TIMEOUT_MS) {
+                var lastLine: String? = null
+                com.nuvio.app.features.search.SearchRepository.uiState.first { state ->
+                    if (!state.query.equals(query.trim(), ignoreCase = true)) return@first false
+                    val watched = WatchedContentFilter.forHistory(WatchedRepository.uiState.value.items)
+                    val seen = HashSet<String>()
+                    val titles = state.sections.flatMap { section ->
+                        section.items.mapNotNull { item ->
+                            if (!seen.add("${item.type}:${item.id}")) return@mapNotNull null
+                            RemoteTitle(
+                                section = listOf(section.title, section.addonName).filter { it.isNotBlank() }.distinct().joinToString(" · "),
+                                type = item.type,
+                                id = item.id,
+                                name = item.name,
+                                year = item.releaseInfo,
+                                poster = item.poster,
+                                posterFallback = item.posterFallback,
+                                watched = watched.isWatched(item.type, item.id),
+                            )
+                        }
+                    }.take(MAX_SEARCH_RESULTS)
+                    titles.forEach { searchNames["${it.type}:${it.id}"] = it.name }
+                    val line = PhoneRemoteLibraryLines.searchLine(query, state.isLoading, titles)
+                    if (line != lastLine) {
+                        lastLine = line
+                        withContext(Dispatchers.Default) { reply(line) }
+                    }
+                    if (state.isLoading) kotlinx.coroutines.delay(SEARCH_THROTTLE_MS)
+                    !state.isLoading
+                }
+            }
+        }
+    }
+
     /** Opens the title's details on the TV, as clicking its poster in the Library does. */
     fun openTitle(type: String, id: String): String? {
         val name = LibraryRepository.uiState.value.items.firstOrNull { it.id == id && it.type == type }?.name
             ?: LibraryRepository.uiState.value.sections.asSequence().flatMap { it.items }.firstOrNull { it.id == id }?.name
         log.i { "Phone remote: opening $type $id" }
         mainScope.launch { handleAppUrl(buildMetaDeepLinkUrl(type, id)) }
-        return name ?: "the title"
+        return name ?: searchNames["$type:$id"] ?: "the title"
     }
 
     fun playAlbum(browseId: String, action: AlbumAction): String {

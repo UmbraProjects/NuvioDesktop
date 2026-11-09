@@ -87,6 +87,15 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Back closes the list on the TV and the phone goes back to the remote
 - [ ] Demo TV: opening a title shows four pretend sources (the last greyed); picking one plays it
 
+### Phone remote: search everything and voice search (phase 6)
+
+- [ ] Watch tab: typing a search (and pausing) adds "From your addons" under your library's matches: what Nuvio's Search tab finds, with posters, filling in while it searches
+- [ ] Tapping a result opens its page on the TV, and the phone says its name
+- [ ] The mic in the Watch and Music search boxes (while empty) opens the phone's voice typing; what you say becomes the search
+- [ ] Remote tab: Search, then the mic beside the text box, types what you say into the TV's search box
+- [ ] A search on the phone while the TV is on its own Search tab does not upset it
+- [ ] Demo TV: searching "signal" shows The Long Signal and two pretend catalog results
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Refresh
@@ -76,6 +77,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.Normalizer
+import kotlinx.coroutines.delay
 
 /** Lower-case, accents and "the " gone, so "Beyoncé" finds "beyonce" and "the beatles" sorts under B. */
 private fun searchKey(text: String): String =
@@ -103,6 +105,8 @@ private fun LibraryHeader(
     placeholder: String,
     loading: Boolean,
     onRefresh: () -> Unit,
+    /** Voice search: a mic in the search box while it is empty. */
+    onMic: (() -> Unit)? = null,
 ) {
     val g = LocalGlass.current
     Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 20.dp, top = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -137,6 +141,8 @@ private fun LibraryHeader(
             }
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQuery("") }) { Icon(Icons.Rounded.Close, contentDescription = "Clear", tint = g.textSecondary) }
+            } else if (onMic != null) {
+                IconButton(onClick = onMic) { Icon(Icons.Rounded.Mic, contentDescription = "Search by voice", tint = g.accent) }
             }
         }
     }
@@ -242,11 +248,29 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
     }
 
     Column(Modifier.fillMaxSize()) {
-        LibraryHeader("Watch", "Your library on ${state.current?.name ?: "the PC"}", query, { query = it }, "Search your library", library.loading) { viewModel.loadVideo(force = true) }
+        val voice = rememberVoiceInput("Search Nuvio", onText = { query = it })
+        LibraryHeader(
+            "Watch",
+            "Your library on ${state.current?.name ?: "the PC"}",
+            query,
+            { query = it },
+            "Search your library and addons",
+            library.loading,
+            onRefresh = { viewModel.loadVideo(force = true) },
+            onMic = voice,
+        )
         if (chips.size > 2) Chips(chips, activeSection) { section = it }
         // Continue Watching leads the tab, above the library, unless a search or a section is narrowing it.
         val resumes = if (activeSection == ALL && query.isBlank()) state.continueWatching else emptyList()
-        if (shown.isEmpty() && resumes.isEmpty()) {
+        // A search also asks Nuvio's catalogs on the PC (what its Search tab finds), once typing pauses.
+        LaunchedEffect(query) {
+            delay(SEARCH_PAUSE_MS)
+            viewModel.searchEverywhere(query)
+        }
+        val search = state.search?.takeIf { query.isNotBlank() && it.query.equals(query.trim(), ignoreCase = true) }
+        val inLibrary = remember(shown) { shown.map { it.key }.toSet() }
+        val found = remember(search, inLibrary) { search?.titles.orEmpty().filter { it.key !in inLibrary } }
+        if (shown.isEmpty() && resumes.isEmpty() && search == null) {
             EmptyLibrary(
                 loading = library.loading && library.titles.isEmpty(),
                 problem = library.problem,
@@ -267,13 +291,34 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
                         ContinueRail(resumes) { resumePicked = it }
                     }
                 }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    SectionRow(if (activeSection == ALL) "Your library" else activeSection, countLabel(shown.size, "title"))
+                if (shown.isNotEmpty() || search == null) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        SectionRow(if (activeSection == ALL) "Your library" else activeSection, countLabel(shown.size, "title"))
+                    }
                 }
                 items(shown, key = { it.key }) { title ->
                     PosterCell(title) {
                         viewModel.openTitle(title)
                         onOpened()
+                    }
+                }
+                if (search != null) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "search-header") {
+                        Column(Modifier.padding(top = if (shown.isEmpty()) 0.dp else 12.dp)) {
+                            SectionRow(
+                                if (search.loading) "From your addons · searching…" else "From your addons",
+                                if (search.loading && found.isEmpty()) null else countLabel(found.size, "title"),
+                            )
+                            if (!search.loading && found.isEmpty()) {
+                                Text("Nothing more found for \"${search.query}\".", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+                            }
+                        }
+                    }
+                    items(found, key = { "search-" + it.key }) { title ->
+                        PosterCell(title) {
+                            viewModel.openTitle(title)
+                            onOpened()
+                        }
                     }
                 }
             }
@@ -418,6 +463,9 @@ private fun PosterCell(title: LibraryTitle, onClick: () -> Unit) {
     }
 }
 
+/** How long typing has to pause before the catalogs on the PC are searched. */
+private const val SEARCH_PAUSE_MS = 600L
+
 private fun countLabel(count: Int, noun: String) = if (count == 1) "1 $noun" else "$count ${noun}s"
 
 // ---------------------------------------------------------------- Music
@@ -457,7 +505,17 @@ fun MusicLibraryScreen(state: UiState, viewModel: RemoteViewModel, onPlayed: () 
         )
     } else {
         Column(Modifier.fillMaxSize()) {
-            LibraryHeader("Music", "Your music on ${state.current?.name ?: "the PC"}", query, { query = it }, "Search artists and albums", library.loading) { viewModel.loadMusic(force = true) }
+            val voice = rememberVoiceInput("Search your music", onText = { query = it })
+            LibraryHeader(
+                "Music",
+                "Your music on ${state.current?.name ?: "the PC"}",
+                query,
+                { query = it },
+                "Search artists and albums",
+                library.loading,
+                onRefresh = { viewModel.loadMusic(force = true) },
+                onMic = voice,
+            )
             PillTabs(
                 items = listOf(ALBUMS, ARTISTS),
                 selected = view,

@@ -83,6 +83,19 @@ internal object PhoneRemoteLibraryLines {
             )
         }
 
+    /**
+     * `SEARCH_RESULTS <loading 0|1> <query> <titles>`: what Nuvio's search finds in the addons' catalogs, sent to the
+     * phone that asked (`SEARCH <query>`) as results arrive. Titles as in the video library, the section being the
+     * catalog they came from; the phone opens one with OPEN_TITLE.
+     */
+    fun searchLine(query: String, loading: Boolean, titles: List<RemoteTitle>): String =
+        "SEARCH_RESULTS ${flag(loading)} ${text(query)} " + records(titles) { title ->
+            listOf(
+                text(title.section), text(title.type), text(title.id), text(title.name), text(title.year),
+                url(title.poster), url(title.posterFallback), flag(title.watched),
+            )
+        }
+
     fun musicLine(ready: Boolean, artists: List<RemoteArtist>, albums: List<RemoteAlbum>): String =
         "LIBRARY $MUSIC ${flag(ready)} " +
             records(artists) { artist -> listOf(text(artist.id), text(artist.name), url(artist.photo), flag(artist.starred)) } + " " +

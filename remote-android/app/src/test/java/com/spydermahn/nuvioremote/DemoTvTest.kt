@@ -73,6 +73,20 @@ class DemoTvTest {
     }
 
     @Test
+    fun readsThePcsSearchLine() {
+        // The exact line PhoneRemoteSearchTest on the PC side produces.
+        val line = ServerLine.parse(
+            "SEARCH_RESULTS 0 blade%20runner Movies%20%C2%B7%20Cinemeta,movie,tt1856101,Blade%20Runner%202049,2017,https%3A%2F%2Fimg%2Fp.jpg,-,1",
+            0L,
+        ) as ServerLine.SearchResults
+        assertEquals("blade runner", line.query)
+        assertEquals(false, line.loading)
+        assertEquals("Movies · Cinemeta", line.titles.single().section)
+        assertTrue(line.titles.single().watched)
+        assertEquals(0, (ServerLine.parse("SEARCH_RESULTS 1 x -", 0L) as ServerLine.SearchResults).titles.size)
+    }
+
+    @Test
     fun pairsPlaysAndAnswersLikeTheTv() {
         val (session, lines) = connect()
         DemoTv.stop()
@@ -133,6 +147,15 @@ class DemoTvTest {
         val resumed = lines.next<ServerLine.State>().nowPlaying
         assertEquals("Northbound Night Train", resumed.title)
         assertTrue(resumed.positionMs >= 72 * 60_000L)
+
+        // Search: loading first, then the matches and the catalogs' extras.
+        session.search("signal")
+        val searching = lines.next<ServerLine.SearchResults>()
+        assertTrue(searching.loading)
+        val answered = lines.next<ServerLine.SearchResults>()
+        assertEquals("signal", answered.query)
+        assertEquals("The Long Signal", answered.titles.first().name)
+        assertEquals(3, answered.titles.size)
 
         // Back closes the player; a theme change reaches the phone.
         session.key(RemoteKey.Back)

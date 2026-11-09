@@ -62,3 +62,21 @@ class PhoneRemoteSourcesTest {
         assertNull(PhoneRemoteProtocol.parse("PICK_SOURCE 0"))
     }
 }
+
+class PhoneRemoteSearchTest {
+    @Test
+    fun searchResultsTravelAsOneLine() {
+        val line = PhoneRemoteLibraryLines.searchLine(
+            "blade runner",
+            loading = false,
+            titles = listOf(RemoteTitle("Movies · Cinemeta", "movie", "tt1856101", "Blade Runner 2049", "2017", "https://img/p.jpg", null, watched = true)),
+        )
+        assertEquals(
+            "SEARCH_RESULTS 0 blade%20runner Movies%20%C2%B7%20Cinemeta,movie,tt1856101,Blade%20Runner%202049,2017,https%3A%2F%2Fimg%2Fp.jpg,-,1",
+            line,
+        )
+        assertEquals("SEARCH_RESULTS 1 x -", PhoneRemoteLibraryLines.searchLine("x", loading = true, titles = emptyList()))
+        assertEquals(RemoteMessage.Search("blade runner"), PhoneRemoteProtocol.parse("SEARCH blade%20runner"))
+        assertNull(PhoneRemoteProtocol.parse("SEARCH %20"))
+    }
+}

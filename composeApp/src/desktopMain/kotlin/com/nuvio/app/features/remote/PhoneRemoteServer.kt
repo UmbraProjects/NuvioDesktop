@@ -46,6 +46,8 @@ internal interface PhoneRemoteListener {
     fun onResume(parentId: String, videoId: String): String? = null
     /** Plays the [number]th source on screen; what is opening, or null when it cannot. */
     fun onPickSource(number: Int): String? = null
+    /** Searches the catalogs for [query], handing each SEARCH_RESULTS line to [reply] (this phone only) as it fills. */
+    fun onSearch(query: String, reply: (String) -> Unit) = Unit
 }
 
 /**
@@ -254,6 +256,7 @@ internal class PhoneRemoteServer(
                             RemoteMessage.Continue -> listener.onContinue()?.let(::send)
                             is RemoteMessage.Resume -> sendOpening(listener.onResume(message.parentId, message.videoId))
                             is RemoteMessage.PickSource -> sendOpening(listener.onPickSource(message.number))
+                            is RemoteMessage.Search -> listener.onSearch(message.query, ::trySend)
                             else -> Unit
                         }
                     }

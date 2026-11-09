@@ -42,6 +42,8 @@ data class UiState(
     val continueWatching: List<ResumeItem> = emptyList(),
     /** The source list while the TV shows one; the remote shows it to pick from. */
     val sources: SourceList? = null,
+    /** Nuvio's catalog search for the Watch tab's query; null until asked. */
+    val search: SearchState? = null,
     val music: MusicLibraryState = MusicLibraryState(),
     /** A short line about something just sent ("Opening Blade Runner on the TV"); clears itself. */
     val notice: String? = null,
@@ -60,6 +62,8 @@ data class VideoLibraryState(
     val loaded: Boolean = false,
     val problem: String? = null,
 )
+
+data class SearchState(val query: String, val loading: Boolean, val titles: List<LibraryTitle>)
 
 data class MusicLibraryState(
     val artists: List<LibraryArtistInfo> = emptyList(),
@@ -389,6 +393,14 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     is ServerLine.MusicLibrary -> onMusicLibrary(line)
                     is ServerLine.Continue -> _state.update { it.copy(continueWatching = line.items) }
                     is ServerLine.Sources -> _state.update { it.copy(sources = line.list) }
+                    is ServerLine.SearchResults -> _state.update { state ->
+                        // Only the answer to the latest query: an older one still arriving is dropped.
+                        if (state.search?.query?.equals(line.query, ignoreCase = true) == true) {
+                            state.copy(search = SearchState(state.search.query, line.loading, line.titles))
+                        } else {
+                            state
+                        }
+                    }
                     is ServerLine.Opening -> notify("Opening ${line.what} on the TV")
                     ServerLine.CantOpen -> notify("Nuvio couldn't open that.")
                     else -> Unit
@@ -549,6 +561,18 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Asks again every time the Watch tab shows: what is in progress changes with every film. */
     fun loadContinue() = sendOrReconnect { it.requestContinue() }
+
+    /** Searches every catalog on the PC (as its Search tab does); blank clears it. */
+    fun searchEverywhere(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.length < 2) {
+            _state.update { it.copy(search = null) }
+            return
+        }
+        if (_state.value.search?.query == trimmed) return
+        _state.update { it.copy(search = SearchState(trimmed, loading = true, titles = emptyList())) }
+        sendOrReconnect { it.search(trimmed) }
+    }
 
     fun pickSource(source: SourceInfo) = sendOrReconnect { it.pickSource(source.number) }
 

@@ -52,6 +52,7 @@ import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MoreHoriz
@@ -745,6 +746,15 @@ private fun TypingPanel(viewModel: RemoteViewModel, onClose: () -> Unit) {
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { viewModel.press(RemoteKey.Enter) }),
         )
+        // Voice: what is said is typed into the TV's search box, as if typed here.
+        val voice = rememberVoiceInput("Say what to search for", onText = { said ->
+            val next = if (text.isEmpty()) said else "$text $said"
+            viewModel.type(next.substring(text.length))
+            text = next
+        })
+        IconButton(onClick = voice) {
+            Icon(Icons.Rounded.Mic, contentDescription = "Search by voice", tint = g.accent)
+        }
         IconButton(onClick = { viewModel.press(RemoteKey.Enter) }) {
             Icon(Icons.AutoMirrored.Rounded.KeyboardReturn, contentDescription = "Enter", tint = g.accent)
         }
