@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.library.LadderAlbumRef // fork:music
+import com.nuvio.app.features.music.library.LADDER_VISIBLE // fork:music
 import com.nuvio.app.features.music.library.LadderRequest // fork:music
 import com.nuvio.app.features.music.library.MusicLadderScreen // fork:music
 import com.nuvio.app.features.music.library.MusicLibraryRepository
@@ -404,9 +405,10 @@ fun MusicTabScreen(
     val pendingLadder by MusicPlayback.pendingLadder.collectAsStateWithLifecycle()
     LaunchedEffect(pendingLadder) {
         val wanted = pendingLadder ?: return@LaunchedEffect
+        MusicPlayback.pendingLadder.value = null
+        if (!LADDER_VISIBLE) return@LaunchedEffect // hidden: nothing sets it any more, but never open one
         MusicTabState.query = ""
         ladder = wanted
-        MusicPlayback.pendingLadder.value = null
     }
     // A search typed into the top bar while a ladder is open is meant to be seen.
     LaunchedEffect(query) {
@@ -533,7 +535,7 @@ fun MusicTabScreen(
                         kind = MusicSearchKind.YouTube
                     }
                     // fork:music - the first result's ladders, as short pills beside the kind
-                    val offers = when (val shown = results) {
+                    val offers = if (!LADDER_VISIBLE) emptyList() else when (val shown = results) {
                         is MusicSearchResults.Albums -> {
                             val first = shown.items.firstOrNull()
                             val ref = first?.let { f -> f.artists.firstOrNull()?.name?.let { LadderAlbumRef(f.title, it, f.year) } }
@@ -573,9 +575,9 @@ fun MusicTabScreen(
             val libraryArtists = MusicLibraryRepository.state.collectAsState().value.artists
             // Recent searches live in the search box's own panel now, not as chips on this page.
             val recent = emptyList<String>()
-            val starters = remember(libraryArtists) { ladderStarters(libraryArtists) }
+            val starters = remember(libraryArtists) { if (LADDER_VISIBLE) ladderStarters(libraryArtists) else emptyList() }
             val tiles = remember(libraryArtists) { genreTiles(libraryArtists) }
-            val continues = remember(libraryArtists) { continueCards(LadderProgressStore.resumable()) }
+            val continues = remember(libraryArtists) { if (LADDER_VISIBLE) continueCards(LadderProgressStore.resumable()) else emptyList() }
             val startArtwork = remember(libraryArtists) { startArt(libraryArtists) }
             if (!startIsEmpty(recent, starters, continues, tiles)) {
                 SearchStartView(

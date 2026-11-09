@@ -131,6 +131,10 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Details on the TV in the sheet still opens the show's page on the TV; a film still opens straight on the TV (2026-11-09)
 - [x] Demo TV: Harbour Lights shows two seasons of six episodes, the first three watched (2026-11-09)
 
+### Phone remote: add-on subtitles
+
+- [ ] A film with no built-in subtitles (the screenshot case): once the add-on subtitles are found, the Subtitles tile reads "Off" instead of "Tap for the next"; tapping it picks the first add-on subtitle and the tile shows its name; further taps go through the rest
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)
@@ -151,7 +155,8 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 - [x] "Keep going?" near a radio's end, and Keep going adds more songs (2026-11-08)
 - [~] Stations and mixes play from search; Start radio on songs and artists (2026-11-08): works, but genre keyword
-  detection needs to be better. Plan: remove the Ladder and move genre into search.
+  detection needs to be better. Plan: remove the Ladder and move genre into search. Built (2026-11-09), see Music home
+  and search below.
 
 ## Shelf
 
@@ -167,6 +172,14 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Sentence chips, the narrow row, Remix / Live panels (2026-11-08)
 - [x] Top-match morph, the action row and More menus (2026-11-08)
 - [x] More menu on songs and releases (right-click, Menu key, hold OK), with Play next (2026-11-08)
+- [ ] The Ladder is gone from the Music tab: no Ladder pills beside the search kinds, no "Ladder starters" or "Continue your ladder" on the old search's start screen, no "Ladder from here" or "Climb into" buttons in the preview pane
+- [ ] Stage: tapping a genre chip closes the stage, opens the Music tab and searches that genre (the genre card shows)
+- [ ] Type a genre (shoegaze, post punk, trip hop): a genre card leads Top Match, with "IN YOUR LIBRARY" artists and "TOP ARTISTS" under it; OK on the card plays a radio or playlist for it
+- [ ] Spelling and word order are forgiven: "postpunk", "hip hop music", "rock indie", "punks" all show the card
+- [ ] Moods, activities and decades: "chill", "workout music", "90s", "90s rock" show a card (and "90s rock" plays something sensible)
+- [ ] An artist wins a clash: with an artist as the top match (try "Soul" or "Dance" if you own one), the artist stays Top Match and the genre card sits second
+- [ ] With the offline MusicBrainz copy installed, a niche tag the hand list lacks (try "vaportrap", "witch house") still gets a card; without the copy it does not
+- [ ] Tapping a TOP ARTISTS row searches that artist
 
 ## Artist page
 

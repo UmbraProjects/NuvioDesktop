@@ -173,3 +173,9 @@ internal fun normalizeWeightedGenres(votes: Map<String, Int>): Map<String, Int> 
     val sorted = byKey.values.sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
     return LinkedHashMap<String, Int>().apply { for ((name, weight) in sorted) put(name, weight) }
 }
+
+/** The fixed readable name for [raw] when it is a genre or alias known by name, else null. Spelling is ignored. */
+internal fun knownGenreName(raw: String): String? = knownByKey[genreKey(raw)]
+
+/** Every genre this file knows by name (aliases excluded), for matching a typed line word by word. */
+internal fun knownGenreNames(): List<String> = knownGenres

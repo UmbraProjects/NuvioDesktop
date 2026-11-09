@@ -138,7 +138,7 @@ private fun ArtistPreview(
         Text(summary.name, fontSize = 40.sp, lineHeight = 46.sp, color = colors.textPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
     MusicAddToLibraryButton(summary.browseId)
-    NuvioPrimaryButton(text = "Ladder from here", modifier = Modifier.fillMaxWidth(), height = 52.dp) {
+    if (LADDER_VISIBLE) NuvioPrimaryButton(text = "Ladder from here", modifier = Modifier.fillMaxWidth(), height = 52.dp) {
         onLadder(LadderRequest.Artist(summary.name, LadderMode.OutFrom))
     }
     NuvioPrimaryButton(text = "Open artist page", modifier = Modifier.fillMaxWidth(), height = 52.dp) { onOpenArtist(summary.browseId) }
@@ -196,7 +196,7 @@ private fun AlbumPreview(
             MusicPlayback.player.play(album, trackIndex = firstPlayable)
         }
     }
-    if (artistName.isNotBlank()) {
+    if (LADDER_VISIBLE && artistName.isNotBlank()) {
         NuvioPrimaryButton(text = "Climb into the sound of ${summary.title}", modifier = Modifier.fillMaxWidth(), height = 52.dp) {
             onLadder(LadderRequest.Album(summary.title, summary.artists.first().name, summary.year, LadderMode.Into))
         }

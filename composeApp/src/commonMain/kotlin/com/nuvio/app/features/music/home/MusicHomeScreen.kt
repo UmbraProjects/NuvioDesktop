@@ -128,7 +128,19 @@ import com.nuvio.app.features.music.MusicTopResult
 import com.nuvio.app.features.music.MusicTopSong
 import com.nuvio.app.features.music.MusicPlaylistSummary
 import com.nuvio.app.features.music.MusicTrack
+import com.nuvio.app.features.music.library.GenreArtist
+import com.nuvio.app.features.music.library.GenreQuery
 import com.nuvio.app.features.music.library.LadderRequest
+import com.nuvio.app.features.music.library.LibraryArtist
+import com.nuvio.app.features.music.library.MusicBrainzClient
+import com.nuvio.app.features.music.library.MusicTagSource
+import com.nuvio.app.features.music.library.TagKind
+import com.nuvio.app.features.music.library.canonicalGenre
+import com.nuvio.app.features.music.library.detectGenreQuery
+import com.nuvio.app.features.music.library.libraryArtistsFor
+import com.nuvio.app.features.music.library.looksLikeRealTag
+import com.nuvio.app.features.music.library.pickGenreStation
+import com.nuvio.app.features.music.library.rankTagArtists
 import com.nuvio.app.features.music.library.LibraryView
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.MusicLibraryShelf
@@ -322,6 +334,28 @@ internal fun MusicHomeScreen(
     }
     val answered = remember(answeredQuery, musicAnswer, youtubeAnswer) {
         answeredQuery?.let { buildHomeResults(it, musicAnswer ?: MusicSearchEverything.EMPTY, youtubeAnswer.orEmpty()) }
+    }
+    // fork:music-genre - a line that is a genre, mood, decade or activity gets a genre card in Top Match (below an artist
+    // match). The lists answer at once; a tag they do not know is checked against the offline MusicBrainz copy.
+    var offlineTag by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(query) {
+        offlineTag = null
+        val line = query.trim()
+        if (line.length < MIN_QUERY_LENGTH || line.split(' ').size > 3 || detectGenreQuery(line) != null) return@LaunchedEffect
+        if (!MusicBrainzClient.hasOfflineCopy) return@LaunchedEffect
+        val tag = canonicalGenre(line) ?: return@LaunchedEffect
+        delay(SEARCH_PAUSE_MS)
+        val found = MusicBrainzClient.searchByTagOffline(tag) ?: return@LaunchedEffect
+        if (looksLikeRealTag(tag, found)) offlineTag = tag
+    }
+    val genre = remember(query, offlineTag) { detectGenreQuery(query) { it == offlineTag } }
+    var genreArtists by remember { mutableStateOf(emptyList<GenreArtist>()) }
+    LaunchedEffect(genre?.tag) {
+        genreArtists = emptyList()
+        val tag = genre?.tag?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        delay(SEARCH_PAUSE_MS)
+        val owned = libraryNames.mapTo(HashSet()) { it.lowercase().trim() }
+        genreArtists = MusicTagSource.searchByTag(tag)?.let { rankTagArtists(tag, it, owned) }.orEmpty()
     }
     // fork:music-home - YouTube Music's newer search rows carry a play or view count where the length was, so those rows
     // read "–:––". Their lengths are looked up once the results have sat still a moment (a few at a time, cached, so
@@ -530,6 +564,10 @@ internal fun MusicHomeScreen(
                             runner = runner,
                             hold = hold,
                             matchSongs = matchSongs,
+                            genre = genre,
+                            genreArtists = genreArtists,
+                            libraryArtists = libraryState.artists,
+                            onSearch = ::setQuery,
                         )
                         }
                     }
@@ -1023,22 +1061,34 @@ private fun HomeResultsBody(
     runner: HomeRunner,
     hold: HoldToSelectState,
     matchSongs: List<MusicTopSong> = emptyList(),
+    genre: GenreQuery? = null,
+    genreArtists: List<GenreArtist> = emptyList(),
+    libraryArtists: List<LibraryArtist> = emptyList(),
+    onSearch: (String) -> Unit = {},
 ) {
     // The keyboard's way in: the first thing in the YouTube Music panel, else the top match, else the first video.
     val entryPanel = when {
         results == null -> -1
         results.rows.isNotEmpty() || results.albums.isNotEmpty() -> 1
-        results.top != null || results.artists.isNotEmpty() -> 0
+        results.top != null || results.artists.isNotEmpty() || genre != null -> 0
         else -> 2
     }
     val left: @Composable ColumnScope.() -> Unit = {
         LensPanelHeader(Icons.Rounded.Star, "TOP MATCH", null, MaterialTheme.nuvio.colors.accent)
-        PanelBody(musicState, onRetry, results?.let { it.top == null && it.artists.isEmpty() } ?: true) {
+        PanelBody(musicState, onRetry, results?.let { it.top == null && it.artists.isEmpty() && genre == null } ?: true) {
             val r = results ?: return@PanelBody
+            // The genre card leads unless an artist is the top match: the artist wins, the card sits second.
+            val artistWins = r.top?.let { topMatchKind(it) == TopMatchKind.Artist } == true
+            if (genre != null && !artistWins) {
+                genreCard(genre, r, genreArtists, libraryArtists, runner, hold, onSearch, entryFirst = entryPanel == 0 && r.top == null, entry = entry)
+            }
             r.top?.let { top ->
                 item(key = "top") {
-                    TopMatchRow(top, if (entryPanel == 0) Modifier.focusRequester(entry) else Modifier, runner, hold)
+                    TopMatchRow(top, if (entryPanel == 0 && !(genre != null && !artistWins)) Modifier.focusRequester(entry) else Modifier, runner, hold)
                 }
+            }
+            if (genre != null && artistWins) {
+                genreCard(genre, r, genreArtists, libraryArtists, runner, hold, onSearch, entryFirst = false, entry = entry)
             }
             if (r.artists.isNotEmpty()) item(key = "artists-label") { SectionLabel("ARTISTS") }
             items(r.artists, key = { "artist:" + it.browseId }) { artist ->
@@ -1189,6 +1239,67 @@ private fun ArtistRow(artist: MusicArtistSummary, modifier: Modifier, runner: Ho
         preview = RowPreview(artist.name, artist.thumbnailUrl),
     )
 }
+
+/**
+ * fork:music-genre - the genre card and what hangs off it, as list items: the card (OK plays the genre's radio), then
+ * the library artists in it, then the top tag-ranked artists (OK searches that artist). Hold OK on the card for the same.
+ */
+private fun androidx.compose.foundation.lazy.LazyListScope.genreCard(
+    genre: GenreQuery,
+    results: HomeResults,
+    genreArtists: List<GenreArtist>,
+    libraryArtists: List<LibraryArtist>,
+    runner: HomeRunner,
+    hold: HoldToSelectState,
+    onSearch: (String) -> Unit,
+    entryFirst: Boolean,
+    entry: FocusRequester,
+) {
+    val station = pickGenreStation(results.playlists, genre)
+    val owned = libraryArtistsFor(genre.tag, libraryArtists)
+    item(key = "genre-card") {
+        ResultRow(
+            art = station?.thumbnailUrl,
+            circle = false,
+            artSize = if (entryFirst || genre.kind != TagKind.Genre) 72.dp else 56.dp,
+            title = genre.label,
+            subtitle = listOfNotNull(genre.kind.noun, if (station != null) "Play radio" else "Play from your library").joinToString(" · "),
+            trailing = null,
+            videoMark = false,
+            modifier = if (entryFirst) Modifier.focusRequester(entry) else Modifier,
+            hold = hold,
+            preview = RowPreview(genre.label, station?.thumbnailUrl),
+            onClick = {
+                when {
+                    station != null -> runner.playlist(station.playlistId, station.title, PlayHow.Now, station.thumbnailUrl)
+                    owned.isNotEmpty() -> owned.first().let { runner.artistRadio(it.id, it.name) }
+                    genreArtists.isNotEmpty() -> onSearch(genreArtists.first().name)
+                }
+            },
+        )
+    }
+    if (owned.isNotEmpty()) {
+        item(key = "genre-owned-label") { SectionLabel("IN YOUR LIBRARY") }
+        items(owned.take(GENRE_ARTISTS_SHOWN), key = { "genre-owned:" + it.id }) { a ->
+            ResultRow(
+                art = a.art.thumb, circle = true, artSize = 44.dp, title = a.name, subtitle = null, trailing = null, videoMark = false,
+                modifier = Modifier, hold = hold, onClick = { runner.openArtist(a.id) },
+            )
+        }
+    }
+    val others = genreArtists.filter { !it.owned }
+    if (others.isNotEmpty()) {
+        item(key = "genre-top-label") { SectionLabel("TOP ARTISTS · ${genre.label.uppercase()}") }
+        items(others.take(GENRE_ARTISTS_SHOWN), key = { "genre-top:" + it.name }) { a ->
+            ResultRow(
+                art = null, circle = true, artSize = 44.dp, title = a.name, subtitle = null, trailing = null, videoMark = false,
+                modifier = Modifier, hold = hold, onClick = { onSearch(a.name) },
+            )
+        }
+    }
+}
+
+private const val GENRE_ARTISTS_SHOWN = 8
 
 private const val MATCH_SONGS_SHOWN = 6
 

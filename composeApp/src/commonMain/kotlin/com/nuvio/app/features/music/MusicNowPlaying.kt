@@ -427,14 +427,16 @@ private fun MusicNowPlayingScreen(
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 chips.forEachIndexed { i, chip ->
                                     val isMood = i == 0 && libraryArtist?.mood != null
-                                    // A genre starts a ladder into it (in the Music tab); the mood is only a label.
+                                    // A genre searches for it in the Music tab; the mood is only a label.
                                     val genre = if (isMood) null else com.nuvio.app.features.music.library.canonicalGenre(chip)
                                     StageChip(
                                         chip,
                                         accented = isMood,
                                         onClick = genre?.let { g ->
                                             {
-                                                MusicPlayback.pendingLadder.value = com.nuvio.app.features.music.library.LadderRequest.Genre(g)
+                                                // A genre chip searches that genre (the Ladder is hidden): the music home shows its genre card.
+                                                MusicTabState.query = g
+                                                MusicTabState.section = MusicSection.Search
                                                 onClose()
                                                 onOpenMusicTab()
                                             }

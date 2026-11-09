@@ -911,7 +911,8 @@ private fun PlayerScreenRuntime.phoneRemoteNowPlaying(): com.nuvio.app.features.
 /** What the phone's Subtitles tile shows: an addon subtitle by its name, a built-in one by its label, else Off. */
 private fun PlayerScreenRuntime.phoneRemoteSubtitleName(): String? {
     selectedAddonSubtitle?.let { addon -> return addon.display.ifBlank { addon.language } }
-    if (subtitleTracks.isEmpty()) return null
+    // Add-on subtitles count too: a file with no built-in tracks still has something to cycle to once they are found.
+    if (subtitleTracks.isEmpty()) return if (visibleAddonSubtitles.isNotEmpty()) "Off" else null
     return subtitleTracks.firstOrNull { it.index == selectedSubtitleIndex }?.label?.takeIf { it.isNotBlank() } ?: "Off"
 }
 
