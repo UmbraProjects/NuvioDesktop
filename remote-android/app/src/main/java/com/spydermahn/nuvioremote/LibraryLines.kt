@@ -75,6 +75,12 @@ data class SourceInfo(
 
 data class SourceList(val title: String, val loading: Boolean, val sources: List<SourceInfo>)
 
+/** A track in the music player's queue on the PC (`QUEUE` line). */
+data class QueueTrack(val videoId: String, val title: String, val artist: String, val seconds: Int, val cover: String?, val upcoming: Boolean)
+
+/** One line of the playing song's lyrics; [timeMs] is null for words without timing. */
+data class LyricLine(val timeMs: Long?, val text: String)
+
 data class LibraryArtistInfo(val id: String, val name: String, val photo: String?, val starred: Boolean)
 
 data class LibraryAlbum(
@@ -193,6 +199,36 @@ object LibraryLines {
             loading = parts[1] == "1",
             query = RemoteProtocol.decode(parts[2]),
             titles = titles(parts.getOrNull(3)),
+        )
+    }
+
+    /** `QUEUE <playing> <tracks>`; mirrors `queueLine` in the PC's PhoneRemoteLibraryLines.kt. */
+    fun parseQueue(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 2 || parts[0] != "QUEUE") return null
+        val tracks = records(parts.getOrNull(2)).mapNotNull { f ->
+            if (f.size < 6) return@mapNotNull null
+            QueueTrack(
+                videoId = f[0] ?: return@mapNotNull null,
+                title = f[1] ?: return@mapNotNull null,
+                artist = f[2].orEmpty(),
+                seconds = f[3]?.toIntOrNull() ?: 0,
+                cover = f[4],
+                upcoming = f[5] == "1",
+            )
+        }
+        return ServerLine.Queue(playing = parts[1].toIntOrNull() ?: -1, tracks = tracks)
+    }
+
+    /** `LYRICS synced|plain|none <title> <lines>`; mirrors `lyricsLine` in the PC's PhoneRemoteLibraryLines.kt. */
+    fun parseLyrics(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 3 || parts[0] != "LYRICS") return null
+        val lines = records(parts.getOrNull(3)).map { f -> LyricLine(f.getOrNull(0)?.toLongOrNull(), f.getOrNull(1).orEmpty()) }
+        return ServerLine.LyricsText(
+            synced = parts[1] == "synced",
+            title = parts[2].takeUnless { it == "-" }?.let(RemoteProtocol::decode),
+            lines = if (parts[1] == "none") emptyList() else lines,
         )
     }
 

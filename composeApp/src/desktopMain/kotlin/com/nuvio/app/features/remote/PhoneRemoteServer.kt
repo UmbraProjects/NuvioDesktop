@@ -48,6 +48,12 @@ internal interface PhoneRemoteListener {
     fun onPickSource(number: Int): String? = null
     /** Searches the catalogs for [query], handing each SEARCH_RESULTS line to [reply] (this phone only) as it fills. */
     fun onSearch(query: String, reply: (String) -> Unit) = Unit
+    /** The QUEUE line; after a [onQueueAction] too, so the phone sees the change. */
+    fun onQueue(): String? = null
+    /** Then hands the fresh QUEUE line to [reply], once the change has landed. */
+    fun onQueueAction(action: String, videoId: String, reply: (String) -> Unit) = Unit
+    /** Hands the LYRICS line for the playing song to [reply]; the first lookup can take a few seconds. */
+    fun onLyrics(reply: (String) -> Unit) = Unit
 }
 
 /**
@@ -262,6 +268,9 @@ internal class PhoneRemoteServer(
                             is RemoteMessage.Resume -> sendOpening(listener.onResume(message.parentId, message.videoId))
                             is RemoteMessage.PickSource -> sendOpening(listener.onPickSource(message.number))
                             is RemoteMessage.Search -> listener.onSearch(message.query, ::trySend)
+                            RemoteMessage.Queue -> listener.onQueue()?.let(::send)
+                            is RemoteMessage.QueueAction -> listener.onQueueAction(message.action, message.videoId, ::trySend)
+                            RemoteMessage.LyricsRequest -> listener.onLyrics(::trySend)
                             else -> Unit
                         }
                     }

@@ -344,6 +344,52 @@ object DemoTv {
         }
     }
 
+    // ------------------------------------------------------------------------------------------ Queue and lyrics
+
+    private fun songId(index: Int) = "demo-song-$index"
+
+    private fun queueLine(): String {
+        fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+        val (list, at) = synchronized(this) { songs to songIndex }
+        if (mode != Mode.Music || list.isEmpty()) return "QUEUE -1 -"
+        return "QUEUE $at " + list.withIndex().joinToString(";") { (i, song) ->
+            listOf(f(songId(i)), f(song.title), f(song.artist), (song.durationMs / 1000).toString(), f(song.image), if (i > at) "1" else "0")
+                .joinToString(",")
+        }
+    }
+
+    @Synchronized
+    private fun queueAction(action: String, id: String) {
+        val index = (0 until songs.size).firstOrNull { songId(it) == id } ?: return
+        when (action) {
+            "play" -> if (index != songIndex) {
+                songIndex = index
+                playing = true
+                setPosition(0L)
+            }
+            "next" -> if (index > songIndex + 1) {
+                val list = songs.toMutableList()
+                val song = list.removeAt(index)
+                list.add(songIndex + 1, song)
+                songs = list
+            }
+            "remove" -> if (index > songIndex) songs = songs.filterIndexed { i, _ -> i != index }
+        }
+    }
+
+    /** Pretend timed lyrics: a line every few seconds, so the phone's lyric view can be seen following the song. */
+    private fun lyricsLine(): String {
+        fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+        val song = synchronized(this) { if (mode == Mode.Music) songs.getOrNull(songIndex) else null } ?: return "LYRICS none - -"
+        if (song.durationMs < 60_000L) return "LYRICS none ${f(song.title)} -"
+        val words = listOf(
+            "Static on the window", "Lights along the water", "Every station humming", "Turn the dial slowly",
+            "", "Somewhere in the night bus", "Someone hums the chorus", "Static on the window", "Lights along the water",
+        )
+        val lines = (0 until (song.durationMs / 6_000L).toInt()).map { i -> (i * 6_000L + 2_000L) to words[i % words.size] }
+        return "LYRICS synced ${f(song.title)} " + lines.joinToString(";") { (t, w) -> "$t,${f(w)}" }
+    }
+
     /** Pretend catalog results: the library's titles that match, and a couple more from "the addons". */
     private fun searchLine(query: String, loading: Boolean): String {
         fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
@@ -500,6 +546,18 @@ object DemoTv {
                             playFilm(resume.title, resume.episode ?: "Resumed", resume.durationMs, resume.positionMs)
                         }, 2, TimeUnit.SECONDS)
                     }
+                }
+                "QUEUE" -> send(queueLine())
+                "QUEUE_PLAY", "QUEUE_NEXT", "QUEUE_REMOVE" -> {
+                    val id = RemoteProtocol.decode(parts.getOrElse(1) { "" })
+                    note("Queue: ${parts[0].removePrefix("QUEUE_").lowercase()} $id")
+                    queueAction(parts[0].removePrefix("QUEUE_").lowercase(), id)
+                    send(queueLine())
+                    broadcastState()
+                }
+                "LYRICS" -> {
+                    note("Lyrics asked for")
+                    send(lyricsLine())
                 }
                 "SEARCH" -> {
                     val query = RemoteProtocol.decode(parts.getOrElse(1) { "" }).trim()

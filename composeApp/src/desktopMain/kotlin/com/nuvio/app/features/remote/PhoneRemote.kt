@@ -227,6 +227,10 @@ internal object PhoneRemote {
         override fun onResume(parentId: String, videoId: String): String? = PhoneRemoteLibrary.resume(parentId, videoId)
         override fun onPickSource(number: Int): String? = pickSource(number)
         override fun onSearch(query: String, reply: (String) -> Unit) = PhoneRemoteLibrary.search(query, reply)
+        override fun onQueue(): String = PhoneRemoteMusic.queueLine()
+        override fun onQueueAction(action: String, videoId: String, reply: (String) -> Unit) =
+            PhoneRemoteMusic.queueAction(action, videoId, reply)
+        override fun onLyrics(reply: (String) -> Unit) = PhoneRemoteMusic.lyrics(reply)
     }
 
     // --- fork:phone-remote: now playing on the phone ---

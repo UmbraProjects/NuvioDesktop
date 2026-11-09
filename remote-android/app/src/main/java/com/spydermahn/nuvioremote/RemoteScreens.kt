@@ -60,6 +60,9 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.FormatQuote
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RadioButtonChecked
@@ -241,7 +244,7 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
                 onSources = { padOverPlaying = true },
                 onMore = { more = true },
             )
-            showing == Showing.Music && playing != null && !padOverPlaying -> MusicBody(playing, state.cover, viewModel, onSearch = search, onMore = { more = true })
+            showing == Showing.Music && playing != null && !padOverPlaying -> MusicBody(state, playing, state.cover, viewModel, onMore = { more = true })
             else -> BrowseBody(state.padMode, viewModel, onSearch = search, onMore = { more = true })
         }
     }
@@ -417,24 +420,33 @@ private fun BottomKeys(content: @Composable androidx.compose.foundation.layout.R
 }
 
 @Composable
-private fun MusicBody(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel, onSearch: () -> Unit, onMore: () -> Unit) {
+private fun MusicBody(state: UiState, playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel, onMore: () -> Unit) {
     val g = LocalGlass.current
+    var showLyrics by rememberSaveable { mutableStateOf(false) }
+    var showQueue by remember { mutableStateOf(false) }
+    // A new song's lyrics are asked for as it starts, while the lyric view is open.
+    LaunchedEffect(showLyrics, playing.title) { if (showLyrics) viewModel.loadLyrics(playing.title) }
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-        // The cover takes whatever height is left (up to 260dp), so the transport and the keys always fit on screen.
+        // The cover (or the lyrics in its place) takes whatever height is left, so the transport and the keys always fit.
         Box(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .heightIn(max = 260.dp)
-                    .aspectRatio(1f, matchHeightConstraintsFirst = true)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0xFF2B2320)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (cover != null) {
-                    Image(cover.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                } else {
-                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = g.textMuted, modifier = Modifier.size(48.dp))
+            if (showLyrics) {
+                LyricsView(state.lyrics?.takeIf { it.title == null || it.title == playing.title }, playing, Modifier.fillMaxSize())
+            } else {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .heightIn(max = 260.dp)
+                        .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF2B2320))
+                        .pressable { showLyrics = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (cover != null) {
+                        Image(cover.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    } else {
+                        Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = g.textMuted, modifier = Modifier.size(48.dp))
+                    }
                 }
             }
         }
@@ -452,10 +464,141 @@ private fun MusicBody(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteView
         Seek(playing, viewModel, Modifier.padding(top = 12.dp))
         Transport(playing, viewModel, Modifier.padding(top = 4.dp))
         BottomKeys {
-            GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 52.dp) { viewModel.press(RemoteKey.Back) }
-            GlassKey(Icons.Rounded.Search, "Search", size = 52.dp, onPress = onSearch)
-            GlassKey(Icons.Rounded.DarkMode, "Dark", size = 52.dp) { viewModel.setDark(true) }
-            GlassKey(Icons.Rounded.MoreHoriz, "More", size = 52.dp, onPress = onMore)
+            GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 50.dp) { viewModel.press(RemoteKey.Back) }
+            GlassKey(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", size = 50.dp) {
+                viewModel.loadQueue()
+                showQueue = true
+            }
+            GlassKey(Icons.Rounded.FormatQuote, "Lyrics", size = 50.dp, active = showLyrics) { showLyrics = !showLyrics }
+            GlassKey(Icons.Rounded.DarkMode, "Dark", size = 50.dp) { viewModel.setDark(true) }
+            GlassKey(Icons.Rounded.MoreHoriz, "More", size = 50.dp, onPress = onMore)
+        }
+    }
+    if (showQueue) QueueSheet(state.queue, viewModel, onDismiss = { showQueue = false })
+}
+
+/**
+ * The playing song's lyrics, as the TV shows them: timed ones follow the song (the line being sung is bright and kept in
+ * the middle), untimed ones simply scroll. Tapping the cover opens them; the Lyrics key switches back to the cover.
+ */
+@Composable
+private fun LyricsView(lyrics: ServerLine.LyricsText?, playing: NowPlaying, modifier: Modifier = Modifier) {
+    val g = LocalGlass.current
+    if (lyrics == null || lyrics.lines.isEmpty()) {
+        Box(modifier.glass(RoundedCornerShape(20.dp)), contentAlignment = Alignment.Center) {
+            Text(
+                if (lyrics == null) "Finding the lyrics…" else "No lyrics for this song.",
+                color = g.textSecondary,
+                fontSize = 14.sp,
+            )
+        }
+        return
+    }
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(playing) {
+        while (true) {
+            now = SystemClock.elapsedRealtime()
+            delay(250)
+        }
+    }
+    val position = playing.positionAt(now)
+    val current = if (lyrics.synced) lyrics.lines.indexOfLast { (it.timeMs ?: Long.MAX_VALUE) <= position } else -1
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(current) {
+        if (current >= 0) listState.animateScrollToItem((current - 2).coerceAtLeast(0))
+    }
+    androidx.compose.foundation.lazy.LazyColumn(
+        modifier.glass(RoundedCornerShape(20.dp)).padding(horizontal = 18.dp),
+        state = listState,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 18.dp),
+    ) {
+        items(lyrics.lines.size) { index ->
+            val line = lyrics.lines[index]
+            val lit = index == current
+            Text(
+                line.text.ifBlank { "♪" },
+                color = when {
+                    !lyrics.synced -> g.text
+                    lit -> g.text
+                    index < current -> g.textMuted
+                    else -> g.textSecondary
+                },
+                fontSize = if (lit) 20.sp else 17.sp,
+                fontWeight = if (lit) FontWeight.Bold else FontWeight.Medium,
+            )
+        }
+    }
+}
+
+/** The TV's music queue: tap a song to play it; Next and Remove on the ones still to come. */
+@Composable
+private fun QueueSheet(queue: ServerLine.Queue?, viewModel: RemoteViewModel, onDismiss: () -> Unit) {
+    val g = LocalGlass.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Color(0xFF14151A),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            GlassLabel(if (queue == null) "Up next" else "Up next · ${(queue.tracks.size - queue.playing - 1).coerceAtLeast(0)} to come")
+            if (queue == null) {
+                Text("Asking the TV…", color = g.textSecondary, modifier = Modifier.padding(vertical = 24.dp))
+                return@Column
+            }
+            if (queue.tracks.isEmpty()) {
+                Text("Nothing is queued.", color = g.textSecondary, modifier = Modifier.padding(vertical = 24.dp))
+                return@Column
+            }
+            val listState = androidx.compose.foundation.lazy.rememberLazyListState(
+                initialFirstVisibleItemIndex = (queue.playing - 1).coerceAtLeast(0),
+            )
+            androidx.compose.foundation.lazy.LazyColumn(
+                Modifier.fillMaxWidth().heightIn(max = 520.dp).padding(top = 10.dp),
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(queue.tracks.size, key = { queue.tracks[it].videoId + "#" + it }) { index ->
+                    val track = queue.tracks[index]
+                    val isPlaying = index == queue.playing
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .glass(RoundedCornerShape(14.dp), fill = if (isPlaying) g.tint else Color.White.copy(alpha = 0.045f), edge = if (isPlaying) g.tintEdge else Color.White.copy(alpha = 0.09f))
+                            .pressable(onPress = { if (!isPlaying) viewModel.queueAction("play", track) })
+                            .padding(start = 8.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RemoteImage(track.cover, null, track.title, Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)))
+                        Spacer(Modifier.size(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                track.title,
+                                color = if (index < queue.playing) g.textMuted else g.text,
+                                fontSize = 15.sp,
+                                fontWeight = if (isPlaying) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                listOf(track.artist, formatTime(track.seconds * 1000L)).filter { it.isNotBlank() }.joinToString(" · "),
+                                color = if (isPlaying) g.accent else g.textSecondary,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (track.upcoming) {
+                            IconButton(onClick = { viewModel.queueAction("next", track) }) {
+                                Icon(Icons.AutoMirrored.Rounded.PlaylistPlay, contentDescription = "Play next", tint = g.textSecondary)
+                            }
+                            IconButton(onClick = { viewModel.queueAction("remove", track) }) {
+                                Icon(Icons.Rounded.Close, contentDescription = "Remove", tint = g.textSecondary)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -44,6 +44,10 @@ data class UiState(
     val sources: SourceList? = null,
     /** Nuvio's catalog search for the Watch tab's query; null until asked. */
     val search: SearchState? = null,
+    /** The music player's queue, while the queue sheet is open. */
+    val queue: ServerLine.Queue? = null,
+    /** The playing song's lyrics, while the lyric view is open. */
+    val lyrics: ServerLine.LyricsText? = null,
     /** The PC can be woken from the phone (it told the app its network card); offered while it is offline. */
     val canWake: Boolean = false,
     /** Waking it: the packet went, and the app is waiting for it to come up. */
@@ -399,6 +403,8 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     is ServerLine.MusicLibrary -> onMusicLibrary(line)
                     is ServerLine.Continue -> _state.update { it.copy(continueWatching = line.items) }
                     is ServerLine.Sources -> _state.update { it.copy(sources = line.list) }
+                    is ServerLine.Queue -> _state.update { it.copy(queue = line) }
+                    is ServerLine.LyricsText -> _state.update { it.copy(lyrics = line) }
                     is ServerLine.Wake -> _state.value.current?.let { pc ->
                         store.saveWake(pc.address, line)
                         _state.update { it.copy(canWake = line.macs.isNotEmpty()) }
@@ -571,6 +577,18 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Asks again every time the Watch tab shows: what is in progress changes with every film. */
     fun loadContinue() = sendOrReconnect { it.requestContinue() }
+
+    // --- The music queue and lyrics (phase 8) ---
+
+    fun loadQueue() = sendOrReconnect { it.requestQueue() }
+
+    fun queueAction(action: String, track: QueueTrack) = sendOrReconnect { it.queueAction(action, track.videoId) }
+
+    /** Asks for the playing song's lyrics; what was shown stays until the new ones arrive, unless it was another song. */
+    fun loadLyrics(title: String) {
+        _state.update { if (it.lyrics?.title == title) it else it.copy(lyrics = null) }
+        sendOrReconnect { it.requestLyrics() }
+    }
 
     private var wakeJob: Job? = null
 

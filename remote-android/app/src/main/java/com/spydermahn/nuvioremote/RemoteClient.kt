@@ -94,6 +94,10 @@ sealed interface ServerLine {
     data class Continue(val items: List<ResumeItem>) : ServerLine
     /** The source list on the TV; null once it closes. */
     data class Sources(val list: SourceList?) : ServerLine
+    /** The music player's queue and where the playing track is in it (-1 when nothing plays). */
+    data class Queue(val playing: Int, val tracks: List<QueueTrack>) : ServerLine
+    /** The playing song's lyrics; empty [lines] when it has none. */
+    data class LyricsText(val synced: Boolean, val title: String?, val lines: List<LyricLine>) : ServerLine
     /** The PC's network cards and home-network broadcast addresses, kept to wake it from sleep. */
     data class Wake(val macs: List<String>, val broadcasts: List<String>) : ServerLine
     /** What Nuvio's search found for [query] in the addons' catalogs, so far while [loading]. */
@@ -113,6 +117,8 @@ sealed interface ServerLine {
                 "CONTINUE" -> LibraryLines.parseContinue(line) ?: Other
                 "SOURCES" -> LibraryLines.parseSources(line) ?: Other
                 "SEARCH_RESULTS" -> LibraryLines.parseSearch(line) ?: Other
+                "QUEUE" -> LibraryLines.parseQueue(line) ?: Other
+                "LYRICS" -> LibraryLines.parseLyrics(line) ?: Other
                 "WAKE" -> Wake(
                     macs = parts.getOrNull(1)?.takeUnless { it == "-" }?.split(',')?.filter { WakeOnLan.macBytes(it) != null }.orEmpty(),
                     broadcasts = parts.getOrNull(2)?.takeUnless { it == "-" }?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
@@ -270,6 +276,15 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     /** Plays the source at [number] (from 1) in the list on the TV. The PC answers OPENING or CANT_OPEN. */
     fun pickSource(number: Int) = send("PICK_SOURCE $number")
+
+    /** The music queue; the answer comes back as [ServerLine.Queue]. */
+    fun requestQueue() = send("QUEUE")
+
+    /** "play", "next" or "remove" on a queued track; the PC answers with the queue as it then is. */
+    fun queueAction(action: String, videoId: String) = send("QUEUE_${action.uppercase()} ${RemoteProtocol.encode(videoId)}")
+
+    /** The playing song's lyrics; the answer comes back as [ServerLine.LyricsText]. */
+    fun requestLyrics() = send("LYRICS")
 
     /** Nuvio's catalog search; answers come back as [ServerLine.SearchResults] while it fills. */
     fun search(query: String) = send("SEARCH ${RemoteProtocol.encode(query)}")

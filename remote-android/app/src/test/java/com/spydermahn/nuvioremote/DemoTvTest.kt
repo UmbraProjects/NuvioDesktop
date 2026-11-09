@@ -73,6 +73,23 @@ class DemoTvTest {
     }
 
     @Test
+    fun readsThePcsQueueAndLyricsLines() {
+        // The lines PhoneRemoteMusicLinesTest on the PC side produces.
+        val queue = ServerLine.parse(
+            "QUEUE 0 abc,Billie%20Jean,Michael%20Jackson,294,https%3A%2F%2Fimg%2Fc.jpg,0;def,Beat%20It,Michael%20Jackson,258,-,1",
+            0L,
+        ) as ServerLine.Queue
+        assertEquals(0, queue.playing)
+        assertEquals("Beat It", queue.tracks[1].title)
+        assertTrue(queue.tracks[1].upcoming)
+        val lyrics = ServerLine.parse("LYRICS synced Billie%20Jean 1200,She%20was%20more%20like%20a%20beauty%20queen;5400,-", 0L) as ServerLine.LyricsText
+        assertEquals("Billie Jean", lyrics.title)
+        assertEquals(LyricLine(1200L, "She was more like a beauty queen"), lyrics.lines[0])
+        assertEquals(LyricLine(5400L, ""), lyrics.lines[1])
+        assertEquals(0, (ServerLine.parse("LYRICS none - -", 0L) as ServerLine.LyricsText).lines.size)
+    }
+
+    @Test
     fun readsThePcsSearchLine() {
         // The exact line PhoneRemoteSearchTest on the PC side produces.
         val line = ServerLine.parse(
@@ -135,6 +152,20 @@ class DemoTvTest {
         assertTrue(song.canSkip)
         session.key(RemoteKey.Next)
         assertEquals("Neon Weather", lines.next<ServerLine.State>().nowPlaying.title)
+
+        // The queue: five songs, the second playing; removing one and playing another.
+        session.requestQueue()
+        val queue = lines.next<ServerLine.Queue>()
+        assertEquals(1, queue.playing)
+        assertEquals(5, queue.tracks.size)
+        assertTrue(queue.tracks[3].upcoming)
+        session.queueAction("remove", queue.tracks[2].videoId)
+        assertEquals(4, lines.next<ServerLine.Queue>().tracks.size)
+        session.requestLyrics()
+        val lyrics = lines.next<ServerLine.LyricsText>()
+        assertTrue(lyrics.synced)
+        assertEquals("Neon Weather", lyrics.title)
+        assertEquals(2_000L, lyrics.lines.first().timeMs)
 
         // Continue Watching lists, and Resume plays from where it stopped.
         session.requestContinue()

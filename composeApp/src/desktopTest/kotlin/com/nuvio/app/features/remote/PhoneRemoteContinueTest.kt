@@ -91,3 +91,27 @@ class PhoneRemoteWakeTest {
         assertEquals("WAKE - -", PhoneRemoteProtocol.wakeLine(emptyList(), emptyList()))
     }
 }
+
+class PhoneRemoteMusicLinesTest {
+    @Test
+    fun theQueueAndLyricsTravelAsOneLineEach() {
+        assertEquals(
+            "QUEUE 0 abc,Billie%20Jean,Michael%20Jackson,294,https%3A%2F%2Fimg%2Fc.jpg,0;def,Beat%20It,Michael%20Jackson,258,-,1",
+            PhoneRemoteLibraryLines.queueLine(
+                0,
+                listOf(
+                    RemoteQueueTrack("abc", "Billie Jean", "Michael Jackson", 294, "https://img/c.jpg", upcoming = false),
+                    RemoteQueueTrack("def", "Beat It", "Michael Jackson", 258, null, upcoming = true),
+                ),
+            ),
+        )
+        assertEquals(
+            "LYRICS synced Billie%20Jean 1200,She%20was%20more%20like%20a%20beauty%20queen;5400,-",
+            PhoneRemoteLibraryLines.lyricsLine("synced", "Billie Jean", listOf(1200L to "She was more like a beauty queen", 5400L to "")),
+        )
+        assertEquals("LYRICS none - -", PhoneRemoteLibraryLines.lyricsLine("none", null, emptyList()))
+        assertEquals(RemoteMessage.QueueAction("remove", "def"), PhoneRemoteProtocol.parse("QUEUE_REMOVE def"))
+        assertEquals(RemoteMessage.Queue, PhoneRemoteProtocol.parse("QUEUE"))
+        assertEquals(RemoteMessage.LyricsRequest, PhoneRemoteProtocol.parse("LYRICS"))
+    }
+}

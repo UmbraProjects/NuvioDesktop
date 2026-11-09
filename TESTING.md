@@ -104,6 +104,15 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] If it does not wake within about 90 s, the remote says so
 - [ ] Demo TV: More › Demo TV › Sleep drops the phone; Wake brings it back after a few seconds
 
+### Phone remote: music queue and lyrics (phase 8)
+
+- [ ] Music screen keys are Back, Queue, Lyrics, Dark, More (Search is on the pad view now)
+- [ ] Queue opens a sheet of the TV's queue (cover, title, artist, length), the playing song highlighted and scrolled to
+- [ ] Tapping a song in the queue plays it on the TV; Play next and Remove (on songs still to come) change the queue, and the sheet shows the change
+- [ ] Lyrics (or a tap on the cover) shows the song's lyrics in the cover's place; timed ones follow the song with the sung line bright and kept in view
+- [ ] Lyrics follow to the next song by themselves; a song with none says so
+- [ ] Demo TV: an album's queue and pretend timed lyrics
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)

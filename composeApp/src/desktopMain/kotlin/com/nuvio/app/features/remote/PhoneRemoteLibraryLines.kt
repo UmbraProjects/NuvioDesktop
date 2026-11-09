@@ -54,6 +54,17 @@ internal data class RemoteResume(
     val progressPermille: Int,
 )
 
+/** A track in the music player's queue, as the phone lists it. */
+internal data class RemoteQueueTrack(
+    val videoId: String,
+    val title: String,
+    val artist: String,
+    val seconds: Int,
+    val cover: String?,
+    /** After the playing one: can be moved next or removed. */
+    val upcoming: Boolean,
+)
+
 internal data class RemoteArtist(val id: String, val name: String, val photo: String?, val starred: Boolean)
 
 internal data class RemoteAlbum(
@@ -95,6 +106,20 @@ internal object PhoneRemoteLibraryLines {
                 url(title.poster), url(title.posterFallback), flag(title.watched),
             )
         }
+
+    /** `QUEUE <playing index> <tracks>`; see PhoneRemoteMusic. */
+    fun queueLine(playing: Int, tracks: List<RemoteQueueTrack>): String =
+        "QUEUE $playing " + records(tracks) { t ->
+            listOf(text(t.videoId), text(t.title), text(t.artist), t.seconds.coerceAtLeast(0).toString(), url(t.cover), flag(t.upcoming))
+        }
+
+    /** `LYRICS synced|plain|none <title> <lines>`, each line its time in ms (`-` for plain) and its text. */
+    fun lyricsLine(kind: String, title: String?, lines: List<Pair<Long?, String>>): String =
+        "LYRICS $kind ${text(title)} " + records(lines.take(MAX_LYRIC_LINES)) { (time, words) ->
+            listOf(time?.coerceAtLeast(0L)?.toString() ?: "-", text(words))
+        }
+
+    private const val MAX_LYRIC_LINES = 400
 
     fun musicLine(ready: Boolean, artists: List<RemoteArtist>, albums: List<RemoteAlbum>): String =
         "LIBRARY $MUSIC ${flag(ready)} " +

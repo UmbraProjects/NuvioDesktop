@@ -136,6 +136,11 @@ internal object PhoneRemoteProtocol {
             // fork:phone-remote continue watching.
             "CONTINUE" -> RemoteMessage.Continue
             // fork:phone-remote search: Nuvio's catalog search, from the phone.
+            // fork:phone-remote music: the queue and the lyrics, see PhoneRemoteMusic.
+            "QUEUE" -> RemoteMessage.Queue
+            "QUEUE_PLAY", "QUEUE_NEXT", "QUEUE_REMOVE" -> parts.getOrNull(1)?.let(::decode)?.takeIf { it.isNotBlank() }
+                ?.let { RemoteMessage.QueueAction(parts[0].removePrefix("QUEUE_").lowercase(), it) }
+            "LYRICS" -> RemoteMessage.LyricsRequest
             "SEARCH" -> parts.getOrNull(1)?.let(::decode)?.trim()?.take(200)?.takeIf { it.isNotEmpty() }?.let { RemoteMessage.Search(it) }
             // fork:phone-remote sources: play the nth source of the list on screen.
             "PICK_SOURCE" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickSource(it) }
@@ -166,6 +171,9 @@ internal sealed interface RemoteMessage {
     data class Resume(val parentId: String, val videoId: String) : RemoteMessage
     data class PickSource(val number: Int) : RemoteMessage
     data class Search(val query: String) : RemoteMessage
+    data object Queue : RemoteMessage
+    data class QueueAction(val action: String, val videoId: String) : RemoteMessage
+    data object LyricsRequest : RemoteMessage
 }
 
 internal enum class AlbumAction(val wire: String) {
