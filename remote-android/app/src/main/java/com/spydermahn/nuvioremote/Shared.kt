@@ -67,6 +67,19 @@ class PcStore(context: Context) {
             prefs.edit().putString(KEY_PAD, value.name).apply()
         }
 
+    /** A PC's network cards and broadcast addresses (from its WAKE line), to wake it later. */
+    fun wake(address: String): ServerLine.Wake? {
+        val saved = prefs.getString("$KEY_WAKE$address", null) ?: return null
+        val macs = saved.substringBefore('|').split(',').filter { it.isNotBlank() }
+        if (macs.isEmpty()) return null
+        return ServerLine.Wake(macs, saved.substringAfter('|', "").split(',').filter { it.isNotBlank() })
+    }
+
+    fun saveWake(address: String, wake: ServerLine.Wake) {
+        if (wake.macs.isEmpty()) return
+        prefs.edit().putString("$KEY_WAKE$address", wake.macs.joinToString(",") + "|" + wake.broadcasts.joinToString(",")).apply()
+    }
+
     /** Dark mode's brightness, Medium until changed. */
     var darkLevel: DarkLevel
         get() = runCatching { DarkLevel.valueOf(prefs.getString(KEY_DARK, null) ?: "") }.getOrDefault(DarkLevel.Medium)
@@ -83,6 +96,7 @@ class PcStore(context: Context) {
         const val KEY_THEME = "theme_"
         const val KEY_PAD = "pad_mode"
         const val KEY_DARK = "dark_level"
+        const val KEY_WAKE = "wake_"
     }
 }
 

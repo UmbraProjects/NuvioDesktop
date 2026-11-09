@@ -60,6 +60,8 @@ internal fun PhoneRemoteSection(isTablet: Boolean) {
                             append(state.addresses.joinToString(" or ") { "$it:${state.port}" })
                             append(".")
                         }
+                        append(" To wake this PC from the phone while it sleeps, turn on Wake on Magic Packet for its network card ")
+                        append("(Device Manager › the network adapter › Power Management and Advanced) and Wake-on-LAN in the BIOS.")
                         if (state.pairedDevices.isNotEmpty()) {
                             append(" Paired: ${state.pairedDevices.joinToString(", ")}.")
                         }

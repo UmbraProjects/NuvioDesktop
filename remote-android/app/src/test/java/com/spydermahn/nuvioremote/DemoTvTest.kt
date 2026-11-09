@@ -165,4 +165,21 @@ class DemoTvTest {
         assertTrue(DemoTv.log.value.isNotEmpty())
         session.close()
     }
+
+    @Test
+    fun sleepsAndWakesFromTheWakeUpPacket() {
+        val (session, lines) = connect()
+        val wake = lines.next<ServerLine.Wake>()
+        DemoTv.sleep()
+        Thread.sleep(200)
+        val asleep = RemoteSession.open(DemoTv.HOST, DemoTv.PORT)
+        assertTrue(asleep.hello(null, "Test phone") is HelloResult.Refused)
+        asleep.close()
+        assertTrue(WakeOnLan.send(wake.macs, wake.broadcasts) > 0)
+        Thread.sleep(4_600)
+        val awake = RemoteSession.open(DemoTv.HOST, DemoTv.PORT)
+        assertEquals(HelloResult.PinRequired, awake.hello(null, "Test phone"))
+        awake.close()
+        session.close()
+    }
 }

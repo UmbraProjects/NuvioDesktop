@@ -88,6 +88,14 @@ internal object PhoneRemoteProtocol {
 
     private fun hex(argb: Int): String = "%06X".format(argb and 0xFFFFFF)
 
+    /**
+     * `WAKE <mac,mac> <broadcast,broadcast>`: this PC's network cards (twelve hex digits each) and the broadcast
+     * addresses of its home networks, sent after SUBSCRIBE. The phone keeps them to wake the PC from sleep later with a
+     * Wake-on-LAN packet. `-` when there are none.
+     */
+    fun wakeLine(macs: List<String>, broadcasts: List<String>): String =
+        "WAKE ${macs.joinToString(",").ifEmpty { "-" }} ${broadcasts.joinToString(",").ifEmpty { "-" }}"
+
     private const val MAX_FIELD_CHARS = 200
     private const val MAX_URL_CHARS = 1500
 

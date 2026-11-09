@@ -94,6 +94,8 @@ sealed interface ServerLine {
     data class Continue(val items: List<ResumeItem>) : ServerLine
     /** The source list on the TV; null once it closes. */
     data class Sources(val list: SourceList?) : ServerLine
+    /** The PC's network cards and home-network broadcast addresses, kept to wake it from sleep. */
+    data class Wake(val macs: List<String>, val broadcasts: List<String>) : ServerLine
     /** What Nuvio's search found for [query] in the addons' catalogs, so far while [loading]. */
     data class SearchResults(val loading: Boolean, val query: String, val titles: List<LibraryTitle>) : ServerLine
     data object Other : ServerLine
@@ -111,6 +113,10 @@ sealed interface ServerLine {
                 "CONTINUE" -> LibraryLines.parseContinue(line) ?: Other
                 "SOURCES" -> LibraryLines.parseSources(line) ?: Other
                 "SEARCH_RESULTS" -> LibraryLines.parseSearch(line) ?: Other
+                "WAKE" -> Wake(
+                    macs = parts.getOrNull(1)?.takeUnless { it == "-" }?.split(',')?.filter { WakeOnLan.macBytes(it) != null }.orEmpty(),
+                    broadcasts = parts.getOrNull(2)?.takeUnless { it == "-" }?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
+                )
                 "THEME" -> RemoteTheme.parse(parts)?.let(::Theme) ?: Other
                 else -> Other
             }

@@ -60,6 +60,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.OpenWith
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.Replay10
@@ -224,6 +225,7 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
                 }
             },
         )
+        if (state.canWake && (state.link == Link.Offline || state.waking)) WakeCard(state, viewModel)
         if (DemoTv.isDemo(state.current)) DemoLogStrip()
         if (typing) TypingPanel(viewModel, onClose = { typing = false })
 
@@ -713,6 +715,12 @@ private fun MoreSheet(state: UiState, viewModel: RemoteViewModel, onType: () -> 
                     GlassKey(Icons.Rounded.Stop, "Stop") { DemoTv.stop(); onDismiss() }
                     GlassKey(Icons.Rounded.Palette, "Theme") { DemoTv.nextTheme() }
                 }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    GlassKey(Icons.Rounded.PowerSettingsNew, "Sleep") { DemoTv.sleep(); onDismiss() }
+                    Spacer(Modifier.size(60.dp))
+                    Spacer(Modifier.size(60.dp))
+                    Spacer(Modifier.size(60.dp))
+                }
             }
             Text("The phone's volume buttons turn the TV up and down too.", color = g.textMuted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
@@ -763,6 +771,36 @@ private fun TypingPanel(viewModel: RemoteViewModel, onClose: () -> Unit) {
             onClose()
         }) {
             Icon(Icons.Rounded.Close, contentDescription = "Close keyboard", tint = g.textMuted)
+        }
+    }
+}
+
+/** While the PC is out of reach: wake it from sleep (Wake-on-LAN), then the app keeps trying to connect. */
+@Composable
+private fun WakeCard(state: UiState, viewModel: RemoteViewModel) {
+    val g = LocalGlass.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .glass(RoundedCornerShape(16.dp), fill = g.tint, edge = g.tintEdge)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            GlassLabel(if (state.waking) "Waking it up" else "Asleep or off?")
+            Text(
+                if (state.waking) "Sent the wake-up. Connecting as soon as ${state.current?.name ?: "the PC"} answers…"
+                else "Wake ${state.current?.name ?: "the PC"} from here.",
+                color = g.text,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        if (state.waking) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(22.dp), color = g.accent, strokeWidth = 2.dp)
+        } else {
+            GlassTag("Wake", icon = Icons.Rounded.PowerSettingsNew, accent = true, onClick = viewModel::wakePc)
         }
     }
 }

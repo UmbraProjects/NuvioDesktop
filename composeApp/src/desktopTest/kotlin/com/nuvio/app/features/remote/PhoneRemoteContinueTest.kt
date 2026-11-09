@@ -80,3 +80,14 @@ class PhoneRemoteSearchTest {
         assertNull(PhoneRemoteProtocol.parse("SEARCH %20"))
     }
 }
+
+class PhoneRemoteWakeTest {
+    @Test
+    fun theWakeLineCarriesTheCardsAndBroadcasts() {
+        assertEquals(
+            "WAKE 001A2B3C4D5E,A0B1C2D3E4F5 192.168.1.255",
+            PhoneRemoteProtocol.wakeLine(listOf("001A2B3C4D5E", "A0B1C2D3E4F5"), listOf("192.168.1.255")),
+        )
+        assertEquals("WAKE - -", PhoneRemoteProtocol.wakeLine(emptyList(), emptyList()))
+    }
+}

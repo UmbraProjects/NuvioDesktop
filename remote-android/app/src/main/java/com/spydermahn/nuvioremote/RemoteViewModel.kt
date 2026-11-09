@@ -44,6 +44,10 @@ data class UiState(
     val sources: SourceList? = null,
     /** Nuvio's catalog search for the Watch tab's query; null until asked. */
     val search: SearchState? = null,
+    /** The PC can be woken from the phone (it told the app its network card); offered while it is offline. */
+    val canWake: Boolean = false,
+    /** Waking it: the packet went, and the app is waiting for it to come up. */
+    val waking: Boolean = false,
     val music: MusicLibraryState = MusicLibraryState(),
     /** A short line about something just sent ("Opening Blade Runner on the TV"); clears itself. */
     val notice: String? = null,
@@ -101,7 +105,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     init {
         val lastPc = store.last()
         if (lastPc != null) {
-            _state.update { it.copy(screen = Screen.Remote, current = lastPc, link = Link.Connecting) }
+            _state.update { it.copy(screen = Screen.Remote, current = lastPc, link = Link.Connecting, canWake = store.wake(lastPc.address) != null) }
         } else {
             scan()
         }
@@ -372,7 +376,9 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         }
         saveAll(_state.value.saved.filterNot { it.address == pc.address } + pc)
         store.lastAddress = pc.address
-        _state.update { it.copy(busy = false, message = null, screen = Screen.Remote, current = pc, link = Link.Connected) }
+        _state.update {
+            it.copy(busy = false, message = null, screen = Screen.Remote, current = pc, link = Link.Connected, waking = false, canWake = store.wake(pc.address) != null)
+        }
         session?.let(::listenTo)
         startKeepAlive()
     }
@@ -393,6 +399,10 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     is ServerLine.MusicLibrary -> onMusicLibrary(line)
                     is ServerLine.Continue -> _state.update { it.copy(continueWatching = line.items) }
                     is ServerLine.Sources -> _state.update { it.copy(sources = line.list) }
+                    is ServerLine.Wake -> _state.value.current?.let { pc ->
+                        store.saveWake(pc.address, line)
+                        _state.update { it.copy(canWake = line.macs.isNotEmpty()) }
+                    }
                     is ServerLine.SearchResults -> _state.update { state ->
                         // Only the answer to the latest query: an older one still arriving is dropped.
                         if (state.search?.query?.equals(line.query, ignoreCase = true) == true) {
@@ -562,6 +572,33 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     /** Asks again every time the Watch tab shows: what is in progress changes with every film. */
     fun loadContinue() = sendOrReconnect { it.requestContinue() }
 
+    private var wakeJob: Job? = null
+
+    /**
+     * Wakes the PC from sleep (a Wake-on-LAN packet to its network card), then keeps trying to connect for a minute and
+     * a half while it starts up.
+     */
+    fun wakePc() {
+        val pc = _state.value.current ?: return
+        val wake = store.wake(pc.address) ?: return
+        _state.update { it.copy(waking = true, message = null) }
+        io.execute {
+            val sent = runCatching { WakeOnLan.send(wake.macs, wake.broadcasts + pc.host) }.getOrDefault(0)
+            if (sent == 0) _state.update { it.copy(waking = false, message = "Couldn't send the wake-up. Is the phone on the home Wi-Fi?") }
+        }
+        wakeJob?.cancel()
+        wakeJob = viewModelScope.launch {
+            repeat(WAKE_TRIES) {
+                delay(WAKE_RETRY_MS)
+                if (_state.value.link == Link.Connected) return@launch
+                reconnect()
+            }
+            if (_state.value.link != Link.Connected) {
+                _state.update { it.copy(waking = false, message = "${pc.name} didn't wake. Check Wake-on-LAN is on for its network card.") }
+            }
+        }
+    }
+
     /** Searches every catalog on the PC (as its Search tab does); blank clears it. */
     fun searchEverywhere(query: String) {
         val trimmed = query.trim()
@@ -606,5 +643,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         const val SILENT_MS = 12_000L
         const val PING_INTERVAL_MS = 5_000L
         const val RETRY_MS = 3_000L
+        const val WAKE_RETRY_MS = 3_000L
+        const val WAKE_TRIES = 30
     }
 }

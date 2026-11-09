@@ -67,6 +67,11 @@ object DemoTv {
                 } catch (_: IOException) {
                     break
                 }
+                // Asleep: as a sleeping PC, nothing answers.
+                if (asleep) {
+                    runCatching { accepted.close() }
+                    continue
+                }
                 Client(accepted).also(clients::add).start()
             }
         }, "demo-tv-accept").apply { isDaemon = true }.start()
@@ -238,6 +243,26 @@ object DemoTv {
         broadcastState()
     }
 
+    @Volatile
+    private var asleep = false
+
+    /** Puts the pretend PC to sleep: every phone is dropped and nothing answers until a wake-up packet arrives. */
+    fun sleep() {
+        note("Gone to sleep")
+        asleep = true
+        clients.forEach { runCatching { it.drop() } }
+    }
+
+    /** A Wake-on-LAN packet for the demo's own card arrived (see WakeOnLan): up again after a few seconds. */
+    fun wake(packet: ByteArray) {
+        val mac = WakeOnLan.macBytes(DEMO_MAC) ?: return
+        if (!asleep || !packet.contentEquals(WakeOnLan.magicPacket(mac))) return
+        ticker.schedule({
+            asleep = false
+            note("Woken by the phone")
+        }, 4, TimeUnit.SECONDS)
+    }
+
     /** The next of a few themes, as if the TV's theme had been changed in Settings. */
     fun nextTheme() {
         synchronized(this) { themeIndex = (themeIndex + 1) % themes.size }
@@ -372,6 +397,8 @@ object DemoTv {
             clients.remove(this)
         }
 
+        fun drop() = close()
+
         private fun run() {
             try {
                 var trusted = false
@@ -409,6 +436,7 @@ object DemoTv {
                     send(stateLine())
                     send(themeLine())
                     send(sourcesLine(complete = true))
+                    send("WAKE $DEMO_MAC $HOST")
                 }
                 "KEY" -> onKey(parts.getOrElse(1) { "" })
                 "TEXT" -> note("Typed \"${RemoteProtocol.decode(parts.getOrElse(1) { "" })}\"")
@@ -508,6 +536,8 @@ object DemoTv {
     }
 
     private const val LOG_SIZE = 6
+    /** The pretend PC's network card, for Wake-on-LAN. */
+    private const val DEMO_MAC = "02DE40DE40AA"
     private val STATE_KEYS = setOf(
         RemoteKey.PlayPause, RemoteKey.SeekBack, RemoteKey.SeekForward, RemoteKey.Next, RemoteKey.Previous,
         RemoteKey.Subtitles, RemoteKey.Audio, RemoteKey.VolumeUp, RemoteKey.VolumeDown, RemoteKey.Mute, RemoteKey.Back,

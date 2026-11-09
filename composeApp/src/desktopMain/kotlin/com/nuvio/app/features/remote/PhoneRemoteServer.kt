@@ -126,6 +126,10 @@ internal class PhoneRemoteServer(
     @Volatile
     private var lastSources: String? = null
 
+    /** This PC's WAKE line (see PhoneRemoteProtocol.wakeLine), for phones to wake it from sleep later. */
+    @Volatile
+    var wakeLine: String? = null
+
     /** The source list on screen (see PhoneRemoteLibraryLines.sourcesLine), for every subscribed phone. */
     fun publishSources(line: String) {
         lastSources = line
@@ -245,6 +249,7 @@ internal class PhoneRemoteServer(
                                 send(lastState)
                                 lastTheme?.let(::send)
                                 lastSources?.let(::send)
+                                wakeLine?.let(::send)
                             }
                             is RemoteMessage.Seek -> listener.onSeek(message.positionMs)
                             is RemoteMessage.Volume -> listener.onVolume(message.volume)

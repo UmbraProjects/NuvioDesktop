@@ -129,6 +129,7 @@ internal object PhoneRemote {
             log = { message -> log.i { message } },
         )
         created.start()
+        created.wakeLine = wakeInfo()
         server = created
         watchState(created)
         watchTheme(created)
@@ -446,6 +447,24 @@ internal object PhoneRemote {
         System.getenv("COMPUTERNAME")?.takeIf { it.isNotBlank() }
             ?: runCatching { InetAddress.getLocalHost().hostName }.getOrNull()?.takeIf { it.isNotBlank() }
             ?: "Nuvio"
+
+    /**
+     * fork:phone-remote wake: the network cards behind this PC's home-network addresses, and those networks' broadcast
+     * addresses, so a phone can send a Wake-on-LAN packet to it while it sleeps.
+     */
+    private fun wakeInfo(): String = runCatching {
+        val cards = NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && !it.isLoopback && !it.isVirtual }
+            .filter { card -> card.inetAddresses.toList().any { it is Inet4Address && it.isSiteLocalAddress } }
+        val macs = cards.mapNotNull { card ->
+            card.hardwareAddress?.takeIf { it.size == 6 }?.joinToString("") { "%02X".format(it) }
+        }.distinct()
+        val broadcasts = cards.flatMap { it.interfaceAddresses }
+            .filter { it.address is Inet4Address && it.address.isSiteLocalAddress }
+            .mapNotNull { it.broadcast?.hostAddress }
+            .distinct()
+        PhoneRemoteProtocol.wakeLine(macs, broadcasts)
+    }.getOrDefault(PhoneRemoteProtocol.wakeLine(emptyList(), emptyList()))
 
     /** The PC's home-network addresses, for typing into the phone when discovery is blocked. */
     private fun localAddresses(): List<String> = runCatching {

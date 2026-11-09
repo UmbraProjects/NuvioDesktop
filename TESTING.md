@@ -96,6 +96,14 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] A search on the phone while the TV is on its own Search tab does not upset it
 - [ ] Demo TV: searching "signal" shows The Long Signal and two pretend catalog results
 
+### Phone remote: wake the PC (phase 7)
+
+- [ ] Once connected with this Nuvio, the remote remembers the PC's network card (no setting needed on the phone)
+- [ ] With the PC asleep, the remote shows "Asleep or off?" with a Wake tag; Wake sends the wake-up, shows "Waking it up", and connects once the PC is up
+- [ ] On the PC: Wake on Magic Packet on for the network card (Device Manager) and Wake-on-LAN in the BIOS, as Settings › Phone remote now says
+- [ ] If it does not wake within about 90 s, the remote says so
+- [ ] Demo TV: More › Demo TV › Sleep drops the phone; Wake brings it back after a few seconds
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)
