@@ -715,8 +715,8 @@ data class DemoSource(
 )
 
 private val DEMO_SOURCES = listOf(
-    DemoSource("Demo 4K HDR", "Pretend.Title.2160p.HDR.WEB-DL.mkv\n💾 18.4 GB  👤 212", "Demo addon", 18_400_000_000L, instant = true, playable = true),
-    DemoSource("Demo 1080p", "Pretend.Title.1080p.BluRay.x264.mkv\n💾 9.1 GB  👤 88", "Demo addon", 9_100_000_000L, instant = true, playable = true),
+    DemoSource("Demo 4K HDR", "Pretend.Title.2160p.WEB-DL.DV.HEVC.mkv\n💾 18.4 GB  👤 212", "Demo addon", 18_400_000_000L, instant = true, playable = true),
+    DemoSource("Demo 1080p", "Pretend.Title.1080p.BluRay.HDR10.x264.mkv\n💾 9.1 GB  👤 88", "Demo addon", 9_100_000_000L, instant = true, playable = true),
     DemoSource("Demo 720p", "Pretend.Title.720p.WEB.mkv\n💾 2.3 GB  👤 14", "Second demo addon", 2_300_000_000L, instant = false, playable = true),
     DemoSource("Demo P2P 1080p", "No debrid service: the TV greys this one out", "Second demo addon", 8_700_000_000L, instant = false, playable = false),
 )

@@ -143,6 +143,15 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 - [ ] A film with no built-in subtitles (the screenshot case): once the add-on subtitles are found, the Subtitles tile reads "Off" instead of "Tap for the next"; tapping it picks the first add-on subtitle and the tile shows its name; further taps go through the rest
 
+### Phone remote: Sources cards
+
+- [ ] Open a film's or episode's source list on the phone: each source is a card with the add-on's name on top, then badges for resolution (4K, 1080p), HDR or Dolby Vision, codec (HEVC, H.264) and size
+- [ ] The raw release name sits on one muted line under the badges; holding the card shows all of it, holding again hides it
+- [ ] A quick tap on a card still plays that source on the TV (and holding does not play it); greyed cards still do nothing
+- [ ] The filter row under the title (All, Instant, 4K, HDR, Dolby Vision) only offers filters that match something; tapping one narrows the list, tapping it again (or All) shows everything
+- [ ] A source whose name says nothing readable shows its name as before, not an empty card
+- [ ] Demo TV: the first source shows 4K, Dolby Vision and HEVC; the second shows 1080p, HDR10 and H.264
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)

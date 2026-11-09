@@ -10,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -385,16 +386,37 @@ private fun FilmBody(
 @Composable
 private fun SourcesBody(list: SourceList, viewModel: RemoteViewModel, onPad: () -> Unit) {
     val g = LocalGlass.current
-    var instantOnly by rememberSaveable { mutableStateOf(false) }
-    val shown = if (instantOnly) list.sources.filter { it.instant } else list.sources
+    // One filter at a time: "instant", "4k", "hdr" or "dv"; null shows everything.
+    var filter by rememberSaveable { mutableStateOf<String?>(null) }
+    val facts = remember(list.sources) { list.sources.associate { it.number to SourceBadges.read(it.name, it.detail) } }
+    val chips = buildList {
+        if (list.sources.any { it.instant }) add("instant" to "Instant")
+        if (list.sources.any { SourceBadges.matches(facts.getValue(it.number), SourceBadges.FOUR_K) }) add(SourceBadges.FOUR_K to "4K")
+        if (list.sources.any { SourceBadges.matches(facts.getValue(it.number), SourceBadges.HDR) }) add(SourceBadges.HDR to "HDR")
+        if (list.sources.any { SourceBadges.matches(facts.getValue(it.number), SourceBadges.DOLBY_VISION) }) add(SourceBadges.DOLBY_VISION to "Dolby Vision")
+    }
+    // A filter whose sources are gone (the list refreshed) falls back to showing everything.
+    val active = filter?.takeIf { key -> chips.any { it.first == key } }
+    val shown = when (active) {
+        null -> list.sources
+        "instant" -> list.sources.filter { it.instant }
+        else -> list.sources.filter { SourceBadges.matches(facts.getValue(it.number), active) }
+    }
+    var expanded by rememberSaveable { mutableStateOf(setOf<Int>()) }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                GlassLabel(if (list.loading) "Finding sources… ${list.sources.size} so far" else "${list.sources.size} sources")
-                DisplayTitle(list.title, Modifier.padding(top = 4.dp), size = 20, maxLines = 1)
-            }
-            if (list.sources.any { it.instant }) {
-                GlassTag("Instant", accent = instantOnly, onClick = { instantOnly = !instantOnly })
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            GlassLabel(if (list.loading) "Finding sources… ${list.sources.size} so far" else "${list.sources.size} sources")
+            DisplayTitle(list.title, Modifier.padding(top = 4.dp), size = 20, maxLines = 1)
+        }
+        if (chips.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 10.dp).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                GlassTag("All", accent = active == null, onClick = { filter = null })
+                chips.forEach { (key, label) ->
+                    GlassTag(label, accent = active == key, onClick = { filter = if (active == key) null else key })
+                }
             }
         }
         if (list.loading) {
@@ -410,14 +432,36 @@ private fun SourcesBody(list: SourceList, viewModel: RemoteViewModel, onPad: () 
         ) {
             items(shown.size, key = { shown[it].number }) { index ->
                 val source = shown[index]
+                val read = facts.getValue(source.number)
+                val release = SourceBadges.releaseName(source.detail)
+                val open = source.number in expanded
                 Column(
                     Modifier
                         .fillMaxWidth()
                         .glass(RoundedCornerShape(16.dp))
-                        .then(if (source.playable) Modifier.pressable { viewModel.pickSource(source) } else Modifier)
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .pointerInput(source.number, source.playable, open) {
+                            // Tap plays; hold shows or hides the whole release name.
+                            detectTapGestures(
+                                onTap = { if (source.playable) viewModel.pickSource(source) },
+                                onLongPress = { expanded = if (open) expanded - source.number else expanded + source.number },
+                            )
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            source.addon.takeIf { it.isNotBlank() } ?: "Source ${source.number}",
+                            color = g.accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (source.instant) GlassTag("Instant", accent = true)
+                    }
+                    if (read.all.isEmpty()) {
+                        // Nothing readable in the name: show it as the TV does.
                         Text(
                             source.name.replace('\n', ' '),
                             color = if (source.playable) g.text else g.textMuted,
@@ -425,19 +469,40 @@ private fun SourcesBody(list: SourceList, viewModel: RemoteViewModel, onPad: () 
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.padding(top = 6.dp),
                         )
-                        if (source.instant) GlassTag("Instant", accent = true)
+                    } else {
+                        Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            read.resolution?.let { GlassTag(it.label, accent = source.playable) }
+                            read.hdr?.let { GlassTag(it.label) }
+                            read.codec?.let { GlassTag(it.label) }
+                            read.extras.forEach { GlassTag(it.label) }
+                            source.sizeLabel?.let { GlassTag(it) }
+                        }
                     }
-                    Text(
-                        listOfNotNull(source.addon.takeIf { it.isNotBlank() }, source.sizeLabel).joinToString(" · "),
-                        color = g.accent,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                    source.detail?.let {
-                        Text(it, color = g.textSecondary, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                    if (read.all.isEmpty()) {
+                        source.sizeLabel?.let { Text(it, color = g.textSecondary, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+                    }
+                    if (release != null) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                release,
+                                color = g.textSecondary,
+                                fontSize = 12.sp,
+                                maxLines = if (open) 4 else 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Icon(
+                                if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                contentDescription = null,
+                                tint = g.textSecondary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
             }
