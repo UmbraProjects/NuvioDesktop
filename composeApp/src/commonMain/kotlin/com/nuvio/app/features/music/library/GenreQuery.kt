@@ -157,16 +157,16 @@ internal fun detectGenreQuery(raw: String, offlineKnown: (String) -> Boolean = {
  */
 internal fun looksLikeRealTag(tag: String, candidates: List<LadderCandidate>): Boolean {
     val key = genreKey(tag)
-    if (key.isEmpty() || candidates.size < MIN_TAG_ARTISTS) return false
+    if (key.isEmpty() || candidates.size < MIN_GENRE_ARTISTS) return false
     val strong = candidates.count { c ->
         val own = c.votes.entries.firstOrNull { genreKey(it.key) == key }?.value ?: 0
-        own >= MIN_TAG_VOTES
+        own >= MIN_GENRE_VOTES
     }
-    return strong >= MIN_TAG_ARTISTS
+    return strong >= MIN_GENRE_ARTISTS
 }
 
-private const val MIN_TAG_ARTISTS = 8
-private const val MIN_TAG_VOTES = 2
+private const val MIN_GENRE_ARTISTS = 8
+private const val MIN_GENRE_VOTES = 2
 
 /** The playlist to play for a genre card: its own radio first, then a playlist named for it, then any radio. Null when none. */
 internal fun pickGenreStation(playlists: List<com.nuvio.app.features.music.MusicPlaylistSummary>, genre: GenreQuery): com.nuvio.app.features.music.MusicPlaylistSummary? {
