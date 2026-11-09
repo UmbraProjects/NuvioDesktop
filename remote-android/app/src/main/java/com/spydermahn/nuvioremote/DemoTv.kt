@@ -172,7 +172,7 @@ object DemoTv {
             Mode.Music -> {
                 val s = songs.getOrNull(songIndex) ?: return "IDLE"
                 "STATE music ${if (playing) 1 else 0} $position ${s.durationMs} $shownVolume 100 1 ${field(s.title)} " +
-                    "${field("${s.artist} · ${s.album}")} ${field(s.image)} - - - 0 $sleepMinutes ${if (shuffle) 1 else 0} $repeat ${if (liked) 1 else 0}"
+                    "${field("${s.artist} · ${s.album}")} ${field(s.image)} - - - - 0 $sleepMinutes ${if (shuffle) 1 else 0} $repeat ${if (liked) 1 else 0}"
             }
         }
     }
