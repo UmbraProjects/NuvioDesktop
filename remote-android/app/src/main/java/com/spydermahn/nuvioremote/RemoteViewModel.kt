@@ -44,6 +44,8 @@ data class UiState(
     /** The TV's theme; the phone wears it. */
     val theme: RemoteTheme = RemoteTheme.Default,
     val padMode: PadMode = PadMode.Touchpad,
+    /** Dark mode: the phone black and dim, gestures anywhere (see DarkModeScreen). */
+    val dark: Boolean = false,
 )
 
 /** Where a library list stands. [problem] is set when the PC never answered (a Nuvio from before the library). */
@@ -154,7 +156,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         io.execute { closeSession() }
         store.lastAddress = null
         NowPlayingService.stop(getApplication())
-        _state.update { it.copy(screen = Screen.Pick, link = Link.Offline, message = null, busy = false, nowPlaying = null, cover = null) }
+        _state.update { it.copy(screen = Screen.Pick, link = Link.Offline, message = null, busy = false, nowPlaying = null, cover = null, dark = false) }
         scan()
     }
 
@@ -217,6 +219,18 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun cancelPairing() = showPicker()
+
+    // --- Debug mode: the pretend TV inside the app (DemoTv), for testing away from the PC. ---
+
+    /** Connects to the demo TV; the first time it asks for its code, [DemoTv.PIN], like a real PC. */
+    fun tryDemo() {
+        io.execute { DemoTv.startAndWait() }
+        openAndGreet(DemoTv.NAME, DemoTv.HOST, DemoTv.PORT, token = _state.value.saved.firstOrNull(DemoTv::isDemo)?.token)
+    }
+
+    fun setDark(on: Boolean) {
+        _state.update { it.copy(dark = on) }
+    }
 
     // --- The remote ---
 

@@ -1,0 +1,467 @@
+package com.spydermahn.nuvioremote
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import java.io.BufferedReader
+import java.io.IOException
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+
+/**
+ * A pretend Nuvio, inside the app, for testing the remote away from the PC (debug mode). It listens on the phone's own
+ * loopback address and speaks the real protocol, so the app connects to it exactly as it does to a PC: pairing (code
+ * [PIN]), keys, typing, now playing, seeking, volume, the library and the TV's theme all go over the same code. It plays
+ * pretend films and albums whose clock runs like the real one, and keeps a log of what it was sent ([log]).
+ *
+ * Mirrors the PC's PhoneRemoteServer only as far as the phone can see it; nothing here is used when talking to a PC.
+ */
+object DemoTv {
+    const val HOST = "127.0.0.1"
+    const val PORT = 47399
+    const val PIN = "123456"
+    const val NAME = "Demo TV"
+    private const val TOKEN = "demo-token"
+
+    val address: String get() = "$HOST:$PORT"
+
+    fun isDemo(pc: SavedPc?): Boolean = pc != null && pc.host == HOST && pc.port == PORT
+
+    private val _log = MutableStateFlow<List<String>>(emptyList())
+
+    /** The last things the pretend TV was sent, newest last. */
+    val log: StateFlow<List<String>> = _log.asStateFlow()
+
+    @Volatile
+    private var server: ServerSocket? = null
+    private val clients = CopyOnWriteArrayList<Client>()
+    private val ticker = Executors.newSingleThreadScheduledExecutor { Thread(it, "demo-tv-clock").apply { isDaemon = true } }
+
+    private val ready = java.util.concurrent.CountDownLatch(1)
+    private var started = false
+
+    /** Starts listening, once, on a thread of its own; later calls do nothing. */
+    @Synchronized
+    fun start() {
+        if (started) return
+        started = true
+        Thread({
+            val socket = try {
+                ServerSocket(PORT, 8, InetAddress.getByName(HOST))
+            } catch (_: IOException) {
+                ready.countDown()
+                return@Thread
+            }
+            server = socket
+            ready.countDown()
+            while (!socket.isClosed) {
+                val accepted = try {
+                    socket.accept()
+                } catch (_: IOException) {
+                    break
+                }
+                Client(accepted).also(clients::add).start()
+            }
+        }, "demo-tv-accept").apply { isDaemon = true }.start()
+        // Music moves on to the next song at the end of one, as the TV does.
+        ticker.scheduleWithFixedDelay({ advanceIfEnded() }, 1, 1, TimeUnit.SECONDS)
+    }
+
+    /** [start], then wait (briefly) until it is listening. Not on the main thread. */
+    fun startAndWait() {
+        start()
+        ready.await(2, TimeUnit.SECONDS)
+    }
+
+    // ------------------------------------------------------------------------------------------ What the TV is doing
+
+    private data class Film(val title: String, val subtitle: String, val image: String?, val durationMs: Long)
+
+    private data class Song(val title: String, val artist: String, val album: String, val image: String?, val durationMs: Long)
+
+    private enum class Mode { Browsing, Film, Music }
+
+    private val subtitleTracks = listOf("Off", "English", "English SDH", "French")
+    private val audioTracks = listOf("English 5.1", "English Stereo", "Commentary")
+
+    private val themes = listOf(
+        "1E88E5 - 0D0D0F", // Ocean, Nuvio's default
+        "E53935 - 0D0D0D", // Crimson
+        "FFD700 FF8800 0B0F10", // a custom gold gradient
+        "8E24AA 26C6DA 0C0B12", // a custom violet to teal
+    )
+
+    private var mode = Mode.Browsing
+    private var film: Film? = null
+    private var songs: List<Song> = emptyList()
+    private var songIndex = 0
+    private var playing = false
+    private var basePositionMs = 0L
+    private var baseAtMs = 0L
+    private var volume = 70
+    private var muted = false
+    private var subtitleIndex = 1
+    private var audioIndex = 0
+    private var themeIndex = 0
+
+    // The JVM clock rather than SystemClock, so the demo also runs in plain unit tests.
+    private fun now() = System.nanoTime() / 1_000_000L
+
+    @Synchronized
+    private fun position(): Long {
+        val moved = if (playing) basePositionMs + (now() - baseAtMs) else basePositionMs
+        return moved.coerceIn(0L, durationMs())
+    }
+
+    @Synchronized
+    private fun durationMs(): Long = when (mode) {
+        Mode.Film -> film?.durationMs ?: 0L
+        Mode.Music -> songs.getOrNull(songIndex)?.durationMs ?: 0L
+        Mode.Browsing -> 0L
+    }
+
+    @Synchronized
+    private fun setPosition(ms: Long) {
+        basePositionMs = ms.coerceIn(0L, durationMs())
+        baseAtMs = now()
+    }
+
+    @Synchronized
+    private fun stateLine(): String {
+        fun field(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+        val position = position()
+        val shownVolume = if (muted) 0 else volume
+        return when (mode) {
+            Mode.Browsing -> "IDLE"
+            Mode.Film -> {
+                val f = film ?: return "IDLE"
+                "STATE film ${if (playing) 1 else 0} $position ${f.durationMs} $shownVolume 100 0 ${field(f.title)} " +
+                    "${field(f.subtitle)} ${field(f.image)} ${field(subtitleTracks[subtitleIndex])} ${field(audioTracks[audioIndex])}"
+            }
+            Mode.Music -> {
+                val s = songs.getOrNull(songIndex) ?: return "IDLE"
+                "STATE music ${if (playing) 1 else 0} $position ${s.durationMs} $shownVolume 100 1 ${field(s.title)} " +
+                    "${field("${s.artist} · ${s.album}")} ${field(s.image)} - -"
+            }
+        }
+    }
+
+    private fun themeLine(): String = "THEME " + themes[themeIndex]
+
+    private fun broadcastState() {
+        val line = stateLine()
+        clients.forEach { if (it.subscribed) it.send(line) }
+    }
+
+    private fun broadcast(line: String) {
+        clients.forEach { if (it.subscribed) it.send(line) }
+    }
+
+    private fun note(text: String) {
+        _log.update { (it + text).takeLast(LOG_SIZE) }
+    }
+
+    // ------------------------------------------------------------------------------------------ Controls for testing
+
+    /** Starts a pretend film, as if it had been picked on the TV. */
+    fun playFilm(title: String = "Blade Runner 2049", subtitle: String = "2017 · Sci-Fi · 2h 44m") {
+        synchronized(this) {
+            mode = Mode.Film
+            film = Film(title, subtitle, poster(title), (2 * 60 + 44) * 60_000L)
+            playing = true
+            setPosition(17 * 60_000L)
+        }
+        note("Playing the film $title")
+        broadcastState()
+    }
+
+    /** Starts a pretend album. */
+    fun playMusic(album: DemoAlbum = DEMO_ALBUMS.first(), shuffle: Boolean = false) {
+        synchronized(this) {
+            mode = Mode.Music
+            songs = album.tracks.map { (title, seconds) -> Song(title, album.artist, album.title, cover(album.title), seconds * 1_000L) }
+                .let { if (shuffle) it.shuffled() else it }
+            songIndex = 0
+            playing = true
+            setPosition(0L)
+        }
+        note("Playing ${album.title}${if (shuffle) " (shuffled)" else ""}")
+        broadcastState()
+    }
+
+    /** Back to browsing, as if the player had been closed. */
+    fun stop() {
+        synchronized(this) {
+            mode = Mode.Browsing
+            playing = false
+        }
+        note("Player closed")
+        broadcastState()
+    }
+
+    /** The next of a few themes, as if the TV's theme had been changed in Settings. */
+    fun nextTheme() {
+        synchronized(this) { themeIndex = (themeIndex + 1) % themes.size }
+        note("Theme changed")
+        broadcast(themeLine())
+    }
+
+    private fun advanceIfEnded() {
+        val ended = synchronized(this) {
+            if (mode != Mode.Music || !playing || position() < durationMs()) return@synchronized false
+            if (songIndex + 1 < songs.size) {
+                songIndex++
+                setPosition(0L)
+            } else {
+                playing = false
+                setPosition(durationMs())
+            }
+            true
+        }
+        if (ended) broadcastState()
+    }
+
+    // ------------------------------------------------------------------------------------------ The protocol
+
+    private fun onKey(wire: String) {
+        val key = RemoteKey.entries.firstOrNull { it.wire == wire }
+        note("Key ${key?.name ?: wire}")
+        synchronized(this) {
+            when (key) {
+                RemoteKey.PlayPause -> if (mode != Mode.Browsing) {
+                    setPosition(position())
+                    playing = !playing
+                }
+                RemoteKey.SeekBack -> if (mode != Mode.Browsing) setPosition(position() - 10_000L)
+                RemoteKey.SeekForward -> if (mode != Mode.Browsing) setPosition(position() + 10_000L)
+                RemoteKey.Next -> if (mode == Mode.Music && songIndex + 1 < songs.size) {
+                    songIndex++
+                    setPosition(0L)
+                }
+                RemoteKey.Previous -> if (mode == Mode.Music) {
+                    if (position() > 3_000L || songIndex == 0) setPosition(0L) else {
+                        songIndex--
+                        setPosition(0L)
+                    }
+                }
+                RemoteKey.Subtitles -> subtitleIndex = (subtitleIndex + 1) % subtitleTracks.size
+                RemoteKey.Audio -> audioIndex = (audioIndex + 1) % audioTracks.size
+                RemoteKey.VolumeUp -> { volume = (volume + 5).coerceAtMost(100); muted = false }
+                RemoteKey.VolumeDown -> volume = (volume - 5).coerceAtLeast(0)
+                RemoteKey.Mute -> muted = !muted
+                // Back out of the player, as on the TV.
+                RemoteKey.Back -> if (mode != Mode.Browsing) mode = Mode.Browsing
+                else -> Unit
+            }
+        }
+        if (key in STATE_KEYS) broadcastState()
+    }
+
+    private fun libraryLine(kind: String): String {
+        fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+        return when (kind) {
+            LibraryLines.VIDEO -> "LIBRARY video 1 " + DEMO_TITLES.joinToString(";") { t ->
+                listOf(f(t.section), f(t.type), f(t.id), f(t.name), f(t.year), f(poster(t.name)), "-", if (t.watched) "1" else "0").joinToString(",")
+            }
+            else -> {
+                val artists = DEMO_ALBUMS.map { it.artist }.distinct().joinToString(";") { name ->
+                    listOf(f(artistId(name)), f(name), f(photo(name)), if (name == DEMO_ALBUMS.first().artist) "1" else "0").joinToString(",")
+                }
+                val albums = DEMO_ALBUMS.joinToString(";") { a ->
+                    listOf(f(artistId(a.artist)), f(a.id), f(a.title), f(a.kind), f(a.year), f(cover(a.title)), if (a.starred) "1" else "0").joinToString(",")
+                }
+                "LIBRARY music 1 $artists $albums"
+            }
+        }
+    }
+
+    private class Client(private val socket: Socket) {
+        private val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+        private val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8)
+
+        @Volatile
+        var subscribed = false
+            private set
+
+        fun start() {
+            Thread({ run() }, "demo-tv-client").apply { isDaemon = true }.start()
+        }
+
+        @Synchronized
+        fun send(line: String) {
+            try {
+                writer.write(line)
+                writer.write("\n")
+                writer.flush()
+            } catch (_: IOException) {
+                close()
+            }
+        }
+
+        private fun close() {
+            runCatching { socket.close() }
+            clients.remove(this)
+        }
+
+        private fun run() {
+            try {
+                var trusted = false
+                while (!socket.isClosed) {
+                    val line = reader.readLine() ?: break
+                    val parts = line.trim().split(' ')
+                    when (parts[0]) {
+                        "HELLO" -> {
+                            trusted = parts.getOrNull(2) == TOKEN
+                            note("Hello from ${RemoteProtocol.decode(parts.getOrElse(3) { "a phone" })}")
+                            send(if (trusted) "WELCOME ${RemoteProtocol.encode(NAME)}" else "PIN_REQUIRED")
+                        }
+                        "PAIR" -> if (parts.getOrNull(1) == PIN) {
+                            trusted = true
+                            note("Paired")
+                            send("PAIRED $TOKEN ${RemoteProtocol.encode(NAME)}")
+                        } else {
+                            note("Wrong code ${parts.getOrNull(1).orEmpty()}")
+                            send("BAD_PIN")
+                        }
+                        "PING" -> send("PONG")
+                        else -> if (trusted) onCommand(parts) else send("PIN_REQUIRED")
+                    }
+                }
+            } catch (_: IOException) {
+            } finally {
+                close()
+            }
+        }
+
+        private fun onCommand(parts: List<String>) {
+            when (parts[0]) {
+                "SUBSCRIBE" -> {
+                    subscribed = true
+                    send(stateLine())
+                    send(themeLine())
+                }
+                "KEY" -> onKey(parts.getOrElse(1) { "" })
+                "TEXT" -> note("Typed \"${RemoteProtocol.decode(parts.getOrElse(1) { "" })}\"")
+                "SEEK" -> {
+                    val ms = parts.getOrNull(1)?.toLongOrNull() ?: return
+                    setPosition(ms)
+                    note("Seek to ${ms / 60_000}:${"%02d".format((ms / 1000) % 60)}")
+                    broadcastState()
+                }
+                "VOLUME" -> {
+                    val level = parts.getOrNull(1)?.toIntOrNull() ?: return
+                    synchronized(DemoTv) { volume = level.coerceIn(0, 100) }
+                    note("Volume $level")
+                    broadcastState()
+                }
+                "LIBRARY" -> {
+                    val kind = parts.getOrElse(1) { LibraryLines.VIDEO }
+                    note("Library ($kind) asked for")
+                    send(libraryLine(kind))
+                }
+                "OPEN_TITLE" -> {
+                    val id = RemoteProtocol.decode(parts.getOrElse(2) { "" })
+                    val title = DEMO_TITLES.firstOrNull { it.id == id }
+                    if (title == null) {
+                        send("CANT_OPEN")
+                    } else {
+                        send("OPENING ${RemoteProtocol.encode(title.name)}")
+                        note("Opened ${title.name}; plays in 2 s, as if a source was picked")
+                        ticker.schedule({ playFilm(title.name, listOfNotNull(title.year, title.section).joinToString(" · ")) }, 2, TimeUnit.SECONDS)
+                    }
+                }
+                "PLAY_ALBUM" -> {
+                    val album = DEMO_ALBUMS.firstOrNull { it.id == RemoteProtocol.decode(parts.getOrElse(1) { "" }) } ?: return
+                    when (parts.getOrNull(2)) {
+                        "queue" -> note("Queued ${album.title}")
+                        "shuffle" -> playMusic(album, shuffle = true)
+                        else -> playMusic(album)
+                    }
+                }
+                "ARTIST" -> {
+                    val id = RemoteProtocol.decode(parts.getOrElse(1) { "" })
+                    val albums = DEMO_ALBUMS.filter { artistId(it.artist) == id }
+                    if (albums.isEmpty()) return
+                    val mixed = DemoAlbum("${albums.first().artist} mix", albums.first().artist, "mix-$id", "Mix", null, false, albums.flatMap { it.tracks })
+                    playMusic(mixed, shuffle = parts.getOrNull(2) == "mix")
+                }
+                "OPEN" -> {
+                    val link = RemoteProtocol.decode(parts.getOrElse(1) { "" })
+                    note("Sent a link: $link")
+                    if (link.startsWith("http")) {
+                        send("OPENING ${RemoteProtocol.encode("the link")}")
+                        playFilm("A shared video", link.take(60))
+                    } else {
+                        send("CANT_OPEN")
+                    }
+                }
+                else -> note("Unknown: ${parts[0]}")
+            }
+        }
+    }
+
+    private const val LOG_SIZE = 6
+    private val STATE_KEYS = setOf(
+        RemoteKey.PlayPause, RemoteKey.SeekBack, RemoteKey.SeekForward, RemoteKey.Next, RemoteKey.Previous,
+        RemoteKey.Subtitles, RemoteKey.Audio, RemoteKey.VolumeUp, RemoteKey.VolumeDown, RemoteKey.Mute, RemoteKey.Back,
+    )
+
+    // Pictures from picsum.photos (free placeholder photos, the same one per name); without a connection the app shows
+    // its usual placeholder instead.
+    private fun poster(name: String) = "https://picsum.photos/seed/${slug(name)}/300/450"
+    private fun cover(name: String) = "https://picsum.photos/seed/${slug(name)}/400/400"
+    private fun photo(name: String) = "https://picsum.photos/seed/${slug(name)}-artist/300/300"
+    private fun slug(name: String) = name.lowercase().filter { it.isLetterOrDigit() }.ifEmpty { "nuvio" }
+    private fun artistId(name: String) = "demo-artist-" + slug(name)
+}
+
+data class DemoTitle(val section: String, val type: String, val id: String, val name: String, val year: String?, val watched: Boolean)
+
+data class DemoAlbum(
+    val title: String,
+    val artist: String,
+    val id: String,
+    val kind: String,
+    val year: String?,
+    val starred: Boolean,
+    /** Title and length in seconds. */
+    val tracks: List<Pair<String, Int>>,
+)
+
+// Invented titles, so nothing here stands for a real film or record.
+private val DEMO_TITLES = listOf(
+    DemoTitle("Continue watching", "movie", "demo-m1", "The Long Signal", "2021", false),
+    DemoTitle("Continue watching", "series", "demo-s1", "Harbour Lights", "2019", false),
+    DemoTitle("Library", "movie", "demo-m2", "Glass Orchard", "2018", true),
+    DemoTitle("Library", "movie", "demo-m3", "Northbound Night Train", "2023", false),
+    DemoTitle("Library", "series", "demo-s2", "The Quiet Engineers", "2022", false),
+    DemoTitle("Library", "movie", "demo-m4", "A Very Long Title For Testing How Cards Cope With Names That Run On", "2020", false),
+    DemoTitle("Watchlist", "movie", "demo-m5", "Paper Lanterns", "2024", false),
+    DemoTitle("Watchlist", "series", "demo-s3", "Low Tide", "2017", true),
+)
+
+val DEMO_ALBUMS = listOf(
+    DemoAlbum(
+        "Neon Weather", "The Static Hours", "demo-a1", "Album", "2019", true,
+        listOf("Opening Frequencies" to 42, "Neon Weather" to 214, "Glasshouse" to 187, "Night Bus" to 233, "Slow Return" to 268),
+    ),
+    DemoAlbum(
+        "Field Recordings", "The Static Hours", "demo-a2", "EP", "2021", false,
+        listOf("Morning Room" to 156, "Rain on Tin" to 201, "Last Light" to 245),
+    ),
+    DemoAlbum(
+        "Small Hours", "Mira Okafor", "demo-a3", "Album", "2022", false,
+        listOf("Small Hours" to 198, "Driftwood" to 176, "Copper Sky" to 222, "Lullaby for Engines" to 264),
+    ),
+    DemoAlbum(
+        "Coastline (Single)", "Mira Okafor", "demo-a4", "Single", "2023", false,
+        listOf("Coastline" to 189),
+    ),
+)

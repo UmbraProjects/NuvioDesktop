@@ -196,6 +196,15 @@ private fun RemoteApp(viewModel: RemoteViewModel) {
         }
     }
     }
+    // Over everything, edge to edge: the bars are hidden while it shows.
+    if (state.dark && state.screen == Screen.Remote) {
+        DarkModeScreen(
+            playing = state.nowPlaying,
+            link = state.link,
+            onKey = viewModel::press,
+            onLeave = { viewModel.setDark(false) },
+        )
+    }
 }
 
 /** Every text style in Nuvio's typeface. */
@@ -279,6 +288,20 @@ private fun PickScreen(state: UiState, viewModel: RemoteViewModel) {
                 enabled = !state.busy,
                 onClick = { viewModel.connectTo(pc) },
             )
+        }
+
+        item {
+            SectionLabel("Debug mode")
+            Text(
+                "No PC to hand? The demo TV runs inside this app and answers like Nuvio: pairing (code ${DemoTv.PIN}), the remote, " +
+                    "a pretend film and album, the library and the TV's colours. It keeps a list of what it was sent.",
+                color = Muted,
+                fontSize = 14.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(onClick = viewModel::tryDemo, enabled = !state.busy) {
+                Text("Try the demo TV")
+            }
         }
 
         item {
@@ -373,6 +396,10 @@ private fun PairScreen(screen: Screen.Pair, state: UiState, viewModel: RemoteVie
             color = Muted,
             textAlign = TextAlign.Center,
         )
+        if (screen.host == DemoTv.HOST && screen.port == DemoTv.PORT) {
+            Spacer(Modifier.height(8.dp))
+            Text("The demo TV's code is ${DemoTv.PIN}.", color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
+        }
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
             value = pin,

@@ -21,6 +21,12 @@ data class SavedPc(val name: String, val host: String, val port: Int, val token:
 class PcStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("nuvio_remote", Context.MODE_PRIVATE)
 
+    init {
+        // The demo TV lives in the app: once it has been paired, it is started wherever the paired PCs are read (the
+        // remote, the lock-screen controls, Send to Nuvio), so it is there to answer like a real PC.
+        if (saved().any(DemoTv::isDemo)) DemoTv.start()
+    }
+
     fun saved(): List<SavedPc> = prefs.getStringSet(KEY_SAVED, emptySet()).orEmpty().mapNotNull { entry ->
         val parts = entry.split('|', limit = 4)
         if (parts.size < 4) return@mapNotNull null

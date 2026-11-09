@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CropSquare
+import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.OpenWith
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RadioButtonChecked
@@ -63,6 +65,7 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SettingsRemote
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,6 +74,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -193,6 +197,7 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
                 }
             },
         )
+        if (DemoTv.isDemo(state.current)) DemoLogStrip()
         if (typing) TypingPanel(viewModel, onClose = { typing = false })
 
         when {
@@ -279,6 +284,7 @@ private fun FilmBody(playing: NowPlaying, cover: Bitmap?, padMode: PadMode, view
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp, start = 24.dp, end = 24.dp), horizontalArrangement = Arrangement.SpaceAround) {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 56.dp) { viewModel.press(RemoteKey.Back) }
             GlassKey(Icons.AutoMirrored.Rounded.List, "Sources", size = 56.dp) { viewModel.press(RemoteKey.Sources) }
+            GlassKey(Icons.Rounded.DarkMode, "Dark", size = 56.dp) { viewModel.setDark(true) }
             GlassKey(Icons.Rounded.MoreHoriz, "More", size = 56.dp, onPress = onMore)
         }
     }
@@ -317,6 +323,7 @@ private fun MusicBody(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteView
         Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp, start = 24.dp, end = 24.dp), horizontalArrangement = Arrangement.SpaceAround) {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 52.dp) { viewModel.press(RemoteKey.Back) }
             GlassKey(Icons.Rounded.Search, "Search", size = 52.dp, onPress = onSearch)
+            GlassKey(Icons.Rounded.DarkMode, "Dark", size = 52.dp) { viewModel.setDark(true) }
             GlassKey(Icons.Rounded.MoreHoriz, "More", size = 52.dp, onPress = onMore)
         }
     }
@@ -562,8 +569,20 @@ private fun MoreSheet(state: UiState, viewModel: RemoteViewModel, onType: () -> 
                     onDismiss()
                     viewModel.showPicker()
                 }
+                GlassKey(Icons.Rounded.DarkMode, "Dark") {
+                    onDismiss()
+                    viewModel.setDark(true)
+                }
                 Spacer(Modifier.size(60.dp))
-                Spacer(Modifier.size(60.dp))
+            }
+            if (DemoTv.isDemo(state.current)) {
+                GlassLabel("Demo TV")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    GlassKey(Icons.Rounded.Movie, "Film") { DemoTv.playFilm(); onDismiss() }
+                    GlassKey(Icons.Rounded.MusicNote, "Album") { DemoTv.playMusic(); onDismiss() }
+                    GlassKey(Icons.Rounded.Stop, "Stop") { DemoTv.stop(); onDismiss() }
+                    GlassKey(Icons.Rounded.Palette, "Theme") { DemoTv.nextTheme() }
+                }
             }
             Text("The phone's volume buttons turn the TV up and down too.", color = g.textMuted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
@@ -606,5 +625,28 @@ private fun TypingPanel(viewModel: RemoteViewModel, onClose: () -> Unit) {
         }) {
             Icon(Icons.Rounded.Close, contentDescription = "Close keyboard", tint = g.textMuted)
         }
+    }
+}
+
+/** On the demo TV: the last few things it was sent, so a press can be checked without a TV to look at. */
+@Composable
+private fun DemoLogStrip() {
+    val g = LocalGlass.current
+    val log by DemoTv.log.collectAsState()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .glass(RoundedCornerShape(14.dp), fill = g.tint, edge = g.tintEdge)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        GlassLabel("Demo TV received")
+        Text(
+            log.takeLast(3).reversed().joinToString("  ·  ").ifEmpty { "Nothing yet" },
+            color = g.text,
+            fontSize = 13.sp,
+            maxLines = 1,
+            modifier = Modifier.padding(top = 4.dp).basicMarquee(initialDelayMillis = 800),
+        )
     }
 }

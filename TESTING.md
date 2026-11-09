@@ -38,6 +38,19 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] More sheet: Mute, Vol −, Vol +, Type, D-pad/Touchpad, Other PC (2026-11-08)
 - [x] Watch and Music tabs in the glass style: header label, glass search, pill chips, section labels with counts, glass album sheet (2026-11-08)
 
+### Phone remote: Dark mode and the demo TV (phase 2)
+
+- [ ] Dark mode: the Dark key (film or music screen, or More) turns the phone black and dim, hides the status and navigation bars, and the screen stays on
+- [ ] Dark mode hints (tap, swipe, hold) show for a few seconds and fade; Back brings them back instead of leaving
+- [ ] Dark mode, a film: tap is play/pause, swipe left/right is 10 s back/ahead per step with a tick each, swipe up/down is volume; each shows faintly in the middle
+- [ ] Dark mode, music: swipe left/right is the previous/next song (one per swipe)
+- [ ] Dark mode: holding a finger anywhere for a second draws a faint ring and leaves; brightness and the bars come back
+- [ ] Demo TV: Try the demo TV (on the PC list) asks for the code 123456, then connects as "Demo TV" and stays in the paired list
+- [ ] Demo TV: the "Demo TV received" strip shows each key, swipe and typed text
+- [ ] Demo TV: More > Demo TV plays a film or an album, stops it, and changes the theme (the app follows)
+- [ ] Demo TV: Watch and Music tabs show the pretend library (with photos when online); opening a title plays it after 2 s; an album plays, shuffles, next and previous work
+- [ ] Demo TV: the lock-screen controls show the pretend film or song and work
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)
