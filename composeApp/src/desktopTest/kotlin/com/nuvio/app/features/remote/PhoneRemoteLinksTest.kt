@@ -75,7 +75,7 @@ class PhoneRemoteLinksTest {
         assertEquals("IDLE", PhoneRemoteProtocol.stateLine(null))
         assertEquals(
             "STATE film 1 5000 7200000 80 150 0 Blade%20Runner%202049 S01E02%20%C2%B7%20Pilot https%3A%2F%2Fimg%2Fp.jpg " +
-                "English%20SDH English%205.1",
+                "English%20SDH English%205.1 - - 0 0 - - -",
             PhoneRemoteProtocol.stateLine(
                 RemoteNowPlaying(
                     kind = "film", title = "Blade Runner 2049", subtitle = "S01E02 · Pilot", imageUrl = "https://img/p.jpg",

@@ -128,7 +128,7 @@ class PhoneRemoteServerTest {
             phone.send("PING")
             assertEquals("PONG", phone.receive())
             phone.send("SUBSCRIBE")
-            assertEquals("STATE music 0 1000 0 - 100 0 Billie%20Jean - - - -", phone.receive())
+            assertEquals("STATE music 0 1000 0 - 100 0 Billie%20Jean - - - - - - 0 0 - - -", phone.receive())
             // The theme published before the phone subscribed follows its first STATE, and a change is pushed.
             assertEquals("THEME 1E88E5 - 0D0D0F", phone.receive())
             server.publishTheme("THEME E53935 - 0D0D0D")
