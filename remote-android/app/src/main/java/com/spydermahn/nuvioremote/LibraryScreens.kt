@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -560,9 +562,16 @@ fun MusicLibraryScreen(state: UiState, viewModel: RemoteViewModel, onPlayed: () 
     }
 
     picked?.let { album ->
+        LaunchedEffect(album.browseId) { viewModel.loadAlbumTracks(album) }
         AlbumSheet(
             album = album,
             artist = artistsById[album.artistId],
+            tracks = state.albumTracks?.takeIf { it.browseId == album.browseId },
+            onTrack = { index ->
+                viewModel.playTrack(album, index)
+                picked = null
+                onPlayed()
+            },
             onDismiss = { picked = null },
             onAction = { action ->
                 viewModel.album(album, action)
@@ -726,6 +735,9 @@ private fun ActionButton(label: String, icon: ImageVector, primary: Boolean = fa
 private fun AlbumSheet(
     album: LibraryAlbum,
     artist: LibraryArtistInfo?,
+    /** The album's songs, once the PC has sent them; null while asking. */
+    tracks: ServerLine.AlbumTracks?,
+    onTrack: (index: Int) -> Unit,
     onDismiss: () -> Unit,
     onAction: (AlbumAction) -> Unit,
     onArtist: (LibraryArtistInfo) -> Unit,
@@ -760,6 +772,37 @@ private fun AlbumSheet(
             if (artist != null) {
                 Spacer(Modifier.height(4.dp))
                 TextButton(onClick = { onArtist(artist) }) { Text("More by ${artist.name}") }
+            }
+            // The songs: tap one to play the album from it, as clicking a song on the album page does on the TV.
+            Spacer(Modifier.height(8.dp))
+            GlassLabel(if (tracks == null) "Songs · asking the TV…" else "Songs · ${tracks.tracks.size}")
+            val g = LocalGlass.current
+            if (tracks != null && tracks.tracks.isEmpty()) {
+                Text("The TV couldn't fetch this album's songs.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+            }
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(top = 8.dp)) {
+                items(tracks?.tracks.orEmpty().size) { index ->
+                    val track = tracks!!.tracks[index]
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(enabled = track.upcoming) { onTrack(index) }
+                            .padding(horizontal = 6.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("${index + 1}", color = g.textMuted, fontSize = 13.sp, modifier = Modifier.width(28.dp))
+                        Text(
+                            track.title,
+                            color = if (track.upcoming) g.text else g.textMuted,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (track.seconds > 0) Text(formatTime(track.seconds * 1000L), color = g.textSecondary, fontSize = 12.sp)
+                    }
+                }
             }
         }
     }

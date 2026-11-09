@@ -141,6 +141,10 @@ internal object PhoneRemoteProtocol {
             "QUEUE_PLAY", "QUEUE_NEXT", "QUEUE_REMOVE" -> parts.getOrNull(1)?.let(::decode)?.takeIf { it.isNotBlank() }
                 ?.let { RemoteMessage.QueueAction(parts[0].removePrefix("QUEUE_").lowercase(), it) }
             "LYRICS" -> RemoteMessage.LyricsRequest
+            "ALBUM_TRACKS" -> parts.getOrNull(1)?.let(::decode)?.takeIf { it.isNotBlank() }?.let { RemoteMessage.AlbumTracks(it) }
+            "PLAY_TRACK" -> if (parts.size >= 3) {
+                parts[2].toIntOrNull()?.takeIf { it >= 0 }?.let { RemoteMessage.PlayTrack(decode(parts[1]), it) }?.takeIf { it.browseId.isNotBlank() }
+            } else null
             "SEARCH" -> parts.getOrNull(1)?.let(::decode)?.trim()?.take(200)?.takeIf { it.isNotEmpty() }?.let { RemoteMessage.Search(it) }
             // fork:phone-remote sources: play the nth source of the list on screen.
             "PICK_SOURCE" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickSource(it) }
@@ -174,6 +178,8 @@ internal sealed interface RemoteMessage {
     data object Queue : RemoteMessage
     data class QueueAction(val action: String, val videoId: String) : RemoteMessage
     data object LyricsRequest : RemoteMessage
+    data class AlbumTracks(val browseId: String) : RemoteMessage
+    data class PlayTrack(val browseId: String, val index: Int) : RemoteMessage
 }
 
 internal enum class AlbumAction(val wire: String) {

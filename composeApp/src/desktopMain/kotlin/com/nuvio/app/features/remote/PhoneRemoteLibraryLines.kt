@@ -113,6 +113,15 @@ internal object PhoneRemoteLibraryLines {
             listOf(text(t.videoId), text(t.title), text(t.artist), t.seconds.coerceAtLeast(0).toString(), url(t.cover), flag(t.upcoming))
         }
 
+    /**
+     * `ALBUM_TRACKS <browseId> <tracks>`: an album's songs for the phone's album sheet, each videoId, title, artist,
+     * seconds and playable 0|1. The phone plays one with `PLAY_TRACK <browseId> <index>` (from 0, in this order).
+     */
+    fun albumTracksLine(browseId: String, tracks: List<RemoteQueueTrack>): String =
+        "ALBUM_TRACKS ${text(browseId)} " + records(tracks) { t ->
+            listOf(text(t.videoId), text(t.title), text(t.artist), t.seconds.coerceAtLeast(0).toString(), flag(t.upcoming))
+        }
+
     /** `LYRICS synced|plain|none <title> <lines>`, each line its time in ms (`-` for plain) and its text. */
     fun lyricsLine(kind: String, title: String?, lines: List<Pair<Long?, String>>): String =
         "LYRICS $kind ${text(title)} " + records(lines.take(MAX_LYRIC_LINES)) { (time, words) ->

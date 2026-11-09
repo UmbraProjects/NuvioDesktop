@@ -115,3 +115,22 @@ class PhoneRemoteMusicLinesTest {
         assertEquals(RemoteMessage.LyricsRequest, PhoneRemoteProtocol.parse("LYRICS"))
     }
 }
+
+class PhoneRemoteAlbumTracksTest {
+    @Test
+    fun anAlbumsSongsTravelAsOneLine() {
+        assertEquals(
+            "ALBUM_TRACKS MPREb_1 abc,Billie%20Jean,Michael%20Jackson,294,1;def,Gone,Michael%20Jackson,0,0",
+            PhoneRemoteLibraryLines.albumTracksLine(
+                "MPREb_1",
+                listOf(
+                    RemoteQueueTrack("abc", "Billie Jean", "Michael Jackson", 294, null, upcoming = true),
+                    RemoteQueueTrack("def", "Gone", "Michael Jackson", 0, null, upcoming = false),
+                ),
+            ),
+        )
+        assertEquals(RemoteMessage.AlbumTracks("MPREb_1"), PhoneRemoteProtocol.parse("ALBUM_TRACKS MPREb_1"))
+        assertEquals(RemoteMessage.PlayTrack("MPREb_1", 3), PhoneRemoteProtocol.parse("PLAY_TRACK MPREb_1 3"))
+        assertNull(PhoneRemoteProtocol.parse("PLAY_TRACK MPREb_1 -1"))
+    }
+}

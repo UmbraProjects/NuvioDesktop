@@ -11,13 +11,16 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.ViewConfiguration
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,7 +45,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -122,87 +124,78 @@ fun DarkModeScreen(
         }
     }
 
+    // Hold to leave takes a full second here, not the usual half: a resting thumb must not drop you out.
+    val baseConfig = LocalViewConfiguration.current
+    val holdConfig = remember(baseConfig) {
+        object : ViewConfiguration by baseConfig {
+            override val longPressTimeoutMillis: Long get() = HOLD_MS
+        }
+    }
+    CompositionLocalProvider(LocalViewConfiguration provides holdConfig) {
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
+            // The same two detectors as the remote's touchpad (which works on every phone): taps and the hold in one, the
+            // swipe in the other. The hand-made single detector before this read no swipes at all on a OnePlus.
             .pointerInput(Unit) {
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    holdAt = down.position
-                    var dx = 0f
-                    var dy = 0f
-                    var moved = false
-                    var lifted = false
-                    var usedByControl = false
-                    // Phase one: until the finger lifts (a tap), moves (a swipe) or stays a second (hold to leave).
-                    val decided = withTimeoutOrNull(HOLD_MS) {
-                        while (true) {
-                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                            if (!change.pressed) {
-                                lifted = true
-                                // A tap a control used (a brightness pill) is not also play/pause.
-                                usedByControl = change.isConsumed
-                                break
-                            }
-                            dx += change.positionChange().x
-                            dy += change.positionChange().y
-                            if (abs(dx) > viewConfiguration.touchSlop || abs(dy) > viewConfiguration.touchSlop) {
-                                moved = true
-                                break
-                            }
-                        }
-                        true
+                detectTapGestures(
+                    onPress = { at ->
+                        holdAt = at
+                        tryAwaitRelease()
+                        holdAt = null
+                    },
+                    onTap = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        send(RemoteKey.PlayPause)
+                        show(if (isPlaying) "Pause" else "Play")
+                    },
+                    onLongPress = {
+                        holdAt = null
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        leave()
+                    },
+                )
+            }
+            .pointerInput(Unit) {
+                var travel = 0f
+                var horizontal: Boolean? = null
+                var songSent = false
+                detectDragGestures(
+                    onDragStart = {
+                        holdAt = null
+                        travel = 0f
+                        horizontal = null
+                        songSent = false
+                    },
+                ) { change, drag ->
+                    change.consume()
+                    // The first way the finger goes decides what the whole swipe does.
+                    val sideways = horizontal ?: (abs(drag.x) >= abs(drag.y)).also { horizontal = it }
+                    travel += if (sideways) drag.x else drag.y
+                    val step = when {
+                        sideways && music -> songStepPx
+                        sideways -> seekStepPx
+                        else -> volumeStepPx
                     }
-                    holdAt = null
-                    when {
-                        decided == null -> {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            leave()
-                            return@awaitEachGesture
+                    while (abs(travel) >= step) {
+                        val forward = travel > 0
+                        travel -= if (forward) step else -step
+                        if (sideways && music) {
+                            // One song per swipe, however long.
+                            if (songSent) continue
+                            songSent = true
+                            send(if (forward) RemoteKey.Next else RemoteKey.Previous)
+                            show(if (forward) "Next song" else "Previous song")
+                        } else if (sideways) {
+                            send(if (forward) RemoteKey.SeekForward else RemoteKey.SeekBack)
+                            show(if (forward) "+10 s" else "−10 s")
+                        } else {
+                            // Up the screen is louder.
+                            send(if (forward) RemoteKey.VolumeDown else RemoteKey.VolumeUp)
+                            show(if (forward) "Volume −" else "Volume +")
                         }
-                        lifted && usedByControl -> return@awaitEachGesture
-                        lifted && !moved -> {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            send(RemoteKey.PlayPause)
-                            show(if (isPlaying) "Pause" else "Play")
-                            return@awaitEachGesture
-                        }
-                        !moved -> return@awaitEachGesture
-                    }
-                    // Phase two: a swipe. The first direction travelled decides what it does, for the whole swipe.
-                    val horizontal = abs(dx) >= abs(dy)
-                    var travel = if (horizontal) dx else dy
-                    var songSent = false
-                    while (true) {
-                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) break
-                        change.consume()
-                        travel += if (horizontal) change.positionChange().x else change.positionChange().y
-                        val step = when {
-                            horizontal && music -> songStepPx
-                            horizontal -> seekStepPx
-                            else -> volumeStepPx
-                        }
-                        while (abs(travel) >= step) {
-                            val forward = travel > 0
-                            travel -= if (forward) step else -step
-                            if (horizontal && music) {
-                                // One song per swipe, however long.
-                                if (songSent) continue
-                                songSent = true
-                                send(if (forward) RemoteKey.Next else RemoteKey.Previous)
-                                show(if (forward) "Next song" else "Previous song")
-                            } else if (horizontal) {
-                                send(if (forward) RemoteKey.SeekForward else RemoteKey.SeekBack)
-                                show(if (forward) "+10 s" else "−10 s")
-                            } else {
-                                // Up the screen is louder.
-                                send(if (forward) RemoteKey.VolumeDown else RemoteKey.VolumeUp)
-                                show(if (forward) "Volume −" else "Volume +")
-                            }
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        }
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     }
                 }
             },
@@ -289,6 +282,7 @@ fun DarkModeScreen(
                     .background(Color(0x88FF5252), androidx.compose.foundation.shape.CircleShape),
             )
         }
+    }
     }
 }
 

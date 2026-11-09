@@ -96,6 +96,8 @@ sealed interface ServerLine {
     data class Sources(val list: SourceList?) : ServerLine
     /** The music player's queue and where the playing track is in it (-1 when nothing plays). */
     data class Queue(val playing: Int, val tracks: List<QueueTrack>) : ServerLine
+    /** An album's songs (each track's `upcoming` meaning it can be played); empty when the PC could not fetch it. */
+    data class AlbumTracks(val browseId: String, val tracks: List<QueueTrack>) : ServerLine
     /** The playing song's lyrics; empty [lines] when it has none. */
     data class LyricsText(val synced: Boolean, val title: String?, val lines: List<LyricLine>) : ServerLine
     /** The PC's network cards and home-network broadcast addresses, kept to wake it from sleep. */
@@ -119,6 +121,7 @@ sealed interface ServerLine {
                 "SEARCH_RESULTS" -> LibraryLines.parseSearch(line) ?: Other
                 "QUEUE" -> LibraryLines.parseQueue(line) ?: Other
                 "LYRICS" -> LibraryLines.parseLyrics(line) ?: Other
+                "ALBUM_TRACKS" -> LibraryLines.parseAlbumTracks(line) ?: Other
                 "WAKE" -> Wake(
                     macs = parts.getOrNull(1)?.takeUnless { it == "-" }?.split(',')?.filter { WakeOnLan.macBytes(it) != null }.orEmpty(),
                     broadcasts = parts.getOrNull(2)?.takeUnless { it == "-" }?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
@@ -282,6 +285,12 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     /** "play", "next" or "remove" on a queued track; the PC answers with the queue as it then is. */
     fun queueAction(action: String, videoId: String) = send("QUEUE_${action.uppercase()} ${RemoteProtocol.encode(videoId)}")
+
+    /** An album's songs; the answer comes back as [ServerLine.AlbumTracks]. */
+    fun albumTracks(browseId: String) = send("ALBUM_TRACKS ${RemoteProtocol.encode(browseId)}")
+
+    /** Plays the album on the TV from its [index]th song (from 0). The PC answers OPENING or CANT_OPEN. */
+    fun playTrack(browseId: String, index: Int) = send("PLAY_TRACK ${RemoteProtocol.encode(browseId)} $index")
 
     /** The playing song's lyrics; the answer comes back as [ServerLine.LyricsText]. */
     fun requestLyrics() = send("LYRICS")

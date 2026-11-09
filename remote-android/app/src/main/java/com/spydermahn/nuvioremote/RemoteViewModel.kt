@@ -48,6 +48,8 @@ data class UiState(
     val queue: ServerLine.Queue? = null,
     /** The playing song's lyrics, while the lyric view is open. */
     val lyrics: ServerLine.LyricsText? = null,
+    /** The songs of the album sheet that is open, once the PC has sent them. */
+    val albumTracks: ServerLine.AlbumTracks? = null,
     /** The PC can be woken from the phone (it told the app its network card); offered while it is offline. */
     val canWake: Boolean = false,
     /** Waking it: the packet went, and the app is waiting for it to come up. */
@@ -405,6 +407,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     is ServerLine.Sources -> _state.update { it.copy(sources = line.list) }
                     is ServerLine.Queue -> _state.update { it.copy(queue = line) }
                     is ServerLine.LyricsText -> _state.update { it.copy(lyrics = line) }
+                    is ServerLine.AlbumTracks -> _state.update { it.copy(albumTracks = line) }
                     is ServerLine.Wake -> _state.value.current?.let { pc ->
                         store.saveWake(pc.address, line)
                         _state.update { it.copy(canWake = line.macs.isNotEmpty()) }
@@ -579,6 +582,15 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     fun loadContinue() = sendOrReconnect { it.requestContinue() }
 
     // --- The music queue and lyrics (phase 8) ---
+
+    /** The album sheet's song list. */
+    fun loadAlbumTracks(album: LibraryAlbum) {
+        if (_state.value.albumTracks?.browseId == album.browseId) return
+        _state.update { it.copy(albumTracks = null) }
+        sendOrReconnect { it.albumTracks(album.browseId) }
+    }
+
+    fun playTrack(album: LibraryAlbum, index: Int) = sendOrReconnect { it.playTrack(album.browseId, index) }
 
     fun loadQueue() = sendOrReconnect { it.requestQueue() }
 

@@ -220,6 +220,25 @@ object LibraryLines {
         return ServerLine.Queue(playing = parts[1].toIntOrNull() ?: -1, tracks = tracks)
     }
 
+    /** `ALBUM_TRACKS <browseId> <tracks>`; mirrors `albumTracksLine` in the PC's PhoneRemoteLibraryLines.kt. */
+    fun parseAlbumTracks(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 2 || parts[0] != "ALBUM_TRACKS") return null
+        val tracks = records(parts.getOrNull(2)).mapNotNull { f ->
+            if (f.size < 5) return@mapNotNull null
+            QueueTrack(
+                videoId = f[0] ?: return@mapNotNull null,
+                title = f[1] ?: return@mapNotNull null,
+                artist = f[2].orEmpty(),
+                seconds = f[3]?.toIntOrNull() ?: 0,
+                cover = null,
+                // Here: whether YouTube Music lets it play.
+                upcoming = f[4] == "1",
+            )
+        }
+        return ServerLine.AlbumTracks(RemoteProtocol.decode(parts[1]), tracks)
+    }
+
     /** `LYRICS synced|plain|none <title> <lines>`; mirrors `lyricsLine` in the PC's PhoneRemoteLibraryLines.kt. */
     fun parseLyrics(line: String): ServerLine? {
         val parts = line.trim().split(' ')

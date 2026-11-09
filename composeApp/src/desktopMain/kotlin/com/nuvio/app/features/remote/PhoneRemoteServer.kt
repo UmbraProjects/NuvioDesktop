@@ -54,6 +54,10 @@ internal interface PhoneRemoteListener {
     fun onQueueAction(action: String, videoId: String, reply: (String) -> Unit) = Unit
     /** Hands the LYRICS line for the playing song to [reply]; the first lookup can take a few seconds. */
     fun onLyrics(reply: (String) -> Unit) = Unit
+    /** Hands an album's ALBUM_TRACKS line to [reply] once the album is fetched. */
+    fun onAlbumTracks(browseId: String, reply: (String) -> Unit) = Unit
+    /** Plays the album from its [index]th song; what is opening, or null. */
+    fun onPlayTrack(browseId: String, index: Int): String? = null
 }
 
 /**
@@ -271,6 +275,8 @@ internal class PhoneRemoteServer(
                             RemoteMessage.Queue -> listener.onQueue()?.let(::send)
                             is RemoteMessage.QueueAction -> listener.onQueueAction(message.action, message.videoId, ::trySend)
                             RemoteMessage.LyricsRequest -> listener.onLyrics(::trySend)
+                            is RemoteMessage.AlbumTracks -> listener.onAlbumTracks(message.browseId, ::trySend)
+                            is RemoteMessage.PlayTrack -> sendOpening(listener.onPlayTrack(message.browseId, message.index))
                             else -> Unit
                         }
                     }

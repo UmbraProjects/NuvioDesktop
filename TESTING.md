@@ -42,8 +42,9 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 - [ ] Dark mode: the Dark key (film or music screen, or More) turns the phone black and dims it (Medium, 15%, to start), hides the status and navigation bars, and the screen stays on
 - [ ] Dark mode hints (tap, swipe, hold) show for a few seconds and fade; Back brings them back instead of leaving
-- [ ] Dark mode brightness: Low / Medium / High under the hints (Back shows them again) changes the phone's brightness at once, is kept for next time, and tapping one does not also pause the film
-- [ ] Dark mode, a film: tap is play/pause, swipe left/right is 10 s back/ahead per step with a tick each, swipe up/down is volume; each shows faintly in the middle
+- [x] Dark mode brightness: Low / Medium / High under the hints (Back shows them again) changes the phone's brightness at once, is kept for next time, and tapping one does not also pause the film (2026-11-09)
+- [ ] **BROKEN** Dark mode, a film: tap is play/pause, swipe left/right is 10 s back/ahead per step with a tick each, swipe up/down is volume; each shows faintly in the middle (2026-11-09): tap works, but no swipe does anything, in any direction
+  - [ ] Re-check after the fix: swipes left/right (10 s, or songs for music) and up/down (volume) work, each with a tick; hold for a second leaves
 - [ ] Dark mode, music: swipe left/right is the previous/next song (one per swipe)
 - [ ] Dark mode: holding a finger anywhere for a second draws a faint ring and leaves; brightness and the bars come back
 - [x] Demo TV: Try the demo TV (on the PC list) asks for the code 123456, then connects as "Demo TV" and stays in the paired list (2026-11-09)
@@ -89,9 +90,9 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 ### Phone remote: search everything and voice search (phase 6)
 
-- [ ] Watch tab: typing a search (and pausing) adds "From your addons" under your library's matches: what Nuvio's Search tab finds, with posters, filling in while it searches
-- [ ] Tapping a result opens its page on the TV, and the phone says its name
-- [ ] The mic in the Watch and Music search boxes (while empty) opens the phone's voice typing; what you say becomes the search
+- [x] Watch tab: typing a search (and pausing) adds "From your addons" under your library's matches: what Nuvio's Search tab finds, with posters, filling in while it searches (2026-11-09)
+- [x] Tapping a result opens its page on the TV, and the phone says its name (2026-11-09)
+- [x] The mic in the Watch and Music search boxes (while empty) opens the phone's voice typing; what you say becomes the search (2026-11-09)
 - [ ] Remote tab: Search, then the mic beside the text box, types what you say into the TV's search box
 - [ ] A search on the phone while the TV is on its own Search tab does not upset it
 - [ ] Demo TV: searching "signal" shows The Long Signal and two pretend catalog results
@@ -108,8 +109,10 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 - [ ] Music screen keys are Back, Queue, Lyrics, Dark, More (Search is on the pad view now)
 - [ ] Queue opens a sheet of the TV's queue (cover, title, artist, length), the playing song highlighted and scrolled to
+- [ ] **BROKEN** Music tab (2026-11-09): tapping an album only plays the whole album; there is no way to play one of its songs
+  - [ ] Re-check after the fix: the album sheet lists the album's songs under Play / Shuffle / Add to queue; tapping one plays the album from that song on the TV
 - [ ] Tapping a song in the queue plays it on the TV; Play next and Remove (on songs still to come) change the queue, and the sheet shows the change
-- [ ] Lyrics (or a tap on the cover) shows the song's lyrics in the cover's place; timed ones follow the song with the sung line bright and kept in view
+- [x] Lyrics (or a tap on the cover) shows the song's lyrics in the cover's place; timed ones follow the song with the sung line bright and kept in view (2026-11-09)
 - [ ] Lyrics follow to the next song by themselves; a song with none says so
 - [ ] Demo TV: an album's queue and pretend timed lyrics
 

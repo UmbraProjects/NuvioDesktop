@@ -84,6 +84,48 @@ internal object PhoneRemoteMusic {
         }
     }
 
+    /** Albums the phone opened, so playing a song from one does not fetch it again. */
+    private val albums = java.util.concurrent.ConcurrentHashMap<String, com.nuvio.app.features.music.MusicAlbum>()
+
+    private suspend fun album(browseId: String): com.nuvio.app.features.music.MusicAlbum? =
+        albums[browseId] ?: runCatching { com.nuvio.app.features.music.defaultMusicCatalog().album(browseId) }.getOrNull()
+            ?.also { albums[browseId] = it }
+
+    /** The album's songs for the phone's album sheet. */
+    fun albumTracks(browseId: String, reply: (String) -> Unit) {
+        background.launch {
+            val found = withTimeoutOrNull(15_000L) { album(browseId) }
+            reply(
+                PhoneRemoteLibraryLines.albumTracksLine(
+                    browseId,
+                    found?.tracks.orEmpty().map { track ->
+                        RemoteQueueTrack(
+                            videoId = track.videoId,
+                            title = track.title,
+                            artist = track.artists.joinToString(", ") { it.name },
+                            seconds = track.durationSeconds,
+                            cover = null,
+                            upcoming = track.isAvailable,
+                        )
+                    },
+                ),
+            )
+        }
+    }
+
+    /** Plays the album from its [index]th song, the rest of the album after it, as a click on the song does on the TV. */
+    fun playTrack(browseId: String, index: Int): String? {
+        val known = albums[browseId]
+        val title = known?.tracks?.getOrNull(index)?.title
+        background.launch {
+            val album = album(browseId) ?: return@launch
+            if (index !in album.tracks.indices) return@launch
+            log.i { "Phone remote: playing ${album.title}, song ${index + 1}" }
+            withContext(Dispatchers.Main) { MusicPlayback.player.play(album, trackIndex = index, shuffled = false) }
+        }
+        return title ?: "the song"
+    }
+
     private var lyricsJob: Job? = null
 
     /** The playing song's lyrics, looked up as the stage does (cached after the first time), handed to [reply]. */

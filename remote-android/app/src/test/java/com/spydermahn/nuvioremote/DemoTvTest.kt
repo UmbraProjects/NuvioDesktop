@@ -188,6 +188,16 @@ class DemoTvTest {
         assertEquals("The Long Signal", answered.titles.first().name)
         assertEquals(3, answered.titles.size)
 
+        // An album's songs, and playing one from the middle.
+        session.albumTracks(music.albums[2].browseId)
+        val songs = lines.next<ServerLine.AlbumTracks>()
+        assertEquals(4, songs.tracks.size)
+        assertEquals("Driftwood", songs.tracks[1].title)
+        session.playTrack(music.albums[2].browseId, 2)
+        assertEquals("Copper Sky", lines.next<ServerLine.Opening>().what)
+        var playingNow = lines.next<ServerLine.State>().nowPlaying
+        while (playingNow.title != "Copper Sky") playingNow = lines.next<ServerLine.State>().nowPlaying
+
         // Back closes the player; a theme change reaches the phone.
         session.key(RemoteKey.Back)
         lines.next<ServerLine.Idle>()

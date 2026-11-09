@@ -547,6 +547,30 @@ object DemoTv {
                         }, 2, TimeUnit.SECONDS)
                     }
                 }
+                "ALBUM_TRACKS" -> {
+                    val album = DEMO_ALBUMS.firstOrNull { it.id == RemoteProtocol.decode(parts.getOrElse(1) { "" }) }
+                    fun f(value: String) = RemoteProtocol.encode(value)
+                    send(
+                        "ALBUM_TRACKS ${parts.getOrElse(1) { "-" }} " + (album?.tracks?.withIndex()?.joinToString(";") { (i, t) ->
+                            "${f("${album.id}-$i")},${f(t.first)},${f(album.artist)},${t.second},1"
+                        }?.ifEmpty { "-" } ?: "-"),
+                    )
+                }
+                "PLAY_TRACK" -> {
+                    val album = DEMO_ALBUMS.firstOrNull { it.id == RemoteProtocol.decode(parts.getOrElse(1) { "" }) }
+                    val index = parts.getOrNull(2)?.toIntOrNull()
+                    if (album == null || index == null || index !in album.tracks.indices) {
+                        send("CANT_OPEN")
+                    } else {
+                        send("OPENING ${RemoteProtocol.encode(album.tracks[index].first)}")
+                        playMusic(album)
+                        synchronized(DemoTv) {
+                            songIndex = index
+                            setPosition(0L)
+                        }
+                        broadcastState()
+                    }
+                }
                 "QUEUE" -> send(queueLine())
                 "QUEUE_PLAY", "QUEUE_NEXT", "QUEUE_REMOVE" -> {
                     val id = RemoteProtocol.decode(parts.getOrElse(1) { "" })

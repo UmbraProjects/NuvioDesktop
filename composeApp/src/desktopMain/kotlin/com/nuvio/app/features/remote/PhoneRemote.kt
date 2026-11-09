@@ -231,6 +231,8 @@ internal object PhoneRemote {
         override fun onQueueAction(action: String, videoId: String, reply: (String) -> Unit) =
             PhoneRemoteMusic.queueAction(action, videoId, reply)
         override fun onLyrics(reply: (String) -> Unit) = PhoneRemoteMusic.lyrics(reply)
+        override fun onAlbumTracks(browseId: String, reply: (String) -> Unit) = PhoneRemoteMusic.albumTracks(browseId, reply)
+        override fun onPlayTrack(browseId: String, index: Int): String? = PhoneRemoteMusic.playTrack(browseId, index)
     }
 
     // --- fork:phone-remote: now playing on the phone ---
