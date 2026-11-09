@@ -155,7 +155,8 @@ internal actual object PlayerSettingsStorage {
     private const val desktopAnimeTreatAnimationAsAnimeKey = "desktop_anime_treat_animation_as_anime"
     private const val desktopAnimeSvpEnabledKey = "desktop_anime_svp_enabled"
     private const val desktopPlaybackInfoPanelEnabledKey = "desktop_playback_info_panel_enabled"
-    private const val desktopAnimeSvpDebugOverlayEnabledKey = "desktop_anime_svp_debug_overlay_enabled"
+    private const val desktopSvpAllContentEnabledKey = "desktop_svp_all_content_enabled"
+    private const val desktopAnimeSvpDebugOverlayEnabledKey ="desktop_anime_svp_debug_overlay_enabled"
     private const val desktopCustomShadersEnabledKey = "desktop_custom_shaders_enabled"
     private const val desktopCustomShaderPathsKey = "desktop_custom_shader_paths"
     private const val desktopCustomShaderSelectedPathKey = "desktop_custom_shader_selected_path"
@@ -586,6 +587,8 @@ internal actual object PlayerSettingsStorage {
         saveBoolean(desktopAnimeSkipUltraHdEnabledKey, enabled)
     actual fun loadDesktopAnimeSvpEnabled(): Boolean? = loadBoolean(desktopAnimeSvpEnabledKey)
     actual fun saveDesktopAnimeSvpEnabled(enabled: Boolean) = saveBoolean(desktopAnimeSvpEnabledKey, enabled)
+    actual fun loadDesktopSvpAllContentEnabled(): Boolean? = loadBoolean(desktopSvpAllContentEnabledKey)
+    actual fun saveDesktopSvpAllContentEnabled(enabled: Boolean) = saveBoolean(desktopSvpAllContentEnabledKey, enabled)
     actual fun loadDesktopAnimeSvpDebugOverlayEnabled(): Boolean? =
         loadBoolean(desktopAnimeSvpDebugOverlayEnabledKey)
     actual fun saveDesktopAnimeSvpDebugOverlayEnabled(enabled: Boolean) =

@@ -305,6 +305,8 @@ internal class NativePlayerController(
             animeSvpFilter = if (animeSvpEnabled && PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) {
                 DesktopAnimeSvp.vapoursynthArgument(
                     debugOverlay = PlayerSettingsRepository.uiState.value.desktopAnimeSvpDebugOverlayEnabled,
+                    // Only reached for non-anime when SVP is set to all videos (PlayerEngine.desktop.kt).
+                    cinema = !isAnimeContent,
                 )
             } else null,
             extraMpvOptions = buildList {
@@ -1147,7 +1149,13 @@ internal class NativePlayerController(
         // An explicit in-player toggle also forces SVP for this session even when the title isn't
         // detected as anime (the persisted toggle alone only fires on effectively-anime content).
         PlayerSettingsRepository.setDesktopAnimeSvpSessionForced(next)
-        showPresetPill(localizedString(Res.string.player_hud_anime_svp), if (next) localizedString(Res.string.compose_action_on) else localizedString(Res.string.compose_action_off))
+        // Name the tuning this video gets, matching the profile choice in applyDesktopAnimeProfile:
+        // detected anime, or anime shaders forced on for this session.
+        val sessionPreset = PlayerSettingsRepository.uiState.value.desktopAnimeSessionOverride?.mode
+        val animeTuning = pendingSource?.isAnimeContent == true ||
+            (sessionPreset != null && sessionPreset != DesktopAnimeMode.Off)
+        val label = if (animeTuning) Res.string.player_hud_anime_svp else Res.string.player_hud_cinema_svp
+        showPresetPill(localizedString(label),if (next) localizedString(Res.string.compose_action_on) else localizedString(Res.string.compose_action_off))
     }
 
     // The player menu's RTX rows: session-only, so the video profile swaps the d3d11vpp filter

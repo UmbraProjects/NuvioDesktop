@@ -1829,6 +1829,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Να μην εφαρμόζεται αυτόματα Anime4K ή προσαρμοσμένο shader σε πηγές που είναι ήδη 4K. Αυτά τα shaders αυξάνουν την ανάλυση, οπότε μια πηγή 4K κερδίζει λίγα και μπορεί να επιβαρύνει υπερβολικά τη GPU. Η χειροκίνητη επιβολή (F10) εξακολουθεί να εφαρμόζεται.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (παρεμβολή)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Χρησιμοποιεί το VapourSynth για παρεμβολή κίνησης και πιο ομαλή εμπειρία.</string>
+  <string name="settings_playback_desktop_svp_all_content">SVP σε όλα τα βίντεο</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Εξομαλύνει και ταινίες και σειρές με ρύθμιση για live action· τα anime κρατούν τη δική τους ρύθμιση. Χρησιμοποιεί περισσότερη CPU και το RTX Video Super Resolution μένει απενεργοποιημένο όσο τρέχει το SVP.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">Επικάλυψη εντοπισμού σφαλμάτων SVP</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Σχεδιάζει στο βίντεο την ενεργή μέθοδο παρεμβολής και τον ρυθμό καρέ πηγής/εξόδου. Ισχύει από την επόμενη έναρξη αναπαραγωγής.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Βιβλιοθήκη shaders</string>
@@ -4464,6 +4466,7 @@
   <string name="player_hud_on_off_during_audio_passthrough">Ενεργό (ανενεργό κατά το audio passthrough)</string>
   <string name="player_hud_on_off_while_svp_runs">Ενεργό (ανενεργό όσο εκτελείται το SVP)</string>
   <string name="player_hud_anime_svp">Anime SVP</string>
+  <string name="player_hud_cinema_svp">SVP ταινιών</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">Ενεργό (ανενεργό στην εφαρμογή NVIDIA)</string>

@@ -1829,6 +1829,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Nepoužívat automaticky Anime4K ani vlastní shader u zdrojů, které už jsou ve 4K. Tyto shadery zvětšují obraz, takže 4K zdroj získá jen málo a může to GPU zahltit. Ruční vynucení (F10) se stále použije.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (interpolace)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Využívá VapourSynth k interpolaci pohybu pro plynulejší zážitek.</string>
+  <string name="settings_playback_desktop_svp_all_content">SVP pro všechna videa</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Vyhlazuje také filmy a seriály s laděním pro hrané záběry; anime si ponechá vlastní ladění. Více zatěžuje CPU a RTX Video Super Resolution zůstává při běhu SVP vypnuté.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">Ladicí překryv SVP</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Vykreslí na video aktivní metodu interpolace a snímkovou frekvenci zdroje/výstupu. Projeví se od dalšího spuštění přehrávání.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Knihovna shaderů</string>
@@ -4472,6 +4474,7 @@
   <string name="player_hud_on_off_during_audio_passthrough">Zapnuto (při předávání zvuku vypnuto)</string>
   <string name="player_hud_on_off_while_svp_runs">Zapnuto (při běhu SVP vypnuto)</string>
   <string name="player_hud_anime_svp">Anime SVP</string>
+  <string name="player_hud_cinema_svp">SVP pro filmy</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">Zapnuto (v aplikaci NVIDIA vypnuto)</string>

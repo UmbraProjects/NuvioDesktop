@@ -1636,26 +1636,37 @@ private fun PlaybackSettingsSection(
                                 modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSkipUltraHd),
                                 onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSkipUltraHdEnabled,
                             )
+                        }
+                        // SVP runs on detected anime whatever the shader choice, so it stays
+                        // reachable with the anime shaders off.
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_anime_svp),
+                            description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
+                            checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
+                            onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
+                        )
+                        if (autoPlayPlayerSettings.desktopAnimeSvpEnabled) {
                             SettingsGroupDivider(isTablet = isTablet)
                             SettingsSwitchRow(
-                                title = stringResource(Res.string.settings_playback_desktop_anime_svp),
-                                description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
-                                checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
+                                title = stringResource(Res.string.settings_playback_desktop_svp_all_content),
+                                description = stringResource(Res.string.settings_playback_desktop_svp_all_content_desc),
+                                checked = autoPlayPlayerSettings.desktopSvpAllContentEnabled,
                                 isTablet = isTablet,
-                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
-                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SvpAllContent),
+                                onCheckedChange = PlayerSettingsRepository::setDesktopSvpAllContentEnabled,
                             )
-                            if (autoPlayPlayerSettings.desktopAnimeSvpEnabled) {
-                                SettingsGroupDivider(isTablet = isTablet)
-                                SettingsSwitchRow(
-                                    title = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
-                                    description = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
-                                    checked = autoPlayPlayerSettings.desktopAnimeSvpDebugOverlayEnabled,
-                                    isTablet = isTablet,
-                                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvpOverlay),
-                                    onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpDebugOverlayEnabled,
-                                )
-                            }
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
+                                description = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
+                                checked = autoPlayPlayerSettings.desktopAnimeSvpDebugOverlayEnabled,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvpOverlay),
+                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpDebugOverlayEnabled,
+                            )
                         }
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsNavigationRow(

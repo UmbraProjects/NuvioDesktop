@@ -1717,6 +1717,14 @@ private fun settingsSearchEntries(
                 fallbackTitle = resolve(Res.string.settings_playback_desktop_anime_mode),
             ) else null,
             if (isDesktop) PlaybackSearchRow(
+                "desktop-svp-all-content",
+                resolve(Res.string.settings_playback_desktop_svp_all_content),
+                resolve(Res.string.settings_playback_desktop_svp_all_content_desc),
+                anchor = SettingsScrollAnchor.SvpAllContent,
+                fallbackAnchor = SettingsScrollAnchor.AnimeSvp,
+                fallbackTitle = resolve(Res.string.settings_playback_desktop_anime_svp),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
                 "desktop-anime-svp-overlay",
                 resolve(Res.string.settings_playback_desktop_anime_svp_overlay),
                 resolve(Res.string.settings_playback_desktop_anime_svp_overlay_desc),

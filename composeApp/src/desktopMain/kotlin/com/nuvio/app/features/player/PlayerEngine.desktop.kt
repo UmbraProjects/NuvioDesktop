@@ -238,7 +238,7 @@ private fun NativePlayerSurface(
     val playerSettings by PlayerSettingsRepository.uiState.collectAsState()
     val initialAnimeSvpRequested = playerSettings.desktopAnimeSvpEnabled &&
         playerSettings.desktopMpvConfigMode != DesktopMpvConfigMode.Full &&
-        isAnimeContent &&
+        (isAnimeContent || playerSettings.desktopSvpAllContentEnabled) &&
         initialPlaybackSpeed < 1.5f
     // Keep one state holder for the controller callback's lifetime. Replacing it on a source
     // change would leave the callback writing to the previous file's state object.
@@ -1321,6 +1321,7 @@ private fun NativePlayerSurface(
                         // in that window can kill the native process before fileLoaded is emitted.
                         animeSvpEnabled = settings.desktopAnimeSvpEnabled && fileLoaded,
                         animeSvpSessionForced = settings.desktopAnimeSvpSessionForced,
+                        svpAllContent = settings.desktopSvpAllContentEnabled,
                         isAnime = isAnimeContent,
                         isHdr = isHdr,
                         displayHdr = videoState.displayHdr,
@@ -1910,6 +1911,7 @@ private fun applyDesktopAnimeProfile(
     isAnime: Boolean,
     isHdr: Boolean?,
     displayHdr: Boolean?,
+    svpAllContent: Boolean = false,
     sourceSize: DesktopVideoSourceSize? = null,
     skipShadersOnUltraHdSources: Boolean = true,
     nvidiaRtxSuperResolutionEnabled: Boolean = false,
@@ -1958,9 +1960,14 @@ private fun applyDesktopAnimeProfile(
     val isEffectivelyAnime = isAnime || requestedPreset != null ||
         requestedCustomShaderChain.isNotEmpty() || animeSvpSessionForced
 
-    val svpFilter = if (isEffectivelyAnime && animeSvpEnabled) {
+    // With "all videos" on, everything else gets SVP too, with the cinema (live-action) tuning.
+    // The tuning follows what the video is, not why SVP runs: an in-player SVP toggle forces SVP
+    // on, but on live action it must still get the cinema profile.
+    val looksLikeAnime = isAnime || requestedPreset != null || requestedCustomShaderChain.isNotEmpty()
+    val svpFilter = if ((isEffectivelyAnime || svpAllContent) && animeSvpEnabled) {
         DesktopAnimeSvp.vapoursynthArgument(
             debugOverlay = PlayerSettingsRepository.uiState.value.desktopAnimeSvpDebugOverlayEnabled,
+            cinema = !looksLikeAnime,
         )
     } else null
     val svpActive = svpFilter != null

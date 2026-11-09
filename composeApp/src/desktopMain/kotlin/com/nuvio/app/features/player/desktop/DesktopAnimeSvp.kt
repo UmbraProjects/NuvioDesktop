@@ -51,11 +51,15 @@ internal object DesktopAnimeSvp {
      *
      * [debugOverlay] is baked into the exported config as `DEBUG_OVERLAY`; the script re-reads the
      * config on every file load, so the next playback start picks up a change with no restart.
+     *
+     * [cinema] picks Stremio-Kai's live-action tuning: the same script, exported a second time as
+     * `svp_cinema.vpy` with its `SVP_PROFILE` line switched (see svp_main.vpy).
      */
-    fun vapoursynthArgument(debugOverlay: Boolean): String? {
+    fun vapoursynthArgument(debugOverlay: Boolean, cinema: Boolean = false): String? {
         if (!vapourSynthCoreAvailable) return null
         exportConfig(debugOverlay)
-        val vpyPath = exportedPath("svp_main.vpy") ?: return null
+        val vpyPath = (if (cinema) exportedPath(CINEMA_SCRIPT, profile = "cinema") else exportedPath(ANIME_SCRIPT))
+            ?: return null
         // mpv's vf/af suboption parser treats \ as an escape character, so a raw Windows path
         // (backslash-separated) silently corrupts and the whole vf= property set fails with
         // MPV_ERROR_INVALID_PARAMETER — SVP was never actually applying. mpv's own %n% verbatim
@@ -97,12 +101,23 @@ internal object DesktopAnimeSvp {
         }.onFailure { log.w(it) { "Failed to export svp.conf; SVP will run with script defaults" } }
     }
 
-    private fun exportedPath(name: String): String? = exportedPaths.getOrPut(name) {
+    /**
+     * Exports the bundled script as [name]. With [profile], the copy is svp_main.vpy with its
+     * `SVP_PROFILE = "anime"` line replaced, so both profiles stay one source file.
+     */
+    private fun exportedPath(name: String, profile: String? = null): String? = exportedPaths.getOrPut(name) {
         runCatching {
-            val resource = "$resourcePrefix$name"
-            val bytes = DesktopAnimeSvp::class.java.getResourceAsStream(resource)
+            val source = DesktopAnimeSvp::class.java.getResourceAsStream("$resourcePrefix$ANIME_SCRIPT")
                 ?.use { it.readBytes() }
                 ?: return@runCatching null
+            val bytes = if (profile == null) source else {
+                val text = source.toString(Charsets.UTF_8)
+                val switched = withSvpProfile(text, profile) ?: run {
+                    log.w { "svp_main.vpy has no SVP_PROFILE line; $profile profile unavailable" }
+                    return@runCatching null
+                }
+                switched.toByteArray(Charsets.UTF_8)
+            }
             val target = File(exportRoot, name)
             if (!target.exists() || !target.readBytes().contentEquals(bytes)) {
                 target.writeBytes(bytes)
@@ -110,4 +125,15 @@ internal object DesktopAnimeSvp {
             target.absolutePath
         }.getOrNull()
     }
+
+    private const val ANIME_SCRIPT = "svp_main.vpy"
+    private const val CINEMA_SCRIPT = "svp_cinema.vpy"
 }
+
+private val svpProfileLine = Regex("""(?m)^SVP_PROFILE = "anime"(?=\r?$)""")
+
+/** [script] with its `SVP_PROFILE` line set to [profile], or null when the line is missing. */
+internal fun withSvpProfile(script: String, profile: String): String? =
+    if (svpProfileLine.containsMatchIn(script)) {
+        svpProfileLine.replaceFirst(script, "SVP_PROFILE = \"$profile\"")
+    } else null

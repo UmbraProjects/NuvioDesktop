@@ -1829,6 +1829,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Jangan terapkan otomatis Anime4K atau shader kustom pada sumber yang sudah 4K. Shader ini melakukan upscaling, jadi sumber 4K hanya mendapat sedikit manfaat dan bisa membebani GPU. Pemaksaan manual (F10) tetap berlaku.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (Interpolasi)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Memakai VapourSynth untuk menginterpolasi gerakan demi pengalaman yang lebih mulus.</string>
+  <string name="settings_playback_desktop_svp_all_content">SVP untuk semua video</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Juga menghaluskan film dan serial dengan penyetelan untuk live action; anime tetap memakai penyetelannya sendiri. Lebih membebani CPU, dan RTX Video Super Resolution tetap mati selama SVP berjalan.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">Overlay Debug SVP</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Menampilkan metode interpolasi aktif dan frame rate sumber/keluaran di atas video. Berlaku mulai pemutaran berikutnya.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Pustaka Shader</string>
@@ -4462,6 +4464,7 @@
   <string name="player_hud_on_off_during_audio_passthrough">Aktif (nonaktif saat audio passthrough)</string>
   <string name="player_hud_on_off_while_svp_runs">Aktif (nonaktif saat SVP berjalan)</string>
   <string name="player_hud_anime_svp">SVP Anime</string>
+  <string name="player_hud_cinema_svp">SVP Sinema</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">Aktif (nonaktif di NVIDIA App)</string>

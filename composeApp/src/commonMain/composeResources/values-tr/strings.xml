@@ -1829,6 +1829,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Zaten 4K olan kaynaklara Anime4K'yı veya özel bir gölgelendiriciyi otomatik uygulama. Bu gölgelendiriciler yükseltme yapar; 4K kaynak pek kazanç sağlamaz ve GPU'yu zorlayabilir. Elle zorlama (F10) yine de uygulanır.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (Ara Kare Üretimi)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Daha akıcı bir deneyim için hareketi ara kare üretimiyle işlemek üzere VapourSynth kullanır.</string>
+  <string name="settings_playback_desktop_svp_all_content">Tüm videolarda SVP</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Film ve dizileri de canlı çekime göre ayarlanmış şekilde akıcılaştırır; anime kendi ayarını korur. Daha fazla CPU kullanır ve SVP çalışırken RTX Video Super Resolution kapalı kalır.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">SVP Hata Ayıklama Katmanı</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Etkin ara kare yöntemini ve kaynak/çıkış kare hızını videonun üzerine çizer. Bir sonraki oynatma başlangıcından itibaren geçerli olur.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Gölgelendirici Kitaplığı</string>
@@ -4464,6 +4466,7 @@
   <string name="player_hud_on_off_during_audio_passthrough">Açık (ses geçişi sırasında kapalı)</string>
   <string name="player_hud_on_off_while_svp_runs">Açık (SVP çalışırken kapalı)</string>
   <string name="player_hud_anime_svp">Anime SVP</string>
+  <string name="player_hud_cinema_svp">Sinema SVP</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">Açık (NVIDIA App içinde kapalı)</string>

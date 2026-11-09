@@ -2400,6 +2400,8 @@
     <string name="settings_playback_desktop_anime_skip_uhd_desc">Anime4K oder einen eigenen Shader nicht automatisch auf Quellen anwenden, die bereits 4K sind. Diese Shader skalieren hoch, daher gewinnt eine 4K-Quelle wenig und kann die GPU überfordern. Ein manuelles Erzwingen (F10) wirkt weiterhin.</string>
     <string name="settings_playback_desktop_anime_svp">Anime-SVP (Interpolation)</string>
     <string name="settings_playback_desktop_anime_svp_desc">Nutzt VapourSynth, um Bewegungen zu interpolieren und das Bild flüssiger zu machen.</string>
+    <string name="settings_playback_desktop_svp_all_content">SVP für alle Videos</string>
+    <string name="settings_playback_desktop_svp_all_content_desc">Glättet auch Filme und Serien mit einer Abstimmung für Realfilm; Anime behält seine eigene. Braucht mehr CPU, und RTX Video Super Resolution bleibt aus, solange SVP läuft.</string>
     <string name="settings_playback_desktop_anime_svp_overlay">SVP-Debug-Overlay</string>
     <string name="settings_playback_desktop_anime_svp_overlay_desc">Zeichnet die aktive Interpolationsmethode und die Quell-/Ausgabe-Bildrate auf das Video. Gilt ab dem nächsten Wiedergabestart.</string>
     <string name="settings_playback_desktop_custom_shader_paths">Shader-Bibliothek</string>
@@ -4464,6 +4466,7 @@
     <string name="player_hud_on_off_during_audio_passthrough">An (aus bei Audio-Passthrough)</string>
     <string name="player_hud_on_off_while_svp_runs">An (aus, solange SVP läuft)</string>
     <string name="player_hud_anime_svp">Anime-SVP</string>
+    <string name="player_hud_cinema_svp">Film-SVP</string>
     <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
     <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
     <string name="player_hud_on_off_in_the_nvidia_app">An (aus in der NVIDIA App)</string>

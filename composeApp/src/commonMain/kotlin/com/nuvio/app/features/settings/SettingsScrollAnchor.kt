@@ -74,6 +74,7 @@ internal object SettingsScrollAnchor {
     const val AnimeSkipUltraHd = "anime_skip_ultra_hd"
     const val AnimeSvp = "anime_svp"
     const val AnimeSvpOverlay = "anime_svp_overlay"
+    const val SvpAllContent = "svp_all_content"
     const val RtxHdr = "rtx_hdr"
     const val RtxHdrAnime = "rtx_hdr_anime"
     const val RtxHdrAnimeShaders = "rtx_hdr_anime_shaders"
