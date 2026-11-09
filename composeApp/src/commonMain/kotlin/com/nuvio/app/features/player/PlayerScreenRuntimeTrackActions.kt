@@ -474,6 +474,35 @@ internal fun PlayerScreenRuntime.applySecondarySubtitleSelectionIfNeeded() {
     secondarySubtitleSelectionApplied = true
 }
 
+/** The subtitle panel's pick of a built-in track ([index] -1 is Off); the phone remote's list picks the same way. */
+internal fun PlayerScreenRuntime.selectBuiltInSubtitle(index: Int) {
+    val wasCustom = useCustomSubtitles
+    selectedSubtitleIndex = index
+    selectedAddonSubtitleId = null
+    useCustomSubtitles = false
+    markSubtitleChosenByViewer()
+    persistInternalSubtitlePreference(subtitleTracks.firstOrNull { it.index == index })
+    if (wasCustom) {
+        playerController?.clearExternalSubtitleAndSelect(index)
+    } else {
+        playerController?.selectSubtitleTrack(index)
+    }
+    secondarySubtitleSelectionApplied = false
+    applySecondarySubtitleSelectionIfNeeded()
+}
+
+/** The subtitle panel's pick of an add-on subtitle; the phone remote's list picks the same way. */
+internal fun PlayerScreenRuntime.selectAddonSubtitle(addon: AddonSubtitle) {
+    selectedAddonSubtitleId = addon.id.ifBlank { addon.url }
+    selectedSubtitleIndex = -1
+    useCustomSubtitles = true
+    markSubtitleChosenByViewer()
+    persistAddonSubtitlePreference(addon)
+    loadAddonSubtitle(addon)
+    secondarySubtitleSelectionApplied = false
+    applySecondarySubtitleSelectionIfNeeded()
+}
+
 internal fun PlayerScreenRuntime.cycleAudioTrackFromKeyboard() {
     refreshTracks()
     // Cycle over the same list the modal shows, so rejected tracks (commentary, audio description)

@@ -39,4 +39,21 @@ class LibraryLinesTest {
         // A short record is skipped, not a crash.
         assertTrue((ServerLine.parse("LIBRARY video 1 Movies,movie", 0L) as ServerLine.VideoLibrary).titles.isEmpty())
     }
+
+    @Test
+    fun readsTheSubtitleList() {
+        val line = "SUBTITLES 1 Off,-,Off,0;English%2C%20SDH,eng%20%C2%B7%20forced,Built-in,0;" +
+            "English%20%28SubSource%29,eng,OpenSubtitles%20v3,1"
+        val parsed = ServerLine.parse(line, 0L) as ServerLine.Subtitles
+        assertTrue(parsed.loading)
+        assertEquals(
+            listOf(
+                SubtitleChoice(1, "Off", null, "Off", false),
+                SubtitleChoice(2, "English, SDH", "eng \u00b7 forced", "Built-in", false),
+                SubtitleChoice(3, "English (SubSource)", "eng", "OpenSubtitles v3", true),
+            ),
+            parsed.choices,
+        )
+        assertEquals(emptyList<SubtitleChoice>(), (ServerLine.parse("SUBTITLES 0 -", 0L) as ServerLine.Subtitles).choices)
+    }
 }

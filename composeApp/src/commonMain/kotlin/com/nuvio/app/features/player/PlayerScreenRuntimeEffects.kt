@@ -865,6 +865,24 @@ private fun PlayerScreenRuntime.BindPhoneRemoteNowPlayingEffect() {
                 val controller = runtime.playerController ?: return
                 controller.setVolume((percent / 100f).coerceIn(0f, controller.maxVolumeFraction))
             }
+            override fun subtitleChoices() = runtime.phoneRemoteSubtitleList()
+            override fun pickSubtitle(number: Int): Boolean {
+                val index = number - 1
+                val builtIn = runtime.visibleSubtitleTracks
+                val addons = runtime.visibleAddonSubtitles
+                if (index < 0 || index > builtIn.size + addons.size) return false
+                runtime.scope.launch {
+                    when {
+                        index == 0 -> runtime.selectBuiltInSubtitle(-1)
+                        index <= builtIn.size -> runtime.selectBuiltInSubtitle(builtIn[index - 1].index)
+                        else -> runtime.selectAddonSubtitle(addons[index - 1 - builtIn.size])
+                    }
+                }
+                return true
+            }
+            override fun fetchSubtitles() {
+                runtime.scope.launch { runtime.fetchAddonSubtitlesForActiveItem() }
+            }
         }
         com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(null, controls)
         onDispose { com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(null, null) }
@@ -906,6 +924,41 @@ private fun PlayerScreenRuntime.phoneRemoteNowPlaying(): com.nuvio.app.features.
         subtitleTrack = phoneRemoteSubtitleName(),
         audioTrack = audioTracks.firstOrNull { it.index == selectedAudioIndex }?.label?.takeIf { it.isNotBlank() },
     )
+}
+
+/**
+ * What the phone's subtitle list shows: Off, then the file's own tracks, then the add-ons' subtitles, the same lists
+ * (and order) the player's panel offers, so a number the phone sends means the same row here.
+ */
+private fun PlayerScreenRuntime.phoneRemoteSubtitleList(): com.nuvio.app.features.remote.RemoteSubtitleList {
+    val builtIn = visibleSubtitleTracks
+    val addons = visibleAddonSubtitles
+    val addonOn = if (useCustomSubtitles) selectedAddonSubtitle else null
+    val builtInOn = if (addonOn == null) builtIn.firstOrNull { it.index == selectedSubtitleIndex || it.isSelected } else null
+    val choices = buildList {
+        add(com.nuvio.app.features.remote.RemoteSubtitleChoice("Off", null, "Off", selected = addonOn == null && builtInOn == null))
+        builtIn.forEach { track ->
+            add(
+                com.nuvio.app.features.remote.RemoteSubtitleChoice(
+                    label = track.label.ifBlank { track.language ?: "Track ${track.index + 1}" },
+                    detail = listOfNotNull(track.language?.takeIf { it.isNotBlank() }, "forced".takeIf { track.isForced }).joinToString(" · ").ifBlank { null },
+                    group = "Built-in",
+                    selected = builtInOn?.index == track.index,
+                ),
+            )
+        }
+        addons.forEach { sub ->
+            add(
+                com.nuvio.app.features.remote.RemoteSubtitleChoice(
+                    label = sub.display.ifBlank { sub.language },
+                    detail = sub.language.takeIf { it.isNotBlank() && it != sub.display },
+                    group = sub.addonName?.takeIf { it.isNotBlank() } ?: "Add-on",
+                    selected = addonOn != null && (sub.id == addonOn.id && sub.url == addonOn.url),
+                ),
+            )
+        }
+    }
+    return com.nuvio.app.features.remote.RemoteSubtitleList(loading = isLoadingAddonSubtitles, choices = choices)
 }
 
 /** What the phone's Subtitles tile shows: an addon subtitle by its name, a built-in one by its label, else Off. */

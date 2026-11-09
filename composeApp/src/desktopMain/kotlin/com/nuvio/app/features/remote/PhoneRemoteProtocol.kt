@@ -32,6 +32,9 @@ import java.nio.charset.StandardCharsets
  *    or: IDLE                           nothing is playing
  * pc:    THEME <accent> <accentEnd or -> <background>   after the first STATE, and when the TV's theme changes
  * phone: KEY sources                    the film player's sources panel
+ * phone: SUBTITLES                      the film player's subtitle list (long press on the Subtitles tile)
+ * pc:    SUBTITLES <loading 0|1> <label,detail,group,selected;...>   Off first; again as the add-ons answer
+ * phone: PICK_SUBTITLE <n>              the nth of that list (Off is 1); the PC then sends SUBTITLES again
  * phone: SEEK <ms> | VOLUME <0..volumeMax>
  * phone: OPEN <url>                     a link from the phone's share menu
  * pc:    OPENING <what> | CANT_OPEN     (only for OPEN)
@@ -157,6 +160,9 @@ internal object PhoneRemoteProtocol {
             "SEARCH" -> parts.getOrNull(1)?.let(::decode)?.trim()?.take(200)?.takeIf { it.isNotEmpty() }?.let { RemoteMessage.Search(it) }
             // fork:phone-remote sources: play the nth source of the list on screen.
             "PICK_SOURCE" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickSource(it) }
+            // fork:phone-remote subtitles: the subtitle list, and picking from it (Off is 1).
+            "SUBTITLES" -> RemoteMessage.SubtitlesRequest
+            "PICK_SUBTITLE" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickSubtitle(it) }
             "RESUME" -> if (parts.size >= 3) {
                 RemoteMessage.Resume(parentId = decode(parts[1]), videoId = decode(parts[2]))
                     .takeIf { it.parentId.isNotBlank() && it.videoId.isNotBlank() }
@@ -183,6 +189,8 @@ internal sealed interface RemoteMessage {
     data object Continue : RemoteMessage
     data class Resume(val parentId: String, val videoId: String) : RemoteMessage
     data class PickSource(val number: Int) : RemoteMessage
+    data object SubtitlesRequest : RemoteMessage
+    data class PickSubtitle(val number: Int) : RemoteMessage
     data class Search(val query: String) : RemoteMessage
     data object Queue : RemoteMessage
     data class QueueAction(val action: String, val videoId: String) : RemoteMessage

@@ -94,6 +94,8 @@ sealed interface ServerLine {
     data class Continue(val items: List<ResumeItem>) : ServerLine
     /** The source list on the TV; null once it closes. */
     data class Sources(val list: SourceList?) : ServerLine
+    /** The film player's subtitles, Off first; sent when asked for, and again as the add-ons answer. */
+    data class Subtitles(val loading: Boolean, val choices: List<SubtitleChoice>) : ServerLine
     /** A show's episodes; [found] false when the PC could not fetch its details. */
     data class Episodes(val type: String, val id: String, val found: Boolean, val episodes: List<EpisodeInfo>) : ServerLine
     /** The music player's queue and where the playing track is in it (-1 when nothing plays). */
@@ -123,6 +125,7 @@ sealed interface ServerLine {
                 "SEARCH_RESULTS" -> LibraryLines.parseSearch(line) ?: Other
                 "QUEUE" -> LibraryLines.parseQueue(line) ?: Other
                 "EPISODES" -> LibraryLines.parseEpisodes(line) ?: Other
+                "SUBTITLES" -> LibraryLines.parseSubtitles(line) ?: Other
                 "LYRICS" -> LibraryLines.parseLyrics(line) ?: Other
                 "ALBUM_TRACKS" -> LibraryLines.parseAlbumTracks(line) ?: Other
                 "WAKE" -> Wake(
@@ -282,6 +285,12 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     /** Plays the source at [number] (from 1) in the list on the TV. The PC answers OPENING or CANT_OPEN. */
     fun pickSource(number: Int) = send("PICK_SOURCE $number")
+
+    /** The film player's subtitle list; the answer comes back as [ServerLine.Subtitles]. */
+    fun requestSubtitles() = send("SUBTITLES")
+
+    /** Picks the subtitle at [number] (Off is 1); the PC answers with the list again, the pick marked. */
+    fun pickSubtitle(number: Int) = send("PICK_SUBTITLE $number")
 
     /** A show's season list; the answer comes back as [ServerLine.Episodes]. */
     fun episodes(type: String, id: String) = send("EPISODES ${RemoteProtocol.encode(type)} ${RemoteProtocol.encode(id)}")

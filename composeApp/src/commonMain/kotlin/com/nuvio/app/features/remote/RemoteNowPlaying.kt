@@ -41,7 +41,22 @@ interface RemoteFilmControls {
     fun pause()
     /** 0..volumeMax, as in [RemoteNowPlaying.volume]. */
     fun setVolume(percent: Int)
+
+    /** The subtitles the phone's list shows: Off first, then the file's own, then the add-ons' (see [RemoteSubtitleList]). */
+    fun subtitleChoices(): RemoteSubtitleList = RemoteSubtitleList(loading = false, choices = emptyList())
+
+    /** Picks the [number]th choice (from 1, in the order of [subtitleChoices]) as tapping it in the player's panel would. False when there is none. */
+    fun pickSubtitle(number: Int): Boolean = false
+
+    /** Asks the add-ons for subtitles again; used when the phone opens its list and nothing is there yet. */
+    fun fetchSubtitles() = Unit
 }
+
+/** One row of the phone's subtitle list. [group] is "Off", "Built-in" or the add-on's name. */
+data class RemoteSubtitleChoice(val label: String, val detail: String?, val group: String, val selected: Boolean)
+
+/** The phone's subtitle list: [loading] while the add-ons are still being asked. */
+data class RemoteSubtitleList(val loading: Boolean, val choices: List<RemoteSubtitleChoice>)
 
 object RemotePlayerHub {
     private val _film = MutableStateFlow<RemoteNowPlaying?>(null)

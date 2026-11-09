@@ -175,6 +175,7 @@ private enum class Showing { Browsing, Film, Music }
 private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
     var typing by rememberSaveable { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
+    var showSubtitles by remember { mutableStateOf(false) }
     // Film and music: the touchpad (or D-pad) in place of what is playing, from the tag in the header.
     var padOverPlaying by rememberSaveable { mutableStateOf(false) }
     val playing = state.nowPlaying
@@ -243,11 +244,17 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
                 // The sources panel is a menu on the TV: the pad comes up to move around it.
                 onSources = { padOverPlaying = true },
                 onMore = { more = true },
+                onSubtitles = {
+                    showSubtitles = true
+                    viewModel.loadSubtitles()
+                },
             )
             showing == Showing.Music && playing != null && !padOverPlaying -> MusicBody(state, playing, state.cover, viewModel, onMore = { more = true })
             else -> BrowseBody(state.padMode, viewModel, onSearch = search, onMore = { more = true })
         }
     }
+
+    if (showSubtitles) SubtitleSheet(state.subtitles, viewModel, onDismiss = { showSubtitles = false })
 
     if (more) {
         MoreSheet(
@@ -310,14 +317,22 @@ private fun BrowseBody(padMode: PadMode, viewModel: RemoteViewModel, onSearch: (
 }
 
 @Composable
-private fun FilmBody(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel, onSources: () -> Unit, onMore: () -> Unit) {
+private fun FilmBody(
+    playing: NowPlaying,
+    cover: Bitmap?,
+    viewModel: RemoteViewModel,
+    onSources: () -> Unit,
+    onMore: () -> Unit,
+    onSubtitles: () -> Unit,
+) {
     // What is playing and its controls, with the keys pinned at the bottom. The pad is a tap away (the tag in the
     // header): on a phone there was no room left for a usable one under all of this.
     Column(Modifier.fillMaxSize()) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
             NowPlayingPanel(playing, cover, viewModel, Modifier.padding(top = 8.dp))
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatTile("Subtitles", playing.subtitleTrack ?: "Tap for the next", Modifier.weight(1f)) {
+                // Tap: the next one. Hold: the list of every subtitle the file and the add-ons have.
+                StatTile("Subtitles", playing.subtitleTrack ?: "Tap for next · hold for list", Modifier.weight(1f), onLongClick = onSubtitles) {
                     viewModel.press(RemoteKey.Subtitles)
                 }
                 StatTile("Audio", playing.audioTrack ?: "Tap for the next", Modifier.weight(1f)) {
@@ -540,6 +555,69 @@ private fun LyricsView(lyrics: ServerLine.LyricsText?, playing: NowPlaying, modi
         }
     }
     if (lyrics.synced) GlassTag("Loud", modifier = Modifier.align(Alignment.TopEnd).padding(8.dp), onClick = { loud = true })
+    }
+}
+
+/**
+ * The film player's subtitles (hold the Subtitles tile): Off, the file's own, then each add-on's, with the one in use
+ * marked. Tap one and the TV switches to it, as picking it in its own panel does.
+ */
+@Composable
+private fun SubtitleSheet(list: ServerLine.Subtitles?, viewModel: RemoteViewModel, onDismiss: () -> Unit) {
+    val g = LocalGlass.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Color(0xFF14151A),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            GlassLabel(if (list == null || list.choices.size <= 1) "Subtitles" else "Subtitles · ${list.choices.size - 1} found")
+            if (list == null) {
+                Text("Asking the TV…", color = g.textSecondary, modifier = Modifier.padding(vertical = 24.dp))
+                return@Column
+            }
+            androidx.compose.foundation.lazy.LazyColumn(
+                Modifier.fillMaxWidth().heightIn(max = 520.dp).padding(top = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                var lastGroup: String? = null
+                list.choices.forEach { choice ->
+                    // A small heading where the source changes: the file's own, then each add-on.
+                    if (choice.group != "Off" && choice.group != lastGroup) {
+                        val heading = choice.group
+                        item(key = "group:$heading") {
+                            Text(heading.uppercase(), color = g.textSecondary, fontSize = 11.sp, letterSpacing = 1.2.sp, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+                        }
+                    }
+                    lastGroup = choice.group
+                    item(key = "sub:${choice.number}") {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .glass(RoundedCornerShape(14.dp), fill = if (choice.selected) g.tint else Color.White.copy(alpha = 0.045f), edge = if (choice.selected) g.tintEdge else Color.White.copy(alpha = 0.09f))
+                                // A tap on release, not on touch-down: a finger that starts a scroll must not pick one.
+                                .pointerInput(choice) {
+                                    detectTapGestures(onTap = {
+                                        if (!choice.selected) viewModel.pickSubtitle(choice)
+                                        onDismiss()
+                                    })
+                                }
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(choice.label, color = g.text, fontSize = 15.sp, fontWeight = if (choice.selected) FontWeight.Bold else FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                if (!choice.detail.isNullOrBlank()) Text(choice.detail, color = g.textSecondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            if (choice.selected) Text("On", color = g.text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                if (list.loading) item(key = "loading") {
+                    Text("Still asking the add-ons…", color = g.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
+                }
+            }
+        }
     }
 }
 

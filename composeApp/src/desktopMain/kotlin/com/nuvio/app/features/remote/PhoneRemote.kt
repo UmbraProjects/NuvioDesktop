@@ -226,6 +226,8 @@ internal object PhoneRemote {
         override fun onContinue(): String? = PhoneRemoteLibrary.continueLine()
         override fun onResume(parentId: String, videoId: String): String? = PhoneRemoteLibrary.resume(parentId, videoId)
         override fun onPickSource(number: Int): String? = pickSource(number)
+        override fun onSubtitles(reply: (String) -> Unit) = subtitles(reply)
+        override fun onPickSubtitle(number: Int, reply: (String) -> Unit) = pickSubtitle(number, reply)
         override fun onSearch(query: String, reply: (String) -> Unit) = PhoneRemoteLibrary.search(query, reply)
         override fun onQueue(): String = PhoneRemoteMusic.queueLine()
         override fun onQueueAction(action: String, videoId: String, reply: (String) -> Unit) =
@@ -292,6 +294,44 @@ internal object PhoneRemote {
                 }
         }
     }
+
+    /**
+     * fork:phone-remote subtitles: the film player's subtitle list, to this phone. When only Off is there the add-ons
+     * are asked again, and the list is sent once more a few seconds later with whatever they found.
+     */
+    private fun subtitles(reply: (String) -> Unit) {
+        val film = RemotePlayerHub.filmControls
+        if (film == null) {
+            reply(PhoneRemoteLibraryLines.subtitlesLine(null))
+            return
+        }
+        reply(PhoneRemoteLibraryLines.subtitlesLine(film.subtitleChoices()))
+        if (film.subtitleChoices().choices.size <= 1) {
+            film.fetchSubtitles()
+            mainScope.launch {
+                repeat(SUBTITLE_REFRESHES) {
+                    delay(SUBTITLE_REFRESH_MS)
+                    val now = film.subtitleChoices()
+                    reply(PhoneRemoteLibraryLines.subtitlesLine(now))
+                    if (!now.loading && now.choices.size > 1) return@launch
+                }
+            }
+        }
+    }
+
+    private fun pickSubtitle(number: Int, reply: (String) -> Unit) {
+        val film = RemotePlayerHub.filmControls ?: return
+        if (!film.pickSubtitle(number)) return
+        log.i { "Phone remote: subtitle $number picked" }
+        mainScope.launch {
+            delay(SUBTITLE_PICK_SETTLE_MS)
+            reply(PhoneRemoteLibraryLines.subtitlesLine(film.subtitleChoices()))
+        }
+    }
+
+    private const val SUBTITLE_REFRESHES = 4
+    private const val SUBTITLE_REFRESH_MS = 2_000L
+    private const val SUBTITLE_PICK_SETTLE_MS = 400L
 
     /** Plays the [number]th source on screen as a click on it would; null when there is none to play. */
     private fun pickSource(number: Int): String? {

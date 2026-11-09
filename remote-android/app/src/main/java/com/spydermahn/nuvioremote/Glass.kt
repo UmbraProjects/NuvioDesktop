@@ -215,11 +215,29 @@ fun GlassTag(text: String, modifier: Modifier = Modifier, icon: ImageVector? = n
 
 /** A label and a value on glass ("Subtitles / English SDH"); with [onClick] the whole tile is the button. */
 @Composable
-fun StatTile(label: String, value: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+fun StatTile(label: String, value: String, modifier: Modifier = Modifier, onLongClick: (() -> Unit)? = null, onClick: (() -> Unit)? = null) {
     val g = LocalGlass.current
+    val haptics = LocalHapticFeedback.current
     val base = modifier.glass(RoundedCornerShape(16.dp))
+    // With a long press the tap has to wait for the finger to lift (to tell the two apart); without, it fires on touch-down.
+    val gesture = when {
+        onClick != null && onLongClick != null -> Modifier.pointerInput(onClick, onLongClick) {
+            detectTapGestures(
+                onTap = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                },
+                onLongPress = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onLongClick()
+                },
+            )
+        }
+        onClick != null -> Modifier.pressable(onPress = onClick)
+        else -> Modifier
+    }
     Column(
-        (if (onClick != null) base.then(Modifier.pressable(onPress = onClick)) else base).padding(horizontal = 14.dp, vertical = 10.dp),
+        base.then(gesture).padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Text(label, color = g.textSecondary, fontSize = 12.sp)

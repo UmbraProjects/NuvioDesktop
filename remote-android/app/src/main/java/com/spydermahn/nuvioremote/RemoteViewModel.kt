@@ -44,6 +44,8 @@ data class UiState(
     val sources: SourceList? = null,
     /** Nuvio's catalog search for the Watch tab's query; null until asked. */
     val search: SearchState? = null,
+    /** The film player's subtitles, while the subtitle sheet is open (asked for with a long press on the tile). */
+    val subtitles: ServerLine.Subtitles? = null,
     /** The music player's queue, while the queue sheet is open. */
     val queue: ServerLine.Queue? = null,
     /** The playing song's lyrics, while the lyric view is open. */
@@ -407,6 +409,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     is ServerLine.MusicLibrary -> onMusicLibrary(line)
                     is ServerLine.Continue -> _state.update { it.copy(continueWatching = line.items) }
                     is ServerLine.Sources -> _state.update { it.copy(sources = line.list) }
+                    is ServerLine.Subtitles -> _state.update { it.copy(subtitles = line) }
                     is ServerLine.Queue -> _state.update { it.copy(queue = line) }
                     is ServerLine.LyricsText -> _state.update { it.copy(lyrics = line) }
                     is ServerLine.AlbumTracks -> _state.update { it.copy(albumTracks = line) }
@@ -587,7 +590,15 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     // --- The music queue and lyrics (phase 8) ---
 
-    /** A show's season list, for its sheet. */
+    /** Asks the TV for its subtitle list (the sheet shows "Asking the TV…" until it comes). */
+    fun loadSubtitles() {
+        _state.update { it.copy(subtitles = null) }
+        sendOrReconnect { it.requestSubtitles() }
+    }
+
+    fun pickSubtitle(choice: SubtitleChoice) = sendOrReconnect { it.pickSubtitle(choice.number) }
+
+    /** A show's season list, for its sheet.
     fun loadEpisodes(title: LibraryTitle) {
         val known = _state.value.episodes
         if (known != null && known.id == title.id && known.found) return

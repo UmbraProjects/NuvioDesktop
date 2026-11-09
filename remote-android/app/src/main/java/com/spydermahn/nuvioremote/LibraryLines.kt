@@ -73,6 +73,9 @@ data class SourceInfo(
         }
 }
 
+/** One row of the film player's subtitle list (`SUBTITLES` line); [number] is what PICK_SUBTITLE sends back (Off is 1). */
+data class SubtitleChoice(val number: Int, val label: String, val detail: String?, val group: String, val selected: Boolean)
+
 data class SourceList(val title: String, val loading: Boolean, val sources: List<SourceInfo>)
 
 /** An episode in a show's season list (`EPISODES` line); [videoId] is what PLAY_EPISODE sends back. */
@@ -190,6 +193,17 @@ object LibraryLines {
         }
         val title = parts.getOrNull(3)?.takeUnless { it == "-" }?.let(RemoteProtocol::decode) ?: "Sources"
         return ServerLine.Sources(SourceList(title, loading = parts[2] == "1", sources = sources))
+    }
+
+    /** `SUBTITLES <loading> <choices>`; mirrors `subtitlesLine` in the PC's PhoneRemoteLibraryLines.kt. Off is number 1. */
+    fun parseSubtitles(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 2 || parts[0] != "SUBTITLES") return null
+        val choices = records(parts.getOrNull(2)).mapIndexedNotNull { index, f ->
+            if (f.size < 4) return@mapIndexedNotNull null
+            SubtitleChoice(number = index + 1, label = f[0] ?: "Track ${index + 1}", detail = f[1], group = f[2] ?: "", selected = f[3] == "1")
+        }
+        return ServerLine.Subtitles(loading = parts[1] == "1", choices = choices)
     }
 
     private fun titles(field: String?): List<LibraryTitle> = records(field).mapNotNull { f ->

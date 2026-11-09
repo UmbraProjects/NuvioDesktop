@@ -202,6 +202,18 @@ internal object PhoneRemoteLibraryLines {
         }
     }
 
+    /**
+     * `SUBTITLES <loading 0|1> <choices>`: the film player's subtitles for the phone's list (long press on its
+     * Subtitles tile). Each choice: label, detail, group ("Off", "Built-in" or an add-on's name), selected. The first is
+     * always Off. The phone picks one with `PICK_SUBTITLE <n>` (from 1, in this order).
+     */
+    fun subtitlesLine(list: com.nuvio.app.features.remote.RemoteSubtitleList?): String {
+        if (list == null) return "SUBTITLES 0 -"
+        return "SUBTITLES ${flag(list.loading)} " + records(list.choices) { c ->
+            listOf(text(c.label), text(c.detail), text(c.group), flag(c.selected))
+        }
+    }
+
     /** A source's description runs to several lines (file name, size, seeders); kept whole, up to a point. */
     private fun detail(value: String?): String = value?.trim()?.take(MAX_DETAIL_CHARS)?.takeIf { it.isNotEmpty() }
         ?.let(PhoneRemoteProtocol::encode) ?: "-"

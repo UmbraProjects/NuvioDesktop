@@ -133,6 +133,12 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 ### Phone remote: add-on subtitles
 
+- [x] The Subtitles tile shows the add-on subtitle's name (English (SubSens…) once one is on (2026-11-09)
+- [ ] Hold the Subtitles tile: a sheet lists Off, the file's own subtitles, then each add-on's (under its name), the one in use marked "On"; with none yet it says it is asking and fills in as the add-ons answer
+- [ ] Tapping a row in that sheet switches the TV's subtitles to it (an add-on one loads and shows), the tile follows, and Off turns them off; a quick tap on the tile still cycles to the next
+- [ ] Scrolling the sheet's list does not pick a row by accident
+- [ ] Demo TV: hold Subtitles shows a list of six; picking one changes the tile
+
 - [ ] A film with no built-in subtitles (the screenshot case): once the add-on subtitles are found, the Subtitles tile reads "Off" instead of "Tap for the next"; tapping it picks the first add-on subtitle and the tile shows its name; further taps go through the rest
 
 ## Music playback
