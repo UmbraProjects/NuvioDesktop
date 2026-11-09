@@ -105,8 +105,16 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.foundation.focusable
 import com.nuvio.app.core.ui.arrowFocusDirection
 import androidx.compose.foundation.focusGroup
-import androidx.compose.foundation.LocalIndication
-import com.nuvio.app.core.ui.rememberKeyboardFocusIndication
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.node.requireLayoutCoordinates
+import com.nuvio.app.core.ui.KeyboardInputMode
+import com.nuvio.app.core.ui.focusedControl
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -259,6 +267,7 @@ import com.nuvio.app.core.i18n.localizedString
 internal var perfSettingsPage: String = SettingsPage.Addons.name
 
 private const val SETTINGS_FOCUS_TRIES = 12
+private const val SETTINGS_FOCUS_RING_POLL_MS = 50L
 private val SettingsSearchRevealThreshold = 28.dp
 private const val SettingsSearchRevealAnimationMillis = 240L
 private const val SettingsSearchRevealHapticDelayMillis = 90L
@@ -366,15 +375,56 @@ fun SettingsScreen(
         }
     }
 
-    // fork:settings-arrows - a ring on the row or control holding keyboard focus (see KeyboardFocusIndication).
-    val settingsIndication = if (isDesktop) {
-        rememberKeyboardFocusIndication(MaterialTheme.nuvio.colors.focusRing)
-    } else {
-        LocalIndication.current
+    // fork:settings-arrows - Settings' rows have no focus look of their own, so focus moved with the arrows but nothing
+    // showed where. The page draws one ring over whatever control holds keyboard focus, wherever it is (a sidebar
+    // category, a row, a switch, a button), while the keyboard, a controller or the remote is in use. Polled rather than
+    // tied to each control, so every row type gets it and a list scrolling under the ring moves it along.
+    val focusRingColor = MaterialTheme.nuvio.colors.focusRing
+    val settingsRootCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    var focusRingRect by remember { mutableStateOf<Rect?>(null) }
+    if (isDesktop) {
+        LaunchedEffect(Unit) {
+            while (true) {
+                val rect = if (KeyboardInputMode.active && settingsKeyboardRoot.hasFocus) {
+                    val root = settingsRootCoordinates[0]
+                    val control = settingsFocusManager.focusedControl()
+                    if (root != null && root.isAttached && control != null && control.node.isAttached) {
+                        runCatching { root.localBoundingBoxOf(control.requireLayoutCoordinates(), clipBounds = true) }
+                            .getOrNull()
+                            ?.takeIf { it.width > 0f && it.height > 0f }
+                    } else {
+                        null
+                    }
+                } else {
+                    null
+                }
+                if (rect != focusRingRect) focusRingRect = rect
+                delay(SETTINGS_FOCUS_RING_POLL_MS)
+            }
+        }
     }
-    CompositionLocalProvider(LocalIndication provides settingsIndication) {
+    val focusRingModifier = if (isDesktop) {
+        Modifier
+            .onGloballyPositioned { settingsRootCoordinates[0] = it }
+            .drawWithContent {
+                drawContent()
+                val rect = focusRingRect ?: return@drawWithContent
+                val stroke = 2.dp.toPx()
+                val outset = 2.dp.toPx()
+                val radius = 10.dp.toPx()
+                drawRoundRect(
+                    color = focusRingColor,
+                    topLeft = Offset(rect.left - outset, rect.top - outset),
+                    size = Size(rect.width + outset * 2, rect.height + outset * 2),
+                    cornerRadius = CornerRadius(radius, radius),
+                    style = Stroke(width = stroke),
+                )
+            }
+    } else {
+        Modifier
+    }
     BoxWithConstraints(
-        modifier = modifier.then(homeKeyModifier).then(arrowKeyModifier).fillMaxSize(),
+        modifier = modifier.then(homeKeyModifier).then(arrowKeyModifier).then(focusRingModifier).fillMaxSize(),
     ) {
         val playerSettingsUiState by remember {
             PlayerSettingsRepository.ensureLoaded()
@@ -796,7 +846,6 @@ fun SettingsScreen(
             target = pendingDownloadsDelete,
             onDismiss = { pendingDownloadsDelete = null },
         )
-    }
     }
 }
 
