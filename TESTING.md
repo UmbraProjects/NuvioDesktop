@@ -20,7 +20,7 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Now playing on the phone (cover, seek bar), with lock-screen and notification controls (2026-11-08)
 - [x] Send to Nuvio: a YouTube or YouTube Music link from the phone's share menu plays on the TV (2026-11-08)
 - [x] Movies & TV tab: library posters show; tapping one opens its details on the TV (2026-11-08)
-- [ ] **BROKEN** Watch tab sometimes lists the Torbox cloud files as "Your library" (no section chips, about 250 titles), and tapping one fails on the TV; other times the real library (My Shows, My Movies..., about 760) (2026-11-09)
+- [x] Watch tab sometimes lists the Torbox cloud files as "Your library" (no section chips, about 250 titles), and tapping one fails on the TV; other times the real library (My Shows, My Movies..., about 760) (2026-11-09) - fixed (2026-11-09)
   - [x] Re-check after the fix: the Watch tab always ends up with the real library and its section chips (it keeps asking for up to half a minute after Nuvio starts, and again when the tab is reopened); Torbox files are no longer in it (2026-11-09)
 - [x] Music tab: albums and artists show; Play / Shuffle / Add to queue and an artist's Shuffle all / Radio play on the TV (2026-11-08)
 - Remote tab bottom row of five keys: dropped, the glass redesign replaced that layout (2026-11-08)
@@ -45,17 +45,17 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Dark mode: the Dark key (film or music screen, or More) turns the phone black and dims it (Medium, 15%, to start), hides the status and navigation bars, and the screen stays on (2026-11-09)
 - [x] Dark mode hints (tap, swipe, hold) show for a few seconds and fade; Back brings them back instead of leaving (2026-11-09)
 - [x] Dark mode brightness: Low / Medium / High under the hints (Back shows them again) changes the phone's brightness at once, is kept for next time, and tapping one does not also pause the film (2026-11-09)
-- [ ] **BROKEN** Dark mode, a film: tap is play/pause, swipe left/right is 10 s back/ahead per step with a tick each, swipe up/down is volume; each shows faintly in the middle (2026-11-09): tap works, but no swipe does anything, in any direction
+- [x] Dark mode, a film: tap is play/pause, swipe left/right is 10 s back/ahead per step with a tick each, swipe up/down is volume; each shows faintly in the middle (2026-11-09): tap works, but no swipe does anything, in any direction - fixed (2026-11-09)
   - [x] Re-check after the fix: swipes left/right (10 s, or songs for music) and up/down (volume) work, each with a tick; hold for a second leaves (2026-11-09)
 - [x] Dark mode, music: swipe left/right is the previous/next song (one per swipe) (2026-11-09)
 - [x] Dark mode: holding a finger anywhere for a second draws a faint ring and leaves; brightness and the bars come back (2026-11-09)
 - [x] Demo TV: Try the demo TV (on the PC list) asks for the code 123456, then connects as "Demo TV" and stays in the paired list (2026-11-09)
 - [x] Demo TV: the "Demo TV received" strip shows each key, swipe and typed text (2026-11-09, from Nick's screenshots)
 - [x] Demo TV: More > Demo TV plays a film or an album, stops it, and changes the theme (the app follows) (2026-11-09)
-- [ ] **BROKEN** Film screen with the demo strip (2026-11-09, from Nick's screenshots): the D-pad / touchpad panel is squeezed down to its title bar, with no pad left to use
+- [x] Film screen with the demo strip (2026-11-09, from Nick's screenshots): the D-pad / touchpad panel is squeezed down to its title bar, with no pad left to use - fixed (2026-11-09)
   - [~] Re-check after the fix (2026-11-09, from Nick's screenshots): the keys stay whole at the bottom, but the pad was still pushed off the screen
   - [x] Re-check after the second fix: the film screen has no pad on it any more; the Touchpad tag in its header (as on the music screen) swaps to the full-size pad and Now playing swaps back; Sources brings the pad up by itself (2026-11-09)
-- [ ] **BROKEN** Music screen (2026-11-09, from Nick's screenshot): the Back / Search / Dark / More keys are cut in half by the tab bar
+- [x] Music screen (2026-11-09, from Nick's screenshot): the Back / Search / Dark / More keys are cut in half by the tab bar - fixed (2026-11-09)
   - [x] Re-check after the fix: the cover shrinks to fit, and the keys show whole above the tab bar (2026-11-09, from Nick's screenshot)
 - [x] Demo TV: Watch and Music tabs show the pretend library (with photos when online); opening a title plays it after 2 s; an album plays, shuffles, next and previous work (2026-11-09, from Nick's screenshots)
 - [x] Demo TV: the lock-screen controls show the pretend film or song and work (2026-11-09)
@@ -77,27 +77,27 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] The phone's own camera app, pointed at the code, offers to open Nuvio Remote, which then pairs (2026-11-09)
 - [x] "Scan the TV's code instead" on the code screen works the same (2026-11-09)
 - [x] New code on the PC changes the QR code too; an old QR then says the code isn't right (2026-11-09)
-- [ ] Demo TV: scanning the demo QR picture (sent in the chat) pairs with Demo TV
+- [x] Demo TV: scanning the demo QR picture (sent in the chat) pairs with Demo TV (2026-11-09)
 
 ### Phone remote: pick the source on the phone (phase 5)
 
 - [x] When a film or episode's source list opens on the TV, the remote shows the same list in the same order: name, addon, size, an Instant tag for cached ones, and the file details (2026-11-09)
-- [ ] It fills in as the TV finds sources ("Finding sources… N so far" with a thin bar), then shows the total
+- [x] It fills in as the TV finds sources ("Finding sources… N so far" with a thin bar), then shows the total (2026-11-09)
 - [x] Tapping a source plays that one on the TV; greyed-out rows (the ones the TV greys) do nothing (2026-11-09)
-- [ ] The Instant tag at the top shows only the cached sources
-- [ ] The header tag (or the Pad key) swaps to the touchpad and back, for anything else on the TV's list
-- [ ] Sources during a film (the player's sources panel) shows its list on the phone too
-- [ ] Back closes the list on the TV and the phone goes back to the remote
-- [ ] Demo TV: opening a title shows four pretend sources (the last greyed); picking one plays it
+- [x] The Instant tag at the top shows only the cached sources (2026-11-09)
+- [x] The header tag (or the Pad key) swaps to the touchpad and back, for anything else on the TV's list (2026-11-09)
+- [x] Sources during a film (the player's sources panel) shows its list on the phone too (2026-11-09)
+- [x] Back closes the list on the TV and the phone goes back to the remote (2026-11-09)
+- [x] Demo TV: opening a title shows four pretend sources (the last greyed); picking one plays it (2026-11-09)
 
 ### Phone remote: search everything and voice search (phase 6)
 
 - [x] Watch tab: typing a search (and pausing) adds "From your addons" under your library's matches: what Nuvio's Search tab finds, with posters, filling in while it searches (2026-11-09)
 - [x] Tapping a result opens its page on the TV, and the phone says its name (2026-11-09)
 - [x] The mic in the Watch and Music search boxes (while empty) opens the phone's voice typing; what you say becomes the search (2026-11-09)
-- [ ] Remote tab: Search, then the mic beside the text box, types what you say into the TV's search box
-- [ ] A search on the phone while the TV is on its own Search tab does not upset it
-- [ ] Demo TV: searching "signal" shows The Long Signal and two pretend catalog results
+- [x] Remote tab: Search, then the mic beside the text box, types what you say into the TV's search box (2026-11-09)
+- [x] A search on the phone while the TV is on its own Search tab does not upset it (2026-11-09)
+- [x] Demo TV: searching "signal" shows The Long Signal and two pretend catalog results (2026-11-09)
 
 ### Phone remote: wake the PC (phase 7)
 
@@ -109,27 +109,27 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 ### Phone remote: music queue and lyrics (phase 8)
 
-- [ ] Music screen keys are Back, Queue, Lyrics, Dark, More (Search is on the pad view now)
-- [ ] Queue opens a sheet of the TV's queue (cover, title, artist, length), the playing song highlighted and scrolled to
-- [ ] **BROKEN** Music tab (2026-11-09): tapping an album only plays the whole album; there is no way to play one of its songs
-  - [ ] Re-check after the fix: the album sheet lists the album's songs under Play / Shuffle / Add to queue; tapping one plays the album from that song on the TV
-- [ ] Tapping a song in the queue plays it on the TV; Play next and Remove (on songs still to come) change the queue, and the sheet shows the change
+- [x] Music screen keys are Back, Queue, Lyrics, Dark, More (Search is on the pad view now) (2026-11-09)
+- [x] Queue opens a sheet of the TV's queue (cover, title, artist, length), the playing song highlighted and scrolled to (2026-11-09)
+- [x] Music tab (2026-11-09): tapping an album only plays the whole album; there is no way to play one of its songs - fixed (2026-11-09)
+  - [x] Re-check after the fix: the album sheet lists the album's songs under Play / Shuffle / Add to queue; tapping one plays the album from that song on the TV (2026-11-09)
+- [x] Tapping a song in the queue plays it on the TV; Play next and Remove (on songs still to come) change the queue, and the sheet shows the change (2026-11-09)
 - [x] Lyrics (or a tap on the cover) shows the song's lyrics in the cover's place; timed ones follow the song with the sung line bright and kept in view (2026-11-09)
-- [ ] Lyrics follow to the next song by themselves; a song with none says so
-- [~] Lyrics on the phone look like the stage's Loud style: each line big in its own face and colour, words outlined and landing as sung (on the beat for word-timed songs); the next line small underneath (2026-11-09): works, but the words were too big: the next line went off the box and the words ran under the List tag
+- [x] Lyrics follow to the next song by themselves; a song with none says so (2026-11-09)
+- [x] Lyrics on the phone look like the stage's Loud style: each line big in its own face and colour, words outlined and landing as sung (on the beat for word-timed songs); the next line small underneath (2026-11-09): works, but the words were too big: the next line went off the box and the words ran under the List tag - fits and shows whole lines after the third fix (2026-11-09)
   - [~] Re-check after the fix (2026-11-09): fits now, but long lines were cut short with … instead of shown whole
   - [~] Re-check after the second fix (2026-11-09): whole lines now, but the last row of a two- or three-row line was cut off at the bottom ("ALL FOR NOTHING", "DID YOU REALLY WANT ?")
-  - [ ] Re-check after the third fix: every row of a long line is fully visible, none cut at the bottom, and the next line still shows under it
-- [ ] The List / Loud tag in the lyrics' corner switches to the scrolling list and back
-- [ ] Demo TV: an album's queue and pretend timed lyrics
+  - [x] Re-check after the third fix: every row of a long line is fully visible, none cut at the bottom, and the next line still shows under it (2026-11-09)
+- [x] The List / Loud tag in the lyrics' corner switches to the scrolling list and back (2026-11-09)
+- [x] Demo TV: an album's queue and pretend timed lyrics (2026-11-09)
 
 ### Phone remote: a show's episodes on the phone
 
-- [ ] Watch tab: tapping a show (not a film) opens its sheet on the phone with season tags and the episodes (picture, number, title, how far watched), instead of only opening it on the TV
-- [ ] It opens on the first season with an episode not yet watched through
-- [ ] Tapping an episode plays it on the TV as its details page would: its source list comes up on the remote to pick from
-- [ ] Details on the TV in the sheet still opens the show's page on the TV; a film still opens straight on the TV
-- [ ] Demo TV: Harbour Lights shows two seasons of six episodes, the first three watched
+- [x] Watch tab: tapping a show (not a film) opens its sheet on the phone with season tags and the episodes (picture, number, title, how far watched), instead of only opening it on the TV (2026-11-09)
+- [x] It opens on the first season with an episode not yet watched through (2026-11-09)
+- [x] Tapping an episode plays it on the TV as its details page would: its source list comes up on the remote to pick from (2026-11-09)
+- [x] Details on the TV in the sheet still opens the show's page on the TV; a film still opens straight on the TV (2026-11-09)
+- [x] Demo TV: Harbour Lights shows two seasons of six episodes, the first three watched (2026-11-09)
 
 ## Music playback
 
