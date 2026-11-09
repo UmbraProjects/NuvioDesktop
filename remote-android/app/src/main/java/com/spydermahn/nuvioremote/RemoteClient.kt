@@ -70,6 +70,17 @@ data class NowPlaying(
     /** The film's subtitle in use ("English SDH" or "Off"); null from a PC that does not say. */
     val subtitleTrack: String? = null,
     val audioTrack: String? = null,
+    /** The film's speed in percent (100 is 1x); null from a PC that does not say. */
+    val speedPercent: Int? = null,
+    /** "Skip intro" and the like while a skippable part plays. */
+    val skipLabel: String? = null,
+    val canNextEpisode: Boolean = false,
+    /** Minutes left on the PC's sleep timer; 0 when it is off. */
+    val sleepMinutes: Int = 0,
+    /** Music only: shuffle, repeat (0 off, 1 all, 2 one) and whether the song is liked (null when not signed in or unknown). */
+    val shuffle: Boolean? = null,
+    val repeat: Int? = null,
+    val liked: Boolean? = null,
 ) {
     val hasTimeline: Boolean get() = durationMs > 0L
 
@@ -157,6 +168,13 @@ sealed interface ServerLine {
                 receivedAtMs = nowMs,
                 subtitleTrack = parts.getOrNull(11)?.let { if (it == "-" || it.isBlank()) null else RemoteProtocol.decode(it) },
                 audioTrack = parts.getOrNull(12)?.let { if (it == "-" || it.isBlank()) null else RemoteProtocol.decode(it) },
+                speedPercent = parts.getOrNull(13)?.toIntOrNull(),
+                skipLabel = parts.getOrNull(14)?.let { if (it == "-" || it.isBlank()) null else RemoteProtocol.decode(it) },
+                canNextEpisode = parts.getOrNull(15) == "1",
+                sleepMinutes = parts.getOrNull(16)?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
+                shuffle = parts.getOrNull(17)?.let { if (it == "1") true else if (it == "0") false else null },
+                repeat = parts.getOrNull(18)?.toIntOrNull(),
+                liked = parts.getOrNull(19)?.let { if (it == "1") true else if (it == "0") false else null },
             )
         }
     }
@@ -273,6 +291,12 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
     fun seek(positionMs: Long) = send("SEEK ${positionMs.coerceAtLeast(0L)}")
 
     fun volume(level: Int) = send("VOLUME ${level.coerceAtLeast(0)}")
+
+    /**
+     * A film or music extra: `SPEED <percent>`, `SKIP_INTRO`, `NEXT_EPISODE`, `SLEEP <minutes>`, `SHUFFLE <0|1>`,
+     * `REPEAT <0|1|2>`, `LIKE`, `RADIO`. The PC answers by sending STATE again.
+     */
+    fun control(line: String) = send(line)
 
     /** The answer comes back as a [ServerLine.VideoLibrary] or [ServerLine.MusicLibrary] through [listen]. */
     fun requestLibrary(kind: String) = send("LIBRARY $kind")

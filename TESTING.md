@@ -152,6 +152,18 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] A source whose name says nothing readable shows its name as before, not an empty card
 - [ ] Demo TV: the first source shows 4K, Dolby Vision and HEVC; the second shows 1080p, HDR10 and H.264
 
+### Phone remote: film extras, music extras and the More sheet
+
+- [ ] Film screen: under the play button a card shows the TV's volume slider, the speed chips (0.75x to 2x) and the sleep chips; dragging the slider changes the TV's volume, and the number follows
+- [ ] Tapping a speed chip changes the film's speed on the TV and the chip lights; the TV's own speed panel agrees
+- [ ] During a show's intro (or recap, credits) a "Skip intro" (or "Skip credits", "Skip recap") button shows above the card; tapping it jumps the TV past it; it disappears once the part is over
+- [ ] On a show with a next episode, "Next episode" shows and tapping it starts that episode on the TV; on a film it is not there
+- [ ] Sleep: tapping 15 min starts a timer, the chip row says "N min left", and when it ends the TV pauses; Off cancels it; the same chips are in More
+- [ ] Music screen: a row of Shuffle, Repeat, Like and Radio under the play button. Shuffle and Repeat (off, all, one) change the TV's queue and light up; Radio starts a radio from the playing song
+- [ ] Like shows only when signed in to YouTube Music on the TV; tapping it fills or empties the heart and the TV's heart agrees
+- [ ] More sheet is in three groups (Playback with volume and sleep, Display with pad and dark mode, Device with Type and Other PC) and scrolls on a small phone
+- [ ] Demo TV: the film shows "Skip intro" for its first minute; speed, sleep, shuffle, repeat and like all answer
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)

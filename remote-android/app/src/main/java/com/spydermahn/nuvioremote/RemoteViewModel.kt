@@ -316,6 +316,18 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     fun backspace(count: Int) = sendOrReconnect { session -> repeat(count) { session.key(RemoteKey.Backspace) } }
 
+    /** Sends a film or music extra (see [RemoteSession.control]); [shown] updates the card at once rather than waiting for the PC. */
+    fun control(line: String, shown: (NowPlaying) -> NowPlaying = { it }) {
+        _state.update { state -> state.copy(nowPlaying = state.nowPlaying?.let(shown)) }
+        sendOrReconnect { it.control(line) }
+    }
+
+    /** Sets the TV's volume from the slider, 0 to the player's maximum. */
+    fun setVolume(level: Int) {
+        _state.update { state -> state.copy(nowPlaying = state.nowPlaying?.copy(volume = level)) }
+        sendOrReconnect { it.volume(level) }
+    }
+
     /** Seeks the PC's player; the card shows the new position at once rather than waiting for the PC. */
     fun seek(positionMs: Long) {
         _state.update { state ->

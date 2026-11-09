@@ -31,6 +31,18 @@ data class RemoteNowPlaying(
     val subtitleTrack: String? = null,
     /** The film player's audio track in use ("English 5.1"), or null. */
     val audioTrack: String? = null,
+    /** The film player's speed in percent (100 is 1x), or null when it cannot report it. */
+    val speedPercent: Int? = null,
+    /** "Skip intro" and the like while a skippable part is playing, else null. */
+    val skipLabel: String? = null,
+    /** True when the film player has a next episode to move to. */
+    val canNextEpisode: Boolean = false,
+    /** Minutes left on the sleep timer (rounded up), 0 when it is off. */
+    val sleepMinutes: Int = 0,
+    /** Music only: shuffle on, repeat (0 off, 1 all, 2 one), and whether the song is liked (null when not signed in). */
+    val shuffle: Boolean? = null,
+    val repeat: Int? = null,
+    val liked: Boolean? = null,
 )
 
 /** What the phone can do to the film player beyond the keys a controller sends. */
@@ -53,6 +65,15 @@ interface RemoteFilmControls {
 
     /** Picks the [number]th audio track (from 1, in the order of [audioChoices]) as the player's panel would. False when there is none. */
     fun pickAudio(number: Int): Boolean = false
+
+    /** Sets the playback speed in percent (100 is 1x), as the player's speed panel does. */
+    fun setSpeedPercent(percent: Int) = Unit
+
+    /** Skips the intro (or recap, credits) now showing, as the skip prompt does. False when there is nothing to skip. */
+    fun skipSegment(): Boolean = false
+
+    /** Moves on to the next episode as the player's next-episode button does. False when there is none. */
+    fun nextEpisode(): Boolean = false
 
     /** Asks the add-ons for subtitles again; used when the phone opens its list and nothing is there yet. */
     fun fetchSubtitles() = Unit

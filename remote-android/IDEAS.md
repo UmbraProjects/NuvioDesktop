@@ -5,9 +5,9 @@ From the UX review of Nov 9 2026 (nine demo screenshots, so nothing here says ho
 ## Build order
 
 1. [x] **Sources cards**: badges for resolution, HDR / Dolby Vision, codec and size; release name demoted; filter chips. Phone only (Nov 9)
-2. [ ] **Film Remote controls**: volume, speed, sleep timer and context buttons ("Skip intro", "Next episode") in the empty space under the transport row. Needs new protocol lines, change both sides together. Check first what the player exposes for speed
-3. [ ] **Music Remote extras**: shuffle, repeat, like and Start radio beside the transport; keep Loud lyrics as the hero. The desktop actions exist
-4. [ ] **More sheet regrouped**: Playback, Display, Device
+2. [x] **Film Remote controls**: volume slider, speed, sleep timer, Skip intro and Next episode under the transport row (Nov 9)
+3. [x] **Music Remote extras**: shuffle, repeat, like and Radio under the transport (Nov 9)
+4. [x] **More sheet regrouped**: Playback, Display, Device (Nov 9)
 5. [ ] **Second-screen music mode**: facts, credits and Wikipedia text for the playing song; Other versions and Cut to fit. Largest piece, last
 
 ## Smaller ideas

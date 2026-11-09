@@ -67,6 +67,12 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RadioButtonChecked
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SettingsRemote
@@ -100,6 +106,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -366,6 +373,7 @@ private fun FilmBody(
                 }
             }
             Transport(playing, viewModel, Modifier.padding(top = 18.dp))
+            FilmExtras(playing, viewModel, Modifier.padding(top = 16.dp, bottom = 8.dp))
         }
         BottomKeys {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 56.dp) { viewModel.press(RemoteKey.Back) }
@@ -568,6 +576,7 @@ private fun MusicBody(state: UiState, playing: NowPlaying, cover: Bitmap?, viewM
         }
         Seek(playing, viewModel, Modifier.padding(top = 12.dp))
         Transport(playing, viewModel, Modifier.padding(top = 4.dp))
+        MusicExtras(playing, viewModel, Modifier.padding(top = 10.dp))
         BottomKeys {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 50.dp) { viewModel.press(RemoteKey.Back) }
             GlassKey(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", size = 50.dp) {
@@ -857,6 +866,124 @@ private fun Seek(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modi
     }
 }
 
+/**
+ * Under the film's transport: a Skip button while an intro, recap or credits part plays, Next episode when there is
+ * one, then the TV's volume, the speed and the sleep timer. Each part only shows what the PC says it can do.
+ */
+@Composable
+private fun FilmExtras(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
+    val g = LocalGlass.current
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (playing.skipLabel != null || playing.canNextEpisode) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                playing.skipLabel?.let { label ->
+                    ActionPill(label, Icons.Rounded.SkipNext, accent = true, modifier = Modifier.weight(1f)) { viewModel.control("SKIP_INTRO") }
+                }
+                if (playing.canNextEpisode) {
+                    ActionPill("Next episode", Icons.Rounded.SkipNext, accent = playing.skipLabel == null, modifier = Modifier.weight(1f)) {
+                        viewModel.control("NEXT_EPISODE")
+                    }
+                }
+            }
+        }
+        Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(20.dp)).padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            playing.volume?.let { level ->
+                val max = playing.volumeMax.coerceAtLeast(1)
+                var dragging by remember { mutableStateOf<Int?>(null) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.AutoMirrored.Rounded.VolumeUp, contentDescription = "TV volume", tint = g.textSecondary, modifier = Modifier.size(20.dp))
+                    SeekBar(
+                        fraction = (dragging ?: level).toFloat() / max,
+                        onScrub = { fraction -> dragging = (fraction * max).toInt().coerceIn(0, max) },
+                        onScrubEnd = {
+                            dragging?.let(viewModel::setVolume)
+                            dragging = null
+                        },
+                        modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
+                    )
+                    Text("${dragging ?: level}", color = g.textSecondary, fontSize = 13.sp, modifier = Modifier.width(30.dp), textAlign = TextAlign.End)
+                }
+            }
+            playing.speedPercent?.let { speed ->
+                ChipRow("Speed") {
+                    listOf(75 to "0.75x", 100 to "1x", 125 to "1.25x", 150 to "1.5x", 200 to "2x").forEach { (percent, label) ->
+                        GlassTag(label, accent = speed == percent, onClick = {
+                            viewModel.control("SPEED $percent") { it.copy(speedPercent = percent) }
+                        })
+                    }
+                }
+            }
+            SleepChips(playing, viewModel)
+        }
+    }
+}
+
+/** A label, then chips that scroll sideways when they do not fit. */
+@Composable
+private fun ChipRow(label: String, chips: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    val g = LocalGlass.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, color = g.textMuted, fontSize = 12.sp, modifier = Modifier.width(48.dp))
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), content = chips)
+    }
+}
+
+/** The PC's sleep timer: pauses what is playing after 15, 30 or 60 minutes; shows the minutes left while it runs. */
+@Composable
+private fun SleepChips(playing: NowPlaying, viewModel: RemoteViewModel) {
+    ChipRow("Sleep") {
+        GlassTag("Off", accent = playing.sleepMinutes == 0, onClick = { viewModel.control("SLEEP 0") { it.copy(sleepMinutes = 0) } })
+        listOf(15, 30, 60).forEach { minutes ->
+            GlassTag("$minutes min", onClick = { viewModel.control("SLEEP $minutes") { it.copy(sleepMinutes = minutes) } })
+        }
+        if (playing.sleepMinutes > 0) GlassTag("${playing.sleepMinutes} min left", accent = true)
+    }
+}
+
+/** A wide button for one action ("Skip intro", "Next episode"). */
+@Composable
+private fun ActionPill(text: String, icon: ImageVector, accent: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val g = LocalGlass.current
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier
+            .height(52.dp)
+            .then(if (accent) Modifier.glass(shape, fill = g.tint, edge = g.tintEdge) else Modifier.glass(shape))
+            .pressable(onPress = onClick)
+            .padding(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = if (accent) g.accent else g.text, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.size(8.dp))
+        Text(text, color = if (accent) g.accent else g.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    }
+}
+
+/** Under the music transport: shuffle, repeat, like (when signed in to YouTube Music on the PC) and a radio from this song. */
+@Composable
+private fun MusicExtras(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        playing.shuffle?.let { on ->
+            GlassKey(Icons.Rounded.Shuffle, null, size = 48.dp, active = on) {
+                viewModel.control("SHUFFLE ${if (on) 0 else 1}") { it.copy(shuffle = !on) }
+            }
+        }
+        playing.repeat?.let { mode ->
+            GlassKey(if (mode == 2) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat, null, size = 48.dp, active = mode != 0) {
+                val next = (mode + 1) % 3
+                viewModel.control("REPEAT $next") { it.copy(repeat = next) }
+            }
+        }
+        playing.liked?.let { liked ->
+            GlassKey(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, size = 48.dp, active = liked) {
+                viewModel.control("LIKE") { it.copy(liked = !liked) }
+            }
+        }
+        GlassKey(Icons.Rounded.Radio, null, size = 48.dp) { viewModel.control("RADIO") }
+    }
+}
+
 /** Back 10s · the one play/pause, tinted and showing what a press does · forward 10s; previous and next for music. */
 @Composable
 private fun Transport(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
@@ -1003,7 +1130,7 @@ private fun DPad(viewModel: RemoteViewModel, size: androidx.compose.ui.unit.Dp) 
 
 // ------------------------------------------------------------------------------------------------ More and typing
 
-/** Everything that is not on the screen: volume and mute, typing, the pad switch, another PC. */
+/** Everything that is not on the screen, in three groups: Playback (volume, sleep timer), Display (pad, dark mode), Device (typing, another PC). */
 @Composable
 private fun MoreSheet(state: UiState, viewModel: RemoteViewModel, onType: () -> Unit, onDismiss: () -> Unit) {
     val g = LocalGlass.current
@@ -1012,14 +1139,19 @@ private fun MoreSheet(state: UiState, viewModel: RemoteViewModel, onType: () -> 
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = Color(0xFF14151A),
     ) {
-        Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-            GlassLabel("More")
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            GlassLabel("Playback")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 GlassKey(Icons.AutoMirrored.Rounded.VolumeOff, "Mute") { viewModel.press(RemoteKey.Mute) }
                 GlassKey(Icons.AutoMirrored.Rounded.VolumeDown, "Vol −", repeat = true) { viewModel.press(RemoteKey.VolumeDown) }
                 GlassKey(Icons.AutoMirrored.Rounded.VolumeUp, "Vol +", repeat = true) { viewModel.press(RemoteKey.VolumeUp) }
-                GlassKey(Icons.Rounded.Keyboard, "Type", onPress = onType)
             }
+            state.nowPlaying?.let { SleepChips(it, viewModel) }
+
+            GlassLabel("Display")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 GlassKey(
                     if (state.padMode == PadMode.Touchpad) Icons.Rounded.RadioButtonChecked else Icons.Rounded.OpenWith,
@@ -1028,13 +1160,19 @@ private fun MoreSheet(state: UiState, viewModel: RemoteViewModel, onType: () -> 
                     viewModel.setPadMode(if (state.padMode == PadMode.Touchpad) PadMode.DPad else PadMode.Touchpad)
                     onDismiss()
                 }
-                GlassKey(Icons.Rounded.Devices, "Other PC") {
-                    onDismiss()
-                    viewModel.showPicker()
-                }
                 GlassKey(Icons.Rounded.DarkMode, "Dark") {
                     onDismiss()
                     viewModel.setDark(true)
+                }
+                Spacer(Modifier.size(60.dp))
+            }
+
+            GlassLabel("Device")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                GlassKey(Icons.Rounded.Keyboard, "Type", onPress = onType)
+                GlassKey(Icons.Rounded.Devices, "Other PC") {
+                    onDismiss()
+                    viewModel.showPicker()
                 }
                 Spacer(Modifier.size(60.dp))
             }

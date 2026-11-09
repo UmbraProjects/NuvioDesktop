@@ -38,6 +38,8 @@ import java.nio.charset.StandardCharsets
  * phone: SUBTITLES                      the film player's subtitle list (long press on the Subtitles tile)
  * pc:    SUBTITLES <loading 0|1> <label,detail,group,selected;...>   Off first; again as the add-ons answer
  * phone: PICK_SUBTITLE <n>              the nth of that list (Off is 1); the PC then sends SUBTITLES again
+ * phone: SPEED <percent> | SKIP_INTRO | NEXT_EPISODE | SLEEP <minutes, 0 off>      film extras (STATE carries the answers)
+ * phone: SHUFFLE <0|1> | REPEAT <0 off|1 all|2 one> | LIKE | RADIO                   music extras
  * phone: SEEK <ms> | VOLUME <0..volumeMax>
  * phone: OPEN <url>                     a link from the phone's share menu
  * pc:    OPENING <what> | CANT_OPEN     (only for OPEN)
@@ -83,6 +85,15 @@ internal object PhoneRemoteProtocol {
             // Added later: an older phone reads the first eleven fields and ignores these.
             field(state.subtitleTrack?.take(MAX_FIELD_CHARS)),
             field(state.audioTrack?.take(MAX_FIELD_CHARS)),
+            // Added with the film and music extras: speed in percent, skip label, next episode, sleep minutes left,
+            // shuffle, repeat (0 off, 1 all, 2 one), liked. `-` where the player cannot say.
+            state.speedPercent?.toString() ?: "-",
+            field(state.skipLabel?.take(MAX_FIELD_CHARS)),
+            if (state.canNextEpisode) "1" else "0",
+            state.sleepMinutes.coerceAtLeast(0).toString(),
+            state.shuffle?.let { if (it) "1" else "0" } ?: "-",
+            state.repeat?.toString() ?: "-",
+            state.liked?.let { if (it) "1" else "0" } ?: "-",
         ).joinToString(" ")
     }
 
@@ -168,6 +179,11 @@ internal object PhoneRemoteProtocol {
             "AUDIO" -> RemoteMessage.AudioRequest
             "PICK_AUDIO" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickAudio(it) }
             "PICK_SUBTITLE" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickSubtitle(it) }
+            // fork:phone-remote extras: speed, skip, next episode, sleep timer, shuffle, repeat, like, radio.
+            "SPEED", "SLEEP", "SHUFFLE", "REPEAT" -> ControlAction.fromWire(parts[0])?.let { action ->
+                parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 0 }?.let { RemoteMessage.Control(action, it) }
+            }
+            "SKIP_INTRO", "NEXT_EPISODE", "LIKE", "RADIO" -> ControlAction.fromWire(parts[0])?.let { RemoteMessage.Control(it, 0) }
             "RESUME" -> if (parts.size >= 3) {
                 RemoteMessage.Resume(parentId = decode(parts[1]), videoId = decode(parts[2]))
                     .takeIf { it.parentId.isNotBlank() && it.videoId.isNotBlank() }
@@ -206,6 +222,17 @@ internal sealed interface RemoteMessage {
     data class PlayEpisode(val type: String, val id: String, val videoId: String) : RemoteMessage
     data class AlbumTracks(val browseId: String) : RemoteMessage
     data class PlayTrack(val browseId: String, val index: Int) : RemoteMessage
+    data class Control(val action: ControlAction, val value: Int) : RemoteMessage
+}
+
+/** The film and music extras the phone can ask for. [value] is the speed in percent, the sleep minutes (0 off), 0/1, or the repeat mode. */
+internal enum class ControlAction(val wire: String) {
+    Speed("SPEED"), SkipIntro("SKIP_INTRO"), NextEpisode("NEXT_EPISODE"), Sleep("SLEEP"),
+    Shuffle("SHUFFLE"), Repeat("REPEAT"), Like("LIKE"), Radio("RADIO");
+
+    companion object {
+        fun fromWire(wire: String): ControlAction? = entries.firstOrNull { it.wire == wire }
+    }
 }
 
 internal enum class AlbumAction(val wire: String) {

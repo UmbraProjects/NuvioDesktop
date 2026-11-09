@@ -16,6 +16,10 @@ import com.nuvio.app.features.music.coverUrl
 import com.nuvio.app.features.music.defaultMusicCatalog
 import com.nuvio.app.features.music.loadPlaylistQueue
 import com.nuvio.app.features.music.loadSongRadio
+import com.nuvio.app.features.music.MusicRepeat
+import com.nuvio.app.features.music.library.MusicAccountShelves
+import com.nuvio.app.features.music.library.MusicLikedSongs
+import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -216,6 +220,8 @@ internal object PhoneRemote {
             }
         }
 
+        override fun onControl(action: ControlAction, value: Int) = control(action, value)
+
         override fun onOpen(url: String): String? = openShared(url)
 
         // fork:phone-remote library: browsing on the phone, choosing plays or opens on the TV.
@@ -252,13 +258,85 @@ internal object PhoneRemote {
         // Read here, on the caller's (main) thread: the music player is created on first use.
         val musicState = MusicPlayback.player.state
         stateWatch = CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            combine(RemotePlayerHub.film, musicState) { film, music ->
-                if (RemotePlayerHub.filmControls != null) film else musicNowPlaying(music)
+            combine(
+                combine(RemotePlayerHub.film, musicState, _sleepMinutes) { film, music, sleep -> Triple(film, music, sleep) },
+                MusicAccountShelves.state,
+                MusicLikedSongs.overrides,
+            ) { (film, music, sleep), account, overrides ->
+                if (RemotePlayerHub.filmControls != null) {
+                    film?.copy(sleepMinutes = sleep)
+                } else {
+                    val liked = music.track?.videoId?.takeIf { YouTubeMusicAuth.isSignedIn }
+                        ?.let { MusicLikedSongs.isLiked(it, account.liked, overrides) }
+                    musicNowPlaying(music)?.copy(liked = liked, sleepMinutes = sleep)
+                }
             }.collect { state ->
                 if (throttle.shouldSend(state)) target.publishState(PhoneRemoteProtocol.stateLine(state))
             }
         }
     }
+
+    // --- fork:phone-remote extras: speed, skip, next episode, sleep timer, shuffle, repeat, like, radio ---
+
+    private val _sleepMinutes = MutableStateFlow(0)
+    private var sleepJob: Job? = null
+
+    private fun control(action: ControlAction, value: Int) {
+        mainScope.launch {
+            val film = RemotePlayerHub.filmControls
+            when (action) {
+                ControlAction.Speed -> film?.setSpeedPercent(value.coerceIn(50, 400))
+                ControlAction.SkipIntro -> film?.skipSegment()
+                ControlAction.NextEpisode -> film?.nextEpisode()
+                ControlAction.Sleep -> setSleep(value)
+                ControlAction.Shuffle -> if (musicActive()) MusicPlayback.player.setShuffled(value == 1)
+                ControlAction.Repeat -> if (musicActive()) {
+                    MusicPlayback.player.setRepeat(MusicRepeat.entries.getOrElse(value) { MusicRepeat.Off })
+                }
+                ControlAction.Like -> likeCurrent()
+                ControlAction.Radio -> startRadio()
+            }
+        }
+    }
+
+    /** Pauses whatever is playing after [minutes] (0 turns the timer off); the phone shows the minutes left. */
+    private fun setSleep(minutes: Int) {
+        sleepJob?.cancel()
+        if (minutes <= 0) {
+            _sleepMinutes.value = 0
+            return
+        }
+        val endsAt = System.currentTimeMillis() + minutes * 60_000L
+        _sleepMinutes.value = minutes
+        log.i { "Phone remote: sleep timer set for $minutes min" }
+        sleepJob = mainScope.launch {
+            while (true) {
+                val left = endsAt - System.currentTimeMillis()
+                if (left <= 0L) break
+                _sleepMinutes.value = ((left + 59_999L) / 60_000L).toInt()
+                delay(minOf(left, SLEEP_TICK_MS))
+            }
+            _sleepMinutes.value = 0
+            val film = RemotePlayerHub.filmControls
+            if (film != null) film.pause() else if (musicActive()) MusicPlayback.player.pause()
+            log.i { "Phone remote: sleep timer ended, paused" }
+        }
+    }
+
+    private fun likeCurrent() {
+        val videoId = MusicPlayback.player.state.value.track?.videoId ?: return
+        if (!YouTubeMusicAuth.isSignedIn) return
+        val liked = MusicLikedSongs.isLiked(videoId, MusicAccountShelves.state.value.liked, MusicLikedSongs.overrides.value)
+        MusicLikedSongs.toggle(defaultMusicCatalog(), videoId, liked)
+    }
+
+    private suspend fun startRadio() {
+        val track = MusicPlayback.player.state.value.track ?: return
+        val queue = loadSongRadio(defaultMusicCatalog(), track.videoId, track.title, track.artists) ?: return
+        MusicPlayback.player.play(queue)
+    }
+
+    private const val SLEEP_TICK_MS = 15_000L
 
     /**
      * fork:phone-remote theme: the phone wears the TV's theme. The accent (and the second stop of a custom gradient)
@@ -372,6 +450,8 @@ internal object PhoneRemote {
             volume = state.volume,
             volumeMax = 100,
             canSkip = true,
+            shuffle = state.shuffled,
+            repeat = state.repeat.ordinal,
         )
     }
 

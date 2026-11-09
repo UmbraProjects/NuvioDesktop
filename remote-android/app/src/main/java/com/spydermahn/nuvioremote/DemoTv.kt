@@ -124,6 +124,11 @@ object DemoTv {
     private var basePositionMs = 0L
     private var baseAtMs = 0L
     private var volume = 70
+    private var speedPercent = 100
+    private var sleepMinutes = 0
+    private var shuffle = false
+    private var repeat = 0
+    private var liked = false
     private var muted = false
     private var subtitleIndex = 1
     private var audioIndex = 0
@@ -161,12 +166,13 @@ object DemoTv {
             Mode.Film -> {
                 val f = film ?: return "IDLE"
                 "STATE film ${if (playing) 1 else 0} $position ${f.durationMs} $shownVolume 100 0 ${field(f.title)} " +
-                    "${field(f.subtitle)} ${field(f.image)} ${field(subtitleTracks[subtitleIndex])} ${field(audioTracks[audioIndex])}"
+                    "${field(f.subtitle)} ${field(f.image)} ${field(subtitleTracks[subtitleIndex])} ${field(audioTracks[audioIndex])} " +
+                    "$speedPercent ${if (position < 60_000L) "Skip%20intro" else "-"} 1 $sleepMinutes - - -"
             }
             Mode.Music -> {
                 val s = songs.getOrNull(songIndex) ?: return "IDLE"
                 "STATE music ${if (playing) 1 else 0} $position ${s.durationMs} $shownVolume 100 1 ${field(s.title)} " +
-                    "${field("${s.artist} · ${s.album}")} ${field(s.image)} - -"
+                    "${field("${s.artist} · ${s.album}")} ${field(s.image)} - - - 0 $sleepMinutes ${if (shuffle) 1 else 0} $repeat ${if (liked) 1 else 0}"
             }
         }
     }
@@ -511,6 +517,38 @@ object DemoTv {
                     note("Volume $level")
                     broadcastState()
                 }
+                "SPEED" -> {
+                    synchronized(DemoTv) { speedPercent = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(50, 400) ?: return }
+                    note("Speed $speedPercent%")
+                    broadcastState()
+                }
+                "SKIP_INTRO" -> {
+                    setPosition(90_000L)
+                    note("Skipped the intro")
+                    broadcastState()
+                }
+                "NEXT_EPISODE" -> note("Next episode (the demo has only one)")
+                "SLEEP" -> {
+                    synchronized(DemoTv) { sleepMinutes = parts.getOrNull(1)?.toIntOrNull()?.coerceAtLeast(0) ?: return }
+                    note(if (sleepMinutes == 0) "Sleep timer off" else "Sleep timer: $sleepMinutes min")
+                    broadcastState()
+                }
+                "SHUFFLE" -> {
+                    synchronized(DemoTv) { shuffle = parts.getOrNull(1) == "1" }
+                    note("Shuffle ${if (shuffle) "on" else "off"}")
+                    broadcastState()
+                }
+                "REPEAT" -> {
+                    synchronized(DemoTv) { repeat = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 2) ?: return }
+                    note("Repeat mode $repeat")
+                    broadcastState()
+                }
+                "LIKE" -> {
+                    synchronized(DemoTv) { liked = !liked }
+                    note(if (liked) "Liked the song" else "Unliked the song")
+                    broadcastState()
+                }
+                "RADIO" -> note("Radio from this song")
                 "LIBRARY" -> {
                     val kind = parts.getOrElse(1) { LibraryLines.VIDEO }
                     note("Library ($kind) asked for")

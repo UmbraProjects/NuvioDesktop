@@ -57,4 +57,30 @@ class RemoteProtocolTest {
         assertEquals(12_000L, playing.positionAt(60_000L))
         assertEquals(10_000L, playing.copy(isPlaying = false).positionAt(60_000L))
     }
+
+    @Test
+    fun readsTheFilmAndMusicExtras() {
+        val film = (ServerLine.parse(
+            "STATE film 1 5000 7200000 80 100 0 Show - - English%20SDH English%205.1 125 Skip%20intro 1 30 - - -", 0L,
+        ) as ServerLine.State).nowPlaying
+        assertEquals(125, film.speedPercent)
+        assertEquals("Skip intro", film.skipLabel)
+        assertTrue(film.canNextEpisode)
+        assertEquals(30, film.sleepMinutes)
+        assertEquals(null, film.shuffle)
+
+        val music = (ServerLine.parse("STATE music 1 1000 200000 50 100 1 Song - - - - - - 0 0 1 2 1", 0L) as ServerLine.State).nowPlaying
+        assertEquals(true, music.shuffle)
+        assertEquals(2, music.repeat)
+        assertEquals(true, music.liked)
+        assertEquals(null, music.skipLabel)
+    }
+
+    @Test
+    fun anOlderPcWithoutTheExtrasStillParses() {
+        val old = (ServerLine.parse("STATE film 1 5000 7200000 80 100 0 Show - - - -", 0L) as ServerLine.State).nowPlaying
+        assertEquals(null, old.speedPercent)
+        assertEquals(0, old.sleepMinutes)
+        assertEquals(false, old.canNextEpisode)
+    }
 }

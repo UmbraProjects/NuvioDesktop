@@ -33,6 +33,8 @@ internal interface PhoneRemoteListener {
     fun onConnectedDevicesChanged(names: List<String>) = Unit
     fun onSeek(positionMs: Long) = Unit
     fun onVolume(volume: Int) = Unit
+    /** A film or music extra from the phone (speed, skip, sleep timer, shuffle...). */
+    fun onControl(action: ControlAction, value: Int) = Unit
     /** A link shared from the phone. Returns what is being opened, for the phone to say, or null if it cannot be. */
     fun onOpen(url: String): String? = null
     /** The whole LIBRARY reply line for [kind] (see PhoneRemoteLibraryLines), or null when there is none to give. */
@@ -275,6 +277,7 @@ internal class PhoneRemoteServer(
                             }
                             is RemoteMessage.Seek -> listener.onSeek(message.positionMs)
                             is RemoteMessage.Volume -> listener.onVolume(message.volume)
+                            is RemoteMessage.Control -> listener.onControl(message.action, message.value)
                             is RemoteMessage.Open -> sendOpening(listener.onOpen(message.url))
                             is RemoteMessage.Library -> listener.onLibrary(message.kind)?.let(::send)
                             is RemoteMessage.OpenTitle -> sendOpening(listener.onOpenTitle(message.type, message.id))

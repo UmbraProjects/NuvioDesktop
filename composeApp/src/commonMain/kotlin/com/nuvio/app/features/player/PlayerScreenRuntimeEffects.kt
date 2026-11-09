@@ -889,6 +889,19 @@ private fun PlayerScreenRuntime.BindPhoneRemoteNowPlayingEffect() {
             override fun fetchSubtitles() {
                 runtime.scope.launch { runtime.fetchAddonSubtitlesForActiveItem() }
             }
+            override fun setSpeedPercent(percent: Int) {
+                runtime.applyUserPlaybackSpeed((percent / 100f).coerceIn(0.5f, 4f))
+            }
+            override fun skipSegment(): Boolean {
+                val interval = runtime.activeSkipInterval ?: return false
+                runtime.acceptSkipInterval(interval)
+                return true
+            }
+            override fun nextEpisode(): Boolean {
+                if (runtime.nextEpisodeInfo?.hasAired != true) return false
+                runtime.playNextEpisode()
+                return true
+            }
         }
         com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(null, controls)
         onDispose { com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(null, null) }
@@ -929,7 +942,19 @@ private fun PlayerScreenRuntime.phoneRemoteNowPlaying(): com.nuvio.app.features.
         canSkip = false,
         subtitleTrack = phoneRemoteSubtitleName(),
         audioTrack = audioTracks.firstOrNull { it.index == selectedAudioIndex }?.label?.takeIf { it.isNotBlank() },
+        speedPercent = (snapshot.playbackSpeed * 100f).toInt().coerceIn(50, 400),
+        skipLabel = activeSkipInterval?.takeUnless { skipIntervalDismissed }?.let { phoneRemoteSkipLabel(it.type) },
+        canNextEpisode = isSeries && nextEpisodeInfo?.hasAired == true,
     )
+}
+
+/** What the phone's skip button says for a skippable part of this type (the TV's own prompt uses string resources). */
+internal fun phoneRemoteSkipLabel(type: String?): String = when (type?.lowercase()) {
+    "intro", "op", "mixed-op" -> "Skip intro"
+    "outro", "ed", "mixed-ed", "credits" -> "Skip credits"
+    "recap" -> "Skip recap"
+    "sponsor", "selfpromo", "interaction", "filler", "music_offtopic" -> "Skip this part"
+    else -> "Skip"
 }
 
 /** The phone's audio list: the tracks the player's panel offers (commentary and audio description left out), in its order. */
