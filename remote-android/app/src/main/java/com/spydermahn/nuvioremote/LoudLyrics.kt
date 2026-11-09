@@ -5,6 +5,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -194,7 +199,11 @@ internal fun withEllipsis(text: String): String = text.trimEnd(',', ';', ':', '-
 /** The TV's lead: lines change a quarter of a second early, so the eye is not behind the voice. */
 private const val LYRIC_LEAD_MS = 250L
 private const val LOUD_MIN_SP = 22f
-private const val NEXT_LINE_DP = 34f
+private const val NEXT_LINE_DP = 38f
+/** Room at the top for the List tag. */
+private const val TOP_BAND_DP = 46f
+/** A row's height for its font size: the faces run a little taller than their size once font padding is off. */
+private const val ROW_HEIGHT_FACTOR = 1.08f
 
 // ------------------------------------------------------------------------------------------------ The view
 
@@ -223,16 +232,17 @@ fun LoudLyricsView(lines: List<LyricLine>, playing: NowPlaying, modifier: Modifi
     val density = LocalDensity.current
 
     BoxWithConstraints(modifier) {
-        val widthPx = with(density) { (maxWidth - 24.dp).toPx() }
+        // Rows are tilted and the diagonal entrance shifts them, so they are set a little narrower than the box.
+        val widthPx = with(density) { (maxWidth - 40.dp).toPx() } * 0.92f
         val nextText = next?.text?.takeIf { it.isNotBlank() }
-        val heightPx = with(density) { (maxHeight - 28.dp - (if (nextText != null) NEXT_LINE_DP.dp else 0.dp)).coerceAtLeast(60.dp).toPx() }
+        // Fixed bands: the top one for the List tag (nothing is set under it), the bottom one for the next line, so
+        // neither is ever covered or pushed off by a big line. The words get what is between.
+        val heightPx = with(density) { (maxHeight - TOP_BAND_DP.dp - NEXT_LINE_DP.dp - 8.dp).coerceAtLeast(60.dp).toPx() }
         // The TV sizes for a 1000dp stage; a phone's pane is about a third of that, and its words travel a third as far.
         val stageScale = (maxWidth.value / 1000f).coerceIn(0.32f, 1f)
-        Column(
-            Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(TOP_BAND_DP.dp))
+            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds(), contentAlignment = Alignment.Center) {
             if (current != null && current.text.isNotBlank()) {
                 val words = remember(lines, shown) { lineWords(lines, shown) }
                 val durationMs = remember(lines, shown) { sungEndMs(lines, shown) - (current.timeMs ?: 0L) }
@@ -249,16 +259,16 @@ fun LoudLyricsView(lines: List<LyricLine>, playing: NowPlaying, modifier: Modifi
                             .size.width * loudFaceWidthFactor(face) * 1.14f
                         min(130f * density.density * 0.9f, 100f * widthPx / measured.coerceAtLeast(1f))
                     }
-                    val keep = fitRowCount(raw, heightPx, minPx = LOUD_MIN_SP * density.density)
+                    val keep = fitRowCount(raw, heightPx, minPx = LOUD_MIN_SP * density.density, lineFactor = ROW_HEIGHT_FACTOR)
                     val kept = raw.take(keep)
-                    val fit = min(1f, heightPx / kept.sumOf { (it * 0.98f).toDouble() }.toFloat().coerceAtLeast(1f))
+                    val fit = min(1f, heightPx / kept.sumOf { (it * ROW_HEIGHT_FACTOR).toDouble() }.toFloat().coerceAtLeast(1f))
                     kept.map { it * fit }
                 }
                 val shownChunks = chunks.take(sizesPx.size)
                 val cut = shownChunks.size < chunks.size
                 val progress = lineProgress(lines, shown, position + LYRIC_LEAD_MS)
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 14.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     shownChunks.forEachIndexed { ci, chunk ->
@@ -290,17 +300,19 @@ fun LoudLyricsView(lines: List<LyricLine>, playing: NowPlaying, modifier: Modifi
             } else {
                 Text("♪", color = Color.White.copy(alpha = 0.35f), fontSize = 40.sp)
             }
-            nextText?.let {
-                Text(
-                    it,
-                    color = Color.White.copy(alpha = 0.35f),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 8.dp),
-                )
+            }
+            Box(Modifier.fillMaxWidth().height(NEXT_LINE_DP.dp).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+                nextText?.let {
+                    Text(
+                        it,
+                        color = Color.White.copy(alpha = 0.40f),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -317,7 +329,14 @@ private fun LoudWord(
     unitPx: Float,
     arrival: Float,
 ) {
-    val base = TextStyle(fontFamily = face, fontSize = sizeSp, lineHeight = sizeSp * 0.98f)
+    // Without Android's extra font padding, so a row is as tall as the fit above counts it.
+    val base = TextStyle(
+        fontFamily = face,
+        fontSize = sizeSp,
+        lineHeight = sizeSp * 0.98f,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
+    )
     Box {
         Text(text, style = base.copy(color = colour.copy(alpha = 0.32f), drawStyle = Stroke(width = 3f)), maxLines = 1, softWrap = false)
         Text(

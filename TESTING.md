@@ -114,7 +114,8 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Tapping a song in the queue plays it on the TV; Play next and Remove (on songs still to come) change the queue, and the sheet shows the change
 - [x] Lyrics (or a tap on the cover) shows the song's lyrics in the cover's place; timed ones follow the song with the sung line bright and kept in view (2026-11-09)
 - [ ] Lyrics follow to the next song by themselves; a song with none says so
-- [ ] Lyrics on the phone look like the stage's Loud style: each line big in its own face and colour, words outlined and landing as sung (on the beat for word-timed songs); the next line small underneath
+- [~] Lyrics on the phone look like the stage's Loud style: each line big in its own face and colour, words outlined and landing as sung (on the beat for word-timed songs); the next line small underneath (2026-11-09): works, but the words were too big: the next line went off the box and the words ran under the List tag
+  - [ ] Re-check after the fix: the words fit between the List tag (top) and the next line (bottom), which always shows; long lines shrink or end in …
 - [ ] The List / Loud tag in the lyrics' corner switches to the scrolling list and back
 - [ ] Demo TV: an album's queue and pretend timed lyrics
 
