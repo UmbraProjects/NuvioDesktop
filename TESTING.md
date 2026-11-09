@@ -47,9 +47,10 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Dark mode, music: swipe left/right is the previous/next song (one per swipe)
 - [ ] Dark mode: holding a finger anywhere for a second draws a faint ring and leaves; brightness and the bars come back
 - [ ] Demo TV: Try the demo TV (on the PC list) asks for the code 123456, then connects as "Demo TV" and stays in the paired list
-- [ ] Demo TV: the "Demo TV received" strip shows each key, swipe and typed text
+- [x] Demo TV: the "Demo TV received" strip shows each key, swipe and typed text (2026-11-09, from Nick's screenshots)
 - [ ] Demo TV: More > Demo TV plays a film or an album, stops it, and changes the theme (the app follows)
-- [ ] Demo TV: Watch and Music tabs show the pretend library (with photos when online); opening a title plays it after 2 s; an album plays, shuffles, next and previous work
+- [ ] **BROKEN** Film screen with the demo strip (2026-11-09, from Nick's screenshots): the D-pad / touchpad panel is squeezed down to its title bar, with no pad left to use
+- [x] Demo TV: Watch and Music tabs show the pretend library (with photos when online); opening a title plays it after 2 s; an album plays, shuffles, next and previous work (2026-11-09, from Nick's screenshots)
 - [ ] Demo TV: the lock-screen controls show the pretend film or song and work
 
 ## Music playback
