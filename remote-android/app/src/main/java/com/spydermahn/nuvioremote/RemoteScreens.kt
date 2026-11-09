@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -269,20 +270,23 @@ private fun BrowseBody(padMode: PadMode, viewModel: RemoteViewModel, onSearch: (
 
 @Composable
 private fun FilmBody(playing: NowPlaying, cover: Bitmap?, padMode: PadMode, viewModel: RemoteViewModel, onMore: () -> Unit) {
-    // Scrolls rather than squeezing: with everything above it, a weighted pad was left with no room at all on a phone.
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        NowPlayingPanel(playing, cover, viewModel, Modifier.padding(top = 8.dp))
-        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile("Subtitles", playing.subtitleTrack ?: "Tap for the next", Modifier.weight(1f)) {
-                viewModel.press(RemoteKey.Subtitles)
+    Column(Modifier.fillMaxSize()) {
+        // The middle scrolls rather than squeezing: with everything above it, a weighted pad was left with no room at
+        // all on a phone. The keys stay pinned at the bottom, never half under the tab bar.
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
+            NowPlayingPanel(playing, cover, viewModel, Modifier.padding(top = 8.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatTile("Subtitles", playing.subtitleTrack ?: "Tap for the next", Modifier.weight(1f)) {
+                    viewModel.press(RemoteKey.Subtitles)
+                }
+                StatTile("Audio", playing.audioTrack ?: "Tap for the next", Modifier.weight(1f)) {
+                    viewModel.press(RemoteKey.Audio)
+                }
             }
-            StatTile("Audio", playing.audioTrack ?: "Tap for the next", Modifier.weight(1f)) {
-                viewModel.press(RemoteKey.Audio)
-            }
+            Transport(playing, viewModel, Modifier.padding(top = 14.dp))
+            NavPanel(padMode, viewModel, Modifier.height(FILM_PAD_HEIGHT).fillMaxWidth().padding(top = 12.dp), compact = true)
         }
-        Transport(playing, viewModel, Modifier.padding(top = 14.dp))
-        NavPanel(padMode, viewModel, Modifier.height(FILM_PAD_HEIGHT).fillMaxWidth().padding(top = 12.dp), compact = true)
-        Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp, start = 24.dp, end = 24.dp), horizontalArrangement = Arrangement.SpaceAround) {
+        BottomKeys {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 56.dp) { viewModel.press(RemoteKey.Back) }
             GlassKey(Icons.AutoMirrored.Rounded.List, "Sources", size = 56.dp) { viewModel.press(RemoteKey.Sources) }
             GlassKey(Icons.Rounded.DarkMode, "Dark", size = 56.dp) { viewModel.setDark(true) }
@@ -291,24 +295,39 @@ private fun FilmBody(playing: NowPlaying, cover: Bitmap?, padMode: PadMode, view
     }
 }
 
+/** The row of keys at the foot of a body, pinned there whatever is above it. */
+@Composable
+private fun BottomKeys(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp, start = 24.dp, end = 24.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+        content = content,
+    )
+}
+
 @Composable
 private fun MusicBody(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel, onSearch: () -> Unit, onMore: () -> Unit) {
     val g = LocalGlass.current
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            Modifier.padding(top = 12.dp).size(196.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFF2B2320)),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (cover != null) {
-                Image(cover.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            } else {
-                Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = g.textMuted, modifier = Modifier.size(48.dp))
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        // The cover takes whatever height is left (up to 260dp), so the transport and the keys always fit on screen.
+        Box(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .heightIn(max = 260.dp)
+                    .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF2B2320)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (cover != null) {
+                    Image(cover.asImageBitmap(), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                } else {
+                    Icon(Icons.Rounded.MusicNote, contentDescription = null, tint = g.textMuted, modifier = Modifier.size(48.dp))
+                }
             }
         }
-        GlassLabel("Now playing on the TV", Modifier.padding(top = 18.dp))
+        GlassLabel("Now playing on the TV", Modifier.padding(top = 16.dp))
         DisplayTitle(playing.title, Modifier.padding(top = 8.dp).basicMarquee(initialDelayMillis = 1_500), maxLines = 1)
         playing.subtitle?.let { line ->
             // "Artist · Album": the artist in the accent, as on the TV's album page.
@@ -319,9 +338,9 @@ private fun MusicBody(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteView
                 if (rest.isNotEmpty()) Text(" · $rest", color = g.textSecondary, fontSize = 14.sp, maxLines = 1)
             }
         }
-        Seek(playing, viewModel, Modifier.padding(top = 14.dp))
-        Transport(playing, viewModel, Modifier.padding(top = 6.dp))
-        Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp, start = 24.dp, end = 24.dp), horizontalArrangement = Arrangement.SpaceAround) {
+        Seek(playing, viewModel, Modifier.padding(top = 12.dp))
+        Transport(playing, viewModel, Modifier.padding(top = 4.dp))
+        BottomKeys {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 52.dp) { viewModel.press(RemoteKey.Back) }
             GlassKey(Icons.Rounded.Search, "Search", size = 52.dp, onPress = onSearch)
             GlassKey(Icons.Rounded.DarkMode, "Dark", size = 52.dp) { viewModel.setDark(true) }

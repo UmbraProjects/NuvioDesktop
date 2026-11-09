@@ -50,7 +50,9 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Demo TV: the "Demo TV received" strip shows each key, swipe and typed text (2026-11-09, from Nick's screenshots)
 - [ ] Demo TV: More > Demo TV plays a film or an album, stops it, and changes the theme (the app follows)
 - [ ] **BROKEN** Film screen with the demo strip (2026-11-09, from Nick's screenshots): the D-pad / touchpad panel is squeezed down to its title bar, with no pad left to use
-  - [ ] Re-check after the fix: the film screen scrolls, and the pad underneath is full size (D-pad and touchpad both usable)
+  - [ ] Re-check after the fix: the film screen's middle scrolls, the Back / Sources / Dark / More keys stay whole at the bottom, and the pad underneath is full size (D-pad and touchpad both usable)
+- [ ] **BROKEN** Music screen (2026-11-09, from Nick's screenshot): the Back / Search / Dark / More keys are cut in half by the tab bar
+  - [ ] Re-check after the fix: the cover shrinks to fit, and the keys show whole above the tab bar
 - [x] Demo TV: Watch and Music tabs show the pretend library (with photos when online); opening a title plays it after 2 s; an album plays, shuffles, next and previous work (2026-11-09, from Nick's screenshots)
 - [ ] Demo TV: the lock-screen controls show the pretend film or song and work
 
