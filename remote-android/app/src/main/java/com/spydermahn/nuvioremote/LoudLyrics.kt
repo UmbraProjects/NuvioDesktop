@@ -91,6 +91,30 @@ internal fun loudChunks(wordLengths: List<Int>): List<List<Int>> {
     return out
 }
 
+/** [wordLengths] split into [rows] runs of about equal length, keeping order (word indices); fewer when words run out. */
+internal fun loudChunksInto(wordLengths: List<Int>, rows: Int): List<List<Int>> {
+    val n = wordLengths.size
+    if (n == 0) return emptyList()
+    val k = rows.coerceIn(1, n)
+    val target = wordLengths.sum().toFloat() / k
+    val out = mutableListOf<List<Int>>()
+    var current = mutableListOf<Int>()
+    var accumulated = 0
+    wordLengths.forEachIndexed { i, length ->
+        current += i
+        accumulated += length
+        val wordsLeft = n - 1 - i
+        val rowsLeft = k - 1 - out.size
+        // Close the row at its share of the length, or when every word left is needed for a row of its own.
+        if (rowsLeft > 0 && i < n - 1 && (accumulated >= target * (out.size + 1) || wordsLeft == rowsLeft)) {
+            out += current
+            current = mutableListOf()
+        }
+    }
+    if (current.isNotEmpty()) out += current
+    return out
+}
+
 internal const val LOUD_WORD_LAND_MS = 300L
 
 /** A word of a line and the share (0..1) of the line's sweep it takes. */
@@ -200,6 +224,8 @@ internal fun withEllipsis(text: String): String = text.trimEnd(',', ';', ':', '-
 private const val LYRIC_LEAD_MS = 250L
 private const val LOUD_MIN_SP = 22f
 private const val NEXT_LINE_DP = 38f
+/** The most rows a line is split into on the phone. */
+private const val MAX_ROWS = 5
 /** Room at the top for the List tag. */
 private const val TOP_BAND_DP = 46f
 /** A row's height for its font size: the faces run a little taller than their size once font padding is off. */
@@ -251,21 +277,26 @@ fun LoudLyricsView(lines: List<LyricLine>, playing: NowPlaying, modifier: Modifi
                 val entrance = loudEntranceFor(shown)
                 val caps = loudFaceIsCapitals(face)
                 val texts = remember(words, caps) { words.map { if (caps) it.text.uppercase() else it.text } }
-                val chunks = remember(words) { loudChunks(words.map { it.text.length }) }
-                val sizesPx = remember(chunks, texts, face, widthPx, heightPx) {
+                // The whole line, always: it is split into as many rows as set it biggest (a phone's pane is narrow, so a
+                // long line takes more, shorter rows than on the TV), and the stack is shrunk to the height. Never cut.
+                val layout = remember(texts, face, widthPx, heightPx) {
                     val reference = TextStyle(fontFamily = LoudFaces[face], fontSize = with(density) { 100f.toSp() })
-                    val raw = chunks.map { chunk ->
-                        val measured = measurer.measure(AnnotatedString(chunk.joinToString(" ") { texts[it] }), reference, maxLines = 1, softWrap = false)
-                            .size.width * loudFaceWidthFactor(face) * 1.14f
-                        min(130f * density.density * 0.9f, 100f * widthPx / measured.coerceAtLeast(1f))
-                    }
-                    val keep = fitRowCount(raw, heightPx, minPx = LOUD_MIN_SP * density.density, lineFactor = ROW_HEIGHT_FACTOR)
-                    val kept = raw.take(keep)
-                    val fit = min(1f, heightPx / kept.sumOf { (it * ROW_HEIGHT_FACTOR).toDouble() }.toFloat().coerceAtLeast(1f))
-                    kept.map { it * fit }
+                    val lengths = texts.map { it.length }
+                    val maxRows = minOf(texts.size, MAX_ROWS).coerceAtLeast(1)
+                    (1..maxRows).map { rows ->
+                        val chunks = if (rows == 1) listOf(texts.indices.toList()) else loudChunksInto(lengths, rows)
+                        val raw = chunks.map { chunk ->
+                            val measured = measurer.measure(AnnotatedString(chunk.joinToString(" ") { texts[it] }), reference, maxLines = 1, softWrap = false)
+                                .size.width * loudFaceWidthFactor(face) * 1.14f
+                            min(130f * density.density * 0.9f, 100f * widthPx / measured.coerceAtLeast(1f))
+                        }
+                        val fit = min(1f, heightPx / raw.sumOf { (it * ROW_HEIGHT_FACTOR).toDouble() }.toFloat().coerceAtLeast(1f))
+                        chunks to raw.map { it * fit }
+                    }.maxByOrNull { (_, sizes) -> sizes.minOrNull() ?: 0f }!!
                 }
-                val shownChunks = chunks.take(sizesPx.size)
-                val cut = shownChunks.size < chunks.size
+                val shownChunks = layout.first
+                val sizesPx = layout.second
+                val cut = false
                 val progress = lineProgress(lines, shown, position + LYRIC_LEAD_MS)
                 Column(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp),
