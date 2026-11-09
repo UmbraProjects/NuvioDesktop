@@ -125,6 +125,12 @@ internal object PhoneRemoteProtocol {
             "ARTIST" -> if (parts.size >= 3) {
                 ArtistAction.fromWire(parts[2])?.let { RemoteMessage.Artist(decode(parts[1]), it) }?.takeIf { it.artistId.isNotBlank() }
             } else null
+            // fork:phone-remote continue watching.
+            "CONTINUE" -> RemoteMessage.Continue
+            "RESUME" -> if (parts.size >= 3) {
+                RemoteMessage.Resume(parentId = decode(parts[1]), videoId = decode(parts[2]))
+                    .takeIf { it.parentId.isNotBlank() && it.videoId.isNotBlank() }
+            } else null
             else -> null
         }
     }
@@ -144,6 +150,8 @@ internal sealed interface RemoteMessage {
     data class OpenTitle(val type: String, val id: String) : RemoteMessage
     data class PlayAlbum(val browseId: String, val action: AlbumAction) : RemoteMessage
     data class Artist(val artistId: String, val action: ArtistAction) : RemoteMessage
+    data object Continue : RemoteMessage
+    data class Resume(val parentId: String, val videoId: String) : RemoteMessage
 }
 
 internal enum class AlbumAction(val wire: String) {

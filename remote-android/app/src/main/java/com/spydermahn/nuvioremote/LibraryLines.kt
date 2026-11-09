@@ -23,6 +23,37 @@ data class LibraryTitle(
     val key: String get() = "$type:$id"
 }
 
+/** A Continue Watching title on the PC (`CONTINUE` line): a film, or the episode of a show it stopped in. */
+data class ResumeItem(
+    val type: String,
+    val parentId: String,
+    val videoId: String,
+    val title: String,
+    /** "S2 E5 · Breakage"; null for a film. */
+    val episode: String?,
+    val poster: String?,
+    val still: String?,
+    val positionMs: Long,
+    val durationMs: Long,
+    val lastSource: String?,
+    /** 0 to 1. */
+    val progress: Float,
+) {
+    val key: String get() = "$parentId|$videoId"
+
+    /** "1h 12m left", or null when the PC only knows a share of it. */
+    val timeLeft: String?
+        get() {
+            if (durationMs <= 0L) return null
+            val minutes = ((durationMs - positionMs).coerceAtLeast(0L) / 60_000L).toInt()
+            return when {
+                minutes < 1 -> "Almost done"
+                minutes < 60 -> "${minutes}m left"
+                else -> "${minutes / 60}h ${minutes % 60}m left"
+            }
+        }
+}
+
 data class LibraryArtistInfo(val id: String, val name: String, val photo: String?, val starred: Boolean)
 
 data class LibraryAlbum(
@@ -87,6 +118,30 @@ object LibraryLines {
             )
             else -> null
         }
+    }
+
+    /** `CONTINUE <items>`; null for anything else. Mirrors `continueLine` in the PC's PhoneRemoteLibraryLines.kt. */
+    fun parseContinue(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.isEmpty() || parts[0] != "CONTINUE") return null
+        return ServerLine.Continue(
+            records(parts.getOrNull(1)).mapNotNull { f ->
+                if (f.size < 11) return@mapNotNull null
+                ResumeItem(
+                    type = f[0] ?: return@mapNotNull null,
+                    parentId = f[1] ?: return@mapNotNull null,
+                    videoId = f[2] ?: return@mapNotNull null,
+                    title = f[3] ?: return@mapNotNull null,
+                    episode = f[4],
+                    poster = f[5],
+                    still = f[6],
+                    positionMs = f[7]?.toLongOrNull() ?: 0L,
+                    durationMs = f[8]?.toLongOrNull() ?: 0L,
+                    lastSource = f[9],
+                    progress = ((f[10]?.toIntOrNull() ?: 0) / 1000f).coerceIn(0f, 1f),
+                )
+            },
+        )
     }
 
     /** Each record's fields, decoded; `-` becomes null. */

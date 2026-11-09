@@ -171,12 +171,17 @@ object DemoTv {
     // ------------------------------------------------------------------------------------------ Controls for testing
 
     /** Starts a pretend film, as if it had been picked on the TV. */
-    fun playFilm(title: String = "Blade Runner 2049", subtitle: String = "2017 · Sci-Fi · 2h 44m") {
+    fun playFilm(
+        title: String = "The Long Signal",
+        subtitle: String = "2021 · Sci-Fi · 2h 44m",
+        durationMs: Long = (2 * 60 + 44) * 60_000L,
+        positionMs: Long = 17 * 60_000L,
+    ) {
         synchronized(this) {
             mode = Mode.Film
-            film = Film(title, subtitle, poster(title), (2 * 60 + 44) * 60_000L)
+            film = Film(title, subtitle, poster(title), durationMs)
             playing = true
-            setPosition(17 * 60_000L)
+            setPosition(positionMs)
         }
         note("Playing the film $title")
         broadcastState()
@@ -279,6 +284,16 @@ object DemoTv {
                 }
                 "LIBRARY music 1 $artists $albums"
             }
+        }
+    }
+
+    private fun continueLine(): String {
+        fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+        return "CONTINUE " + DEMO_CONTINUE.joinToString(";") { c ->
+            listOf(
+                f(c.type), f(c.parentId), f(c.videoId), f(c.title), f(c.episode), f(poster(c.title)), f(still(c.title)),
+                c.positionMs.toString(), c.durationMs.toString(), f(c.lastSource), (c.positionMs * 1000 / c.durationMs).toString(),
+            ).joinToString(",")
         }
     }
 
@@ -392,6 +407,23 @@ object DemoTv {
                     val mixed = DemoAlbum("${albums.first().artist} mix", albums.first().artist, "mix-$id", "Mix", null, false, albums.flatMap { it.tracks })
                     playMusic(mixed, shuffle = parts.getOrNull(2) == "mix")
                 }
+                "CONTINUE" -> {
+                    note("Continue watching asked for")
+                    send(continueLine())
+                }
+                "RESUME" -> {
+                    val parentId = RemoteProtocol.decode(parts.getOrElse(1) { "" })
+                    val resume = DEMO_CONTINUE.firstOrNull { it.parentId == parentId }
+                    if (resume == null) {
+                        send("CANT_OPEN")
+                    } else {
+                        send("OPENING ${RemoteProtocol.encode(resume.title)}")
+                        note("Resuming ${resume.title} from its last source")
+                        ticker.schedule({
+                            playFilm(resume.title, resume.episode ?: "Resumed", resume.durationMs, resume.positionMs)
+                        }, 2, TimeUnit.SECONDS)
+                    }
+                }
                 "OPEN" -> {
                     val link = RemoteProtocol.decode(parts.getOrElse(1) { "" })
                     note("Sent a link: $link")
@@ -416,6 +448,7 @@ object DemoTv {
     // Pictures from picsum.photos (free placeholder photos, the same one per name); without a connection the app shows
     // its usual placeholder instead.
     private fun poster(name: String) = "https://picsum.photos/seed/${slug(name)}/300/450"
+    private fun still(name: String) = "https://picsum.photos/seed/${slug(name)}-still/640/360"
     private fun cover(name: String) = "https://picsum.photos/seed/${slug(name)}/400/400"
     private fun photo(name: String) = "https://picsum.photos/seed/${slug(name)}-artist/300/300"
     private fun slug(name: String) = name.lowercase().filter { it.isLetterOrDigit() }.ifEmpty { "nuvio" }
@@ -423,6 +456,23 @@ object DemoTv {
 }
 
 data class DemoTitle(val section: String, val type: String, val id: String, val name: String, val year: String?, val watched: Boolean)
+
+data class DemoResume(
+    val type: String,
+    val parentId: String,
+    val videoId: String,
+    val title: String,
+    val episode: String?,
+    val positionMs: Long,
+    val durationMs: Long,
+    val lastSource: String?,
+)
+
+private val DEMO_CONTINUE = listOf(
+    DemoResume("series", "demo-s1", "demo-s1:2:5", "Harbour Lights", "S2 E5 · The Breakwater", 21 * 60_000L, 47 * 60_000L, "Demo addon 1080p WEB-DL"),
+    DemoResume("movie", "demo-m3", "demo-m3", "Northbound Night Train", null, 72 * 60_000L, 118 * 60_000L, "Demo addon 4K HDR"),
+    DemoResume("series", "demo-s2", "demo-s2:1:2", "The Quiet Engineers", "S1 E2 · Tolerances", 5 * 60_000L, 52 * 60_000L, null),
+)
 
 data class DemoAlbum(
     val title: String,
@@ -437,8 +487,8 @@ data class DemoAlbum(
 
 // Invented titles, so nothing here stands for a real film or record.
 private val DEMO_TITLES = listOf(
-    DemoTitle("Continue watching", "movie", "demo-m1", "The Long Signal", "2021", false),
-    DemoTitle("Continue watching", "series", "demo-s1", "Harbour Lights", "2019", false),
+    DemoTitle("Favourites", "movie", "demo-m1", "The Long Signal", "2021", false),
+    DemoTitle("Favourites", "series", "demo-s1", "Harbour Lights", "2019", false),
     DemoTitle("Library", "movie", "demo-m2", "Glass Orchard", "2018", true),
     DemoTitle("Library", "movie", "demo-m3", "Northbound Night Train", "2023", false),
     DemoTitle("Library", "series", "demo-s2", "The Quiet Engineers", "2022", false),

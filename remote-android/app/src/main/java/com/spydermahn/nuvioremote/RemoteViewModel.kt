@@ -38,6 +38,8 @@ data class UiState(
     /** [NowPlaying.imageUrl], once fetched. */
     val cover: Bitmap? = null,
     val video: VideoLibraryState = VideoLibraryState(),
+    /** The PC's Continue Watching; empty from a PC that does not send it. */
+    val continueWatching: List<ResumeItem> = emptyList(),
     val music: MusicLibraryState = MusicLibraryState(),
     /** A short line about something just sent ("Opening Blade Runner on the TV"); clears itself. */
     val notice: String? = null,
@@ -319,7 +321,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         // Another PC has another library: forget the one shown.
         if (_state.value.current?.address != pc.address) {
             _state.update {
-                it.copy(video = VideoLibraryState(), music = MusicLibraryState(), theme = store.theme(pc.address) ?: RemoteTheme.Default)
+                it.copy(video = VideoLibraryState(), music = MusicLibraryState(), continueWatching = emptyList(), theme = store.theme(pc.address) ?: RemoteTheme.Default)
             }
         }
         saveAll(_state.value.saved.filterNot { it.address == pc.address } + pc)
@@ -343,6 +345,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     is ServerLine.VideoLibrary -> onVideoLibrary(line)
                     is ServerLine.MusicLibrary -> onMusicLibrary(line)
+                    is ServerLine.Continue -> _state.update { it.copy(continueWatching = line.items) }
                     is ServerLine.Opening -> notify("Opening ${line.what} on the TV")
                     ServerLine.CantOpen -> notify("Nuvio couldn't open that.")
                     else -> Unit
@@ -500,6 +503,13 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         }
         if (again) viewModelScope.launch { delay(LIBRARY_RETRY_MS); askMusic() }
     }
+
+    /** Asks again every time the Watch tab shows: what is in progress changes with every film. */
+    fun loadContinue() = sendOrReconnect { it.requestContinue() }
+
+    fun resume(item: ResumeItem) = sendOrReconnect { it.resume(item.parentId, item.videoId) }
+
+    fun openDetails(item: ResumeItem) = sendOrReconnect { it.openTitle(item.type, item.parentId) }
 
     fun openTitle(title: LibraryTitle) = sendOrReconnect { it.openTitle(title.type, title.id) }
 

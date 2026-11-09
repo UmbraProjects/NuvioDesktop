@@ -50,8 +50,18 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Demo TV: the "Demo TV received" strip shows each key, swipe and typed text (2026-11-09, from Nick's screenshots)
 - [ ] Demo TV: More > Demo TV plays a film or an album, stops it, and changes the theme (the app follows)
 - [ ] **BROKEN** Film screen with the demo strip (2026-11-09, from Nick's screenshots): the D-pad / touchpad panel is squeezed down to its title bar, with no pad left to use
+  - [ ] Re-check after the fix: the film screen scrolls, and the pad underneath is full size (D-pad and touchpad both usable)
 - [x] Demo TV: Watch and Music tabs show the pretend library (with photos when online); opening a title plays it after 2 s; an album plays, shuffles, next and previous work (2026-11-09, from Nick's screenshots)
 - [ ] Demo TV: the lock-screen controls show the pretend film or song and work
+
+### Phone remote: Continue watching (phase 3)
+
+- [ ] The Watch tab opens with a Continue watching row (landscape pictures, a progress line, the episode and time left), the same titles as Nuvio's Continue Watching
+- [ ] Tapping one opens a sheet: poster, title, episode, how far in, and the source it last played from
+- [ ] Resume on the TV plays it straight away from the same source, from where it stopped (with a film already playing, that one closes first)
+- [ ] Resume on a title whose last link no longer plays opens its source list on the TV instead
+- [ ] Details on the TV opens the title's page on the TV
+- [ ] Demo TV: the row shows three pretend titles, and Resume plays one from its saved place
 
 ## Music playback
 

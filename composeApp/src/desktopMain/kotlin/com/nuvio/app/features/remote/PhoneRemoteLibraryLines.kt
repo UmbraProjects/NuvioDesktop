@@ -10,7 +10,10 @@ package com.nuvio.app.features.remote
  * phone: OPEN_TITLE <type> <id>                 opens the title's details on the PC
  * phone: PLAY_ALBUM <browseId> play|shuffle|queue
  * phone: ARTIST <channelId> mix|radio
- * pc:    OPENING <what> | CANT_OPEN             (for OPEN_TITLE, PLAY_ALBUM and ARTIST)
+ * pc:    OPENING <what> | CANT_OPEN             (for OPEN_TITLE, PLAY_ALBUM, ARTIST and RESUME)
+ * phone: CONTINUE
+ * pc:    CONTINUE <items>                       Continue Watching, newest first
+ * phone: RESUME <parentId> <videoId>            plays it again from the same source, from where it stopped
  * ```
  * Each list is one field: records joined by `;`, a record's fields joined by `,`, every field URL-encoded (which
  * encodes `,` and `;`), so a whole library is a single line and a STATE push can never land in the middle of it.
@@ -30,6 +33,25 @@ internal data class RemoteTitle(
     /** A second poster to try when [poster] (often a poster service) does not load. */
     val posterFallback: String?,
     val watched: Boolean,
+)
+
+/** One Continue Watching title: a film, or the episode of a show it stopped in. */
+internal data class RemoteResume(
+    val type: String,
+    val parentId: String,
+    val videoId: String,
+    val title: String,
+    /** "S2 E5 · The Episode" for a show; null for a film. */
+    val episode: String?,
+    val poster: String?,
+    /** A landscape picture: the episode's still or the backdrop. */
+    val still: String?,
+    val positionMs: Long,
+    val durationMs: Long,
+    /** The source it last played from, as the source list names it; null when not kept. */
+    val lastSource: String?,
+    /** How far through, 0 to 1000 (some progress, from Trakt say, comes as a share without a duration). */
+    val progressPermille: Int,
 )
 
 internal data class RemoteArtist(val id: String, val name: String, val photo: String?, val starred: Boolean)
@@ -70,6 +92,16 @@ internal object PhoneRemoteLibraryLines {
                     text(album.year), url(album.cover), flag(album.starred),
                 )
             }
+
+    fun continueLine(items: List<RemoteResume>): String =
+        "CONTINUE " + records(items) { item ->
+            listOf(
+                text(item.type), text(item.parentId), text(item.videoId), text(item.title), text(item.episode),
+                url(item.poster), url(item.still), item.positionMs.coerceAtLeast(0L).toString(),
+                item.durationMs.coerceAtLeast(0L).toString(), text(item.lastSource),
+                item.progressPermille.coerceIn(0, 1000).toString(),
+            )
+        }
 
     private fun flag(value: Boolean) = if (value) "1" else "0"
 

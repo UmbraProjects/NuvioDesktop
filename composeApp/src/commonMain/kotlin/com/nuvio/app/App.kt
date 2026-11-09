@@ -3248,6 +3248,22 @@ private fun MainAppContent(
             openContinueWatching(item, false, true)
         }
 
+        // fork:phone-remote continue watching - Resume on the TV from the phone: the same source again, from where it
+        // stopped, as the card's last-link shortcut plays it. A player already open is closed first.
+        LaunchedEffect(navController) {
+            com.nuvio.app.features.remote.RemotePlayerHub.resumes.collectLatest { item ->
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    PlayerHandoff.holdShield()
+                    ResumePromptRepository.markPlayerExitedNormally()
+                    navController.popBackStack()
+                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                        PlayerHandoff.activeRoutes.first { it == 0 }
+                    }
+                }
+                openContinueWatching(item, useAlternateBehavior = false, startFromBeginning = false, forceReuseLastLink = true)
+            }
+        }
+
         val onContinueWatchingLongPress: (ContinueWatchingItem) -> Unit = { item ->
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
             selectedContinueWatchingAnchor = PosterZoomAnchorHolder.consume()

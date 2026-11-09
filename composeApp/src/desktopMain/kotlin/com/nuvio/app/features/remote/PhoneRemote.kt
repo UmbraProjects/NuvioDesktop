@@ -214,6 +214,8 @@ internal object PhoneRemote {
         override fun onOpenTitle(type: String, id: String): String? = PhoneRemoteLibrary.openTitle(type, id)
         override fun onPlayAlbum(browseId: String, action: AlbumAction): String? = PhoneRemoteLibrary.playAlbum(browseId, action)
         override fun onArtist(artistId: String, action: ArtistAction): String? = PhoneRemoteLibrary.artist(artistId, action)
+        override fun onContinue(): String? = PhoneRemoteLibrary.continueLine()
+        override fun onResume(parentId: String, videoId: String): String? = PhoneRemoteLibrary.resume(parentId, videoId)
     }
 
     // --- fork:phone-remote: now playing on the phone ---

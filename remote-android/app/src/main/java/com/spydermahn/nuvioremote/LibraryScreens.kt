@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Refresh
@@ -209,8 +210,14 @@ private const val UNWATCHED = "Unwatched"
  */
 @Composable
 fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () -> Unit) {
-    LaunchedEffect(state.link) { if (state.link == Link.Connected) viewModel.loadVideo() }
+    LaunchedEffect(state.link) {
+        if (state.link == Link.Connected) {
+            viewModel.loadVideo()
+            viewModel.loadContinue()
+        }
+    }
     val library = state.video
+    var resumePicked by remember { mutableStateOf<ResumeItem?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var section by rememberSaveable { mutableStateOf(ALL) }
 
@@ -237,7 +244,9 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
     Column(Modifier.fillMaxSize()) {
         LibraryHeader("Watch", "Your library on ${state.current?.name ?: "the PC"}", query, { query = it }, "Search your library", library.loading) { viewModel.loadVideo(force = true) }
         if (chips.size > 2) Chips(chips, activeSection) { section = it }
-        if (shown.isEmpty()) {
+        // Continue Watching leads the tab, above the library, unless a search or a section is narrowing it.
+        val resumes = if (activeSection == ALL && query.isBlank()) state.continueWatching else emptyList()
+        if (shown.isEmpty() && resumes.isEmpty()) {
             EmptyLibrary(
                 loading = library.loading && library.titles.isEmpty(),
                 problem = library.problem,
@@ -253,6 +262,11 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
+                if (resumes.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "continue") {
+                        ContinueRail(resumes) { resumePicked = it }
+                    }
+                }
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     SectionRow(if (activeSection == ALL) "Your library" else activeSection, countLabel(shown.size, "title"))
                 }
@@ -265,6 +279,119 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
             }
         }
     }
+
+    resumePicked?.let { item ->
+        ResumeSheet(
+            item = item,
+            onDismiss = { resumePicked = null },
+            onResume = {
+                resumePicked = null
+                viewModel.resume(item)
+                onOpened()
+            },
+            onDetails = {
+                resumePicked = null
+                viewModel.openDetails(item)
+                onOpened()
+            },
+        )
+    }
+}
+
+/** Continue Watching: landscape cards with the progress under each, newest first. */
+@Composable
+private fun ContinueRail(resumes: List<ResumeItem>, onPick: (ResumeItem) -> Unit) {
+    val g = LocalGlass.current
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionRow("Continue watching", countLabel(resumes.size, "title"))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(resumes, key = { it.key }) { item ->
+                Column(Modifier.size(width = 220.dp, height = 176.dp).clip(RoundedCornerShape(12.dp)).clickable { onPick(item) }) {
+                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+                        RemoteImage(
+                            url = item.still ?: item.poster,
+                            fallback = item.poster,
+                            placeholder = item.title,
+                            modifier = Modifier.fillMaxSize().glass(RoundedCornerShape(12.dp), fill = Color.Transparent),
+                        )
+                        ProgressLine(item.progress, Modifier.align(Alignment.BottomCenter).padding(horizontal = 10.dp, vertical = 8.dp))
+                    }
+                    Text(item.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                    Text(
+                        listOfNotNull(item.episode, item.timeLeft).joinToString(" · ").ifEmpty { "${(item.progress * 100).toInt()}% watched" },
+                        fontSize = 12.sp,
+                        color = g.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+    }
+}
+
+/** A thin bar: how far through, in the accent, over a faint track. */
+@Composable
+private fun ProgressLine(progress: Float, modifier: Modifier = Modifier) {
+    val g = LocalGlass.current
+    Box(modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.25f))) {
+        Box(Modifier.fillMaxWidth(progress.coerceIn(0.02f, 1f)).height(4.dp).background(g.accent))
+    }
+}
+
+/** One Continue Watching title: Resume on the TV (the same source, from where it stopped), or its details. */
+@Composable
+private fun ResumeSheet(item: ResumeItem, onDismiss: () -> Unit, onResume: () -> Unit, onDetails: () -> Unit) {
+    val g = LocalGlass.current
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = Color(0xFF14151A),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RemoteImage(
+                    url = item.poster ?: item.still,
+                    fallback = item.still,
+                    placeholder = item.title,
+                    modifier = Modifier.size(width = 72.dp, height = 108.dp).clip(RoundedCornerShape(10.dp)),
+                )
+                Spacer(Modifier.size(16.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    GlassLabel(if (item.episode != null) "Continue the show" else "Continue the film")
+                    DisplayTitle(item.title, size = 22, maxLines = 2)
+                    item.episode?.let { Text(it, color = g.accent, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            ProgressLine(item.progress)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                listOfNotNull(
+                    if (item.durationMs > 0L) "${formatClock(item.positionMs)} of ${formatClock(item.durationMs)}" else "${(item.progress * 100).toInt()}% watched",
+                    item.timeLeft,
+                ).joinToString(" · "),
+                color = g.textSecondary,
+                fontSize = 13.sp,
+            )
+            item.lastSource?.let {
+                Text("Last played from $it", color = g.textMuted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+            }
+            Spacer(Modifier.height(20.dp))
+            ActionButton("Resume on the TV", Icons.Rounded.PlayArrow, primary = true, modifier = Modifier.fillMaxWidth(), onClick = onResume)
+            Spacer(Modifier.height(10.dp))
+            ActionButton("Details on the TV", Icons.Rounded.Info, modifier = Modifier.fillMaxWidth(), onClick = onDetails)
+        }
+    }
+}
+
+private fun formatClock(ms: Long): String {
+    val total = (ms / 1000L).coerceAtLeast(0L)
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val sec = total % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }
 
 @Composable

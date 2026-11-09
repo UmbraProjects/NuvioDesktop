@@ -34,6 +34,26 @@ class DemoTvTest {
     }
 
     @Test
+    fun readsThePcsContinueLine() {
+        // The exact line PhoneRemoteContinueTest on the PC side produces.
+        val line = ServerLine.parse(
+            "CONTINUE series,tt0903747,tt0903747%3A2%3A5,Breaking%2C%20Bad%3B%20Show,S2%20E5%20%C2%B7%20Breakage," +
+                "https%3A%2F%2Fimg%2Fp.jpg,-,1200000,2820000,Torrentio%201080p,425;" +
+                "movie,tt1856101,tt1856101,Blade%20Runner%202049,-,-,-,0,0,-,300",
+            0L,
+        ) as ServerLine.Continue
+        assertEquals(2, line.items.size)
+        val show = line.items[0]
+        assertEquals("Breaking, Bad; Show", show.title)
+        assertEquals("tt0903747:2:5", show.videoId)
+        assertEquals("Torrentio 1080p", show.lastSource)
+        assertEquals("27m left", show.timeLeft)
+        assertEquals(0.425f, show.progress, 0.001f)
+        assertEquals(null, line.items[1].timeLeft)
+        assertEquals(ServerLine.Continue(emptyList()), ServerLine.parse("CONTINUE -", 0L))
+    }
+
+    @Test
     fun pairsPlaysAndAnswersLikeTheTv() {
         val (session, lines) = connect()
         DemoTv.stop()
@@ -72,6 +92,18 @@ class DemoTvTest {
         assertTrue(song.canSkip)
         session.key(RemoteKey.Next)
         assertEquals("Neon Weather", lines.next<ServerLine.State>().nowPlaying.title)
+
+        // Continue Watching lists, and Resume plays from where it stopped.
+        session.requestContinue()
+        val resumes = lines.next<ServerLine.Continue>().items
+        assertEquals(3, resumes.size)
+        assertEquals("S2 E5 · The Breakwater", resumes.first().episode)
+        assertEquals("26m left", resumes.first().timeLeft)
+        session.resume(resumes[1].parentId, resumes[1].videoId)
+        assertEquals("Northbound Night Train", lines.next<ServerLine.Opening>().what)
+        val resumed = lines.next<ServerLine.State>().nowPlaying
+        assertEquals("Northbound Night Train", resumed.title)
+        assertTrue(resumed.positionMs >= 72 * 60_000L)
 
         // Back closes the player; a theme change reaches the phone.
         session.key(RemoteKey.Back)

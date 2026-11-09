@@ -41,6 +41,9 @@ internal interface PhoneRemoteListener {
     fun onOpenTitle(type: String, id: String): String? = null
     fun onPlayAlbum(browseId: String, action: AlbumAction): String? = null
     fun onArtist(artistId: String, action: ArtistAction): String? = null
+    /** The whole CONTINUE reply line, or null when there is none to give. */
+    fun onContinue(): String? = null
+    fun onResume(parentId: String, videoId: String): String? = null
 }
 
 /**
@@ -236,6 +239,8 @@ internal class PhoneRemoteServer(
                             is RemoteMessage.OpenTitle -> sendOpening(listener.onOpenTitle(message.type, message.id))
                             is RemoteMessage.PlayAlbum -> sendOpening(listener.onPlayAlbum(message.browseId, message.action))
                             is RemoteMessage.Artist -> sendOpening(listener.onArtist(message.artistId, message.action))
+                            RemoteMessage.Continue -> listener.onContinue()?.let(::send)
+                            is RemoteMessage.Resume -> sendOpening(listener.onResume(message.parentId, message.videoId))
                             else -> Unit
                         }
                     }

@@ -65,6 +65,18 @@ object RemotePlayerHub {
     fun openYouTube(request: RemoteYouTubeOpen) {
         _youTubeOpens.tryEmit(request)
     }
+
+    private val _resumes = MutableSharedFlow<com.nuvio.app.features.watchprogress.ContinueWatchingItem>(extraBufferCapacity = 2)
+
+    /**
+     * Continue Watching titles the phone asked to resume (its Watch tab, Resume on the TV). The app root plays them as
+     * the card's last-link shortcut does: the same source again, from where it stopped.
+     */
+    val resumes: SharedFlow<com.nuvio.app.features.watchprogress.ContinueWatchingItem> = _resumes.asSharedFlow()
+
+    fun resume(item: com.nuvio.app.features.watchprogress.ContinueWatchingItem) {
+        _resumes.tryEmit(item)
+    }
 }
 
 data class RemoteYouTubeOpen(val videoId: String, val startSeconds: Int? = null)

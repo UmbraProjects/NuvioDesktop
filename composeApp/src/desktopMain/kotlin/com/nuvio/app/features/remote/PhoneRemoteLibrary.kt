@@ -15,6 +15,8 @@ import com.nuvio.app.features.music.library.shelfAlbumsOf
 import com.nuvio.app.features.music.library.shelfSortKey
 import com.nuvio.app.features.music.loadArtistRadio
 import com.nuvio.app.features.watched.WatchedRepository
+import com.nuvio.app.features.watchprogress.WatchProgressRepository
+import com.nuvio.app.features.watchprogress.toContinueWatchingItem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +36,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal object PhoneRemoteLibrary {
     private val log = Logger.withTag("PhoneRemote")
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private const val MAX_CONTINUE = 20
 
     /** The repositories are loaded the first time a phone asks; a phone asks again while `ready` is 0. */
     private fun onMain(work: () -> Unit) {
@@ -105,6 +108,50 @@ internal object PhoneRemoteLibrary {
             artists = artists.map { RemoteArtist(it.id, it.name, it.art.thumb, it.favourite) },
             albums = albums,
         )
+    }
+
+    // --- Continue watching (phase 3): the phone's Watch tab opens with it, and Resume on the TV plays it. ---
+
+    fun continueLine(): String? = runCatching {
+        onMain { WatchProgressRepository.ensureLoaded() }
+        val items = WatchProgressRepository.continueWatching()
+            .filter { it.isResumable }
+            .take(MAX_CONTINUE)
+            .map { entry ->
+                val episode = if (entry.seasonNumber != null && entry.episodeNumber != null) {
+                    listOfNotNull("S${entry.seasonNumber} E${entry.episodeNumber}", entry.episodeTitle?.takeIf { it.isNotBlank() })
+                        .joinToString(" · ")
+                } else {
+                    null
+                }
+                RemoteResume(
+                    type = entry.parentMetaType,
+                    parentId = entry.parentMetaId,
+                    videoId = entry.videoId,
+                    title = entry.title,
+                    episode = episode,
+                    poster = entry.poster,
+                    still = entry.episodeThumbnail ?: entry.background,
+                    positionMs = entry.lastPositionMs,
+                    durationMs = entry.durationMs,
+                    lastSource = entry.lastStreamTitle ?: entry.providerName,
+                    progressPermille = (entry.progressFraction * 1000f).toInt(),
+                )
+            }
+        PhoneRemoteLibraryLines.continueLine(items)
+    }.onFailure { error -> log.w { "Phone remote: could not list Continue Watching: ${error.message}" } }.getOrNull()
+
+    /**
+     * Plays a Continue Watching title as the card's last-link shortcut does: the same source again, from where it
+     * stopped (the source list opens when the last link is not kept or no longer plays).
+     */
+    fun resume(parentId: String, videoId: String): String? {
+        val entry = WatchProgressRepository.continueWatching()
+            .firstOrNull { it.parentMetaId == parentId && it.videoId == videoId }
+            ?: return null
+        log.i { "Phone remote: resuming ${entry.parentMetaType} $parentId ($videoId)" }
+        RemotePlayerHub.resume(entry.toContinueWatchingItem())
+        return entry.title
     }
 
     /** Opens the title's details on the TV, as clicking its poster in the Library does. */

@@ -90,6 +90,8 @@ sealed interface ServerLine {
     data object CantOpen : ServerLine
     data class VideoLibrary(val ready: Boolean, val titles: List<LibraryTitle>) : ServerLine
     data class MusicLibrary(val ready: Boolean, val artists: List<LibraryArtistInfo>, val albums: List<LibraryAlbum>) : ServerLine
+    /** The PC's Continue Watching, newest first. */
+    data class Continue(val items: List<ResumeItem>) : ServerLine
     data object Other : ServerLine
 
     companion object {
@@ -102,6 +104,7 @@ sealed interface ServerLine {
                 "OPENING" -> Opening(RemoteProtocol.decode(parts.getOrElse(1) { "" }))
                 "STATE" -> parseState(parts, nowMs)?.let(::State) ?: Other
                 "LIBRARY" -> LibraryLines.parse(line) ?: Other
+                "CONTINUE" -> LibraryLines.parseContinue(line) ?: Other
                 "THEME" -> RemoteTheme.parse(parts)?.let(::Theme) ?: Other
                 else -> Other
             }
@@ -246,6 +249,12 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     /** Opens the title's details on the TV. The PC answers OPENING or CANT_OPEN through [listen]. */
     fun openTitle(type: String, id: String) = send("OPEN_TITLE ${RemoteProtocol.encode(type)} ${RemoteProtocol.encode(id)}")
+
+    /** The answer comes back as a [ServerLine.Continue]; a PC from before Continue Watching does not answer. */
+    fun requestContinue() = send("CONTINUE")
+
+    /** Plays it on the TV from the same source, from where it stopped. The PC answers OPENING or CANT_OPEN. */
+    fun resume(parentId: String, videoId: String) = send("RESUME ${RemoteProtocol.encode(parentId)} ${RemoteProtocol.encode(videoId)}")
 
     fun album(browseId: String, action: AlbumAction) = send("PLAY_ALBUM ${RemoteProtocol.encode(browseId)} ${action.wire}")
 

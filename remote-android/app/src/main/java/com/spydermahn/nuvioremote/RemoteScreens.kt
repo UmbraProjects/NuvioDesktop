@@ -269,7 +269,8 @@ private fun BrowseBody(padMode: PadMode, viewModel: RemoteViewModel, onSearch: (
 
 @Composable
 private fun FilmBody(playing: NowPlaying, cover: Bitmap?, padMode: PadMode, viewModel: RemoteViewModel, onMore: () -> Unit) {
-    Column(Modifier.fillMaxSize()) {
+    // Scrolls rather than squeezing: with everything above it, a weighted pad was left with no room at all on a phone.
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         NowPlayingPanel(playing, cover, viewModel, Modifier.padding(top = 8.dp))
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatTile("Subtitles", playing.subtitleTrack ?: "Tap for the next", Modifier.weight(1f)) {
@@ -280,7 +281,7 @@ private fun FilmBody(playing: NowPlaying, cover: Bitmap?, padMode: PadMode, view
             }
         }
         Transport(playing, viewModel, Modifier.padding(top = 14.dp))
-        NavPanel(padMode, viewModel, Modifier.weight(1f).heightIn(min = 120.dp).fillMaxWidth().padding(top = 12.dp), compact = true)
+        NavPanel(padMode, viewModel, Modifier.height(FILM_PAD_HEIGHT).fillMaxWidth().padding(top = 12.dp), compact = true)
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp, start = 24.dp, end = 24.dp), horizontalArrangement = Arrangement.SpaceAround) {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 56.dp) { viewModel.press(RemoteKey.Back) }
             GlassKey(Icons.AutoMirrored.Rounded.List, "Sources", size = 56.dp) { viewModel.press(RemoteKey.Sources) }
@@ -505,6 +506,9 @@ private fun Touchpad(onKey: (RemoteKey) -> Unit, compact: Boolean, modifier: Mod
 }
 
 private val STEP = 44.dp
+
+/** The film screen's pad: room for the D-pad or a usable touchpad, whatever is above it. */
+private val FILM_PAD_HEIGHT = 250.dp
 
 @Composable
 private fun DPad(viewModel: RemoteViewModel, size: androidx.compose.ui.unit.Dp) {
