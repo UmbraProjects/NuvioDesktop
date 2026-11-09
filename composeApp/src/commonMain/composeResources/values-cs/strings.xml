@@ -998,7 +998,6 @@
   <string name="downloads_status_downloading">Stahování • %1$s</string>
   <string name="downloads_status_failed">Selhalo</string>
   <string name="downloads_status_paused">Pozastaveno • %1$s</string>
-  <string name="downloads_status_merging">Spojování částí • %1$s</string>
   <string name="downloads_status_queued">Ve frontě • %1$s</string>
   <string name="downloads_status_eta">Zbývá %1$s</string>
   <string name="episodes_cd_watched">Zhlédnuto</string>
@@ -1523,6 +1522,14 @@
   <string name="settings_rating_prompt_title">Vyzvat k hodnocení po finále</string>
   <string name="settings_rating_prompt_description">Vyzve vás k ohodnocení ve vámi zvolené službě knihovny.</string>
   <string name="settings_rating_prompt_unavailable">Pro zapnutí hodnocení nastavte Zdroj knihovny na MDBList, SIMKL nebo Floppy a připojte ho.</string>
+  <string name="settings_rating_source_title">Hodnocení ukládat do</string>
+  <string name="settings_rating_source_description">Kam se ukládají hodnocení z detailu a z výzvy po finále.</string>
+  <string name="settings_rating_source_library">Stejně jako knihovna</string>
+  <string name="settings_rating_source_library_active">Podle zdroje knihovny: hodnocení jdou do %1$s.</string>
+  <string name="settings_rating_source_library_unavailable">Zdroj knihovny nepřijímá hodnocení, takže hodnocení je vypnuté. Vyberte SIMKL, MDBList nebo Floppy.</string>
+  <string name="settings_rating_source_not_connected">%1$s není připojen, takže hodnocení je vypnuté, dokud se nepřihlásíte.</string>
+  <string name="settings_rating_prompt_description_source">Požádá o hodnocení ve službě zvolené v Hodnocení ukládat do.</string>
+  <string name="settings_rating_prompt_no_source">Pro zapnutí vyberte připojenou službu v Hodnocení ukládat do.</string>
   <string name="settings_library_source_not_connected">Nepřipojeno - Knihovna používá Nuvio Sync, dokud se nepřihlásíte.</string>
   <string name="settings_calendar_source_section">Kalendář</string>
   <string name="settings_calendar_source_title">Zdroj kalendáře</string>
@@ -1829,6 +1836,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Nepoužívat automaticky Anime4K ani vlastní shader u zdrojů, které už jsou ve 4K. Tyto shadery zvětšují obraz, takže 4K zdroj získá jen málo a může to GPU zahltit. Ruční vynucení (F10) se stále použije.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (interpolace)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Využívá VapourSynth k interpolaci pohybu pro plynulejší zážitek.</string>
+  <string name="settings_playback_desktop_svp_all_content">SVP pro všechna videa</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Vyhlazuje také filmy a seriály s laděním pro hrané záběry; anime si ponechá vlastní ladění. Více zatěžuje CPU a RTX Video Super Resolution zůstává při běhu SVP vypnuté.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">Ladicí překryv SVP</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Vykreslí na video aktivní metodu interpolace a snímkovou frekvenci zdroje/výstupu. Projeví se od dalšího spuštění přehrávání.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Knihovna shaderů</string>
@@ -1848,6 +1857,8 @@
   <string name="settings_playback_desktop_audio_channels_desc">Stereo sloučí prostorové stopy do dvou kanálů přímo v přehrávači. Zkuste to, pokud se na televizi nebo soundbaru dialogy neustále zesilují a zeslabují. Automaticky použije rozložení nastavené pro zvukové zařízení ve Windows.</string>
   <string name="settings_playback_desktop_audio_dialogue_boost">Zesílení dialogů (downmix)</string>
   <string name="settings_playback_desktop_audio_dialogue_boost_desc">Zesílí středový (dialogový) kanál, když se prostorová stopa slučuje do menšího počtu kanálů, například při nastavení Zvukových kanálů na Stereo.</string>
+    <string name="settings_playback_desktop_headphone_surround">Prostorový zvuk do sluchátek</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">Pro sluchátka a pecky: prostorové stopy zní, jako by hrály z reproduktorů kolem vás, místo aby se ploše smíchaly do levého a pravého kanálu. Stereo zdroje hrají o něco tišeji. Při průchodu zvuku (passthrough) nemá vliv.</string>
   <string name="settings_playback_desktop_custom_mpv_options">Možnosti MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Jedna možnost na řádek ve tvaru klíč=hodnota. Použijí se nad výchozími hodnotami Nuvia; neplatné možnosti se ignorují.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">např.\nprofile=gpu-hq\ndeband=no</string>
@@ -4469,9 +4480,11 @@
   <string name="player_hud_less_bass">Méně basů</string>
   <string name="player_hud_audio_channels">Zvukové kanály</string>
   <string name="player_hud_dialogue_boost_downmix">Zesílení dialogů (downmix)</string>
+    <string name="player_hud_headphone_surround">Prostorový zvuk do sluchátek</string>
   <string name="player_hud_on_off_during_audio_passthrough">Zapnuto (při předávání zvuku vypnuto)</string>
   <string name="player_hud_on_off_while_svp_runs">Zapnuto (při běhu SVP vypnuto)</string>
   <string name="player_hud_anime_svp">Anime SVP</string>
+  <string name="player_hud_cinema_svp">SVP pro filmy</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">Zapnuto (v aplikaci NVIDIA vypnuto)</string>

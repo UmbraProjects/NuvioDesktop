@@ -194,7 +194,7 @@ internal const val TMDB_ANIMATION_GENRE_ID = 16
 internal fun collectionAnimeType(
     mediaType: TmdbCollectionMediaType,
     genres: List<String> = emptyList(),
-    isAnimation: Boolean = genres.any { it.equals("animation", ignoreCase = true) },
+    isAnimation: Boolean = genres.any { com.nuvio.app.features.player.isAnimationGenreName(it) },
     originalLanguage: String? = null,
     originCountries: Iterable<String> = emptyList(),
     sourceDeclaresAnime: Boolean = false,

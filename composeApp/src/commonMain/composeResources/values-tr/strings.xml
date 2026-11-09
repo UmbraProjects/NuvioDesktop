@@ -998,7 +998,6 @@
   <string name="downloads_status_downloading">İndiriliyor • %1$s</string>
   <string name="downloads_status_failed">Olmadı</string>
   <string name="downloads_status_paused">Duraklatıldı • %1$s</string>
-  <string name="downloads_status_merging">Parçalar birleştiriliyor • %1$s</string>
   <string name="downloads_status_queued">Sırada • %1$s</string>
   <string name="downloads_status_eta">%1$s kaldı</string>
   <string name="episodes_cd_watched">İzlendi</string>
@@ -1523,6 +1522,14 @@
   <string name="settings_rating_prompt_title">Finalden sonra puanlamamı iste</string>
   <string name="settings_rating_prompt_description">Seçtiğin kitaplık servisinde değerlendirme yapman için hatırlatır.</string>
   <string name="settings_rating_prompt_unavailable">Puanlamayı etkinleştirmek için Kitaplık kaynağını MDBList, SIMKL veya Floppy yap ve bağla.</string>
+  <string name="settings_rating_source_title">Puanların kaydedileceği yer</string>
+  <string name="settings_rating_source_description">Ayrıntılar'dan ve final sonrası sorudan verilen puanların kaydedildiği yer.</string>
+  <string name="settings_rating_source_library">Kütüphane ile aynı</string>
+  <string name="settings_rating_source_library_active">Kütüphane kaynağını izler: puanlar %1$s hizmetine gider.</string>
+  <string name="settings_rating_source_library_unavailable">Kütüphane kaynağı puan kabul etmiyor, bu yüzden puanlama kapalı. Bunun yerine SIMKL, MDBList veya Floppy seçin.</string>
+  <string name="settings_rating_source_not_connected">%1$s bağlı değil, bu yüzden giriş yapana kadar puanlama kapalı.</string>
+  <string name="settings_rating_prompt_description_source">Puanların kaydedileceği yer bölümünde seçilen hizmette puan ister.</string>
+  <string name="settings_rating_prompt_no_source">Bunu açmak için Puanların kaydedileceği yer bölümünde bağlı bir hizmet seçin.</string>
   <string name="settings_library_source_not_connected">Bağlı değil - sen giriş yapana kadar Kitaplık, Nuvio Sync'i kullanıyor.</string>
   <string name="settings_calendar_source_section">Takvim</string>
   <string name="settings_calendar_source_title">Takvim kaynağı</string>
@@ -1829,6 +1836,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Zaten 4K olan kaynaklara Anime4K'yı veya özel bir gölgelendiriciyi otomatik uygulama. Bu gölgelendiriciler yükseltme yapar; 4K kaynak pek kazanç sağlamaz ve GPU'yu zorlayabilir. Elle zorlama (F10) yine de uygulanır.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (Ara Kare Üretimi)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Daha akıcı bir deneyim için hareketi ara kare üretimiyle işlemek üzere VapourSynth kullanır.</string>
+  <string name="settings_playback_desktop_svp_all_content">Tüm videolarda SVP</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Film ve dizileri de canlı çekime göre ayarlanmış şekilde akıcılaştırır; anime kendi ayarını korur. Daha fazla CPU kullanır ve SVP çalışırken RTX Video Super Resolution kapalı kalır.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">SVP Hata Ayıklama Katmanı</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Etkin ara kare yöntemini ve kaynak/çıkış kare hızını videonun üzerine çizer. Bir sonraki oynatma başlangıcından itibaren geçerli olur.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Gölgelendirici Kitaplığı</string>
@@ -1848,6 +1857,8 @@
   <string name="settings_playback_desktop_audio_channels_desc">Stereo, surround kanallı kayıtları oynatıcıda iki kanala indirger. TV'de veya ses çubuğunda diyaloglar sürekli yükselip alçalıyorsa dene. Otomatik, Windows ses aygıtının ayarlı olduğu düzeni kullanır.</string>
   <string name="settings_playback_desktop_audio_dialogue_boost">Diyalog güçlendirme (kanal azaltma)</string>
   <string name="settings_playback_desktop_audio_dialogue_boost_desc">Bir surround kayıt daha az kanala indirgenirken (örneğin Ses kanalları Stereo iken) orta (diyalog) kanalı yükseltir.</string>
+    <string name="settings_playback_desktop_headphone_surround">Kulaklık surround</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">Kulaklıklar için: surround parçalar sol ve sağa düz şekilde karıştırılmak yerine etrafınızdaki hoparlörlerden geliyormuş gibi duyulur. Stereo kaynaklar biraz daha kısık çalar. Ses passthrough sırasında etkisizdir.</string>
   <string name="settings_playback_desktop_custom_mpv_options">MPV Seçenekleri</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Her satıra anahtar=değer biçiminde bir seçenek. Nuvio'nun varsayılanlarının üzerine uygulanır; geçersiz seçenekler yok sayılır.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">örn.\nprofile=gpu-hq\ndeband=no</string>
@@ -4461,9 +4472,11 @@
   <string name="player_hud_less_bass">Daha az bas</string>
   <string name="player_hud_audio_channels">Ses kanalları</string>
   <string name="player_hud_dialogue_boost_downmix">Diyalog güçlendirme (downmix)</string>
+    <string name="player_hud_headphone_surround">Kulaklık surround</string>
   <string name="player_hud_on_off_during_audio_passthrough">Açık (ses geçişi sırasında kapalı)</string>
   <string name="player_hud_on_off_while_svp_runs">Açık (SVP çalışırken kapalı)</string>
   <string name="player_hud_anime_svp">Anime SVP</string>
+  <string name="player_hud_cinema_svp">Sinema SVP</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">Açık (NVIDIA App içinde kapalı)</string>

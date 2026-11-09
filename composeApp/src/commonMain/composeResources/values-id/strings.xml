@@ -998,7 +998,6 @@
   <string name="downloads_status_downloading">Mengunduh • %1$s</string>
   <string name="downloads_status_failed">Gagal</string>
   <string name="downloads_status_paused">Dijeda • %1$s</string>
-  <string name="downloads_status_merging">Menggabungkan bagian • %1$s</string>
   <string name="downloads_status_queued">Antre • %1$s</string>
   <string name="downloads_status_eta">%1$s lagi</string>
   <string name="episodes_cd_watched">Ditonton</string>
@@ -1523,6 +1522,14 @@
   <string name="settings_rating_prompt_title">Minta saya memberi rating setelah episode akhir</string>
   <string name="settings_rating_prompt_description">Meminta ulasan di layanan pustaka pilihan Anda.</string>
   <string name="settings_rating_prompt_unavailable">Atur Sumber pustaka ke MDBList, SIMKL, atau Floppy dan hubungkan untuk mengaktifkan rating.</string>
+  <string name="settings_rating_source_title">Simpan rating ke</string>
+  <string name="settings_rating_source_description">Tempat rating dari Detail dan dari permintaan setelah final disimpan.</string>
+  <string name="settings_rating_source_library">Sama dengan Pustaka</string>
+  <string name="settings_rating_source_library_active">Mengikuti sumber Pustaka: rating dikirim ke %1$s.</string>
+  <string name="settings_rating_source_library_unavailable">Sumber Pustaka tidak menerima rating, jadi rating mati. Pilih SIMKL, MDBList, atau Floppy.</string>
+  <string name="settings_rating_source_not_connected">%1$s belum terhubung, jadi rating mati sampai Anda masuk.</string>
+  <string name="settings_rating_prompt_description_source">Meminta rating di layanan yang dipilih pada Simpan rating ke.</string>
+  <string name="settings_rating_prompt_no_source">Pilih layanan yang terhubung di Simpan rating ke untuk mengaktifkannya.</string>
   <string name="settings_library_source_not_connected">Tidak terhubung - Pustaka menggunakan Nuvio Sync sampai Anda masuk.</string>
   <string name="settings_calendar_source_section">Kalender</string>
   <string name="settings_calendar_source_title">Sumber kalender</string>
@@ -1829,6 +1836,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Jangan terapkan otomatis Anime4K atau shader kustom pada sumber yang sudah 4K. Shader ini melakukan upscaling, jadi sumber 4K hanya mendapat sedikit manfaat dan bisa membebani GPU. Pemaksaan manual (F10) tetap berlaku.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (Interpolasi)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Memakai VapourSynth untuk menginterpolasi gerakan demi pengalaman yang lebih mulus.</string>
+  <string name="settings_playback_desktop_svp_all_content">SVP untuk semua video</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Juga menghaluskan film dan serial dengan penyetelan untuk live action; anime tetap memakai penyetelannya sendiri. Lebih membebani CPU, dan RTX Video Super Resolution tetap mati selama SVP berjalan.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">Overlay Debug SVP</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Menampilkan metode interpolasi aktif dan frame rate sumber/keluaran di atas video. Berlaku mulai pemutaran berikutnya.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Pustaka Shader</string>
@@ -1848,6 +1857,8 @@
   <string name="settings_playback_desktop_audio_channels_desc">Stereo menggabungkan trek surround menjadi dua kanal di pemutar. Coba jika dialog terus berubah antara keras dan pelan di TV atau soundbar. Otomatis memakai tata letak yang ditetapkan pada perangkat audio Windows.</string>
   <string name="settings_playback_desktop_audio_dialogue_boost">Penguat dialog (downmix)</string>
   <string name="settings_playback_desktop_audio_dialogue_boost_desc">Menaikkan kanal tengah (dialog) saat trek surround di-downmix ke kanal yang lebih sedikit, misalnya dengan Kanal audio disetel ke Stereo.</string>
+    <string name="settings_playback_desktop_headphone_surround">Surround headphone</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">Untuk headphone dan earbud: trek surround terdengar seolah berasal dari speaker di sekitar Anda, bukan dicampur datar ke kiri dan kanan. Sumber stereo diputar sedikit lebih pelan. Tidak berpengaruh saat audio passthrough.</string>
   <string name="settings_playback_desktop_custom_mpv_options">Opsi MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Satu opsi per baris dalam format key=value. Diterapkan di atas bawaan Nuvio; opsi yang tidak valid diabaikan.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">mis.\nprofile=gpu-hq\ndeband=no</string>
@@ -4459,9 +4470,11 @@
   <string name="player_hud_less_bass">Bass dikurangi</string>
   <string name="player_hud_audio_channels">Kanal audio</string>
   <string name="player_hud_dialogue_boost_downmix">Penguat dialog (downmix)</string>
+    <string name="player_hud_headphone_surround">Surround headphone</string>
   <string name="player_hud_on_off_during_audio_passthrough">Aktif (nonaktif saat audio passthrough)</string>
   <string name="player_hud_on_off_while_svp_runs">Aktif (nonaktif saat SVP berjalan)</string>
   <string name="player_hud_anime_svp">SVP Anime</string>
+  <string name="player_hud_cinema_svp">SVP Sinema</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">Aktif (nonaktif di NVIDIA App)</string>

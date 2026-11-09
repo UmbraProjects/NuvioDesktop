@@ -1,4 +1,11 @@
-# SVP for Anime - Final Stable Version (Enhanced for Memory Cleanup and Stability)
+# SVP motion interpolation for Nuvio: anime and cinema (live-action) profiles.
+#
+# Based on the SVP scripts from Stremio-Kai by allecsc (https://github.com/allecsc/Stremio-Kai,
+# portable_config/svp_anime.vpy and svp_cinema.vpy), GPL-3.0, used with the author's permission.
+# Nuvio's changes: one script for both profiles (SVP_PROFILE below, rewritten per profile when
+# Nuvio exports it), refresh-aware target FPS, plugin discovery and diagnostics logging.
+#
+# Original Stremio-Kai notes (anime profile):
 #
 # This script is the result of a methodical, step-by-step process to combine the best features
 # of multiple versions into a single, robust, and high-performance VapourSynth script.
@@ -24,6 +31,11 @@ from subprocess import call
 import vapoursynth as vs
 import gc
 import traceback
+
+# "anime" or "cinema". Nuvio rewrites this line when it exports the script (DesktopAnimeSvp.kt),
+# so keep it on one line in exactly this form.
+SVP_PROFILE = "anime"
+IS_CINEMA = SVP_PROFILE == "cinema"
 
 # Config loader: reads script-opts/svp.conf placed next to this script in MPV config
 def load_config():
@@ -192,14 +204,50 @@ def is_yuv420p8(clip):
     except Exception:
         return False
 
+def loaded_module_dir(module_name):
+    # Directory a DLL already in this process was loaded from. The SVP plugins ship next to
+    # libvapoursynth.dll, so this finds them whatever the working directory is (os.environ does
+    # not see the PYTHONHOME the bridge sets at run time, and a relative path depends on how
+    # Nuvio was started).
+    try:
+        import ctypes
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetModuleHandleW.restype = ctypes.c_void_p
+        kernel32.GetModuleHandleW.argtypes = [ctypes.c_wchar_p]
+        kernel32.GetModuleFileNameW.restype = ctypes.c_uint32
+        kernel32.GetModuleFileNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32]
+        handle = kernel32.GetModuleHandleW(module_name)
+        if not handle:
+            return None
+        buffer = ctypes.create_unicode_buffer(32768)
+        if not kernel32.GetModuleFileNameW(handle, buffer, len(buffer)):
+            return None
+        return os.path.dirname(buffer.value)
+    except Exception:
+        return None
+
+def plugin_search_dirs():
+    dirs = [
+        os.path.dirname(__file__),
+        loaded_module_dir("libvapoursynth.dll"),
+        loaded_module_dir("vsscript.dll"),
+        os.environ.get("PYTHONHOME"),
+        sys.prefix,
+        os.path.dirname(sys.executable),
+        os.path.dirname(os.path.dirname(sys.executable)),
+        os.getcwd(),
+    ]
+    unique = []
+    for d in dirs:
+        if d and d not in unique:
+            unique.append(d)
+    return unique
+
 def load_local_plugin(name):
-    path = os.path.join(os.path.dirname(__file__), name)
-    if not os.path.exists(path):
-        path = os.path.join(os.path.dirname(os.path.dirname(sys.executable)), name)
-    if not os.path.exists(path):
-        path = os.path.join(os.environ.get("PYTHONHOME", ""), name)
-    if not os.path.exists(path):
-        return f"missing:{name}"
+    searched = plugin_search_dirs()
+    path = next((os.path.join(d, name) for d in searched if os.path.exists(os.path.join(d, name))), None)
+    if path is None:
+        return f"missing:{name} (searched {'; '.join(searched)})"
     try:
         core.std.LoadPlugin(path=path)
         return f"loaded:{path}"
@@ -299,7 +347,7 @@ def add_svp_runtime_probe(clip, method, target_fps):
 
 log_svp_diag(
     f"script_start: source_fps={fmt_fps(src_fps)}, container_fps={fmt_fps(container_fps)}, "
-    f"display_fps={fmt_fps(display_fps)}, input={clip.width}x{clip.height}, "
+    f"profile={SVP_PROFILE}, display_fps={fmt_fps(display_fps)}, input={clip.width}x{clip.height}, "
     f"input_clip_fps={clip_fps_text(clip)}, threads={core.num_threads}, "
     f"cache={core.max_cache_size}MB, config={config_status}, config_path={config_path}, "
     f"diag_log={diagnostic_log_path}, yuv420p8={YUV420P8_FORMAT}, "
@@ -314,7 +362,7 @@ def add_method_overlay(clip, target_fps):
     """
     try:
         txt = (
-            f"SVP | Method: {current_method}\n"
+            f"SVP {'Cinema' if IS_CINEMA else 'Anime'} | Method: {current_method}\n"
             f"{fmt_fps(src_fps)} -> {fmt_fps(target_fps)} fps | out={clip_fps_text(clip)}\n"
             f"{overlay_status}"
         )
@@ -337,21 +385,27 @@ def calculate_optimal_block_size(width):
 def get_svp_params(clip):
     width = clip.width
     mpix = (width * clip.height) / 1000000.0
-    
+    # Stremio-Kai's cinema tuning: algo 23, more block overlap and a higher thsad so film grain
+    # and live-action motion do not break vectors (less ghosting and haloing round actors).
+    algo = 23 if IS_CINEMA else 13
+
     if mpix > 6:    # 4K+ content
+        thsad = 250 if IS_CINEMA else 200
         return {
             'super': "{pel:1,scale:{up:0},gpu:1,full:false,rc:false}",
-            'analyse': "{block:{overlap:0},main:{search:{coarse:{distance:-6,bad:{sad:2000}},type:2,distance:-6}},refine:[{thsad:200}]}",
-            'algo': 13,
+            'analyse': "{block:{overlap:0},main:{search:{coarse:{distance:-6,bad:{sad:2000}},type:2,distance:-6}},refine:[{thsad:" + str(thsad) + "}]}",
+            'algo': algo,
             'format': YUV420P8_FORMAT,
             'resize_kernel': 'Bicubic'
         }
     else:   # 1080p and below
         block_size = calculate_optimal_block_size(width)
+        overlap = 2 if IS_CINEMA else 1
+        thsad = 250 if IS_CINEMA else 220
         return {
             'super': "{pel:1,scale:{up:2},gpu:1,full:false,rc:false}",
-            'analyse': "{block:{w:" + str(block_size) + ",overlap:1},main:{search:{coarse:{distance:-10,bad:{sad:1800}},type:2,distance:-10}},refine:[{thsad:220}]}",
-            'algo': 13,
+            'analyse': "{block:{w:" + str(block_size) + ",overlap:" + str(overlap) + "},main:{search:{coarse:{distance:-10,bad:{sad:1800}},type:2,distance:-10}},refine:[{thsad:" + str(thsad) + "}]}",
+            'algo': algo,
             'format': YUV420P8_FORMAT,
             'resize_kernel': 'Spline36'
         }
@@ -389,7 +443,7 @@ def interpolate_svp(clip, params, target_fps):
         vectors = core.svp1.Analyse(super_clip["clip"], super_clip["data"], clip, params['analyse'])
         smooth = core.svp2.SmoothFps(clip, super_clip["clip"], super_clip["data"], vectors["clip"], vectors["data"], smoothfps_params, src=clip, fps=src_fps)
         smooth = core.std.AssumeFPS(smooth, fpsnum=fps_num, fpsden=fps_den)
-        smooth = core.std.SetFrameProp(smooth, prop="_InterpolationMethod", data="SVP4")
+        smooth = core.std.SetFrameProp(smooth, prop="_InterpolationMethod", data="SVP4-Cinema" if IS_CINEMA else "SVP4")
         return smooth
     finally:
         if super_clip is not None: del super_clip
@@ -457,8 +511,30 @@ def interpolate_mvtools(clip, target_fps):
 
 ###########-=MAIN PROCESSING=-###########
 
+MAX_TARGET_FPS = 60.0
+
+def refresh_locked_target_fps(source_fps, refresh):
+    """Highest refresh/n at or below 60 FPS that still adds frames, so every interpolated frame
+    is held for a whole number of refreshes. mpv's display-resample is off while SVP runs, so an
+    output of 48 FPS on a 120 Hz screen (2.5 refreshes per frame) would judder 2-3-2-3 on top of
+    the smoothing. 120/240 Hz -> 60, 144 Hz -> 48, 165 Hz -> 55, 60 Hz -> 60, 50 Hz -> 50."""
+    if refresh is None or refresh < 23.0:
+        return None
+    divisor = 1
+    while divisor <= 12:
+        candidate = refresh / divisor
+        if candidate <= MAX_TARGET_FPS + 0.5:
+            return candidate if candidate >= source_fps * 1.5 else None
+        divisor += 1
+    return None
+
 def get_target_fps():
- # Priority 1: Handle the most common anime framerates with perfect doubling.
+    locked = refresh_locked_target_fps(src_fps, display_fps if display_fps and display_fps > 0 else None)
+    if locked is not None:
+        return locked
+
+    # Fallback (unknown refresh, or no whole-refresh rate high enough): Stremio-Kai's doubling.
+    # Priority 1: Handle the most common anime framerates with perfect doubling.
     if 23.5 <= src_fps <= 24.5:
         return 48.0
     if 24.9 <= src_fps <= 25.1:

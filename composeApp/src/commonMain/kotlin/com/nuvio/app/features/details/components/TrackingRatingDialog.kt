@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,10 +75,16 @@ fun TrackingRatingDialog(
     onDismiss: () -> Unit,
     onClear: (() -> Unit)? = null,
     dismissLabel: String? = null,
+    initialScore: Int? = null,
 ) {
     if (!visible) return
 
     var selectedScore by remember(visible, headline) { mutableStateOf<Int?>(null) }
+    var touched by remember(visible, headline) { mutableStateOf(false) }
+    // The saved score is looked up after the dialog opens; show it unless a score was picked first.
+    LaunchedEffect(initialScore) {
+        if (!touched) selectedScore = initialScore
+    }
     val closeLabel = dismissLabel ?: stringResource(Res.string.action_cancel)
 
     Dialog(
@@ -174,6 +181,7 @@ fun TrackingRatingDialog(
                             selectedScore = selectedScore,
                             enabled = !isPending,
                             onScoreSelected = { score ->
+                                touched = true
                                 selectedScore = score
                                 onRate(score)
                             },
@@ -208,6 +216,7 @@ fun TrackingRatingDialog(
                                 Spacer(Modifier.height(8.dp))
                                 TextButton(
                                     onClick = {
+                                        touched = true
                                         selectedScore = null
                                         onClear()
                                     },

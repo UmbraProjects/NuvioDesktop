@@ -998,7 +998,6 @@
   <string name="downloads_status_downloading">Γίνεται εγκατάσταση • %1$s</string>
   <string name="downloads_status_failed">Απέτυχε</string>
   <string name="downloads_status_paused">Σε παύση • %1$s</string>
-  <string name="downloads_status_merging">Συνένωση τμημάτων • %1$s</string>
   <string name="downloads_status_queued">Σε αναμονή • %1$s</string>
   <string name="downloads_status_eta">Απομένουν %1$s</string>
   <string name="episodes_cd_watched">Παρακολουθήθηκε</string>
@@ -1523,6 +1522,14 @@
   <string name="settings_rating_prompt_title">Ερώτηση για βαθμολόγηση μετά από φινάλε</string>
   <string name="settings_rating_prompt_description">Εμφανίζει προτροπή αξιολόγησης στην υπηρεσία βιβλιοθήκης που επιλέξατε.</string>
   <string name="settings_rating_prompt_unavailable">Ορίστε ως πηγή βιβλιοθήκης το MDBList, το SIMKL ή το Floppy και συνδεθείτε για να ενεργοποιήσετε τις βαθμολογίες.</string>
+  <string name="settings_rating_source_title">Οι βαθμολογίες πάνε στο</string>
+  <string name="settings_rating_source_description">Πού αποθηκεύονται οι βαθμολογίες από τις Λεπτομέρειες και την ερώτηση μετά από φινάλε.</string>
+  <string name="settings_rating_source_library">Ίδιο με τη Βιβλιοθήκη</string>
+  <string name="settings_rating_source_library_active">Ακολουθεί την πηγή της Βιβλιοθήκης: οι βαθμολογίες πάνε στο %1$s.</string>
+  <string name="settings_rating_source_library_unavailable">Η πηγή της Βιβλιοθήκης δεν δέχεται βαθμολογίες, οπότε η βαθμολόγηση είναι ανενεργή. Διάλεξε SIMKL, MDBList ή Floppy.</string>
+  <string name="settings_rating_source_not_connected">Το %1$s δεν είναι συνδεδεμένο, οπότε η βαθμολόγηση είναι ανενεργή μέχρι να συνδεθείς.</string>
+  <string name="settings_rating_prompt_description_source">Ζητά βαθμολογία στην υπηρεσία που επιλέχθηκε στο «Οι βαθμολογίες πάνε στο».</string>
+  <string name="settings_rating_prompt_no_source">Διάλεξε μια συνδεδεμένη υπηρεσία στο «Οι βαθμολογίες πάνε στο» για να το ενεργοποιήσεις.</string>
   <string name="settings_library_source_not_connected">Δεν είναι συνδεδεμένο - η Βιβλιοθήκη χρησιμοποιεί το Nuvio Sync μέχρι να συνδεθείτε.</string>
   <string name="settings_calendar_source_section">Ημερολόγιο</string>
   <string name="settings_calendar_source_title">Πηγή ημερολογίου</string>
@@ -1829,6 +1836,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Να μην εφαρμόζεται αυτόματα Anime4K ή προσαρμοσμένο shader σε πηγές που είναι ήδη 4K. Αυτά τα shaders αυξάνουν την ανάλυση, οπότε μια πηγή 4K κερδίζει λίγα και μπορεί να επιβαρύνει υπερβολικά τη GPU. Η χειροκίνητη επιβολή (F10) εξακολουθεί να εφαρμόζεται.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (παρεμβολή)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Χρησιμοποιεί το VapourSynth για παρεμβολή κίνησης και πιο ομαλή εμπειρία.</string>
+  <string name="settings_playback_desktop_svp_all_content">SVP σε όλα τα βίντεο</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Εξομαλύνει και ταινίες και σειρές με ρύθμιση για live action· τα anime κρατούν τη δική τους ρύθμιση. Χρησιμοποιεί περισσότερη CPU και το RTX Video Super Resolution μένει απενεργοποιημένο όσο τρέχει το SVP.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">Επικάλυψη εντοπισμού σφαλμάτων SVP</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Σχεδιάζει στο βίντεο την ενεργή μέθοδο παρεμβολής και τον ρυθμό καρέ πηγής/εξόδου. Ισχύει από την επόμενη έναρξη αναπαραγωγής.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Βιβλιοθήκη shaders</string>
@@ -1848,6 +1857,8 @@
   <string name="settings_playback_desktop_audio_channels_desc">Το Στερεοφωνικό συμπτύσσει τα κανάλια surround σε δύο κανάλια μέσα στο πρόγραμμα αναπαραγωγής. Δοκιμάστε το αν οι διάλογοι δυναμώνουν και χαμηλώνουν συνεχώς σε τηλεόραση ή soundbar. Το Αυτόματο χρησιμοποιεί τη διάταξη στην οποία έχει ρυθμιστεί η συσκευή ήχου των Windows.</string>
   <string name="settings_playback_desktop_audio_dialogue_boost">Ενίσχυση διαλόγων (downmix)</string>
   <string name="settings_playback_desktop_audio_dialogue_boost_desc">Ενισχύει το κεντρικό κανάλι (διάλογοι) όταν ένα κανάλι surround συμπτύσσεται σε λιγότερα κανάλια, για παράδειγμα με τα Κανάλια ήχου ρυθμισμένα σε Στερεοφωνικό.</string>
+    <string name="settings_playback_desktop_headphone_surround">Surround για ακουστικά</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">Για ακουστικά: τα surround κομμάτια ακούγονται σαν να έρχονται από ηχεία γύρω σας, αντί να μιξάρονται επίπεδα σε αριστερό και δεξί κανάλι. Οι στερεοφωνικές πηγές παίζουν λίγο πιο χαμηλά. Δεν έχει επίδραση κατά το audio passthrough.</string>
   <string name="settings_playback_desktop_custom_mpv_options">Επιλογές MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Μία επιλογή ανά γραμμή ως key=value. Εφαρμόζονται πάνω από τις προεπιλογές του Nuvio· οι μη έγκυρες επιλογές αγνοούνται.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">π.χ.\nprofile=gpu-hq\ndeband=no</string>
@@ -4461,9 +4472,11 @@
   <string name="player_hud_less_bass">Λιγότερα μπάσα</string>
   <string name="player_hud_audio_channels">Κανάλια ήχου</string>
   <string name="player_hud_dialogue_boost_downmix">Ενίσχυση διαλόγων (downmix)</string>
+    <string name="player_hud_headphone_surround">Surround για ακουστικά</string>
   <string name="player_hud_on_off_during_audio_passthrough">Ενεργό (ανενεργό κατά το audio passthrough)</string>
   <string name="player_hud_on_off_while_svp_runs">Ενεργό (ανενεργό όσο εκτελείται το SVP)</string>
   <string name="player_hud_anime_svp">Anime SVP</string>
+  <string name="player_hud_cinema_svp">SVP ταινιών</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">Ενεργό (ανενεργό στην εφαρμογή NVIDIA)</string>

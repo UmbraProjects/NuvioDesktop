@@ -76,6 +76,8 @@ import com.nuvio.app.features.player.AvailableLanguageOptions
 import com.nuvio.app.features.player.DesktopAnimeMode
 import com.nuvio.app.features.player.DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY
 import com.nuvio.app.features.player.DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY
+import com.nuvio.app.features.player.DESKTOP_HEADPHONE_SURROUND_ON
+import com.nuvio.app.features.player.DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY
 import com.nuvio.app.features.player.desktopAudioChannelChoices
 import com.nuvio.app.features.player.desktopAudioDialogueChoices
 import com.nuvio.app.features.player.selectedFor
@@ -1562,6 +1564,20 @@ private fun PlaybackSettingsSection(
                                 )
                             },
                         )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_headphone_surround),
+                            description = stringResource(Res.string.settings_playback_desktop_headphone_surround_desc),
+                            checked = mpvOverrides[DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY] == DESKTOP_HEADPHONE_SURROUND_ON,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("desktop-headphone-surround")),
+                            onCheckedChange = { enabled ->
+                                PlayerSettingsRepository.setDesktopMpvPropertyOverride(
+                                    key = DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY,
+                                    value = DESKTOP_HEADPHONE_SURROUND_ON.takeIf { enabled },
+                                )
+                            },
+                        )
                     }
                 }
             }
@@ -1636,26 +1652,37 @@ private fun PlaybackSettingsSection(
                                 modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSkipUltraHd),
                                 onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSkipUltraHdEnabled,
                             )
+                        }
+                        // SVP runs on detected anime whatever the shader choice, so it stays
+                        // reachable with the anime shaders off.
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_anime_svp),
+                            description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
+                            checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
+                            onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
+                        )
+                        if (autoPlayPlayerSettings.desktopAnimeSvpEnabled) {
                             SettingsGroupDivider(isTablet = isTablet)
                             SettingsSwitchRow(
-                                title = stringResource(Res.string.settings_playback_desktop_anime_svp),
-                                description = stringResource(Res.string.settings_playback_desktop_anime_svp_desc),
-                                checked = autoPlayPlayerSettings.desktopAnimeSvpEnabled,
+                                title = stringResource(Res.string.settings_playback_desktop_svp_all_content),
+                                description = stringResource(Res.string.settings_playback_desktop_svp_all_content_desc),
+                                checked = autoPlayPlayerSettings.desktopSvpAllContentEnabled,
                                 isTablet = isTablet,
-                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvp),
-                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpEnabled,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.SvpAllContent),
+                                onCheckedChange = PlayerSettingsRepository::setDesktopSvpAllContentEnabled,
                             )
-                            if (autoPlayPlayerSettings.desktopAnimeSvpEnabled) {
-                                SettingsGroupDivider(isTablet = isTablet)
-                                SettingsSwitchRow(
-                                    title = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
-                                    description = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
-                                    checked = autoPlayPlayerSettings.desktopAnimeSvpDebugOverlayEnabled,
-                                    isTablet = isTablet,
-                                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvpOverlay),
-                                    onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpDebugOverlayEnabled,
-                                )
-                            }
+                            SettingsGroupDivider(isTablet = isTablet)
+                            SettingsSwitchRow(
+                                title = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay),
+                                description = stringResource(Res.string.settings_playback_desktop_anime_svp_overlay_desc),
+                                checked = autoPlayPlayerSettings.desktopAnimeSvpDebugOverlayEnabled,
+                                isTablet = isTablet,
+                                modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.AnimeSvpOverlay),
+                                onCheckedChange = PlayerSettingsRepository::setDesktopAnimeSvpDebugOverlayEnabled,
+                            )
                         }
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsNavigationRow(

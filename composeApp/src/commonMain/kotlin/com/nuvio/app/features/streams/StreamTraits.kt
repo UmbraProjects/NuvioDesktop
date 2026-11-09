@@ -164,7 +164,8 @@ object StreamTraitDetector {
             audioChannels = streamAudioChannels(parsed?.channels.orEmpty(), searchText),
             encode = streamEncode(parsed?.codec, searchText),
             languages = parsed?.languages.orEmpty().mapNotNull { languageFor(it) }.ifEmpty {
-                DebridStreamLanguage.entries.filter { searchText.hasToken(it.code) }
+                val languageText = languageSearchText(stream)
+                LANGUAGE_REGEXES.filter { (_, regex) -> regex.containsMatchIn(languageText) }.map { it.first }
             },
             releaseGroup = group,
             size = streamSize(stream),
@@ -762,11 +763,36 @@ object StreamTraitDetector {
     }
 
     private fun languageFor(value: String): DebridStreamLanguage? {
-        val normalized = value.lowercase()
+        val normalized = value.trim().lowercase()
         return DebridStreamLanguage.entries.firstOrNull {
-            normalized == it.code || normalized == it.label.lowercase()
+            normalized == it.code ||
+                normalized == it.label.lowercase() ||
+                normalized in LANGUAGE_ALIASES[it].orEmpty()
         }
     }
+
+    // Words release names use for each language besides its code. Short words common in titles
+    // ("por", "chi", "fra") are left out so a title is not read as a language. Upstream 6eb35df05.
+    private val LANGUAGE_ALIASES = mapOf(
+        DebridStreamLanguage.EN to listOf("eng", "english"),
+        DebridStreamLanguage.HI to listOf("hin", "hindi"),
+        DebridStreamLanguage.IT to listOf("ita", "italian", "italiano"),
+        DebridStreamLanguage.ES to listOf("spa", "esp", "spanish", "espanol", "castellano"),
+        DebridStreamLanguage.FR to listOf("fre", "french", "truefrench"),
+        DebridStreamLanguage.DE to listOf("ger", "deu", "german", "deutsch"),
+        DebridStreamLanguage.PT to listOf("portuguese", "portugues"),
+        DebridStreamLanguage.PL to listOf("pol", "polish"),
+        DebridStreamLanguage.CS to listOf("cze", "czech"),
+        DebridStreamLanguage.LA to listOf("latino"),
+        DebridStreamLanguage.JA to listOf("jpn", "japanese"),
+        DebridStreamLanguage.KO to listOf("kor", "korean"),
+        DebridStreamLanguage.ZH to listOf("chinese"),
+    )
+    private val LANGUAGE_REGEXES = DebridStreamLanguage.entries.map { language ->
+        val tokens = listOf(language.code) + LANGUAGE_ALIASES[language].orEmpty()
+        language to Regex("(^|[^a-z0-9])(${tokens.joinToString("|") { Regex.escape(it) }})([^a-z0-9]|\$)")
+    }
+    private val NON_ALPHANUMERIC_RUN = Regex("[^a-z0-9]+")
 
     private fun releaseGroupFromText(text: String): String =
         RELEASE_GROUP_SUFFIX
@@ -956,9 +982,20 @@ object StreamTraitDetector {
     }
 
     private fun streamSearchText(stream: StreamItem): String {
+        val parsed = stream.clientResolve?.stream?.raw?.parsed
+        val parsedTexts = listOfNotNull(
+            parsed?.resolution,
+            parsed?.quality,
+            parsed?.codec,
+            parsed?.hdr?.joinToString(" "),
+            parsed?.audio?.joinToString(" "),
+        )
+        return (streamTexts(stream) + parsedTexts).joinToString(" ").lowercase()
+    }
+
+    private fun streamTexts(stream: StreamItem): List<String> {
         val resolve = stream.clientResolve
         val raw = resolve?.stream?.raw
-        val parsed = raw?.parsed
         return listOfNotNull(
             stream.name,
             stream.title,
@@ -969,11 +1006,29 @@ object StreamTraitDetector {
             resolve?.filename,
             raw?.torrentName,
             raw?.filename,
-            parsed?.resolution,
-            parsed?.quality,
-            parsed?.codec,
-            parsed?.hdr?.joinToString(" "),
-            parsed?.audio?.joinToString(" "),
-        ).joinToString(" ").lowercase()
+        )
+    }
+
+    /**
+     * The stream's texts with the media title taken out, for language matching only, so title
+     * words ("The French Dispatch", "The Italian Job") are not read as the stream's language. Only
+     * the first match per text goes: a release name repeats the title only as a language word.
+     * Upstream 4b79c43cf.
+     */
+    private fun languageSearchText(stream: StreamItem): String {
+        val resolve = stream.clientResolve
+        val titleRegexes = listOfNotNull(resolve?.stream?.raw?.parsed?.parsedTitle, resolve?.title)
+            .mapNotNull(::titleRegex)
+            .distinctBy { it.pattern }
+            .sortedByDescending { it.pattern.length }
+        return streamTexts(stream).joinToString(" ") { text ->
+            titleRegexes.fold(text.lowercase()) { remaining, regex -> regex.replaceFirst(remaining, " ") }
+        }
+    }
+
+    private fun titleRegex(title: String): Regex? {
+        val words = title.lowercase().split(NON_ALPHANUMERIC_RUN).filter { it.isNotEmpty() }
+        if (words.isEmpty()) return null
+        return Regex("(^|[^a-z0-9])${words.joinToString("[^a-z0-9]+") { Regex.escape(it) }}(?=[^a-z0-9]|\$)")
     }
 }

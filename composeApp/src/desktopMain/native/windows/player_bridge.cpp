@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <clocale>
 #include <cmath>
 #include <condition_variable>
 #include <cctype>
@@ -1216,6 +1217,16 @@ MpvApi &mpvApi() {
     return api;
 }
 
+// libmpv refuses to start (mpv_create returns null) unless LC_NUMERIC is "C": a comma-decimal
+// locale would corrupt its option parsing. The CRT starts in "C", but anything in the process
+// (a JVM library, a shell extension, a driver) can call setlocale. Java formats numbers through
+// java.util.Locale, so resetting the C locale here does not change what the app shows.
+// Upstream e8f626efd.
+mpv_handle *createMpvHandle(MpvApi &api) {
+    setlocale(LC_NUMERIC, "C");
+    return api.create();
+}
+
 // fork:loudness - decodes [startSeconds, startSeconds + durationSeconds) of the audio at url (a stream or a local file)
 // with a throwaway headless mpv, to raw little-endian float32 PCM at sampleRate Hz with 1 or 2 interleaved channels in
 // outputPath. headerLines ("Name: value") go with an http request; aid picks the audio track when not empty. Blocks for
@@ -1226,7 +1237,7 @@ int decodeAudioUrlToFile(const std::string &url, const std::vector<std::string> 
                          int sampleRate, int channelCount, const std::atomic<bool> *stop) {
     if (url.empty() || (stop && stop->load())) return -1;
     MpvApi &api = mpvApi();
-    mpv_handle *probe = api.create();
+    mpv_handle *probe = createMpvHandle(api);
     if (!probe) return -1;
     const std::string start = std::to_string(std::max(0.0, startSeconds));
     const std::string end = std::to_string(std::max(0.0, startSeconds) + std::max(1.0, durationSeconds));
@@ -3930,7 +3941,7 @@ public:
     void runThumbnailWorker() {
         if (thumbnailStopping.load() || shuttingDown.load()) return;
         MpvApi &api = mpvApi();
-        mpv_handle *thumbnailMpv = api.create();
+        mpv_handle *thumbnailMpv = createMpvHandle(api);
         if (!thumbnailMpv) return;
         auto destroyThumbnailMpv = [&]() {
             if (thumbnailMpv) {
@@ -4794,7 +4805,7 @@ private:
         MpvApi &api = mpvApi();
         {
             std::lock_guard<std::mutex> lock(mpvMutex);
-            mpv = api.create();
+            mpv = createMpvHandle(api);
             if (!mpv) {
                 throw std::runtime_error("mpv_create failed.");
             }

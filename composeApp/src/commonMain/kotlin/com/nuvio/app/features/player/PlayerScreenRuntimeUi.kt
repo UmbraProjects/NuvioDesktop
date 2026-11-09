@@ -423,6 +423,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     }
 
     val iptvControlState = rememberIptvControlState()
+    val stableLabels = playerControlsLabelsStable(nextEpisodeForControls)
     val playerControlsState = PlayerControlsState(
         // Live TV: the playing channel, which channel up/down changes after launch.
         title = iptvControlState?.channelLabel ?: title,
@@ -480,17 +481,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             tapToUnlockLabel = stringResource(Res.string.compose_player_tap_to_unlock),
             playbackErrorTitle = stringResource(Res.string.compose_player_playback_error),
             playbackErrorActionLabel = stringResource(Res.string.compose_player_go_back),
-            sourcesPanelTitle = if (youTubeVideo) "Comments" else pendingSourcesEpisode?.let { pending ->
-                stringResource(
-                    Res.string.compose_player_panel_sources_for_episode,
-                    stringResource(
-                        Res.string.compose_player_episode_title_format,
-                        pending.playbackSeasonNumber() ?: 1,
-                        pending.playbackEpisodeNumber() ?: 0,
-                        pending.title.orEmpty(),
-                    ),
-                )
-            } ?: stringResource(Res.string.compose_player_panel_sources),
+            sourcesPanelTitle = if (youTubeVideo) "Comments" else stableLabels.sourcesPanelTitle,
             episodesPanelTitle = if (youTubeVideo) "Related videos" else stringResource(Res.string.compose_player_panel_episodes),
             streamsPanelTitle = stringResource(Res.string.compose_player_panel_streams),
             allFilterLabel = allFilterLabel,
@@ -522,11 +513,14 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             desktopColorGamma = playerSettingsUiState.desktopColorGamma,
             // Shows what is actually in effect: a session force wins; otherwise the persisted preset
             // only counts when it would auto-apply (auto-detect on + detected anime), else "Off".
+            // Both labels are looked up before choosing (see [playerControlsLabelsStable]): a lookup only
+            // when no session force is set made picking a shader shift every composable after it, the
+            // player surface among them, which restarted playback and dropped the force it was for.
             desktopAnimeModeLabel = playerSettingsUiState.desktopAnimeSessionOverride?.label
                 ?: if (playerSettingsUiState.desktopAnimeModeAutoEnabled && isAnimeContent) {
-                    stringResource(playerSettingsUiState.desktopAnimeMode.labelRes)
+                    stableLabels.animeModePreset
                 } else {
-                    stringResource(DesktopAnimeMode.Off.labelRes)
+                    stableLabels.animeModeOff
                 },
             desktopAnimeSvpEnabled = playerSettingsUiState.desktopAnimeSvpEnabled,
             rtxVsrEnabled = playerSettingsUiState.effectiveRtxVsrEnabled,
@@ -786,19 +780,12 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             nextEpisodeHeaderLabel = if (playlistCardEntry != null) {
                 playlistUpNextHeader
             } else {
-                stringResource(Res.string.player_next_episode)
+                stableLabels.nextEpisodeHeader
             },
             nextEpisodeTitle = if (playlistCardEntry != null) {
                 playlistCardEntry.displayTitle()
             } else {
-                nextEpisodeForControls?.let {
-                    stringResource(
-                        Res.string.compose_player_episode_title_format,
-                        it.season,
-                        it.episode,
-                        it.title,
-                    )
-                }.orEmpty()
+                stableLabels.nextEpisodeTitle
             },
             nextEpisodeThumbnail = if (playlistCardEntry != null) {
                 (playlistCardEntry.episodeThumbnail ?: playlistCardEntry.background ?: playlistCardEntry.poster).orEmpty()
@@ -807,9 +794,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             },
             nextEpisodeStatus = if (playlistCardEntry != null) playlistStatus else nextEpisodeStatus,
             nextEpisodeActionLabel = if (playlistCardEntry != null || nextEpisodeForControls?.hasAired == true) {
-                stringResource(Res.string.detail_btn_play)
+                stableLabels.nextEpisodePlay
             } else {
-                stringResource(Res.string.player_next_episode_unaired)
+                stableLabels.nextEpisodeUnaired
             },
             nextEpisodePlayable = playlistCardEntry != null ||
                 (nextEpisodeForControls?.hasAired == true && !manualSwitchIsNonSequential),
@@ -1092,6 +1079,51 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
     }
     }
     if (isYouTubeVideoPlayback) YouTubeWatchFrame(playerBox) else playerBox(Modifier.fillMaxSize())
+}
+
+internal class PlayerControlsStableLabels(
+    val animeModePreset: String,
+    val animeModeOff: String,
+    val nextEpisodeHeader: String,
+    val nextEpisodeTitle: String,
+    val nextEpisodePlay: String,
+    val nextEpisodeUnaired: String,
+    val sourcesPanelTitle: String,
+)
+
+/**
+ * The HUD labels whose choice changes while a file plays (a shader picked, the next episode found,
+ * the sources panel opened for another episode). Every lookup here runs on every composition, and
+ * only the chosen value differs: a `stringResource` inside one branch of an `?:` or `?.let` added or
+ * removed a composable call in RenderPlayerRuntimeUi, which shifted the groups after it and made
+ * Compose rebuild the player surface (playback restarting from the launch position).
+ */
+@Composable
+private fun PlayerScreenRuntime.playerControlsLabelsStable(nextEpisode: com.nuvio.app.features.player.skip.NextEpisodeInfo?): PlayerControlsStableLabels {
+    val pending = pendingSourcesEpisode
+    val pendingEpisodeTitle = stringResource(
+        Res.string.compose_player_episode_title_format,
+        pending?.playbackSeasonNumber() ?: 1,
+        pending?.playbackEpisodeNumber() ?: 0,
+        pending?.title.orEmpty(),
+    )
+    val sourcesForEpisode = stringResource(Res.string.compose_player_panel_sources_for_episode, pendingEpisodeTitle)
+    val sourcesDefault = stringResource(Res.string.compose_player_panel_sources)
+    val nextEpisodeTitle = stringResource(
+        Res.string.compose_player_episode_title_format,
+        nextEpisode?.season ?: 0,
+        nextEpisode?.episode ?: 0,
+        nextEpisode?.title.orEmpty(),
+    )
+    return PlayerControlsStableLabels(
+        animeModePreset = stringResource(playerSettingsUiState.desktopAnimeMode.labelRes),
+        animeModeOff = stringResource(DesktopAnimeMode.Off.labelRes),
+        nextEpisodeHeader = stringResource(Res.string.player_next_episode),
+        nextEpisodeTitle = if (nextEpisode != null) nextEpisodeTitle else "",
+        nextEpisodePlay = stringResource(Res.string.detail_btn_play),
+        nextEpisodeUnaired = stringResource(Res.string.player_next_episode_unaired),
+        sourcesPanelTitle = if (pending != null) sourcesForEpisode else sourcesDefault,
+    )
 }
 
 private fun PlayerScreenRuntime.presentUnrecoverablePlaybackError(

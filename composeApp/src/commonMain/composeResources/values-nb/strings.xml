@@ -998,7 +998,6 @@
   <string name="downloads_status_downloading">Laster ned • %1$s</string>
   <string name="downloads_status_failed">Mislyktes</string>
   <string name="downloads_status_paused">Pauset • %1$s</string>
-  <string name="downloads_status_merging">Slår sammen deler • %1$s</string>
   <string name="downloads_status_queued">I kø • %1$s</string>
   <string name="downloads_status_eta">%1$s igjen</string>
   <string name="episodes_cd_watched">Sett</string>
@@ -1523,6 +1522,14 @@
   <string name="settings_rating_prompt_title">Be meg vurdere etter en finale</string>
   <string name="settings_rating_prompt_description">Ber om en anmeldelse på den valgte bibliotektjenesten.</string>
   <string name="settings_rating_prompt_unavailable">Sett Bibliotekkilde til MDBList, SIMKL eller Floppy og koble til for å aktivere vurderinger.</string>
+  <string name="settings_rating_source_title">Lagre vurderinger på</string>
+  <string name="settings_rating_source_description">Hvor vurderinger fra Detaljer og spørsmålet etter en finale lagres.</string>
+  <string name="settings_rating_source_library">Samme som biblioteket</string>
+  <string name="settings_rating_source_library_active">Følger bibliotekskilden: vurderinger går til %1$s.</string>
+  <string name="settings_rating_source_library_unavailable">Bibliotekskilden tar ikke imot vurderinger, så vurdering er av. Velg SIMKL, MDBList eller Floppy i stedet.</string>
+  <string name="settings_rating_source_not_connected">%1$s er ikke tilkoblet, så vurdering er av til du logger inn.</string>
+  <string name="settings_rating_prompt_description_source">Ber om en vurdering på tjenesten valgt under Lagre vurderinger på.</string>
+  <string name="settings_rating_prompt_no_source">Velg en tilkoblet tjeneste under Lagre vurderinger på for å slå dette på.</string>
   <string name="settings_library_source_not_connected">Ikke tilkoblet – Biblioteket bruker Nuvio Sync til du logger inn.</string>
   <string name="settings_calendar_source_section">Kalender</string>
   <string name="settings_calendar_source_title">Kalenderkilde</string>
@@ -1829,6 +1836,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Ikke bruk Anime4K eller en egendefinert shader automatisk på kilder som allerede er 4K. Disse shaderne oppskalerer, så en 4K-kilde har liten nytte og kan overbelaste GPU-en. En manuell tvang (F10) gjelder fortsatt.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (interpolering)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Bruker VapourSynth til å interpolere bevegelse for en jevnere opplevelse.</string>
+  <string name="settings_playback_desktop_svp_all_content">SVP på alle videoer</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Glatter også ut filmer og serier med en innstilling laget for spillefilm; anime beholder sin egen. Bruker mer CPU, og RTX Video Super Resolution er av mens SVP kjører.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">SVP-feilsøkingsoverlegg</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Tegner aktiv interpoleringsmetode og bildefrekvens for kilde/utdata på videoen. Gjelder fra neste avspillingsstart.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Shaderbibliotek</string>
@@ -1848,6 +1857,8 @@
   <string name="settings_playback_desktop_audio_channels_desc">Stereo mikser surround-spor ned til to kanaler i avspilleren. Prøv det hvis dialogen stadig blir høyere og lavere på en TV eller lydplanke. Auto bruker oppsettet Windows-lydenheten er satt til.</string>
   <string name="settings_playback_desktop_audio_dialogue_boost">Dialogforsterkning (nedmiks)</string>
   <string name="settings_playback_desktop_audio_dialogue_boost_desc">Hever midtkanalen (dialog) når et surround-spor mikses ned til færre kanaler, for eksempel med Lydkanaler satt til Stereo.</string>
+    <string name="settings_playback_desktop_headphone_surround">Surround for hodetelefoner</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">For hodetelefoner og ørepropper: surroundspor høres ut som om de kommer fra høyttalere rundt deg, i stedet for å mikses flatt til venstre og høyre. Stereokilder spilles litt lavere. Har ingen effekt ved lyd-passthrough.</string>
   <string name="settings_playback_desktop_custom_mpv_options">MPV-alternativer</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Ett alternativ per linje som nøkkel=verdi. Brukes oppå Nuvios standarder; ugyldige alternativer ignoreres.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">f.eks.\nprofile=gpu-hq\ndeband=no</string>
@@ -4461,9 +4472,11 @@
   <string name="player_hud_less_bass">Mindre bass</string>
   <string name="player_hud_audio_channels">Lydkanaler</string>
   <string name="player_hud_dialogue_boost_downmix">Dialogforsterkning (nedmiks)</string>
+    <string name="player_hud_headphone_surround">Surround for hodetelefoner</string>
   <string name="player_hud_on_off_during_audio_passthrough">På (av under lyd-passthrough)</string>
   <string name="player_hud_on_off_while_svp_runs">På (av mens SVP kjører)</string>
   <string name="player_hud_anime_svp">Anime SVP</string>
+  <string name="player_hud_cinema_svp">Film-SVP</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">På (av i NVIDIA-appen)</string>

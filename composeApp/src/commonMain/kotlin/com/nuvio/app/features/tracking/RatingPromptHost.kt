@@ -2,6 +2,7 @@ package com.nuvio.app.features.tracking
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -11,6 +12,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.details.components.TrackingRatingDialog
 import com.nuvio.app.features.profiles.ProfileRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.details_rating_failed
@@ -41,16 +43,21 @@ fun RatingPromptHost(isSuppressed: Boolean) {
         LibrarySourceRepository.ensureLoaded()
         LibrarySourceRepository.uiState
     }.collectAsStateWithLifecycle()
+    val ratingSource by remember {
+        TrackingRatingSourceRepository.ensureLoaded()
+        TrackingRatingSourceRepository.uiState
+    }.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var isPending by remember(request) { mutableStateOf(false) }
     var errorMessage by remember(request) { mutableStateOf<String?>(null) }
+    var savedRating by remember(request) { mutableStateOf<Int?>(null) }
 
     val pending = request ?: return
     if (isSuppressed) return
 
     // Re-checked at display time, not just when queued: the user may have disconnected the service
     // or switched Library source between finishing the title and this prompt being shown.
-    val providerId = trackingRatingProviderFor(librarySource)
+    val providerId = trackingRatingProviderFor(ratingSource, librarySource)
         ?.takeIf { it in connectedProviderIds } ?: return
     val writer = TrackingProviderRegistry.ratingWriter(providerId) ?: return
     val providerName = trackingRatingProviderDisplayName(providerId)
@@ -63,6 +70,17 @@ fun RatingPromptHost(isSuppressed: Boolean) {
         },
         providerName,
     )
+
+    // A title rated before (on another device, or rewatched) opens with that score shown.
+    LaunchedEffect(pending, providerId) {
+        savedRating = try {
+            writer.currentRating(ProfileRepository.activeProfileId, pending.media)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     // Tells the screen underneath, so it can park a playing trailer (see RatingPromptRepository.isShowing).
     DisposableEffect(Unit) {
@@ -78,6 +96,7 @@ fun RatingPromptHost(isSuppressed: Boolean) {
         isPending = isPending,
         errorMessage = errorMessage,
         dismissLabel = stringResource(Res.string.rating_prompt_not_now),
+        initialScore = savedRating,
         onRate = { score ->
             scope.launch {
                 isPending = true

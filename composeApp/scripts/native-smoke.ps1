@@ -10,7 +10,7 @@
 # in 3-7 before its fix).
 param(
     [Parameter(Mandatory = $true)][string]$Exe,
-    [int]$Runs = 15,
+    [int]$Runs = 5,
     [int]$TimeoutSeconds = 90,
     [string]$WorkDir = (Join-Path $env:TEMP 'nuvio-native-smoke'),
     # mpv's built-in test pattern: proves the player bridge, libmpv and the event sink load

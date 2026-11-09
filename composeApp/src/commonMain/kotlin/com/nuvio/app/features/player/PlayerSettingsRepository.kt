@@ -242,6 +242,8 @@ data class PlayerSettingsUiState(
     // (F10) bypasses it either way.
     val desktopAnimeSkipUltraHdEnabled: Boolean = true,
     val desktopAnimeSvpEnabled: Boolean = false,
+    // SVP on every video, not only anime: live action gets Stremio-Kai's cinema tuning.
+    val desktopSvpAllContentEnabled: Boolean = false,
     // Draws SVP's own method/frame-rate overlay on the filtered video (DEBUG_OVERLAY in svp.conf).
     val desktopAnimeSvpDebugOverlayEnabled: Boolean = false,
     // Opt-in summary of what the pipeline is actually doing, shown when playback starts.
@@ -411,6 +413,7 @@ object PlayerSettingsRepository {
     private var desktopAnimeTreatAnimationAsAnime = false
     private var desktopAnimeSkipUltraHdEnabled = true
     private var desktopAnimeSvpEnabled = false
+    private var desktopSvpAllContentEnabled = false
     private var desktopAnimeSvpDebugOverlayEnabled = false
     private var desktopPlaybackInfoPanelEnabled = false
     // Session-only state; deliberately has no PlayerSettingsStorage backing.
@@ -568,6 +571,7 @@ object PlayerSettingsRepository {
         desktopAnimeTreatAnimationAsAnime = false
         desktopAnimeSkipUltraHdEnabled = true
         desktopAnimeSvpEnabled = false
+        desktopSvpAllContentEnabled = false
         desktopAnimeSvpDebugOverlayEnabled = false
         desktopPlaybackInfoPanelEnabled = false
         desktopAnimeSessionOverride = null
@@ -876,6 +880,7 @@ object PlayerSettingsRepository {
         desktopAnimeSkipUltraHdEnabled =
             PlayerSettingsStorage.loadDesktopAnimeSkipUltraHdEnabled() ?: true
         desktopAnimeSvpEnabled = PlayerSettingsStorage.loadDesktopAnimeSvpEnabled() ?: false
+        desktopSvpAllContentEnabled = PlayerSettingsStorage.loadDesktopSvpAllContentEnabled() ?: false
         desktopAnimeSvpDebugOverlayEnabled =
             PlayerSettingsStorage.loadDesktopAnimeSvpDebugOverlayEnabled() ?: false
         desktopPlaybackInfoPanelEnabled =
@@ -1961,6 +1966,7 @@ object PlayerSettingsRepository {
             desktopAnimeTreatAnimationAsAnime = desktopAnimeTreatAnimationAsAnime,
             desktopAnimeSkipUltraHdEnabled = desktopAnimeSkipUltraHdEnabled,
             desktopAnimeSvpEnabled = desktopAnimeSvpEnabled,
+            desktopSvpAllContentEnabled = desktopSvpAllContentEnabled,
             desktopAnimeSvpDebugOverlayEnabled = desktopAnimeSvpDebugOverlayEnabled,
             desktopPlaybackInfoPanelEnabled = desktopPlaybackInfoPanelEnabled,
             desktopAnimeSessionOverride = desktopAnimeSessionOverride,
@@ -2165,6 +2171,14 @@ object PlayerSettingsRepository {
         desktopAnimeSvpEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopAnimeSvpEnabled(enabled)
+    }
+
+    fun setDesktopSvpAllContentEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopSvpAllContentEnabled == enabled) return
+        desktopSvpAllContentEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopSvpAllContentEnabled(enabled)
     }
 
     fun setDesktopPlaybackInfoPanelEnabled(enabled: Boolean) {

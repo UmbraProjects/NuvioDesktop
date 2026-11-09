@@ -19,6 +19,9 @@ internal val DESKTOP_PROFILE_OWNED_OVERRIDE_KEYS = setOf(
     DESKTOP_FILM_GRAIN_OVERRIDE_KEY,
     DESKTOP_DISPLAY_PANEL_OVERRIDE_KEY,
     DESKTOP_INTERPOLATION_OVERRIDE_KEY,
+    // Folded into `af` together with the Audio profile row; see desktopAudioFilterChain.
+    com.nuvio.app.features.player.DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY,
+    "af",
 )
 
 internal const val DESKTOP_FILM_GRAIN_NONE = "none"

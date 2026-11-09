@@ -10,18 +10,26 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import java.io.File
-import java.io.FileOutputStream
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.URI
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+import java.util.concurrent.atomic.AtomicLongArray
 import java.util.concurrent.TimeUnit
 import nuvio.composeapp.generated.resources.*
 import com.nuvio.app.core.i18n.localizedString
@@ -54,7 +62,6 @@ internal actual object DownloadsPlatformDownloader {
     actual fun start(
         request: DownloadPlatformRequest,
         onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
-        onMerging: (mergedBytes: Long, totalBytes: Long) -> Unit,
         onSuccess: (localFileUri: String, totalBytes: Long?) -> Unit,
         onFailure: (message: String, isTransient: Boolean) -> Unit,
     ): DownloadsTaskHandle {
@@ -88,7 +95,6 @@ internal actual object DownloadsPlatformDownloader {
                             request = request,
                             tempFile = tempFile,
                             onProgress = onProgress,
-                            onMerging = onMerging,
                         )
                         break
                     } catch (error: CancellationException) {
@@ -120,6 +126,9 @@ internal actual object DownloadsPlatformDownloader {
                     tempFile.copyTo(destination, overwrite = true)
                     tempFile.delete()
                 }
+                // Kept until now so a crash between the last byte and the rename resumes as
+                // already complete instead of downloading again.
+                removeSegmentFiles(tempFile)
 
                 val finalSize = destination.length()
                 // Plain path, not a URI — see resolveLocalFileUri: this value is handed straight to
@@ -203,15 +212,17 @@ internal actual object DownloadsPlatformDownloader {
         request: DownloadPlatformRequest,
         tempFile: File,
         onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
-        onMerging: (mergedBytes: Long, totalBytes: Long) -> Unit,
     ): Long? {
-        var resumeFromBytes = tempFile.takeIf { it.exists() }?.length()?.coerceAtLeast(0L) ?: 0L
-        var attemptedRangeRequest = resumeFromBytes > 0L
-        if (attemptedRangeRequest) {
-            // A merged sequential partial is authoritative. Segment files can only be leftovers
-            // from an interrupted merge and must not be counted alongside it.
-            removeSegmentFiles(tempFile)
+        // A multi-connection partial has holes, so its length says nothing about where to resume.
+        // Start with a plain request; downloadInSegments picks the per-connection offsets back up
+        // from the sidecar once the server confirms the same file still supports ranges.
+        val hasSegmentedPartial = segmentMetadataFile(tempFile).exists()
+        var resumeFromBytes = if (hasSegmentedPartial) {
+            0L
+        } else {
+            tempFile.takeIf { it.exists() }?.length()?.coerceAtLeast(0L) ?: 0L
         }
+        var attemptedRangeRequest = resumeFromBytes > 0L
         var response = sendDownloadRequest(
             request = request,
             rangeStart = if (attemptedRangeRequest) resumeFromBytes else null,
@@ -253,15 +264,11 @@ internal actual object DownloadsPlatformDownloader {
                 currentResponse.close()
                 if (supportsByteRanges(request, totalBytes)) {
                     try {
-                        // A server that ignored a sequential resume may leave the old contiguous
-                        // partial behind. Once ranges are confirmed, the segment set is authoritative.
-                        tempFile.delete()
                         downloadInSegments(
                             request = request,
                             tempFile = tempFile,
                             totalBytes = totalBytes,
                             onProgress = onProgress,
-                            onMerging = onMerging,
                         )
                         return totalBytes
                     } catch (error: RangeDownloadRejectedException) {
@@ -388,35 +395,37 @@ internal actual object DownloadsPlatformDownloader {
         }
     }
 
+    /**
+     * Downloads [totalBytes] over several connections straight into [tempFile], each connection
+     * writing its own byte range at its own offset, so the file is complete the moment the last
+     * byte arrives and nothing has to be joined afterwards.
+     *
+     * The file is created sparse: on NTFS, writing far past the end of an ordinary file makes
+     * Windows zero-fill everything before the write first, which would stall the last connection
+     * for as long as the old merge took. How far each connection has got is kept in a sidecar
+     * (see [SegmentCheckpoint]) and only ever records bytes already flushed to disk, so a resume
+     * after a pause, crash or power cut never trusts a range that was not written.
+     */
     private suspend fun downloadInSegments(
         request: DownloadPlatformRequest,
         tempFile: File,
         totalBytes: Long,
         onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
-        onMerging: (mergedBytes: Long, totalBytes: Long) -> Unit,
     ) {
         val ranges = planDownloadSegments(totalBytes, SEGMENT_CONNECTION_COUNT)
-        prepareSegmentFiles(
+        val resumedBytes = prepareSegmentedFile(
             tempFile = tempFile,
             totalBytes = totalBytes,
             sourceUrl = request.sourceUrl,
+            ranges = ranges,
         )
-        val segmentFiles = segmentFiles(tempFile)
-        ranges.forEachIndexed { index, range ->
-            val segmentFile = segmentFiles[index]
-            if (segmentFile.length() > range.length) {
-                if (index == 0) {
-                    // The merge appends the other pieces onto the first one, so an interrupted
-                    // merge leaves it long. Its own bytes are still the first range.length bytes.
-                    truncateFile(segmentFile, range.length)
-                } else {
-                    segmentFile.delete()
-                }
-            }
-        }
-        val existingBytes = ranges.indices.sumOf { index ->
-            segmentFiles[index].takeIf { it.exists() }?.length()?.coerceAtMost(ranges[index].length) ?: 0L
-        }
+        val checkpoint = SegmentCheckpoint(
+            metadataFile = segmentMetadataFile(tempFile),
+            header = segmentMetadataHeader(totalBytes, request.sourceUrl),
+            ranges = ranges,
+            initialDoneBytes = resumedBytes,
+        )
+        val existingBytes = resumedBytes.sum()
         val progress = SegmentedProgressReporter(
             initialBytes = existingBytes,
             totalBytes = totalBytes,
@@ -424,51 +433,70 @@ internal actual object DownloadsPlatformDownloader {
         )
         onProgress(existingBytes, totalBytes)
 
-        val errors = supervisorScope {
-            ranges.mapIndexed { index, range ->
-                async(Dispatchers.IO) {
-                    try {
-                        downloadSegment(
-                            request = request,
-                            range = range,
-                            segmentFile = segmentFiles[index],
-                            progress = progress,
-                        )
-                        null
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Throwable) {
-                        error
+        FileChannel.open(tempFile.toPath(), StandardOpenOption.WRITE).use { channel ->
+            val errors = try {
+                supervisorScope {
+                    val checkpointer = launch(Dispatchers.IO) {
+                        while (true) {
+                            delay(SEGMENT_CHECKPOINT_INTERVAL_MS)
+                            checkpoint.save(channel)
+                        }
                     }
+                    val results = ranges.mapIndexed { index, range ->
+                        async(Dispatchers.IO) {
+                            try {
+                                downloadSegment(
+                                    request = request,
+                                    index = index,
+                                    range = range,
+                                    channel = channel,
+                                    checkpoint = checkpoint,
+                                    progress = progress,
+                                )
+                                null
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                error
+                            }
+                        }
+                    }.awaitAll()
+                    checkpointer.cancel()
+                    results
                 }
-            }.awaitAll()
+            } finally {
+                // Pause, delete and failures all land here: keep what is on disk for the resume.
+                withContext(NonCancellable) {
+                    runCatching { checkpoint.save(channel) }
+                        .onFailure { log.w(it) { "Could not save download progress" } }
+                }
+            }
+            errors.filterNotNull().firstOrNull { it is RangeDownloadRejectedException }?.let { throw it }
+            errors.filterNotNull().firstOrNull()?.let { throw it }
         }
-        errors.filterNotNull().firstOrNull { it is RangeDownloadRejectedException }?.let { throw it }
-        errors.filterNotNull().firstOrNull()?.let { throw it }
 
         ranges.forEachIndexed { index, range ->
-            val actualLength = segmentFiles[index].length()
-            if (actualLength != range.length) {
-                throw IOException(
-                    "Download segment ended early at $actualLength of ${range.length} bytes",
-                )
+            val done = checkpoint.doneBytes(index)
+            if (done != range.length) {
+                throw IOException("Download segment ended early at $done of ${range.length} bytes")
             }
         }
-        mergeSegments(tempFile, segmentFiles.take(ranges.size), ranges, totalBytes, onMerging)
+        if (tempFile.length() != totalBytes) {
+            throw IOException("Download is ${tempFile.length()} of $totalBytes bytes on disk")
+        }
         onProgress(totalBytes, totalBytes)
     }
 
     private suspend fun downloadSegment(
         request: DownloadPlatformRequest,
+        index: Int,
         range: DownloadByteRange,
-        segmentFile: File,
+        channel: FileChannel,
+        checkpoint: SegmentCheckpoint,
         progress: SegmentedProgressReporter,
     ) {
-        val existingBytes = segmentFile.takeIf { it.exists() }?.length()?.coerceAtLeast(0L) ?: 0L
+        val existingBytes = checkpoint.doneBytes(index)
         if (existingBytes == range.length) return
-        if (existingBytes > range.length) {
-            throw IOException("Partial segment is larger than its expected range")
-        }
         val requestStart = range.start + existingBytes
         sendDownloadRequest(
             request = request,
@@ -504,23 +532,27 @@ internal actual object DownloadsPlatformDownloader {
                 ?: throw IOException("Download response had no body")
             var segmentBytes = existingBytes
             responseBody.byteStream().use { input ->
-                FileOutputStream(segmentFile, existingBytes > 0L).use { output ->
-                    val buffer = ByteArray(DOWNLOAD_BUFFER_BYTES)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val read = input.read(buffer)
-                        if (read <= 0) break
-                        if (segmentBytes + read.toLong() > range.length) {
-                            throw RangeDownloadRejectedException("Server sent bytes beyond the requested range")
-                        }
-                        if (request.usesAutomaticBandwidthLimit) {
-                            AggregateDownloadRateLimiter.acquire(read)
-                        }
-                        output.write(buffer, 0, read)
-                        segmentBytes += read.toLong()
-                        progress.record(read)
+                val buffer = ByteArray(DOWNLOAD_BUFFER_BYTES)
+                while (true) {
+                    currentCoroutineContext().ensureActive()
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    if (segmentBytes + read.toLong() > range.length) {
+                        throw RangeDownloadRejectedException("Server sent bytes beyond the requested range")
                     }
-                    output.flush()
+                    if (request.usesAutomaticBandwidthLimit) {
+                        AggregateDownloadRateLimiter.acquire(read)
+                    }
+                    // Positional writes on one shared channel are safe across connections and
+                    // never move a shared file pointer.
+                    val chunk = ByteBuffer.wrap(buffer, 0, read)
+                    var position = range.start + segmentBytes
+                    while (chunk.hasRemaining()) {
+                        position += channel.write(chunk, position).toLong()
+                    }
+                    segmentBytes += read.toLong()
+                    checkpoint.recordWritten(index, segmentBytes)
+                    progress.record(read)
                 }
             }
             if (segmentBytes != range.length) {
@@ -529,57 +561,6 @@ internal actual object DownloadsPlatformDownloader {
                 )
             }
         }
-    }
-
-    /**
-     * Joins the pieces into [tempFile] by appending pieces 2..n onto piece 1 and renaming it, which
-     * copies a quarter less than writing a fresh file. On a large file this still takes a while,
-     * so progress goes to [onMerging] and the copy stops promptly on pause or delete. If it is
-     * interrupted, piece 1 is trimmed back to its own range on resume and the merge runs again.
-     */
-    private suspend fun mergeSegments(
-        tempFile: File,
-        segmentFiles: List<File>,
-        ranges: List<DownloadByteRange>,
-        totalBytes: Long,
-        onMerging: (mergedBytes: Long, totalBytes: Long) -> Unit,
-    ) {
-        val first = segmentFiles.first()
-        var mergedBytes = ranges.first().length
-        onMerging(mergedBytes, totalBytes)
-        var lastProgressAtNanos = System.nanoTime()
-        FileOutputStream(first, true).use { output ->
-            val buffer = ByteArray(DOWNLOAD_BUFFER_BYTES)
-            segmentFiles.drop(1).forEach { segmentFile ->
-                FileInputStream(segmentFile).use { input ->
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val read = input.read(buffer)
-                        if (read <= 0) break
-                        output.write(buffer, 0, read)
-                        mergedBytes += read.toLong()
-                        val nowNanos = System.nanoTime()
-                        if (nowNanos - lastProgressAtNanos >= DOWNLOAD_PROGRESS_INTERVAL_NANOS) {
-                            onMerging(mergedBytes, totalBytes)
-                            lastProgressAtNanos = nowNanos
-                        }
-                    }
-                }
-            }
-            output.flush()
-        }
-        if (first.length() != totalBytes) {
-            throw IOException("Merged download is ${first.length()} of $totalBytes bytes")
-        }
-        tempFile.delete()
-        if (!first.renameTo(tempFile)) {
-            first.copyTo(tempFile, overwrite = true)
-            first.delete()
-        }
-        onMerging(totalBytes, totalBytes)
-        segmentFiles.drop(1).forEach { it.delete() }
-        mergeFile(tempFile).delete()
-        segmentMetadataFile(tempFile).delete()
     }
 
     private fun validateSuccessfulResponse(response: Response) {
@@ -634,6 +615,7 @@ internal actual object DownloadsPlatformDownloader {
     private const val DOWNLOAD_BUFFER_BYTES = 1024 * 1024
     private const val SEGMENT_CONNECTION_COUNT = 4
     private const val MIN_SEGMENTED_DOWNLOAD_BYTES = 16L * 1024L * 1024L
+    private const val SEGMENT_CHECKPOINT_INTERVAL_MS = 2_000L
 }
 
 private class SegmentedProgressReporter(
@@ -712,42 +694,128 @@ internal fun parseContentRange(headerValue: String?): DownloadContentRange? {
     )
 }
 
-private fun segmentFiles(tempFile: File): List<File> =
+// Builds before 2026-11 downloaded each connection into its own piece file and joined them at the
+// end. A partial left by one of those is discarded on the next start rather than migrated.
+private fun legacySegmentFiles(tempFile: File): List<File> =
     List(PARTIAL_SEGMENT_FILE_COUNT) { index ->
         File("${tempFile.absolutePath}.segment-$index")
-    }
-
-private fun mergeFile(tempFile: File): File =
-    File("${tempFile.absolutePath}.merge")
-
-private fun truncateFile(file: File, length: Long) {
-    java.io.RandomAccessFile(file, "rw").use { it.setLength(length) }
-}
+    } + File("${tempFile.absolutePath}.merge")
 
 private fun segmentMetadataFile(tempFile: File): File =
     File("${tempFile.absolutePath}.segments")
 
-private fun prepareSegmentFiles(
+private fun segmentMetadataHeader(totalBytes: Long, sourceUrl: String): String =
+    "$totalBytes:${sourceUrl.hashCode()}"
+
+private const val SEGMENT_METADATA_VERSION = "v2"
+
+/** `v2 <total>:<url hash> <done0>,<done1>,…`, one line. */
+internal fun formatSegmentMetadata(header: String, doneBytes: LongArray): String =
+    "$SEGMENT_METADATA_VERSION $header ${doneBytes.joinToString(",")}"
+
+/**
+ * Returns the bytes each range already has on disk, or null when [text] is from another file, an
+ * older build, or a different split of the ranges.
+ */
+internal fun parseSegmentMetadata(
+    text: String?,
+    header: String,
+    ranges: List<DownloadByteRange>,
+): LongArray? {
+    val parts = text?.trim()?.split(' ') ?: return null
+    if (parts.size != 3 || parts[0] != SEGMENT_METADATA_VERSION || parts[1] != header) return null
+    val done = parts[2].split(',').map { it.toLongOrNull() ?: return null }
+    if (done.size != ranges.size) return null
+    return LongArray(done.size) { index -> done[index].coerceIn(0L, ranges[index].length) }
+}
+
+/**
+ * Resumes the in-place partial when its sidecar describes this file, otherwise starts a new sparse
+ * one. Returns the bytes each range already has.
+ */
+private fun prepareSegmentedFile(
     tempFile: File,
     totalBytes: Long,
     sourceUrl: String,
-) {
+    ranges: List<DownloadByteRange>,
+): LongArray {
     val metadataFile = segmentMetadataFile(tempFile)
-    val expectedMetadata = "$totalBytes:${sourceUrl.hashCode()}"
-    val savedMetadata = runCatching {
-        metadataFile.takeIf { it.exists() }?.readText()
-    }.getOrNull()
-    if (savedMetadata != expectedMetadata) {
-        segmentFiles(tempFile).forEach { it.delete() }
-        metadataFile.writeText(expectedMetadata)
+    val header = segmentMetadataHeader(totalBytes, sourceUrl)
+    legacySegmentFiles(tempFile).forEach { it.delete() }
+    if (tempFile.exists()) {
+        val saved = runCatching { metadataFile.takeIf { it.exists() }?.readText() }.getOrNull()
+        parseSegmentMetadata(saved, header, ranges)?.let { return it }
+    }
+    // Anything else at this path is a sequential partial, a server that ignored a resume, or a
+    // different file: none of it lines up with these ranges.
+    tempFile.delete()
+    val fresh = LongArray(ranges.size)
+    FileChannel.open(
+        tempFile.toPath(),
+        StandardOpenOption.CREATE_NEW,
+        StandardOpenOption.WRITE,
+        StandardOpenOption.SPARSE,
+    ).close()
+    writeSegmentMetadata(metadataFile, formatSegmentMetadata(header, fresh))
+    return fresh
+}
+
+private fun writeSegmentMetadata(metadataFile: File, text: String) {
+    val staging = File("${metadataFile.absolutePath}.tmp")
+    staging.writeText(text)
+    try {
+        Files.move(
+            staging.toPath(),
+            metadataFile.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE,
+        )
+    } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+        Files.move(staging.toPath(), metadataFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    }
+}
+
+/**
+ * How far each connection has written. [save] snapshots the counts, flushes the file and only then
+ * persists the snapshot, so the sidecar never claims bytes that a power cut could still lose.
+ */
+private class SegmentCheckpoint(
+    private val metadataFile: File,
+    private val header: String,
+    ranges: List<DownloadByteRange>,
+    initialDoneBytes: LongArray,
+) {
+    private val done = AtomicLongArray(initialDoneBytes)
+    private val saveLock = Any()
+    private var lastSaved: String? = formatSegmentMetadata(header, initialDoneBytes)
+
+    init {
+        require(initialDoneBytes.size == ranges.size)
+    }
+
+    fun doneBytes(index: Int): Long = done.get(index)
+
+    fun recordWritten(index: Int, bytes: Long) {
+        done.set(index, bytes)
+    }
+
+    fun save(channel: FileChannel) {
+        synchronized(saveLock) {
+            val snapshot = LongArray(done.length()) { done.get(it) }
+            val text = formatSegmentMetadata(header, snapshot)
+            if (text == lastSaved) return
+            channel.force(false)
+            writeSegmentMetadata(metadataFile, text)
+            lastSaved = text
+        }
     }
 }
 
 private fun partialDownloadFiles(tempFile: File): List<File> =
-    listOf(tempFile, mergeFile(tempFile), segmentMetadataFile(tempFile)) + segmentFiles(tempFile)
+    listOf(tempFile, segmentMetadataFile(tempFile)) + legacySegmentFiles(tempFile)
 
 private fun removeSegmentFiles(tempFile: File): Boolean =
-    (listOf(mergeFile(tempFile), segmentMetadataFile(tempFile)) + segmentFiles(tempFile))
+    (listOf(segmentMetadataFile(tempFile)) + legacySegmentFiles(tempFile))
         .map { file -> !file.exists() || runCatching { file.delete() }.getOrDefault(false) }
         .all { it }
 
@@ -756,11 +824,13 @@ private fun removePartialDownloadFiles(tempFile: File): Boolean =
         .map { file -> !file.exists() || runCatching { file.delete() }.getOrDefault(false) }
         .all { it }
 
+/** For logging only. */
 private fun downloadedPartialBytes(tempFile: File): Long {
-    if (tempFile.exists()) return tempFile.length().coerceAtLeast(0L)
-    return segmentFiles(tempFile).sumOf { file ->
-        file.takeIf { it.exists() }?.length()?.coerceAtLeast(0L) ?: 0L
+    val saved = runCatching { segmentMetadataFile(tempFile).takeIf { it.exists() }?.readText() }.getOrNull()
+    saved?.trim()?.split(' ')?.takeIf { it.size == 3 && it[0] == SEGMENT_METADATA_VERSION }?.let { parts ->
+        return parts[2].split(',').sumOf { it.toLongOrNull() ?: 0L }
     }
+    return tempFile.takeIf { it.exists() }?.length()?.coerceAtLeast(0L) ?: 0L
 }
 
 /**

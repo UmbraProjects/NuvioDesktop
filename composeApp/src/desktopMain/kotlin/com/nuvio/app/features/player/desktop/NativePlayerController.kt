@@ -29,6 +29,8 @@ import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.AppShortcutsRepository
 import com.nuvio.app.features.player.DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY
 import com.nuvio.app.features.player.DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY
+import com.nuvio.app.features.player.DESKTOP_HEADPHONE_SURROUND_ON
+import com.nuvio.app.features.player.DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY
 import com.nuvio.app.features.player.desktopAudioChannelChoices
 import com.nuvio.app.features.player.desktopAudioDialogueChoices
 import com.nuvio.app.features.player.DesktopAnimeMode
@@ -305,6 +307,8 @@ internal class NativePlayerController(
             animeSvpFilter = if (animeSvpEnabled && PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled) {
                 DesktopAnimeSvp.vapoursynthArgument(
                     debugOverlay = PlayerSettingsRepository.uiState.value.desktopAnimeSvpDebugOverlayEnabled,
+                    // Only reached for non-anime when SVP is set to all videos (PlayerEngine.desktop.kt).
+                    cinema = !isAnimeContent,
                 )
             } else null,
             extraMpvOptions = buildList {
@@ -1031,8 +1035,9 @@ internal class NativePlayerController(
             choices = listOf(MpvChoice(localizedString(Res.string.compose_action_off), "no", isDefault = true), MpvChoice(localizedString(Res.string.compose_action_on), "yes")),
         ),
         MpvOption(
-            // Nothing else sets `af` on the main player. The filters are one chain, so each choice
-            // replaces the last. Loudness keeps its old value so a saved choice carries over.
+            // The filters are one chain, so each choice replaces the last; headphone surround is
+            // appended after it (desktopAudioFilterChain). Loudness keeps its old value so a saved
+            // choice carries over.
             key = "af",
             label = localizedString(Res.string.player_hud_audio_profile),
             choices = listOf(
@@ -1054,6 +1059,15 @@ internal class NativePlayerController(
             key = DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY,
             label = localizedString(Res.string.player_hud_dialogue_boost_downmix),
             choices = desktopAudioDialogueChoices.map { MpvChoice(it.label, it.value, it.isDefault) },
+        ),
+        MpvOption(
+            // Folded into `af` after the Audio profile; see DesktopHeadphoneSurround.kt.
+            key = DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY,
+            label = localizedString(Res.string.player_hud_headphone_surround),
+            choices = listOf(
+                MpvChoice(localizedString(Res.string.compose_action_off), "", isDefault = true),
+                MpvChoice(localizedString(Res.string.compose_action_on), DESKTOP_HEADPHONE_SURROUND_ON),
+            ),
         ),
     )
 
@@ -1095,6 +1109,12 @@ internal class NativePlayerController(
                     // Profile-owned rows are applied by the profile rebuild the override change
                     // triggers; writing them here would only be overwritten.
                     if (option.key !in DESKTOP_PROFILE_OWNED_OVERRIDE_KEYS) setMpvProperty(option.key, choice.value)
+                    if (option.key in DESKTOP_AUDIO_FILTER_CHAIN_KEYS) {
+                        setMpvProperty(
+                            "af",
+                            desktopAudioFilterChain(PlayerSettingsRepository.uiState.value.desktopMpvPropertyOverrides),
+                        )
+                    }
                     showPresetPill(option.label, mpvOptionPillLabel(option.key, choice))
                     // Re-push so a kept-open menu reflects the new selection.
                     openMpvOptionsContextMenu()
@@ -1147,7 +1167,13 @@ internal class NativePlayerController(
         // An explicit in-player toggle also forces SVP for this session even when the title isn't
         // detected as anime (the persisted toggle alone only fires on effectively-anime content).
         PlayerSettingsRepository.setDesktopAnimeSvpSessionForced(next)
-        showPresetPill(localizedString(Res.string.player_hud_anime_svp), if (next) localizedString(Res.string.compose_action_on) else localizedString(Res.string.compose_action_off))
+        // Name the tuning this video gets, matching the profile choice in applyDesktopAnimeProfile:
+        // detected anime, or anime shaders forced on for this session.
+        val sessionPreset = PlayerSettingsRepository.uiState.value.desktopAnimeSessionOverride?.mode
+        val animeTuning = pendingSource?.isAnimeContent == true ||
+            (sessionPreset != null && sessionPreset != DesktopAnimeMode.Off)
+        val label = if (animeTuning) Res.string.player_hud_anime_svp else Res.string.player_hud_cinema_svp
+        showPresetPill(localizedString(label),if (next) localizedString(Res.string.compose_action_on) else localizedString(Res.string.compose_action_off))
     }
 
     // The player menu's RTX rows: session-only, so the video profile swaps the d3d11vpp filter
@@ -2593,6 +2619,10 @@ private fun buildDesktopUserMpvOptions(initialPlaybackSpeed: Float): List<String
             settings.desktopMpvPropertyOverrides.forEach { (key, value) ->
                 if (key !in DESKTOP_PROFILE_OWNED_OVERRIDE_KEYS) add("$key=$value")
             }
+            // Audio profile and headphone surround share one `af` chain.
+            desktopAudioFilterChain(settings.desktopMpvPropertyOverrides)
+                .takeIf { it.isNotEmpty() }
+                ?.let { add("af=$it") }
         }
         if (settings.desktopMpvConfigMode != DesktopMpvConfigMode.Off) {
             settings.desktopCustomMpvOptions.lineSequence()

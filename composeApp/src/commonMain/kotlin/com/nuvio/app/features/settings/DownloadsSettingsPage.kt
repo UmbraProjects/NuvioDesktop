@@ -424,10 +424,7 @@ private fun DownloadSettingsRow(
             }
         }
         if (item.status == DownloadStatus.Downloading) {
-            val mergeFraction = item.mergeFraction
-            if (mergeFraction != null) {
-                LinearProgressIndicator(progress = mergeFraction, modifier = Modifier.fillMaxWidth())
-            } else if (item.totalBytes != null && item.totalBytes > 0L) {
+            if (item.totalBytes != null && item.totalBytes > 0L) {
                 LinearProgressIndicator(progress = item.progressFraction, modifier = Modifier.fillMaxWidth())
             } else {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -510,9 +507,6 @@ private fun downloadSettingsStatus(item: DownloadItem): String {
         "${formatDownloadBytes(item.downloadedBytes)} / ${formatDownloadBytes(item.totalBytes)}"
     } else {
         formatDownloadBytes(item.downloadedBytes)
-    }
-    item.mergeFraction?.takeIf { item.isMerging }?.let { fraction ->
-        return stringResource(Res.string.downloads_status_merging, "${(fraction * 100f).toInt()}%")
     }
     return when (item.status) {
         DownloadStatus.Downloading -> stringResource(Res.string.downloads_status_downloading, size)

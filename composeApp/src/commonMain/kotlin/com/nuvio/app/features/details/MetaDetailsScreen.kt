@@ -287,6 +287,10 @@ fun MetaDetailsScreen(
         WatchProgressRepository.uiState
     }.collectAsStateWithLifecycle()
     val connectedTrackingProviders by TrackingProviderRegistry.connectedProviderIds.collectAsStateWithLifecycle()
+    val ratingSource by remember {
+        com.nuvio.app.features.tracking.TrackingRatingSourceRepository.ensureLoaded()
+        com.nuvio.app.features.tracking.TrackingRatingSourceRepository.uiState
+    }.collectAsStateWithLifecycle()
     val localLibraryUiState by remember {
         LocalLibraryRepository.ensureLoaded()
         LocalLibraryRepository.uiState
@@ -324,6 +328,8 @@ fun MetaDetailsScreen(
     val detailsScope = rememberCoroutineScope()
     var showLibraryListPicker by remember(type, id) { mutableStateOf(false) }
     var showRatingDialog by remember(type, id) { mutableStateOf(false) }
+    // The score already saved on the rating service, looked up when the rating dialog opens.
+    var savedRating by remember(type, id) { mutableStateOf<Int?>(null) }
     var ratingPending by remember(type, id) { mutableStateOf(false) }
     var ratingError by remember(type, id) { mutableStateOf<String?>(null) }
     var pickerTabs by remember(type, id) { mutableStateOf<List<TraktListTab>>(emptyList()) }
@@ -638,8 +644,8 @@ fun MetaDetailsScreen(
                         Unit
                     }
                 }
-                val ratingProviderId = remember(libraryUiState.sourceMode) {
-                    trackingRatingProviderFor(libraryUiState.sourceMode)
+                val ratingProviderId = remember(ratingSource, libraryUiState.sourceMode) {
+                    trackingRatingProviderFor(ratingSource, libraryUiState.sourceMode)
                 }
                 val ratingWriter = ratingProviderId?.let(TrackingProviderRegistry::ratingWriter)
                 val canRate = ratingProviderId != null &&
@@ -682,6 +688,7 @@ fun MetaDetailsScreen(
                                     rating = rating,
                                 )
                             }.onSuccess {
+                                savedRating = rating
                                 showRatingDialog = false
                                 NuvioToastController.show(
                                     getString(Res.string.details_rating_saved, ratingProviderName),
@@ -691,6 +698,18 @@ fun MetaDetailsScreen(
                             }
                             ratingPending = false
                         }
+                    }
+                }
+                LaunchedEffect(showRatingDialog, ratingProviderId, ratingMedia) {
+                    val writer = ratingWriter
+                    if (!showRatingDialog || writer == null) return@LaunchedEffect
+                    savedRating = try {
+                        writer.currentRating(ProfileRepository.activeProfileId, ratingMedia)
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        // Only a convenience: the dialog still rates without it.
+                        null
                     }
                 }
                 val libraryPvrUiState by LibraryPvrRepository.uiState.collectAsStateWithLifecycle()
@@ -3001,6 +3020,7 @@ fun MetaDetailsScreen(
                                     showRatingDialog = false
                                 }
                             },
+                            initialScore = savedRating,
                         )
 
                         selectedComment?.let { comment ->

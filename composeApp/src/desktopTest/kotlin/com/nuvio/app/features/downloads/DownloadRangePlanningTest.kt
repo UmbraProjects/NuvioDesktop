@@ -67,4 +67,36 @@ class DownloadRangePlanningTest {
         assertNull(parseContentRange("bytes 0-1000/1000"))
         assertNull(parseContentRange("items 0-1/2"))
     }
+
+    @Test
+    fun `segment metadata round-trips per-connection progress`() {
+        val ranges = planDownloadSegments(totalBytes = 10L, requestedSegmentCount = 4)
+        val text = formatSegmentMetadata("10:42", longArrayOf(3L, 1L, 0L, 2L))
+
+        assertEquals(
+            listOf(3L, 1L, 0L, 2L),
+            parseSegmentMetadata(text, header = "10:42", ranges = ranges)?.toList(),
+        )
+    }
+
+    @Test
+    fun `segment metadata from another file or an older build is ignored`() {
+        val ranges = planDownloadSegments(totalBytes = 10L, requestedSegmentCount = 4)
+
+        assertNull(parseSegmentMetadata("v2 10:41 0,0,0,0", header = "10:42", ranges = ranges))
+        assertNull(parseSegmentMetadata("10:42", header = "10:42", ranges = ranges))
+        assertNull(parseSegmentMetadata("v2 10:42 0,0,0", header = "10:42", ranges = ranges))
+        assertNull(parseSegmentMetadata("v2 10:42 0,x,0,0", header = "10:42", ranges = ranges))
+        assertNull(parseSegmentMetadata(null, header = "10:42", ranges = ranges))
+    }
+
+    @Test
+    fun `segment metadata never claims more than a range holds`() {
+        val ranges = planDownloadSegments(totalBytes = 10L, requestedSegmentCount = 4)
+
+        assertEquals(
+            listOf(3L, 0L, 2L, 2L),
+            parseSegmentMetadata("v2 10:42 99,-5,2,2", header = "10:42", ranges = ranges)?.toList(),
+        )
+    }
 }

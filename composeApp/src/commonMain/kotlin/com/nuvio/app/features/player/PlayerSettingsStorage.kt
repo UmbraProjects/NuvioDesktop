@@ -156,6 +156,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopAnimeSkipUltraHdEnabled(enabled: Boolean)
     fun loadDesktopAnimeSvpEnabled(): Boolean?
     fun saveDesktopAnimeSvpEnabled(enabled: Boolean)
+    fun loadDesktopSvpAllContentEnabled(): Boolean?
+    fun saveDesktopSvpAllContentEnabled(enabled: Boolean)
     fun loadDesktopAnimeSvpDebugOverlayEnabled(): Boolean?
     fun saveDesktopAnimeSvpDebugOverlayEnabled(enabled: Boolean)
     fun loadDesktopPlaybackInfoPanelEnabled(): Boolean?

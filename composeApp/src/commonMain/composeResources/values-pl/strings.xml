@@ -998,7 +998,6 @@
   <string name="downloads_status_downloading">Pobieranie • %1$s</string>
   <string name="downloads_status_failed">Niepowodzenie</string>
   <string name="downloads_status_paused">Wstrzymane • %1$s</string>
-  <string name="downloads_status_merging">Łączenie części • %1$s</string>
   <string name="downloads_status_queued">W kolejce • %1$s</string>
   <string name="downloads_status_eta">Pozostało: %1$s</string>
   <string name="episodes_cd_watched">Obejrzane</string>
@@ -1523,6 +1522,14 @@
   <string name="settings_rating_prompt_title">Pytaj o ocenę po finale</string>
   <string name="settings_rating_prompt_description">Wyświetla prośbę o recenzję w wybranej usłudze biblioteki.</string>
   <string name="settings_rating_prompt_unavailable">Ustaw źródło biblioteki na MDBList, SIMKL lub Floppy i połącz je, aby włączyć oceny.</string>
+  <string name="settings_rating_source_title">Zapisuj oceny w</string>
+  <string name="settings_rating_source_description">Gdzie zapisywane są oceny ze szczegółów i z prośby po finale.</string>
+  <string name="settings_rating_source_library">Tak jak biblioteka</string>
+  <string name="settings_rating_source_library_active">Według źródła biblioteki: oceny trafiają do %1$s.</string>
+  <string name="settings_rating_source_library_unavailable">Źródło biblioteki nie przyjmuje ocen, więc ocenianie jest wyłączone. Wybierz SIMKL, MDBList lub Floppy.</string>
+  <string name="settings_rating_source_not_connected">%1$s nie jest połączony, więc ocenianie jest wyłączone do czasu zalogowania.</string>
+  <string name="settings_rating_prompt_description_source">Prosi o ocenę w serwisie wybranym w Zapisuj oceny w.</string>
+  <string name="settings_rating_prompt_no_source">Aby to włączyć, wybierz połączony serwis w Zapisuj oceny w.</string>
   <string name="settings_library_source_not_connected">Brak połączenia - Biblioteka korzysta z Nuvio Sync do czasu zalogowania.</string>
   <string name="settings_calendar_source_section">Kalendarz</string>
   <string name="settings_calendar_source_title">Źródło kalendarza</string>
@@ -1829,6 +1836,8 @@
   <string name="settings_playback_desktop_anime_skip_uhd_desc">Nie stosuj automatycznie Anime4K ani własnego shadera do źródeł, które są już w 4K. Te shadery skalują obraz w górę, więc źródło 4K zyskuje niewiele i może przeciążyć GPU. Ręczne wymuszenie (F10) nadal działa.</string>
   <string name="settings_playback_desktop_anime_svp">Anime SVP (interpolacja)</string>
   <string name="settings_playback_desktop_anime_svp_desc">Używa VapourSynth do interpolacji ruchu dla płynniejszego obrazu.</string>
+  <string name="settings_playback_desktop_svp_all_content">SVP dla wszystkich filmów</string>
+  <string name="settings_playback_desktop_svp_all_content_desc">Wygładza też filmy i seriale z ustawieniami dla materiałów aktorskich; anime zachowuje własne. Bardziej obciąża CPU, a RTX Video Super Resolution pozostaje wyłączone, gdy działa SVP.</string>
   <string name="settings_playback_desktop_anime_svp_overlay">Nakładka debugowania SVP</string>
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Rysuje na wideo aktywną metodę interpolacji oraz liczbę klatek na sekundę źródła i wyjścia. Działa od następnego uruchomienia odtwarzania.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Biblioteka shaderów</string>
@@ -1848,6 +1857,8 @@
   <string name="settings_playback_desktop_audio_channels_desc">Stereo miksuje ścieżki przestrzenne do dwóch kanałów w odtwarzaczu. Wypróbuj, jeśli dialogi stają się na zmianę głośniejsze i cichsze na telewizorze lub soundbarze. Auto używa układu ustawionego dla urządzenia audio w systemie Windows.</string>
   <string name="settings_playback_desktop_audio_dialogue_boost">Wzmocnienie dialogów (downmix)</string>
   <string name="settings_playback_desktop_audio_dialogue_boost_desc">Podnosi głośność kanału środkowego (dialogów), gdy ścieżka przestrzenna jest miksowana do mniejszej liczby kanałów, na przykład gdy Kanały audio ustawiono na Stereo.</string>
+    <string name="settings_playback_desktop_headphone_surround">Dźwięk przestrzenny w słuchawkach</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">Do słuchawek: ścieżki przestrzenne brzmią, jakby dochodziły z głośników wokół ciebie, zamiast być płasko zmiksowane do lewego i prawego kanału. Źródła stereo grają nieco ciszej. Nie działa podczas passthrough dźwięku.</string>
   <string name="settings_playback_desktop_custom_mpv_options">Opcje MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Jedna opcja w linii w formacie klucz=wartość. Stosowane na wierzchu ustawień domyślnych Nuvio; nieprawidłowe opcje są ignorowane.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">np.\nprofile=gpu-hq\ndeband=no</string>
@@ -4469,9 +4480,11 @@
   <string name="player_hud_less_bass">Mniej basów</string>
   <string name="player_hud_audio_channels">Kanały audio</string>
   <string name="player_hud_dialogue_boost_downmix">Wzmocnienie dialogów (downmix)</string>
+    <string name="player_hud_headphone_surround">Dźwięk przestrzenny w słuchawkach</string>
   <string name="player_hud_on_off_during_audio_passthrough">Wł. (wył. podczas przekazywania audio)</string>
   <string name="player_hud_on_off_while_svp_runs">Wł. (wył. gdy działa SVP)</string>
   <string name="player_hud_anime_svp">Anime SVP</string>
+  <string name="player_hud_cinema_svp">SVP dla filmów</string>
   <string name="player_hud_rtx_super_resolution">RTX Super Resolution</string>
   <string name="player_hud_rtx_true_hdr">RTX True HDR</string>
   <string name="player_hud_on_off_in_the_nvidia_app">Wł. (wył. w aplikacji NVIDIA)</string>

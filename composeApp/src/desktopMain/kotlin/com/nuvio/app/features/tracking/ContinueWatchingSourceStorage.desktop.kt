@@ -9,6 +9,7 @@ internal actual object ContinueWatchingSourceStorage {
     private const val librarySelectionKey = "library_source"
     private const val calendarSelectionKey = "calendar_source"
     private const val ratingPromptKey = "rating_prompt_enabled"
+    private const val ratingSourceKey = "rating_source"
 
     actual fun loadSelection(): String? = store.getString(ProfileScopedKey.of(selectionKey))
 
@@ -35,5 +36,12 @@ internal actual object ContinueWatchingSourceStorage {
 
     actual fun saveRatingPromptEnabled(value: String) {
         store.putString(ProfileScopedKey.of(ratingPromptKey), value)
+    }
+
+    actual fun loadRatingSource(): String? =
+        store.getString(ProfileScopedKey.of(ratingSourceKey))
+
+    actual fun saveRatingSource(value: String) {
+        store.putString(ProfileScopedKey.of(ratingSourceKey), value)
     }
 }

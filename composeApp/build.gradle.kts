@@ -981,7 +981,7 @@ val prepareWindowsPlayerRuntime = tasks.register<Sync>("prepareWindowsPlayerRunt
             ?: throw GradleException("The Windows libmpv runtime does not contain avfilter.dll.")
         val avfilterText = avfilter.readBytes().toString(Charsets.ISO_8859_1).lowercase()
         val forbiddenImports = if (windowsAllowWhisperAvfilter) emptyList() else
-            listOf("libwhisper-1.dll", "ggml.dll").filter(avfilterText::contains)
+            listOf("libwhisper-1.dll", "ggml.dll", "ggml-0.dll", "ggml-base-0.dll").filter(avfilterText::contains)
         if (forbiddenImports.isNotEmpty()) {
             throw GradleException(
                 "${avfilter.name} still imports ${forbiddenImports.joinToString()}. " +
@@ -1017,6 +1017,8 @@ val prepareWindowsPlayerRuntime = tasks.register<Sync>("prepareWindowsPlayerRunt
 // SPIRV-Tools copies. ~140MB removed from the shipped app.
 //
 // NOT excluded (reverted after real-world failures):
+// - libssl-3-x64.dll, libmpg123-0.dll: mpv 0.42 streams http(s) through libcurl (OpenSSL), and
+//   LAME 4.0 imports mpg123. Both were unreachable with mpv 0.41 / FFmpeg 8 and are not now.
 // - glslang.dll, SPIRV.dll, libSPIRV-Tools*.dll, libglslang-default-resource-limits.dll: static
 //   PE-import analysis showed libshaderc_shared.dll only imports Windows CRT DLLs, which read as
 //   "these are unused" — but that only rules out *static* linking, not a dynamically loaded
@@ -1043,7 +1045,12 @@ val windowsAllowWhisperAvfilter =
 val windowsUnusedLibmpvRuntimeDllsAll = listOf(
     "OpenCL.dll", "edit.dll",
     "ggml.dll", "ggml-base.dll", "ggml-blas.dll", "ggml-opencl.dll", "ggml-rpc.dll",
-    "ggml-vulkan.dll", "libwhisper-1.dll",
+    "ggml-vulkan.dll", "libwhisper-1.dll", "ggml-0.dll", "ggml-base-0.dll",
+    // llama.cpp / mtmd / parakeet arrive with whisper.cpp (MSYS2, 2026-11); nothing in the player imports them.
+    "libllama-0.dll", "libllama-common-0.dll", "libllama-batched-bench-impl.dll",
+    "libllama-bench-impl.dll", "libllama-cli-impl.dll", "libllama-completion-impl.dll",
+    "libllama-fit-params-impl.dll", "libllama-perplexity-impl.dll", "libllama-quantize-impl.dll",
+    "libllama-server-impl.dll", "libmtmd-0.dll", "libparakeet-1.dll",
     "ggml-cpu-alderlake.dll", "ggml-cpu-cannonlake.dll", "ggml-cpu-cascadelake.dll",
     "ggml-cpu-cooperlake.dll", "ggml-cpu-haswell.dll", "ggml-cpu-icelake.dll",
     "ggml-cpu-ivybridge.dll", "ggml-cpu-piledriver.dll", "ggml-cpu-sandybridge.dll",
@@ -1051,9 +1058,11 @@ val windowsUnusedLibmpvRuntimeDllsAll = listOf(
     "ggml-cpu-x64.dll", "ggml-cpu-zen4.dll",
     "libFLAC++.dll", "libFLAC.dll", "libIex-3_4.dll", "libIlmThread-3_4.dll",
     "libImath-3_2.dll", "libOpenEXR-3_4.dll", "libOpenEXRCore-3_4.dll", "libOpenEXRUtil-3_4.dll",
+    "libIex-3_5.dll", "libIlmThread-3_5.dll", "libOpenEXR-3_5.dll", "libOpenEXRCore-3_5.dll",
+    "libOpenEXRUtil-3_5.dll",
     "libPyImath_Python3_14-3_2.dll", "libasprintf-0.dll", "libatomic-1.dll",
     "libcairo-script-interpreter-2.dll", "libcddb-2.dll",
-    "libcdio++-1.dll", "libcharset-1.dll", "libexif-12.dll", "libfftw3_omp-3.dll",
+    "libcdio++-1.dll", "libcdio++-2.dll","libcharset-1.dll", "libexif-12.dll", "libfftw3_omp-3.dll",
     "libfftw3_threads-3.dll", "libfftw3f-3.dll", "libfftw3f_omp-3.dll", "libfftw3f_threads-3.dll",
     "libfftw3l-3.dll", "libfftw3l_omp-3.dll", "libfftw3l_threads-3.dll", "libformw6.dll",
     "libgfortran-5.dll", "libgif-7.dll", "libgirepository-2.0-0.dll",
@@ -1061,13 +1070,13 @@ val windowsUnusedLibmpvRuntimeDllsAll = listOf(
     "libgnutlsxx-30.dll", "libgthread-2.0-0.dll", "libharfbuzz-gobject-0.dll",
     "libharfbuzz-raster-0.dll", "libharfbuzz-subset-0.dll", "libharfbuzz-vector-0.dll",
     "libhwy_contrib.dll", "libhwy_test.dll", "libisl-23.dll", "libiso9660++-1.dll",
-    "libiso9660-12.dll", "liblcms2_fast_float-2.dll", "liblzo2-2.dll", "libmenuw6.dll",
-    "libmpc-3.dll", "libmpdec++-4.dll", "libmpdec-4.dll", "libmpfr-6.dll", "libmpg123-0.dll",
+    "libiso9660-12.dll", "libiso9660-13.dll","liblcms2_fast_float-2.dll", "liblzo2-2.dll", "libmenuw6.dll",
+    "libmpc-3.dll", "libmpdec++-4.dll", "libmpdec-4.dll", "libmpfr-6.dll",
     "libmysofa.dll", "libncurses++w6.dll", "libncursesw6.dll",
-    "libopenblas.dll", "libopenjph-0.27.dll", "libopenjpip-7.dll", "libout123-0.dll",
+    "libopenblas.dll", "libopenjph-0.27.dll", "libopenjph-0.32.dll","libopenjpip-7.dll", "libout123-0.dll",
     "libpanelw6.dll", "libpcre2-16-0.dll", "libpcre2-32-0.dll", "libpcre2-posix-3.dll",
-    "libpkgconf-7.dll", "libpython3.dll", "libquadmath-0.dll", "libsndfile-1.dll",
-    "libsoxr-lsr.dll", "libspeexdsp-1.dll", "libsqlite3-0.dll", "libssl-3-x64.dll",
+    "libpkgconf-7.dll", "libpkgconf-8.dll","libpython3.dll", "libquadmath-0.dll", "libsndfile-1.dll",
+    "libsoxr-lsr.dll", "libspeexdsp-1.dll", "libsqlite3-0.dll",
     "libsyn123-0.dll", "libsystre-0.dll", "libtheora-1.dll", "libtiffxx-6.dll", "libtre-5.dll",
     "libturbojpeg.dll", "libudf-0.dll", "libvamp-hostsdk.dll", "libvamp-sdk.dll",
     "libvorbisfile-3.dll", "libwebpdecoder-3.dll", "libwebpdemux-2.dll", "tcl86.dll", "tk86.dll",
@@ -1855,7 +1864,8 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.cio)
-                implementation("com.squareup.okhttp3:okhttp:4.12.0")
+                // 5.x: InnerTubeX's Ktor OkHttp engine resolves it there anyway, so state what ships.
+                implementation("com.squareup.okhttp3:okhttp:5.3.2")
                 // fork:music - reads MusicBrainz's .tar.xz data dumps for the offline copy (pure Java, public domain).
                 implementation("org.tukaani:xz:1.10")
                 implementation(libs.quickjs.kt)
@@ -1904,7 +1914,8 @@ kotlin {
                 @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
                 implementation(compose.uiTest)
                 // Serves byte ranges to the AutoSync embedded-subtitle index loader tests.
-                implementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+                // Must match OkHttp's major version: 4.x needs okhttp3.internal.Util, gone in OkHttp 5.
+                implementation("com.squareup.okhttp3:mockwebserver:5.3.2")
             }
         }
     }
@@ -2614,17 +2625,19 @@ val createNativeDistributable = tasks.register("createNativeDistributable") {
 // -Pnuvio.native.skipSmoke=true: zip without the smoke gate. Local iteration only, never a release.
 val nativeSkipSmoke = providers.gradleProperty("nuvio.native.skipSmoke").orNull.toBoolean()
 
-// Plan step 5: launches the laid-out exe 15 times (plus once as the player smoke harness) against
+// Plan step 5: launches the laid-out exe 5 times (plus once as the player smoke harness) against
 // a throwaway data directory and fails on an early exit, a missing start-screen / self-test marker,
 // a DPI-virtualised window or a native failure in the log. The gate before every nightly upload;
-// no CI can build a 1:1 release (the SVP DLLs are not in the repo). Opens real windows for ~2 min.
+// no CI can build a 1:1 release (the SVP DLLs are not in the repo). Opens real windows for under a minute.
+// Was 15 runs while the native exe was new (the skiko FontMgr race failed 1 in 3-7); cut to 5 on
+// 2026-11-08 after months without a real failure.
 val nativeSmoke = tasks.register<Exec>("nativeSmoke") {
     group = "native image"
     description = "Launches the native build repeatedly with its self-test and fails on any native failure (plan step 5)."
     notCompatibleWithConfigurationCache("Launches the host-local native image.")
     enabled = isWindowsHost
     dependsOn(createNativeDistributable)
-    val runs = providers.gradleProperty("nuvio.native.smokeRuns").orNull ?: "15"
+    val runs = providers.gradleProperty("nuvio.native.smokeRuns").orNull ?: "5"
     commandLine(
         "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
         "-File", project.file("scripts/native-smoke.ps1").absolutePath,

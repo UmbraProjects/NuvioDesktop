@@ -64,7 +64,6 @@ import com.nuvio.app.features.settings.SettingsNavigationRow
 import com.nuvio.app.features.settings.SettingsSection
 import com.nuvio.app.features.settings.SettingsSwitchRow
 import nuvio.composeapp.generated.resources.Res
-import nuvio.composeapp.generated.resources.downloads_status_merging
 import nuvio.composeapp.generated.resources.library_add_to_library
 import nuvio.composeapp.generated.resources.library_downloads_activity_empty
 import nuvio.composeapp.generated.resources.library_downloads_bandwidth_desc
@@ -880,11 +879,7 @@ private fun GrabRecord.displayLine(): String = buildString {
         }
 }
 
-@Composable
 private fun downloadProgressLine(download: DownloadItem): String {
-    download.mergeFraction?.takeIf { download.isMerging }?.let { fraction ->
-        return stringResource(Res.string.downloads_status_merging, "${(fraction * 100f).toInt()}%")
-    }
     val percent = download.progressPercent?.let { "$it%" } ?: "—%"
     val speed = download.bytesPerSecond?.takeIf { it > 0L }?.let(::formatDownloadSpeed) ?: "—"
     val eta = download.etaSeconds?.let { "${formatDownloadDuration(it)} left" }

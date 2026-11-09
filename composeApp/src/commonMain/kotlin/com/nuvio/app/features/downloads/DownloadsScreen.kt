@@ -499,13 +499,7 @@ private fun DownloadRow(
             }
 
             if (item.status == DownloadStatus.Downloading) {
-                val mergeFraction = item.mergeFraction
-                if (mergeFraction != null) {
-                    LinearProgressIndicator(
-                        progress = mergeFraction,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                } else if (item.totalBytes != null && item.totalBytes > 0L) {
+                if (item.totalBytes != null && item.totalBytes > 0L) {
                     LinearProgressIndicator(
                         progress = item.progressFraction,
                         modifier = Modifier.fillMaxWidth(),
@@ -593,9 +587,6 @@ private fun statusText(item: DownloadItem): String {
         formatBytes(item.downloadedBytes)
     }
 
-    item.mergeFraction?.takeIf { item.isMerging }?.let { fraction ->
-        return stringResource(Res.string.downloads_status_merging, "${(fraction * 100f).toInt()}%")
-    }
     return when (item.status) {
         DownloadStatus.Downloading -> {
             // Percent + speed + ETA are what a transfer list is for; size alone said nothing about
