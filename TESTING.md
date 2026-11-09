@@ -126,6 +126,7 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Constant volume for trailers: check they get the same treatment as music (Nick, 2026-11-08)
 - [x] Lossless: an album playing from YouTube Music switches to the addon's lossless copy; tiles show the Lossless badge (2026-11-08)
 - [x] Calm lyrics stay in order without jumbling (2026-11-08)
+- [x] After the upstream merge (mpv 0.42, FFmpeg 9.0.2): gapless, steady volume and the Beat Grid all still work (2026-11-09)
 
 ## Mini player
 
