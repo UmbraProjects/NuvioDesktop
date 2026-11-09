@@ -598,7 +598,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     fun pickSubtitle(choice: SubtitleChoice) = sendOrReconnect { it.pickSubtitle(choice.number) }
 
-    /** A show's season list, for its sheet.
+    /** A show's season list, for its sheet. */
     fun loadEpisodes(title: LibraryTitle) {
         val known = _state.value.episodes
         if (known != null && known.id == title.id && known.found) return
