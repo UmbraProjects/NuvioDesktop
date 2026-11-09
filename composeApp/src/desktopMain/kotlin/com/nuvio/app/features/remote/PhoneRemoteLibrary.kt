@@ -71,7 +71,9 @@ internal object PhoneRemoteLibrary {
         val state = LibraryRepository.uiState.value
         val watched = WatchedContentFilter.forHistory(WatchedRepository.uiState.value.items)
         val seen = HashSet<String>()
-        val titles = state.sections.flatMap { section ->
+        // Not the debrid cloud's files (Torbox and the like): they are files, not titles. The Library tab plays them from
+        // its own cloud view; opened as a title from the phone they failed on the TV. Only the library's titles go.
+        val titles = state.sections.filterNot { it.type.startsWith(com.nuvio.app.features.cloud.CloudLibraryContentType) }.flatMap { section ->
             section.items.mapNotNull { item ->
                 // A title saved to two lists shows once, in the first.
                 if (!seen.add("${item.type}:${item.id}")) return@mapNotNull null
@@ -88,7 +90,8 @@ internal object PhoneRemoteLibrary {
                 )
             }
         }
-        val ready = state.isLoaded && !state.isLoading
+        // Still the stand-in from before the chosen source (Trakt, MDBList...) loaded: the phone asks again shortly.
+        val ready = state.isLoaded && !state.isLoading && state.sourceMode == LibraryRepository.intendedSourceMode()
         return PhoneRemoteLibraryLines.videoLine(ready, titles)
     }
 

@@ -567,7 +567,8 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         videoTimeout?.cancel()
         val again = !line.ready && videoTries++ < LIBRARY_RETRIES
         _state.update {
-            it.copy(video = it.video.copy(titles = line.titles, loading = again, loaded = !again, problem = null))
+            // Still partial after every retry: shown, but asked for again the next time the Watch tab opens.
+            it.copy(video = it.video.copy(titles = line.titles, loading = again, loaded = !again && line.ready, problem = null))
         }
         if (again) viewModelScope.launch { delay(LIBRARY_RETRY_MS); askVideo() }
     }
@@ -680,7 +681,8 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     private companion object {
         const val LIBRARY_TIMEOUT_MS = 8_000L
         const val LIBRARY_RETRY_MS = 1_500L
-        const val LIBRARY_RETRIES = 8
+        /** About half a minute: a Trakt or MDBList library can take that long to load after Nuvio starts. */
+        const val LIBRARY_RETRIES = 20
         const val NOTICE_MS = 3_500L
         /** A PC that has said nothing for this long (it answers every ping) has gone. */
         const val SILENT_MS = 12_000L

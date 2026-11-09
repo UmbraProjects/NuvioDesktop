@@ -20,6 +20,8 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Now playing on the phone (cover, seek bar), with lock-screen and notification controls (2026-11-08)
 - [x] Send to Nuvio: a YouTube or YouTube Music link from the phone's share menu plays on the TV (2026-11-08)
 - [x] Movies & TV tab: library posters show; tapping one opens its details on the TV (2026-11-08)
+- [ ] **BROKEN** Watch tab sometimes lists the Torbox cloud files as "Your library" (no section chips, about 250 titles), and tapping one fails on the TV; other times the real library (My Shows, My Movies..., about 760) (2026-11-09)
+  - [ ] Re-check after the fix: the Watch tab always ends up with the real library and its section chips (it keeps asking for up to half a minute after Nuvio starts, and again when the tab is reopened); Torbox files are no longer in it
 - [x] Music tab: albums and artists show; Play / Shuffle / Add to queue and an artist's Shuffle all / Radio play on the TV (2026-11-08)
 - Remote tab bottom row of five keys: dropped, the glass redesign replaced that layout (2026-11-08)
 - [x] The big key is the only play/pause: it shows Pause while playing and Play while paused, and matches the TV (2026-11-08)
