@@ -10,6 +10,16 @@ import java.net.URL
 
 enum class PadMode { Touchpad, DPad }
 
+/** How bright the phone is in dark mode (the window's own brightness, 0 to 1). */
+enum class DarkLevel(val label: String, val brightness: Float) {
+    Low("Low", 0.05f),
+    Medium("Medium", 0.15f),
+    High("High", 0.35f),
+    ;
+
+    fun next(): DarkLevel = entries[(ordinal + 1) % entries.size]
+}
+
 data class SavedPc(val name: String, val host: String, val port: Int, val token: String) {
     val address get() = "$host:$port"
 }
@@ -57,6 +67,13 @@ class PcStore(context: Context) {
             prefs.edit().putString(KEY_PAD, value.name).apply()
         }
 
+    /** Dark mode's brightness, Medium until changed. */
+    var darkLevel: DarkLevel
+        get() = runCatching { DarkLevel.valueOf(prefs.getString(KEY_DARK, null) ?: "") }.getOrDefault(DarkLevel.Medium)
+        set(value) {
+            prefs.edit().putString(KEY_DARK, value.name).apply()
+        }
+
     /** The PC the remote was last connected to, if it is still paired. */
     fun last(): SavedPc? = lastAddress?.let { address -> saved().firstOrNull { it.address == address } }
 
@@ -65,6 +82,7 @@ class PcStore(context: Context) {
         const val KEY_LAST = "last_pc"
         const val KEY_THEME = "theme_"
         const val KEY_PAD = "pad_mode"
+        const val KEY_DARK = "dark_level"
     }
 }
 

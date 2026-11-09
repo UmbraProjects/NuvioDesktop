@@ -201,7 +201,9 @@ private fun RemoteApp(viewModel: RemoteViewModel) {
         DarkModeScreen(
             playing = state.nowPlaying,
             link = state.link,
+            level = state.darkLevel,
             onKey = viewModel::press,
+            onLevel = viewModel::setDarkLevel,
             onLeave = { viewModel.setDark(false) },
         )
     }

@@ -46,6 +46,7 @@ data class UiState(
     val padMode: PadMode = PadMode.Touchpad,
     /** Dark mode: the phone black and dim, gestures anywhere (see DarkModeScreen). */
     val dark: Boolean = false,
+    val darkLevel: DarkLevel = DarkLevel.Medium,
 )
 
 /** Where a library list stands. [problem] is set when the PC never answered (a Nuvio from before the library). */
@@ -78,6 +79,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
             saved = store.saved(),
             theme = store.last()?.let { store.theme(it.address) } ?: RemoteTheme.Default,
             padMode = store.padMode,
+            darkLevel = store.darkLevel,
         ),
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -226,6 +228,11 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     fun tryDemo() {
         io.execute { DemoTv.startAndWait() }
         openAndGreet(DemoTv.NAME, DemoTv.HOST, DemoTv.PORT, token = _state.value.saved.firstOrNull(DemoTv::isDemo)?.token)
+    }
+
+    fun setDarkLevel(level: DarkLevel) {
+        store.darkLevel = level
+        _state.update { it.copy(darkLevel = level) }
     }
 
     fun setDark(on: Boolean) {

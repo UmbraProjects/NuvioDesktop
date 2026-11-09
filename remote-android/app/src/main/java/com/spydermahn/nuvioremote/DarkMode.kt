@@ -11,6 +11,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -53,7 +58,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 /**
- * Dark mode, for watching in a dark room: the whole phone goes black and dimmed to 15% (low, not the lowest: at 2% the hints could not be read), the screen stays on, and the remote is
+ * Dark mode, for watching in a dark room: the whole phone goes black and dimmed to Low, Medium or High (5, 15 or 35%; chosen under the hints and kept), the screen stays on, and the remote is
  * gestures anywhere on the glass, with a tick under the thumb for each step.
  *
  * - Tap: play / pause.
@@ -64,7 +69,14 @@ import kotlin.math.abs
  * The hints show for a few seconds on the way in and fade; each gesture flashes what it did, faintly.
  */
 @Composable
-fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit, onLeave: () -> Unit) {
+fun DarkModeScreen(
+    playing: NowPlaying?,
+    link: Link,
+    level: DarkLevel,
+    onKey: (RemoteKey) -> Unit,
+    onLevel: (DarkLevel) -> Unit,
+    onLeave: () -> Unit,
+) {
     val haptics = LocalHapticFeedback.current
     val send by rememberUpdatedState(onKey)
     val leave by rememberUpdatedState(onLeave)
@@ -76,7 +88,7 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
     val volumeStepPx = with(density) { VOLUME_STEP.toPx() }
     val songStepPx = with(density) { SONG_STEP.toPx() }
 
-    KeepAwakeAndDim()
+    KeepAwakeAndDim(level)
 
     var hints by remember { mutableStateOf(true) }
     var hintsShown by remember { mutableIntStateOf(0) }
@@ -122,12 +134,15 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
                     var dy = 0f
                     var moved = false
                     var lifted = false
+                    var usedByControl = false
                     // Phase one: until the finger lifts (a tap), moves (a swipe) or stays a second (hold to leave).
                     val decided = withTimeoutOrNull(HOLD_MS) {
                         while (true) {
                             val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) {
                                 lifted = true
+                                // A tap a control used (a brightness pill) is not also play/pause.
+                                usedByControl = change.isConsumed
                                 break
                             }
                             dx += change.positionChange().x
@@ -146,6 +161,7 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
                             leave()
                             return@awaitEachGesture
                         }
+                        lifted && usedByControl -> return@awaitEachGesture
                         lifted && !moved -> {
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             send(RemoteKey.PlayPause)
@@ -234,6 +250,28 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
                 )
                 Text("Swipe ↑ ↓  ·  volume", color = dim, fontSize = 15.sp)
                 Text("Hold anywhere  ·  leave", color = dim, fontSize = 15.sp)
+                // Brightness: Low, Medium or High, kept for next time; tapping one keeps the hints up. Only while the hints show, so a tap on the dark
+                // screen is always play/pause.
+                Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DarkLevel.entries.forEach { option ->
+                        val chosen = option == level
+                        Text(
+                            option.label,
+                            color = if (chosen) Color.Black else dim,
+                            fontSize = 14.sp,
+                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (chosen) Color.White.copy(alpha = 0.6f) else Color.Transparent)
+                                .border(1.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(50))
+                                .clickable {
+                                    onLevel(option)
+                                    hintsShown++
+                                }
+                                .padding(horizontal = 14.dp, vertical = 6.dp),
+                        )
+                    }
+                }
                 when {
                     link != Link.Connected -> Text("Not connected to the PC", color = Color(0x99FF8A80), fontSize = 13.sp, textAlign = TextAlign.Center)
                     playing == null -> Text("Nothing is playing", color = dim, fontSize = 13.sp)
@@ -254,9 +292,9 @@ fun DarkModeScreen(playing: NowPlaying?, link: Link, onKey: (RemoteKey) -> Unit,
     }
 }
 
-/** While dark mode shows: the screen stays on, at its lowest brightness, with the status and navigation bars hidden. */
+/** While dark mode shows: the screen stays on, dimmed to [level], with the status and navigation bars hidden. */
 @Composable
-private fun KeepAwakeAndDim() {
+private fun KeepAwakeAndDim(level: DarkLevel) {
     val view = LocalView.current
     val activity = LocalContext.current as? Activity
     DisposableEffect(view, activity) {
@@ -264,7 +302,6 @@ private fun KeepAwakeAndDim() {
         val window = activity?.window
         val previousBrightness = window?.attributes?.screenBrightness
         window?.let {
-            it.attributes = it.attributes.apply { screenBrightness = DIM_BRIGHTNESS }
             WindowCompat.getInsetsController(it, view).apply {
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 hide(WindowInsetsCompat.Type.systemBars())
@@ -280,6 +317,10 @@ private fun KeepAwakeAndDim() {
             }
         }
     }
+    // Apart from the above, so changing the level does not show the bars again for a moment.
+    LaunchedEffect(activity, level) {
+        activity?.window?.let { it.attributes = it.attributes.apply { screenBrightness = level.brightness } }
+    }
 }
 
 private val SEEK_STEP = 64.dp
@@ -290,4 +331,3 @@ private const val HOLD_MS = 1_000L
 private const val HOLD_RING_DELAY_MS = 200L
 private const val HINT_MS = 4_000L
 private const val FLASH_MS = 700L
-private const val DIM_BRIGHTNESS = 0.15f
