@@ -46,7 +46,7 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Dark mode, a film: tap is play/pause, swipe left/right is 10 s back/ahead per step with a tick each, swipe up/down is volume; each shows faintly in the middle
 - [ ] Dark mode, music: swipe left/right is the previous/next song (one per swipe)
 - [ ] Dark mode: holding a finger anywhere for a second draws a faint ring and leaves; brightness and the bars come back
-- [ ] Demo TV: Try the demo TV (on the PC list) asks for the code 123456, then connects as "Demo TV" and stays in the paired list
+- [x] Demo TV: Try the demo TV (on the PC list) asks for the code 123456, then connects as "Demo TV" and stays in the paired list (2026-11-09)
 - [x] Demo TV: the "Demo TV received" strip shows each key, swipe and typed text (2026-11-09, from Nick's screenshots)
 - [ ] Demo TV: More > Demo TV plays a film or an album, stops it, and changes the theme (the app follows)
 - [ ] **BROKEN** Film screen with the demo strip (2026-11-09, from Nick's screenshots): the D-pad / touchpad panel is squeezed down to its title bar, with no pad left to use
@@ -59,18 +59,18 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 ### Phone remote: Continue watching (phase 3)
 
-- [ ] The Watch tab opens with a Continue watching row (landscape pictures, a progress line, the episode and time left), the same titles as Nuvio's Continue Watching
+- [x] The Watch tab opens with a Continue watching row (landscape pictures, a progress line, the episode and time left), the same titles as Nuvio's Continue Watching (2026-11-09)
 - [ ] The "Opening … on the TV" note shows at the top of the remote, clear of the keys (it covered them at the bottom)
 - [ ] Tapping one opens a sheet: poster, title, episode, how far in, and the source it last played from
-- [ ] Resume on the TV plays it straight away from the same source, from where it stopped (with a film already playing, that one closes first)
+- [x] Resume on the TV plays it straight away from the same source, from where it stopped (with a film already playing, that one closes first) (2026-11-09)
 - [ ] Resume on a title whose last link no longer plays opens its source list on the TV instead
 - [ ] Details on the TV opens the title's page on the TV
 - [x] Demo TV: Resume plays a pretend title from its saved place (2026-11-09, from Nick's screenshots)
 
 ### Phone remote: QR pairing (phase 4)
 
-- [ ] Nuvio's Settings › Keyboard shortcuts › Phone remote shows a QR code ("Or scan to pair") under the pairing code, while Phone remote is on
-- [ ] In the app, "Scan the TV's code" on the PC list opens Google's scanner (no camera permission asked); scanning the TV's code pairs and connects with no typing
+- [x] Nuvio's Settings › Keyboard shortcuts › Phone remote shows a QR code ("Or scan to pair") under the pairing code, while Phone remote is on (2026-11-09)
+- [x] In the app, "Scan the TV's code" on the PC list opens Google's scanner (no camera permission asked); scanning the TV's code pairs and connects with no typing (2026-11-09)
 - [ ] The phone's own camera app, pointed at the code, offers to open Nuvio Remote, which then pairs
 - [ ] "Scan the TV's code instead" on the code screen works the same
 - [ ] New code on the PC changes the QR code too; an old QR then says the code isn't right
@@ -78,9 +78,9 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 ### Phone remote: pick the source on the phone (phase 5)
 
-- [ ] When a film or episode's source list opens on the TV, the remote shows the same list in the same order: name, addon, size, an Instant tag for cached ones, and the file details
+- [x] When a film or episode's source list opens on the TV, the remote shows the same list in the same order: name, addon, size, an Instant tag for cached ones, and the file details (2026-11-09)
 - [ ] It fills in as the TV finds sources ("Finding sources… N so far" with a thin bar), then shows the total
-- [ ] Tapping a source plays that one on the TV; greyed-out rows (the ones the TV greys) do nothing
+- [x] Tapping a source plays that one on the TV; greyed-out rows (the ones the TV greys) do nothing (2026-11-09)
 - [ ] The Instant tag at the top shows only the cached sources
 - [ ] The header tag (or the Pad key) swaps to the touchpad and back, for anything else on the TV's list
 - [ ] Sources during a film (the player's sources panel) shows its list on the phone too
