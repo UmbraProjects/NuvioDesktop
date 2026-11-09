@@ -21,7 +21,7 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Send to Nuvio: a YouTube or YouTube Music link from the phone's share menu plays on the TV (2026-11-08)
 - [x] Movies & TV tab: library posters show; tapping one opens its details on the TV (2026-11-08)
 - [ ] **BROKEN** Watch tab sometimes lists the Torbox cloud files as "Your library" (no section chips, about 250 titles), and tapping one fails on the TV; other times the real library (My Shows, My Movies..., about 760) (2026-11-09)
-  - [ ] Re-check after the fix: the Watch tab always ends up with the real library and its section chips (it keeps asking for up to half a minute after Nuvio starts, and again when the tab is reopened); Torbox files are no longer in it
+  - [x] Re-check after the fix: the Watch tab always ends up with the real library and its section chips (it keeps asking for up to half a minute after Nuvio starts, and again when the tab is reopened); Torbox files are no longer in it (2026-11-09)
 - [x] Music tab: albums and artists show; Play / Shuffle / Add to queue and an artist's Shuffle all / Radio play on the TV (2026-11-08)
 - Remote tab bottom row of five keys: dropped, the glass redesign replaced that layout (2026-11-08)
 - [x] The big key is the only play/pause: it shows Pause while playing and Play while paused, and matches the TV (2026-11-08)
@@ -42,41 +42,41 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 ### Phone remote: Dark mode and the demo TV (phase 2)
 
-- [ ] Dark mode: the Dark key (film or music screen, or More) turns the phone black and dims it (Medium, 15%, to start), hides the status and navigation bars, and the screen stays on
-- [ ] Dark mode hints (tap, swipe, hold) show for a few seconds and fade; Back brings them back instead of leaving
+- [x] Dark mode: the Dark key (film or music screen, or More) turns the phone black and dims it (Medium, 15%, to start), hides the status and navigation bars, and the screen stays on (2026-11-09)
+- [x] Dark mode hints (tap, swipe, hold) show for a few seconds and fade; Back brings them back instead of leaving (2026-11-09)
 - [x] Dark mode brightness: Low / Medium / High under the hints (Back shows them again) changes the phone's brightness at once, is kept for next time, and tapping one does not also pause the film (2026-11-09)
 - [ ] **BROKEN** Dark mode, a film: tap is play/pause, swipe left/right is 10 s back/ahead per step with a tick each, swipe up/down is volume; each shows faintly in the middle (2026-11-09): tap works, but no swipe does anything, in any direction
-  - [ ] Re-check after the fix: swipes left/right (10 s, or songs for music) and up/down (volume) work, each with a tick; hold for a second leaves
-- [ ] Dark mode, music: swipe left/right is the previous/next song (one per swipe)
-- [ ] Dark mode: holding a finger anywhere for a second draws a faint ring and leaves; brightness and the bars come back
+  - [x] Re-check after the fix: swipes left/right (10 s, or songs for music) and up/down (volume) work, each with a tick; hold for a second leaves (2026-11-09)
+- [x] Dark mode, music: swipe left/right is the previous/next song (one per swipe) (2026-11-09)
+- [x] Dark mode: holding a finger anywhere for a second draws a faint ring and leaves; brightness and the bars come back (2026-11-09)
 - [x] Demo TV: Try the demo TV (on the PC list) asks for the code 123456, then connects as "Demo TV" and stays in the paired list (2026-11-09)
 - [x] Demo TV: the "Demo TV received" strip shows each key, swipe and typed text (2026-11-09, from Nick's screenshots)
-- [ ] Demo TV: More > Demo TV plays a film or an album, stops it, and changes the theme (the app follows)
+- [x] Demo TV: More > Demo TV plays a film or an album, stops it, and changes the theme (the app follows) (2026-11-09)
 - [ ] **BROKEN** Film screen with the demo strip (2026-11-09, from Nick's screenshots): the D-pad / touchpad panel is squeezed down to its title bar, with no pad left to use
   - [~] Re-check after the fix (2026-11-09, from Nick's screenshots): the keys stay whole at the bottom, but the pad was still pushed off the screen
-  - [ ] Re-check after the second fix: the film screen has no pad on it any more; the Touchpad tag in its header (as on the music screen) swaps to the full-size pad and Now playing swaps back; Sources brings the pad up by itself
+  - [x] Re-check after the second fix: the film screen has no pad on it any more; the Touchpad tag in its header (as on the music screen) swaps to the full-size pad and Now playing swaps back; Sources brings the pad up by itself (2026-11-09)
 - [ ] **BROKEN** Music screen (2026-11-09, from Nick's screenshot): the Back / Search / Dark / More keys are cut in half by the tab bar
   - [x] Re-check after the fix: the cover shrinks to fit, and the keys show whole above the tab bar (2026-11-09, from Nick's screenshot)
 - [x] Demo TV: Watch and Music tabs show the pretend library (with photos when online); opening a title plays it after 2 s; an album plays, shuffles, next and previous work (2026-11-09, from Nick's screenshots)
-- [ ] Demo TV: the lock-screen controls show the pretend film or song and work
+- [x] Demo TV: the lock-screen controls show the pretend film or song and work (2026-11-09)
 
 ### Phone remote: Continue watching (phase 3)
 
 - [x] The Watch tab opens with a Continue watching row (landscape pictures, a progress line, the episode and time left), the same titles as Nuvio's Continue Watching (2026-11-09)
-- [ ] The "Opening … on the TV" note shows at the top of the remote, clear of the keys (it covered them at the bottom)
-- [ ] Tapping one opens a sheet: poster, title, episode, how far in, and the source it last played from
+- [x] The "Opening … on the TV" note shows at the top of the remote, clear of the keys (it covered them at the bottom) (2026-11-09)
+- [x] Tapping one opens a sheet: poster, title, episode, how far in, and the source it last played from (2026-11-09)
 - [x] Resume on the TV plays it straight away from the same source, from where it stopped (with a film already playing, that one closes first) (2026-11-09)
-- [ ] Resume on a title whose last link no longer plays opens its source list on the TV instead
-- [ ] Details on the TV opens the title's page on the TV
+- [x] Resume on a title whose last link no longer plays opens its source list on the TV instead (2026-11-09)
+- [x] Details on the TV opens the title's page on the TV (2026-11-09)
 - [x] Demo TV: Resume plays a pretend title from its saved place (2026-11-09, from Nick's screenshots)
 
 ### Phone remote: QR pairing (phase 4)
 
 - [x] Nuvio's Settings › Keyboard shortcuts › Phone remote shows a QR code ("Or scan to pair") under the pairing code, while Phone remote is on (2026-11-09)
 - [x] In the app, "Scan the TV's code" on the PC list opens Google's scanner (no camera permission asked); scanning the TV's code pairs and connects with no typing (2026-11-09)
-- [ ] The phone's own camera app, pointed at the code, offers to open Nuvio Remote, which then pairs
-- [ ] "Scan the TV's code instead" on the code screen works the same
-- [ ] New code on the PC changes the QR code too; an old QR then says the code isn't right
+- [x] The phone's own camera app, pointed at the code, offers to open Nuvio Remote, which then pairs (2026-11-09)
+- [x] "Scan the TV's code instead" on the code screen works the same (2026-11-09)
+- [x] New code on the PC changes the QR code too; an old QR then says the code isn't right (2026-11-09)
 - [ ] Demo TV: scanning the demo QR picture (sent in the chat) pairs with Demo TV
 
 ### Phone remote: pick the source on the phone (phase 5)
