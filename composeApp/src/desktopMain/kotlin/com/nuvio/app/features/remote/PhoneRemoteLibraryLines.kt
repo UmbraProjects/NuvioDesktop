@@ -54,6 +54,9 @@ internal data class RemoteResume(
     val progressPermille: Int,
 )
 
+/** A lyric line for the phone: [words] (text, start, end in ms) when the source timed each word. */
+internal data class RemoteLyricLine(val timeMs: Long?, val text: String, val words: List<Triple<String, Long, Long>> = emptyList())
+
 /** A track in the music player's queue, as the phone lists it. */
 internal data class RemoteQueueTrack(
     val videoId: String,
@@ -122,10 +125,19 @@ internal object PhoneRemoteLibraryLines {
             listOf(text(t.videoId), text(t.title), text(t.artist), t.seconds.coerceAtLeast(0).toString(), flag(t.upcoming))
         }
 
-    /** `LYRICS synced|plain|none <title> <lines>`, each line its time in ms (`-` for plain) and its text. */
-    fun lyricsLine(kind: String, title: String?, lines: List<Pair<Long?, String>>): String =
-        "LYRICS $kind ${text(title)} " + records(lines.take(MAX_LYRIC_LINES)) { (time, words) ->
-            listOf(time?.coerceAtLeast(0L)?.toString() ?: "-", text(words))
+    /**
+     * `LYRICS synced|plain|none <title> <lines>`, each line its time in ms (`-` for plain), its text and, when the source
+     * timed every word, the words as `word:start:end` joined by `|` (else `-`): what the stage's Loud style lands words on.
+     */
+    fun lyricsLine(kind: String, title: String?, lines: List<RemoteLyricLine>): String =
+        "LYRICS $kind ${text(title)} " + records(lines.take(MAX_LYRIC_LINES)) { line ->
+            listOf(
+                line.timeMs?.coerceAtLeast(0L)?.toString() ?: "-",
+                text(line.text),
+                line.words.takeIf { it.isNotEmpty() }
+                    ?.joinToString("|") { (word, start, end) -> "${word.replace('|', ' ').replace(':', ' ')}:$start:$end" }
+                    ?.let(PhoneRemoteProtocol::encode) ?: "-",
+            )
         }
 
     private const val MAX_LYRIC_LINES = 400

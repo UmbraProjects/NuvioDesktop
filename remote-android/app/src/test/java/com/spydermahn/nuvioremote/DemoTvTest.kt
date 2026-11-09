@@ -82,10 +82,15 @@ class DemoTvTest {
         assertEquals(0, queue.playing)
         assertEquals("Beat It", queue.tracks[1].title)
         assertTrue(queue.tracks[1].upcoming)
-        val lyrics = ServerLine.parse("LYRICS synced Billie%20Jean 1200,She%20was%20more%20like%20a%20beauty%20queen;5400,-", 0L) as ServerLine.LyricsText
+        val lyrics = ServerLine.parse(
+            "LYRICS synced Billie%20Jean 1200,She%20was%20more%20like%20a%20beauty%20queen,-;5400,-,-;" +
+                "9000,Billie%20Jean,Billie%3A9000%3A9400%7CJean%3A9400%3A10100",
+            0L,
+        ) as ServerLine.LyricsText
         assertEquals("Billie Jean", lyrics.title)
         assertEquals(LyricLine(1200L, "She was more like a beauty queen"), lyrics.lines[0])
         assertEquals(LyricLine(5400L, ""), lyrics.lines[1])
+        assertEquals(listOf(WordTime("Billie", 9000L, 9400L), WordTime("Jean", 9400L, 10100L)), lyrics.lines[2].words)
         assertEquals(0, (ServerLine.parse("LYRICS none - -", 0L) as ServerLine.LyricsText).lines.size)
     }
 

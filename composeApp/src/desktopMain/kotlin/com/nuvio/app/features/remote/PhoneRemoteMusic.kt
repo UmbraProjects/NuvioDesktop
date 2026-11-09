@@ -139,8 +139,12 @@ internal object PhoneRemoteMusic {
         if (track == null) return PhoneRemoteLibraryLines.lyricsLine("none", null, emptyList())
         val lyrics = runCatching { runBlocking { withTimeoutOrNull(8_000L) { LyricsRepository.forTrack(track, album) } } }.getOrNull()
         return when (lyrics) {
-            is Lyrics.Synced -> PhoneRemoteLibraryLines.lyricsLine("synced", track.title, lyrics.lines.map { it.timeMs to it.text })
-            is Lyrics.Plain -> PhoneRemoteLibraryLines.lyricsLine("plain", track.title, lyrics.lines.map { null to it })
+            is Lyrics.Synced -> PhoneRemoteLibraryLines.lyricsLine(
+                "synced",
+                track.title,
+                lyrics.lines.map { line -> RemoteLyricLine(line.timeMs, line.text, line.words.map { Triple(it.text, it.startMs, it.endMs) }) },
+            )
+            is Lyrics.Plain -> PhoneRemoteLibraryLines.lyricsLine("plain", track.title, lyrics.lines.map { RemoteLyricLine(null, it) })
             else -> PhoneRemoteLibraryLines.lyricsLine("none", track.title, emptyList())
         }
     }

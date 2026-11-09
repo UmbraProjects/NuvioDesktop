@@ -78,8 +78,11 @@ data class SourceList(val title: String, val loading: Boolean, val sources: List
 /** A track in the music player's queue on the PC (`QUEUE` line). */
 data class QueueTrack(val videoId: String, val title: String, val artist: String, val seconds: Int, val cover: String?, val upcoming: Boolean)
 
-/** One line of the playing song's lyrics; [timeMs] is null for words without timing. */
-data class LyricLine(val timeMs: Long?, val text: String)
+/** A word the lyric source timed: when it is sung, in ms into the song. */
+data class WordTime(val text: String, val startMs: Long, val endMs: Long)
+
+/** One line of the playing song's lyrics; [timeMs] is null for words without timing, [words] empty unless every word was timed. */
+data class LyricLine(val timeMs: Long?, val text: String, val words: List<WordTime> = emptyList())
 
 data class LibraryArtistInfo(val id: String, val name: String, val photo: String?, val starred: Boolean)
 
@@ -243,7 +246,14 @@ object LibraryLines {
     fun parseLyrics(line: String): ServerLine? {
         val parts = line.trim().split(' ')
         if (parts.size < 3 || parts[0] != "LYRICS") return null
-        val lines = records(parts.getOrNull(3)).map { f -> LyricLine(f.getOrNull(0)?.toLongOrNull(), f.getOrNull(1).orEmpty()) }
+        val lines = records(parts.getOrNull(3)).map { f ->
+            val words = f.getOrNull(2)?.split('|')?.mapNotNull { piece ->
+                val bits = piece.split(':')
+                if (bits.size != 3) return@mapNotNull null
+                WordTime(bits[0], bits[1].toLongOrNull() ?: return@mapNotNull null, bits[2].toLongOrNull() ?: return@mapNotNull null)
+            }.orEmpty()
+            LyricLine(f.getOrNull(0)?.toLongOrNull(), f.getOrNull(1).orEmpty(), words)
+        }
         return ServerLine.LyricsText(
             synced = parts[1] == "synced",
             title = parts[2].takeUnless { it == "-" }?.let(RemoteProtocol::decode),

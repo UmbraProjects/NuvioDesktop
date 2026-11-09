@@ -494,6 +494,15 @@ private fun LyricsView(lyrics: ServerLine.LyricsText?, playing: NowPlaying, modi
         }
         return
     }
+    // Timed lyrics show in the stage's Loud style (the default) or as the scrolling list; the tag in the corner switches.
+    var loud by rememberSaveable { mutableStateOf(true) }
+    if (lyrics.synced && loud) {
+        Box(modifier.glass(RoundedCornerShape(20.dp), fill = Color.Black.copy(alpha = 0.35f))) {
+            LoudLyricsView(lyrics.lines, playing, Modifier.fillMaxSize())
+            GlassTag("List", modifier = Modifier.align(Alignment.TopEnd).padding(8.dp), onClick = { loud = false })
+        }
+        return
+    }
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(playing) {
         while (true) {
@@ -507,8 +516,9 @@ private fun LyricsView(lyrics: ServerLine.LyricsText?, playing: NowPlaying, modi
     LaunchedEffect(current) {
         if (current >= 0) listState.animateScrollToItem((current - 2).coerceAtLeast(0))
     }
+    Box(modifier) {
     androidx.compose.foundation.lazy.LazyColumn(
-        modifier.glass(RoundedCornerShape(20.dp)).padding(horizontal = 18.dp),
+        Modifier.fillMaxSize().glass(RoundedCornerShape(20.dp)).padding(horizontal = 18.dp),
         state = listState,
         verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 18.dp),
@@ -528,6 +538,8 @@ private fun LyricsView(lyrics: ServerLine.LyricsText?, playing: NowPlaying, modi
                 fontWeight = if (lit) FontWeight.Bold else FontWeight.Medium,
             )
         }
+    }
+    if (lyrics.synced) GlassTag("Loud", modifier = Modifier.align(Alignment.TopEnd).padding(8.dp), onClick = { loud = true })
     }
 }
 

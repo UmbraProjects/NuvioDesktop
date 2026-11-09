@@ -106,8 +106,17 @@ class PhoneRemoteMusicLinesTest {
             ),
         )
         assertEquals(
-            "LYRICS synced Billie%20Jean 1200,She%20was%20more%20like%20a%20beauty%20queen;5400,-",
-            PhoneRemoteLibraryLines.lyricsLine("synced", "Billie Jean", listOf(1200L to "She was more like a beauty queen", 5400L to "")),
+            "LYRICS synced Billie%20Jean 1200,She%20was%20more%20like%20a%20beauty%20queen,-;5400,-,-;" +
+                "9000,Billie%20Jean,Billie%3A9000%3A9400%7CJean%3A9400%3A10100",
+            PhoneRemoteLibraryLines.lyricsLine(
+                "synced",
+                "Billie Jean",
+                listOf(
+                    RemoteLyricLine(1200L, "She was more like a beauty queen"),
+                    RemoteLyricLine(5400L, ""),
+                    RemoteLyricLine(9000L, "Billie Jean", listOf(Triple("Billie", 9000L, 9400L), Triple("Jean", 9400L, 10100L))),
+                ),
+            ),
         )
         assertEquals("LYRICS none - -", PhoneRemoteLibraryLines.lyricsLine("none", null, emptyList()))
         assertEquals(RemoteMessage.QueueAction("remove", "def"), PhoneRemoteProtocol.parse("QUEUE_REMOVE def"))
