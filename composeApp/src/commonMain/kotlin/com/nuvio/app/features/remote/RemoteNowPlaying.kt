@@ -48,6 +48,12 @@ interface RemoteFilmControls {
     /** Picks the [number]th choice (from 1, in the order of [subtitleChoices]) as tapping it in the player's panel would. False when there is none. */
     fun pickSubtitle(number: Int): Boolean = false
 
+    /** The audio tracks for the phone's list, in the player's order; reuses [RemoteSubtitleList] (no Off, no groups). */
+    fun audioChoices(): RemoteSubtitleList = RemoteSubtitleList(loading = false, choices = emptyList())
+
+    /** Picks the [number]th audio track (from 1, in the order of [audioChoices]) as the player's panel would. False when there is none. */
+    fun pickAudio(number: Int): Boolean = false
+
     /** Asks the add-ons for subtitles again; used when the phone opens its list and nothing is there yet. */
     fun fetchSubtitles() = Unit
 }

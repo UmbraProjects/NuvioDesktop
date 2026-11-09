@@ -48,6 +48,10 @@ internal interface PhoneRemoteListener {
     fun onPickSource(number: Int): String? = null
     /** Hands the SUBTITLES line to [reply] (this phone only); again when the add-ons answer. */
     fun onSubtitles(reply: (String) -> Unit) = Unit
+    /** Hands the AUDIO line to [reply] (this phone only). */
+    fun onAudio(reply: (String) -> Unit) = Unit
+    /** Picks the [number]th audio track, then hands the fresh AUDIO line to [reply]. */
+    fun onPickAudio(number: Int, reply: (String) -> Unit) = Unit
     /** Picks the [number]th subtitle (Off is 1), then hands the fresh SUBTITLES line to [reply]. */
     fun onPickSubtitle(number: Int, reply: (String) -> Unit) = Unit
     /** Searches the catalogs for [query], handing each SEARCH_RESULTS line to [reply] (this phone only) as it fills. */
@@ -279,6 +283,8 @@ internal class PhoneRemoteServer(
                             RemoteMessage.Continue -> listener.onContinue()?.let(::send)
                             is RemoteMessage.Resume -> sendOpening(listener.onResume(message.parentId, message.videoId))
                             is RemoteMessage.PickSource -> sendOpening(listener.onPickSource(message.number))
+                            RemoteMessage.AudioRequest -> listener.onAudio(::trySend)
+                            is RemoteMessage.PickAudio -> listener.onPickAudio(message.number, ::trySend)
                             RemoteMessage.SubtitlesRequest -> listener.onSubtitles(::trySend)
                             is RemoteMessage.PickSubtitle -> listener.onPickSubtitle(message.number, ::trySend)
                             is RemoteMessage.Search -> listener.onSearch(message.query, ::trySend)

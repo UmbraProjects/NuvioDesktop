@@ -206,6 +206,17 @@ object LibraryLines {
         return ServerLine.Subtitles(loading = parts[1] == "1", choices = choices)
     }
 
+    /** `AUDIO 0 <choices>`; the same fields as SUBTITLES (the group is empty, there is no Off). */
+    fun parseAudio(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 2 || parts[0] != "AUDIO") return null
+        val choices = records(parts.getOrNull(2)).mapIndexedNotNull { index, f ->
+            if (f.size < 4) return@mapIndexedNotNull null
+            SubtitleChoice(number = index + 1, label = f[0] ?: "Track ${index + 1}", detail = f[1], group = f[2] ?: "", selected = f[3] == "1")
+        }
+        return ServerLine.Audio(choices)
+    }
+
     private fun titles(field: String?): List<LibraryTitle> = records(field).mapNotNull { f ->
         if (f.size < 8) return@mapNotNull null
         LibraryTitle(

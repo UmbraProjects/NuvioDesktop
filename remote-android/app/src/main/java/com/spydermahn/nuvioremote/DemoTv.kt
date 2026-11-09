@@ -95,6 +95,10 @@ object DemoTv {
 
     private val subtitleTracks = listOf("Off", "English", "English SDH", "French", "English (SubSource)", "Français (Wizdom)")
 
+    private fun audioLine(): String = "AUDIO 0 " + audioTracks.mapIndexed { i, name ->
+        listOf(RemoteProtocol.encode(name), "-", "-", if (i == audioIndex) "1" else "0").joinToString(",")
+    }.joinToString(";")
+
     /** The pretend subtitle list: the file's own (1 to 3) and an add-on's (4 and 5), Off first. */
     private fun subtitlesLine(): String {
         val rows = subtitleTracks.mapIndexed { i, name ->
@@ -626,6 +630,19 @@ object DemoTv {
                     note("Search for \"$query\"")
                     send(searchLine(query, loading = true))
                     ticker.schedule({ send(searchLine(query, loading = false)) }, 1, TimeUnit.SECONDS)
+                }
+                "AUDIO" -> {
+                    note("Audio list asked for")
+                    send(audioLine())
+                }
+                "PICK_AUDIO" -> {
+                    val number = parts.getOrNull(1)?.toIntOrNull() ?: return
+                    if (number in 1..audioTracks.size) {
+                        synchronized(DemoTv) { audioIndex = number - 1 }
+                        note("Picked audio $number: ${audioTracks[number - 1]}")
+                        broadcastState()
+                        send(audioLine())
+                    }
                 }
                 "SUBTITLES" -> {
                     note("Subtitle list asked for")

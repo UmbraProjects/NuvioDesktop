@@ -880,6 +880,12 @@ private fun PlayerScreenRuntime.BindPhoneRemoteNowPlayingEffect() {
                 }
                 return true
             }
+            override fun audioChoices() = runtime.phoneRemoteAudioList()
+            override fun pickAudio(number: Int): Boolean {
+                val track = runtime.visibleAudioTracks.getOrNull(number - 1) ?: return false
+                runtime.scope.launch { runtime.selectAudioTrackFromList(track.index) }
+                return true
+            }
             override fun fetchSubtitles() {
                 runtime.scope.launch { runtime.fetchAddonSubtitlesForActiveItem() }
             }
@@ -923,6 +929,23 @@ private fun PlayerScreenRuntime.phoneRemoteNowPlaying(): com.nuvio.app.features.
         canSkip = false,
         subtitleTrack = phoneRemoteSubtitleName(),
         audioTrack = audioTracks.firstOrNull { it.index == selectedAudioIndex }?.label?.takeIf { it.isNotBlank() },
+    )
+}
+
+/** The phone's audio list: the tracks the player's panel offers (commentary and audio description left out), in its order. */
+private fun PlayerScreenRuntime.phoneRemoteAudioList(): com.nuvio.app.features.remote.RemoteSubtitleList {
+    val tracks = visibleAudioTracks
+    val on = tracks.firstOrNull { it.index == selectedAudioIndex || it.isSelected }
+    return com.nuvio.app.features.remote.RemoteSubtitleList(
+        loading = false,
+        choices = tracks.map { track ->
+            com.nuvio.app.features.remote.RemoteSubtitleChoice(
+                label = track.label.ifBlank { track.language ?: "Track ${track.index + 1}" },
+                detail = track.language?.takeIf { it.isNotBlank() && !track.label.contains(it, ignoreCase = true) },
+                group = "",
+                selected = on?.index == track.index,
+            )
+        },
     )
 }
 

@@ -46,6 +46,8 @@ data class UiState(
     val search: SearchState? = null,
     /** The film player's subtitles, while the subtitle sheet is open (asked for with a long press on the tile). */
     val subtitles: ServerLine.Subtitles? = null,
+    /** The film player's audio tracks, while the audio sheet is open. */
+    val audio: ServerLine.Audio? = null,
     /** The music player's queue, while the queue sheet is open. */
     val queue: ServerLine.Queue? = null,
     /** The playing song's lyrics, while the lyric view is open. */
@@ -409,6 +411,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     is ServerLine.MusicLibrary -> onMusicLibrary(line)
                     is ServerLine.Continue -> _state.update { it.copy(continueWatching = line.items) }
                     is ServerLine.Sources -> _state.update { it.copy(sources = line.list) }
+                    is ServerLine.Audio -> _state.update { it.copy(audio = line) }
                     is ServerLine.Subtitles -> _state.update { it.copy(subtitles = line) }
                     is ServerLine.Queue -> _state.update { it.copy(queue = line) }
                     is ServerLine.LyricsText -> _state.update { it.copy(lyrics = line) }
@@ -595,6 +598,13 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(subtitles = null) }
         sendOrReconnect { it.requestSubtitles() }
     }
+
+    fun loadAudio() {
+        _state.update { it.copy(audio = null) }
+        sendOrReconnect { it.requestAudio() }
+    }
+
+    fun pickAudio(choice: SubtitleChoice) = sendOrReconnect { it.pickAudio(choice.number) }
 
     fun pickSubtitle(choice: SubtitleChoice) = sendOrReconnect { it.pickSubtitle(choice.number) }
 

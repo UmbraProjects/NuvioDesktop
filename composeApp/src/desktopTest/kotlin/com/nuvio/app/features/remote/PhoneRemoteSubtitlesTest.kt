@@ -25,6 +25,18 @@ class PhoneRemoteSubtitlesTest {
     }
 
     @Test
+    fun theAudioListUsesTheSameFields() {
+        val line = PhoneRemoteLibraryLines.audioLine(
+            RemoteSubtitleList(false, listOf(RemoteSubtitleChoice("Track 1 (Stereo)", "eng", "", selected = true), RemoteSubtitleChoice("Commentary", null, "", selected = false))),
+        )
+        assertEquals("AUDIO 0 Track%201%20%28Stereo%29,eng,-,1;Commentary,-,-,0", line)
+        assertEquals("AUDIO 0 -", PhoneRemoteLibraryLines.audioLine(null))
+        assertEquals(RemoteMessage.AudioRequest, PhoneRemoteProtocol.parse("AUDIO"))
+        assertEquals(RemoteMessage.PickAudio(2), PhoneRemoteProtocol.parse("PICK_AUDIO 2"))
+        assertNull(PhoneRemoteProtocol.parse("PICK_AUDIO 0"))
+    }
+
+    @Test
     fun noFilmMeansAnEmptyList() {
         assertEquals("SUBTITLES 0 -", PhoneRemoteLibraryLines.subtitlesLine(null))
     }

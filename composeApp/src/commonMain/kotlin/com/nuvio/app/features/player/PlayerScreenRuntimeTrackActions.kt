@@ -503,6 +503,14 @@ internal fun PlayerScreenRuntime.selectAddonSubtitle(addon: AddonSubtitle) {
     applySecondarySubtitleSelectionIfNeeded()
 }
 
+/** The audio panel's pick of a track; the phone remote's list picks the same way. False when the player refused. */
+internal fun PlayerScreenRuntime.selectAudioTrackFromList(index: Int): Boolean {
+    if (playerController?.selectAudioTrack(index) != true) return false
+    selectedAudioIndex = index
+    persistAudioPreference(audioTracks.firstOrNull { it.index == index })
+    return true
+}
+
 internal fun PlayerScreenRuntime.cycleAudioTrackFromKeyboard() {
     refreshTracks()
     // Cycle over the same list the modal shows, so rejected tracks (commentary, audio description)

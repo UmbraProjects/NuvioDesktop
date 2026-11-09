@@ -94,6 +94,8 @@ sealed interface ServerLine {
     data class Continue(val items: List<ResumeItem>) : ServerLine
     /** The source list on the TV; null once it closes. */
     data class Sources(val list: SourceList?) : ServerLine
+    /** The film player's audio tracks (the same row type as subtitles; no Off, no groups). */
+    data class Audio(val choices: List<SubtitleChoice>) : ServerLine
     /** The film player's subtitles, Off first; sent when asked for, and again as the add-ons answer. */
     data class Subtitles(val loading: Boolean, val choices: List<SubtitleChoice>) : ServerLine
     /** A show's episodes; [found] false when the PC could not fetch its details. */
@@ -126,6 +128,7 @@ sealed interface ServerLine {
                 "QUEUE" -> LibraryLines.parseQueue(line) ?: Other
                 "EPISODES" -> LibraryLines.parseEpisodes(line) ?: Other
                 "SUBTITLES" -> LibraryLines.parseSubtitles(line) ?: Other
+                "AUDIO" -> LibraryLines.parseAudio(line) ?: Other
                 "LYRICS" -> LibraryLines.parseLyrics(line) ?: Other
                 "ALBUM_TRACKS" -> LibraryLines.parseAlbumTracks(line) ?: Other
                 "WAKE" -> Wake(
@@ -285,6 +288,12 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     /** Plays the source at [number] (from 1) in the list on the TV. The PC answers OPENING or CANT_OPEN. */
     fun pickSource(number: Int) = send("PICK_SOURCE $number")
+
+    /** The film player's audio list; the answer comes back as [ServerLine.Audio]. */
+    fun requestAudio() = send("AUDIO")
+
+    /** Picks the audio track at [number] (from 1); the PC answers with the list again. */
+    fun pickAudio(number: Int) = send("PICK_AUDIO $number")
 
     /** The film player's subtitle list; the answer comes back as [ServerLine.Subtitles]. */
     fun requestSubtitles() = send("SUBTITLES")

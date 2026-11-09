@@ -176,6 +176,7 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
     var typing by rememberSaveable { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
     var showSubtitles by remember { mutableStateOf(false) }
+    var showAudio by remember { mutableStateOf(false) }
     // Film and music: the touchpad (or D-pad) in place of what is playing, from the tag in the header.
     var padOverPlaying by rememberSaveable { mutableStateOf(false) }
     val playing = state.nowPlaying
@@ -248,13 +249,36 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
                     showSubtitles = true
                     viewModel.loadSubtitles()
                 },
+                onAudio = {
+                    showAudio = true
+                    viewModel.loadAudio()
+                },
             )
             showing == Showing.Music && playing != null && !padOverPlaying -> MusicBody(state, playing, state.cover, viewModel, onMore = { more = true })
             else -> BrowseBody(state.padMode, viewModel, onSearch = search, onMore = { more = true })
         }
     }
 
-    if (showSubtitles) SubtitleSheet(state.subtitles, viewModel, onDismiss = { showSubtitles = false })
+    if (showSubtitles) {
+        TrackSheet(
+            choices = state.subtitles?.choices,
+            loading = state.subtitles?.loading == true,
+            heading = { n -> if (n <= 1) "Subtitles" else "Subtitles · ${n - 1} found" },
+            loadingText = "Still asking the add-ons…",
+            onPick = viewModel::pickSubtitle,
+            onDismiss = { showSubtitles = false },
+        )
+    }
+    if (showAudio) {
+        TrackSheet(
+            choices = state.audio?.choices,
+            loading = false,
+            heading = { n -> if (n == 1) "Audio · 1 track" else "Audio · $n tracks" },
+            loadingText = "",
+            onPick = viewModel::pickAudio,
+            onDismiss = { showAudio = false },
+        )
+    }
 
     if (more) {
         MoreSheet(
@@ -324,6 +348,7 @@ private fun FilmBody(
     onSources: () -> Unit,
     onMore: () -> Unit,
     onSubtitles: () -> Unit,
+    onAudio: () -> Unit,
 ) {
     // What is playing and its controls, with the keys pinned at the bottom. The pad is a tap away (the tag in the
     // header): on a phone there was no room left for a usable one under all of this.
@@ -335,7 +360,7 @@ private fun FilmBody(
                 StatTile("Subtitles", playing.subtitleTrack ?: "Tap for next · hold for list", Modifier.weight(1f), onLongClick = onSubtitles) {
                     viewModel.press(RemoteKey.Subtitles)
                 }
-                StatTile("Audio", playing.audioTrack ?: "Tap for the next", Modifier.weight(1f)) {
+                StatTile("Audio", playing.audioTrack ?: "Tap for next · hold for list", Modifier.weight(1f), onLongClick = onAudio) {
                     viewModel.press(RemoteKey.Audio)
                 }
             }
@@ -559,11 +584,19 @@ private fun LyricsView(lyrics: ServerLine.LyricsText?, playing: NowPlaying, modi
 }
 
 /**
- * The film player's subtitles (hold the Subtitles tile): Off, the file's own, then each add-on's, with the one in use
- * marked. Tap one and the TV switches to it, as picking it in its own panel does.
+ * The film player's subtitles or audio tracks (hold the Subtitles or Audio tile): subtitles are Off, the file's own, then
+ * each add-on's; audio is the file's tracks. The one in use is marked. Tap one and the TV switches to it, as picking it
+ * in its own panel does. [choices] is null until the TV has answered.
  */
 @Composable
-private fun SubtitleSheet(list: ServerLine.Subtitles?, viewModel: RemoteViewModel, onDismiss: () -> Unit) {
+private fun TrackSheet(
+    choices: List<SubtitleChoice>?,
+    loading: Boolean,
+    heading: (Int) -> String,
+    loadingText: String,
+    onPick: (SubtitleChoice) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val g = LocalGlass.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -571,8 +604,8 @@ private fun SubtitleSheet(list: ServerLine.Subtitles?, viewModel: RemoteViewMode
         containerColor = Color(0xFF14151A),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
-            GlassLabel(if (list == null || list.choices.size <= 1) "Subtitles" else "Subtitles · ${list.choices.size - 1} found")
-            if (list == null) {
+            GlassLabel(heading(choices?.size ?: 0))
+            if (choices == null) {
                 Text("Asking the TV…", color = g.textSecondary, modifier = Modifier.padding(vertical = 24.dp))
                 return@Column
             }
@@ -581,9 +614,9 @@ private fun SubtitleSheet(list: ServerLine.Subtitles?, viewModel: RemoteViewMode
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 var lastGroup: String? = null
-                list.choices.forEach { choice ->
+                choices.forEach { choice ->
                     // A small heading where the source changes: the file's own, then each add-on.
-                    if (choice.group != "Off" && choice.group != lastGroup) {
+                    if (choice.group.isNotBlank() && choice.group != "Off" && choice.group != lastGroup) {
                         val heading = choice.group
                         item(key = "group:$heading") {
                             Text(heading.uppercase(), color = g.textSecondary, fontSize = 11.sp, letterSpacing = 1.2.sp, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
@@ -598,7 +631,7 @@ private fun SubtitleSheet(list: ServerLine.Subtitles?, viewModel: RemoteViewMode
                                 // A tap on release, not on touch-down: a finger that starts a scroll must not pick one.
                                 .pointerInput(choice) {
                                     detectTapGestures(onTap = {
-                                        if (!choice.selected) viewModel.pickSubtitle(choice)
+                                        if (!choice.selected) onPick(choice)
                                         onDismiss()
                                     })
                                 }
@@ -613,8 +646,8 @@ private fun SubtitleSheet(list: ServerLine.Subtitles?, viewModel: RemoteViewMode
                         }
                     }
                 }
-                if (list.loading) item(key = "loading") {
-                    Text("Still asking the add-ons…", color = g.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
+                if (loading) item(key = "loading") {
+                    Text(loadingText, color = g.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
                 }
             }
         }

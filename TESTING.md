@@ -138,6 +138,8 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Tapping a row in that sheet switches the TV's subtitles to it (an add-on one loads and shows), the tile follows, and Off turns them off; a quick tap on the tile still cycles to the next
 - [ ] Scrolling the sheet's list does not pick a row by accident
 - [ ] Demo TV: hold Subtitles shows a list of six; picking one changes the tile
+- [ ] Hold the Audio tile: a sheet lists the film's audio tracks (the one playing marked "On"); tapping one switches the TV's audio and the tile follows; a quick tap still cycles to the next
+- [ ] The audio list leaves out commentary and audio-description tracks, as the TV's own audio panel does
 
 - [ ] A film with no built-in subtitles (the screenshot case): once the add-on subtitles are found, the Subtitles tile reads "Off" instead of "Tap for the next"; tapping it picks the first add-on subtitle and the tile shows its name; further taps go through the rest
 

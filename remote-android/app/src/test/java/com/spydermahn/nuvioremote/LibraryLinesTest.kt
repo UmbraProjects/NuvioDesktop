@@ -41,6 +41,15 @@ class LibraryLinesTest {
     }
 
     @Test
+    fun readsTheAudioList() {
+        val parsed = ServerLine.parse("AUDIO 0 Track%201%20%28Stereo%29,eng,-,1;Commentary,-,-,0", 0L) as ServerLine.Audio
+        assertEquals(
+            listOf(SubtitleChoice(1, "Track 1 (Stereo)", "eng", "", true), SubtitleChoice(2, "Commentary", null, "", false)),
+            parsed.choices,
+        )
+    }
+
+    @Test
     fun readsTheSubtitleList() {
         val line = "SUBTITLES 1 Off,-,Off,0;English%2C%20SDH,eng%20%C2%B7%20forced,Built-in,0;" +
             "English%20%28SubSource%29,eng,OpenSubtitles%20v3,1"

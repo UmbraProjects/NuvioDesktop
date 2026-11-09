@@ -32,6 +32,9 @@ import java.nio.charset.StandardCharsets
  *    or: IDLE                           nothing is playing
  * pc:    THEME <accent> <accentEnd or -> <background>   after the first STATE, and when the TV's theme changes
  * phone: KEY sources                    the film player's sources panel
+ * phone: AUDIO                          the film player's audio list (long press on the Audio tile)
+ * pc:    AUDIO 0 <label,detail,group,selected;...>   same fields as SUBTITLES, group empty, no Off
+ * phone: PICK_AUDIO <n>                 the nth of that list (from 1); the PC then sends AUDIO again
  * phone: SUBTITLES                      the film player's subtitle list (long press on the Subtitles tile)
  * pc:    SUBTITLES <loading 0|1> <label,detail,group,selected;...>   Off first; again as the add-ons answer
  * phone: PICK_SUBTITLE <n>              the nth of that list (Off is 1); the PC then sends SUBTITLES again
@@ -162,6 +165,8 @@ internal object PhoneRemoteProtocol {
             "PICK_SOURCE" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickSource(it) }
             // fork:phone-remote subtitles: the subtitle list, and picking from it (Off is 1).
             "SUBTITLES" -> RemoteMessage.SubtitlesRequest
+            "AUDIO" -> RemoteMessage.AudioRequest
+            "PICK_AUDIO" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickAudio(it) }
             "PICK_SUBTITLE" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickSubtitle(it) }
             "RESUME" -> if (parts.size >= 3) {
                 RemoteMessage.Resume(parentId = decode(parts[1]), videoId = decode(parts[2]))
@@ -190,6 +195,8 @@ internal sealed interface RemoteMessage {
     data class Resume(val parentId: String, val videoId: String) : RemoteMessage
     data class PickSource(val number: Int) : RemoteMessage
     data object SubtitlesRequest : RemoteMessage
+    data object AudioRequest : RemoteMessage
+    data class PickAudio(val number: Int) : RemoteMessage
     data class PickSubtitle(val number: Int) : RemoteMessage
     data class Search(val query: String) : RemoteMessage
     data object Queue : RemoteMessage

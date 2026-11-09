@@ -226,6 +226,8 @@ internal object PhoneRemote {
         override fun onContinue(): String? = PhoneRemoteLibrary.continueLine()
         override fun onResume(parentId: String, videoId: String): String? = PhoneRemoteLibrary.resume(parentId, videoId)
         override fun onPickSource(number: Int): String? = pickSource(number)
+        override fun onAudio(reply: (String) -> Unit) = reply(PhoneRemoteLibraryLines.audioLine(RemotePlayerHub.filmControls?.audioChoices()))
+        override fun onPickAudio(number: Int, reply: (String) -> Unit) = pickAudio(number, reply)
         override fun onSubtitles(reply: (String) -> Unit) = subtitles(reply)
         override fun onPickSubtitle(number: Int, reply: (String) -> Unit) = pickSubtitle(number, reply)
         override fun onSearch(query: String, reply: (String) -> Unit) = PhoneRemoteLibrary.search(query, reply)
@@ -316,6 +318,16 @@ internal object PhoneRemote {
                     if (!now.loading && now.choices.size > 1) return@launch
                 }
             }
+        }
+    }
+
+    private fun pickAudio(number: Int, reply: (String) -> Unit) {
+        val film = RemotePlayerHub.filmControls ?: return
+        if (!film.pickAudio(number)) return
+        log.i { "Phone remote: audio $number picked" }
+        mainScope.launch {
+            delay(SUBTITLE_PICK_SETTLE_MS)
+            reply(PhoneRemoteLibraryLines.audioLine(film.audioChoices()))
         }
     }
 

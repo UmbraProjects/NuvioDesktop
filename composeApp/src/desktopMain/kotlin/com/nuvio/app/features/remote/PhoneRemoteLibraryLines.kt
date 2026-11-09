@@ -214,6 +214,12 @@ internal object PhoneRemoteLibraryLines {
         }
     }
 
+    /** `AUDIO 0 <choices>`: the film player's audio tracks, the same fields as [subtitlesLine] (group empty, no Off). */
+    fun audioLine(list: com.nuvio.app.features.remote.RemoteSubtitleList?): String {
+        if (list == null) return "AUDIO 0 -"
+        return "AUDIO 0 " + records(list.choices) { c -> listOf(text(c.label), text(c.detail), text(c.group), flag(c.selected)) }
+    }
+
     /** A source's description runs to several lines (file name, size, seeders); kept whole, up to a point. */
     private fun detail(value: String?): String = value?.trim()?.take(MAX_DETAIL_CHARS)?.takeIf { it.isNotEmpty() }
         ?.let(PhoneRemoteProtocol::encode) ?: "-"
