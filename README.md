@@ -27,6 +27,7 @@ If you're a Linux user check out [Slokker's Linux Fork.](https://github.com/iamS
 * Automatic dim and shutdown for OLED displays.
 * Audio pass-through features for a receiver.
 * Casting to another device, if the TV is busy you can cast to your phone or laptop.
+* Nuvio Remote, an Android app that drives Nuvio from your phone over Wi-Fi: touchpad or D-pad, now playing with lock-screen controls, Continue watching, the library and seasons, search by voice, picking the source, the music queue and loud lyrics, a dark mode for the cinema, and Wake-on-LAN. Pair by scanning a QR code in Settings. See [remote-android/README.md](remote-android/README.md).
 
 # Discovery & Browsing
 

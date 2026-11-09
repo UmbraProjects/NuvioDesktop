@@ -9,7 +9,8 @@ import java.nio.charset.StandardCharsets
  *
  * Deliberately tiny: one UTF-8 line per message over a plain TCP socket, so the phone side is a
  * `java.net.Socket` and a reader, with no HTTP or WebSocket layer on either end. The Android app
- * carries a copy of these constants in `RemoteProtocol.kt`; change both together.
+ * carries a copy of these constants in `RemoteClient.kt` (and the library parsers in `LibraryLines.kt`); change both
+ * together. remote-android/README.md has a table of every message.
  *
  * Discovery (UDP, [DISCOVERY_PORT]): the phone broadcasts [DISCOVER_REQUEST]; every Nuvio with the
  * remote turned on answers `NUVIO_REMOTE 1 <tcpPort> <name>` straight back to the sender.
