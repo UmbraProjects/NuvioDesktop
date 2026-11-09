@@ -40,6 +40,8 @@ data class UiState(
     val video: VideoLibraryState = VideoLibraryState(),
     /** The PC's Continue Watching; empty from a PC that does not send it. */
     val continueWatching: List<ResumeItem> = emptyList(),
+    /** The source list while the TV shows one; the remote shows it to pick from. */
+    val sources: SourceList? = null,
     val music: MusicLibraryState = MusicLibraryState(),
     /** A short line about something just sent ("Opening Blade Runner on the TV"); clears itself. */
     val notice: String? = null,
@@ -386,6 +388,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     is ServerLine.VideoLibrary -> onVideoLibrary(line)
                     is ServerLine.MusicLibrary -> onMusicLibrary(line)
                     is ServerLine.Continue -> _state.update { it.copy(continueWatching = line.items) }
+                    is ServerLine.Sources -> _state.update { it.copy(sources = line.list) }
                     is ServerLine.Opening -> notify("Opening ${line.what} on the TV")
                     ServerLine.CantOpen -> notify("Nuvio couldn't open that.")
                     else -> Unit
@@ -438,7 +441,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     private fun closeSession() {
         session?.close()
         session = null
-        _state.update { it.copy(nowPlaying = null, cover = null) }
+        _state.update { it.copy(nowPlaying = null, cover = null, sources = null) }
     }
 
     /** A ping every few seconds, so a PC that went to sleep shows as offline before the next press. */
@@ -546,6 +549,8 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Asks again every time the Watch tab shows: what is in progress changes with every film. */
     fun loadContinue() = sendOrReconnect { it.requestContinue() }
+
+    fun pickSource(source: SourceInfo) = sendOrReconnect { it.pickSource(source.number) }
 
     fun resume(item: ResumeItem) = sendOrReconnect { it.resume(item.parentId, item.videoId) }
 

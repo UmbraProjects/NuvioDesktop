@@ -44,6 +44,8 @@ internal interface PhoneRemoteListener {
     /** The whole CONTINUE reply line, or null when there is none to give. */
     fun onContinue(): String? = null
     fun onResume(parentId: String, videoId: String): String? = null
+    /** Plays the [number]th source on screen; what is opening, or null when it cannot. */
+    fun onPickSource(number: Int): String? = null
 }
 
 /**
@@ -116,6 +118,15 @@ internal class PhoneRemoteServer(
 
     fun publishTheme(line: String) {
         lastTheme = line
+        clients.forEach { session -> if (session.subscribed) session.trySend(line) }
+    }
+
+    @Volatile
+    private var lastSources: String? = null
+
+    /** The source list on screen (see PhoneRemoteLibraryLines.sourcesLine), for every subscribed phone. */
+    fun publishSources(line: String) {
+        lastSources = line
         clients.forEach { session -> if (session.subscribed) session.trySend(line) }
     }
 
@@ -231,6 +242,7 @@ internal class PhoneRemoteServer(
                                 subscribed = true
                                 send(lastState)
                                 lastTheme?.let(::send)
+                                lastSources?.let(::send)
                             }
                             is RemoteMessage.Seek -> listener.onSeek(message.positionMs)
                             is RemoteMessage.Volume -> listener.onVolume(message.volume)
@@ -241,6 +253,7 @@ internal class PhoneRemoteServer(
                             is RemoteMessage.Artist -> sendOpening(listener.onArtist(message.artistId, message.action))
                             RemoteMessage.Continue -> listener.onContinue()?.let(::send)
                             is RemoteMessage.Resume -> sendOpening(listener.onResume(message.parentId, message.videoId))
+                            is RemoteMessage.PickSource -> sendOpening(listener.onPickSource(message.number))
                             else -> Unit
                         }
                     }

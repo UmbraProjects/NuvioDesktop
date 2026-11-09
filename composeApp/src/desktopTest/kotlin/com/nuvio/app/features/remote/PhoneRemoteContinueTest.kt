@@ -37,3 +37,28 @@ class PhoneRemoteContinueTest {
         assertNull(PhoneRemoteProtocol.parse("RESUME tt0903747"))
     }
 }
+
+class PhoneRemoteSourcesTest {
+    @Test
+    fun theSourceListTravelsAsOneLine() {
+        val line = PhoneRemoteLibraryLines.sourcesLine(
+            RemoteSourceList(
+                title = "Severance · S2 E5",
+                loading = true,
+                sources = listOf(
+                    RemoteSource("Torrentio 4K", "Severance.S02E05.2160p.mkv\n💾 12.3 GB 👤 41", "Torrentio", 13_200_000_000L, instant = true, playable = true),
+                    RemoteSource("P2P 1080p", null, "Comet", null, instant = false, playable = false),
+                ),
+            ),
+        )
+        assertEquals(
+            "SOURCES 1 1 Severance%20%C2%B7%20S2%20E5 " +
+                "Torrentio%204K,Severance.S02E05.2160p.mkv%0A%F0%9F%92%BE%2012.3%20GB%20%F0%9F%91%A4%2041,Torrentio,13200000000,1,1;" +
+                "P2P%201080p,-,Comet,-,0,0",
+            line,
+        )
+        assertEquals("SOURCES 0 0 - -", PhoneRemoteLibraryLines.sourcesLine(null))
+        assertEquals(RemoteMessage.PickSource(3), PhoneRemoteProtocol.parse("PICK_SOURCE 3"))
+        assertNull(PhoneRemoteProtocol.parse("PICK_SOURCE 0"))
+    }
+}

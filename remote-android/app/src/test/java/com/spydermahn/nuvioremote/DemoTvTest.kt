@@ -54,6 +54,25 @@ class DemoTvTest {
     }
 
     @Test
+    fun readsThePcsSourcesLine() {
+        // The exact line PhoneRemoteSourcesTest on the PC side produces.
+        val list = (ServerLine.parse(
+            "SOURCES 1 1 Severance%20%C2%B7%20S2%20E5 " +
+                "Torrentio%204K,Severance.S02E05.2160p.mkv%0A%F0%9F%92%BE%2012.3%20GB%20%F0%9F%91%A4%2041,Torrentio,13200000000,1,1;" +
+                "P2P%201080p,-,Comet,-,0,0",
+            0L,
+        ) as ServerLine.Sources).list!!
+        assertEquals("Severance · S2 E5", list.title)
+        assertTrue(list.loading)
+        assertEquals(2, list.sources.size)
+        assertEquals(2, list.sources[1].number)
+        assertEquals("Severance.S02E05.2160p.mkv\n💾 12.3 GB 👤 41", list.sources[0].detail)
+        assertEquals("13.2 GB", list.sources[0].sizeLabel)
+        assertEquals(false, list.sources[1].playable)
+        assertEquals(ServerLine.Sources(null), ServerLine.parse("SOURCES 0 0 - -", 0L))
+    }
+
+    @Test
     fun pairsPlaysAndAnswersLikeTheTv() {
         val (session, lines) = connect()
         DemoTv.stop()
@@ -69,9 +88,19 @@ class DemoTvTest {
         assertEquals(2, music.artists.size)
         assertEquals(4, music.albums.size)
 
-        // Opening a title says so, then plays it as a film.
+        // Opening a title says so and shows its sources, which fill in; picking one plays it as a film.
         session.openTitle("movie", "demo-m2")
         assertEquals("Glass Orchard", lines.next<ServerLine.Opening>().what)
+        val filling = lines.next<ServerLine.Sources>().list!!
+        assertTrue(filling.loading)
+        assertEquals("Glass Orchard", filling.title)
+        val full = lines.next<ServerLine.Sources>().list!!
+        assertEquals(4, full.sources.size)
+        assertEquals(false, full.sources[3].playable)
+        assertEquals("18.4 GB", full.sources[0].sizeLabel)
+        session.pickSource(2)
+        assertEquals("Demo 1080p", lines.next<ServerLine.Opening>().what)
+        assertEquals(null, lines.next<ServerLine.Sources>().list)
         val film = lines.next<ServerLine.State>().nowPlaying
         assertEquals("film", film.kind)
         assertEquals("Glass Orchard", film.title)

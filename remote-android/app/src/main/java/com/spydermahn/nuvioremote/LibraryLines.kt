@@ -54,6 +54,27 @@ data class ResumeItem(
         }
 }
 
+/** One row of the source list on the TV (`SOURCES` line), in the order the TV draws them. */
+data class SourceInfo(
+    /** Its place in the list, from 1: what PICK_SOURCE sends back. */
+    val number: Int,
+    val name: String,
+    val detail: String?,
+    val addon: String,
+    val sizeBytes: Long?,
+    val instant: Boolean,
+    val playable: Boolean,
+) {
+    val sizeLabel: String?
+        get() {
+            val bytes = sizeBytes ?: return null
+            val gb = bytes / 1_000_000_000.0
+            return if (gb >= 1.0) "%.1f GB".format(gb) else "%d MB".format((bytes / 1_000_000L).coerceAtLeast(1L))
+        }
+}
+
+data class SourceList(val title: String, val loading: Boolean, val sources: List<SourceInfo>)
+
 data class LibraryArtistInfo(val id: String, val name: String, val photo: String?, val starred: Boolean)
 
 data class LibraryAlbum(
@@ -142,6 +163,27 @@ object LibraryLines {
                 )
             },
         )
+    }
+
+    /** `SOURCES <open> <loading> <title> <sources>`; mirrors `sourcesLine` in the PC's PhoneRemoteLibraryLines.kt. */
+    fun parseSources(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 3 || parts[0] != "SOURCES") return null
+        if (parts[1] != "1") return ServerLine.Sources(null)
+        val sources = records(parts.getOrNull(4)).mapIndexedNotNull { index, f ->
+            if (f.size < 6) return@mapIndexedNotNull null
+            SourceInfo(
+                number = index + 1,
+                name = f[0] ?: "Source ${index + 1}",
+                detail = f[1],
+                addon = f[2] ?: "",
+                sizeBytes = f[3]?.toLongOrNull(),
+                instant = f[4] == "1",
+                playable = f[5] == "1",
+            )
+        }
+        val title = parts.getOrNull(3)?.takeUnless { it == "-" }?.let(RemoteProtocol::decode) ?: "Sources"
+        return ServerLine.Sources(SourceList(title, loading = parts[2] == "1", sources = sources))
     }
 
     /** Each record's fields, decoded; `-` becomes null. */

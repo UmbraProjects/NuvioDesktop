@@ -184,18 +184,29 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
     }
     // The next film or album opens on what is playing, not on a pad left up from the last one.
     LaunchedEffect(showing) { if (showing == Showing.Browsing) padOverPlaying = false }
+    // Each new source list opens as the list, even if the pad was chosen over the last one.
+    var padOverSources by rememberSaveable { mutableStateOf(false) }
+    val sourcesOpen = state.sources != null
+    LaunchedEffect(sourcesOpen) { if (!sourcesOpen) padOverSources = false }
 
     Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 20.dp)) {
         RemoteHeader(
             state = state,
-            status = when (showing) {
-                Showing.Browsing -> "Connected · browsing"
-                Showing.Film -> "Playing a film"
-                Showing.Music -> "Playing music"
+            status = when {
+                state.sources != null -> "Choosing a source"
+                showing == Showing.Browsing -> "Connected · browsing"
+                showing == Showing.Film -> "Playing a film"
+                else -> "Playing music"
             },
             onRetry = viewModel::reconnect,
             trailing = {
-                if (showing != Showing.Browsing) {
+                if (state.sources != null) {
+                    GlassTag(
+                        if (padOverSources) "Sources" else if (state.padMode == PadMode.Touchpad) "Touchpad" else "D-pad",
+                        icon = if (padOverSources) Icons.AutoMirrored.Rounded.List else Icons.Rounded.CropSquare,
+                        onClick = { padOverSources = !padOverSources },
+                    )
+                } else if (showing != Showing.Browsing) {
                     GlassTag(
                         when {
                             padOverPlaying -> "Now playing"
@@ -215,7 +226,10 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
         if (DemoTv.isDemo(state.current)) DemoLogStrip()
         if (typing) TypingPanel(viewModel, onClose = { typing = false })
 
+        val sources = state.sources
         when {
+            // The TV is showing its source list: pick one here (the pad, from the header tag, still drives the TV).
+            sources != null && !padOverSources -> SourcesBody(sources, viewModel, onPad = { padOverSources = true })
             showing == Showing.Film && playing != null && !padOverPlaying -> FilmBody(
                 playing,
                 state.cover,
@@ -314,6 +328,77 @@ private fun FilmBody(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewM
             }
             GlassKey(Icons.Rounded.DarkMode, "Dark", size = 56.dp) { viewModel.setDark(true) }
             GlassKey(Icons.Rounded.MoreHoriz, "More", size = 56.dp, onPress = onMore)
+        }
+    }
+}
+
+/**
+ * The TV's source list, on the phone: every source in the TV's order, with its addon, size and whether it plays at once
+ * (cached on the debrid service). Tapping one plays it on the TV; greyed rows are the ones the TV greys out.
+ */
+@Composable
+private fun SourcesBody(list: SourceList, viewModel: RemoteViewModel, onPad: () -> Unit) {
+    val g = LocalGlass.current
+    var instantOnly by rememberSaveable { mutableStateOf(false) }
+    val shown = if (instantOnly) list.sources.filter { it.instant } else list.sources
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                GlassLabel(if (list.loading) "Finding sources… ${list.sources.size} so far" else "${list.sources.size} sources")
+                DisplayTitle(list.title, Modifier.padding(top = 4.dp), size = 20, maxLines = 1)
+            }
+            if (list.sources.any { it.instant }) {
+                GlassTag("Instant", accent = instantOnly, onClick = { instantOnly = !instantOnly })
+            }
+        }
+        if (list.loading) {
+            androidx.compose.material3.LinearProgressIndicator(
+                Modifier.fillMaxWidth().padding(top = 10.dp).height(2.dp),
+                color = g.accent,
+                trackColor = Color.White.copy(alpha = 0.08f),
+            )
+        }
+        androidx.compose.foundation.lazy.LazyColumn(
+            Modifier.weight(1f).fillMaxWidth().padding(top = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(shown.size, key = { shown[it].number }) { index ->
+                val source = shown[index]
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .glass(RoundedCornerShape(16.dp))
+                        .then(if (source.playable) Modifier.pressable { viewModel.pickSource(source) } else Modifier)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            source.name.replace('\n', ' '),
+                            color = if (source.playable) g.text else g.textMuted,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (source.instant) GlassTag("Instant", accent = true)
+                    }
+                    Text(
+                        listOfNotNull(source.addon.takeIf { it.isNotBlank() }, source.sizeLabel).joinToString(" · "),
+                        color = g.accent,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                    source.detail?.let {
+                        Text(it, color = g.textSecondary, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+            }
+        }
+        BottomKeys {
+            GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 52.dp) { viewModel.press(RemoteKey.Back) }
+            GlassKey(Icons.Rounded.CropSquare, "Pad", size = 52.dp, onPress = onPad)
         }
     }
 }

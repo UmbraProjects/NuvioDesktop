@@ -76,6 +76,17 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] New code on the PC changes the QR code too; an old QR then says the code isn't right
 - [ ] Demo TV: scanning the demo QR picture (sent in the chat) pairs with Demo TV
 
+### Phone remote: pick the source on the phone (phase 5)
+
+- [ ] When a film or episode's source list opens on the TV, the remote shows the same list in the same order: name, addon, size, an Instant tag for cached ones, and the file details
+- [ ] It fills in as the TV finds sources ("Finding sources… N so far" with a thin bar), then shows the total
+- [ ] Tapping a source plays that one on the TV; greyed-out rows (the ones the TV greys) do nothing
+- [ ] The Instant tag at the top shows only the cached sources
+- [ ] The header tag (or the Pad key) swaps to the touchpad and back, for anything else on the TV's list
+- [ ] Sources during a film (the player's sources panel) shows its list on the phone too
+- [ ] Back closes the list on the TV and the phone goes back to the remote
+- [ ] Demo TV: opening a title shows four pretend sources (the last greyed); picking one plays it
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)

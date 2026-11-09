@@ -127,6 +127,8 @@ internal object PhoneRemoteProtocol {
             } else null
             // fork:phone-remote continue watching.
             "CONTINUE" -> RemoteMessage.Continue
+            // fork:phone-remote sources: play the nth source of the list on screen.
+            "PICK_SOURCE" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 1 }?.let { RemoteMessage.PickSource(it) }
             "RESUME" -> if (parts.size >= 3) {
                 RemoteMessage.Resume(parentId = decode(parts[1]), videoId = decode(parts[2]))
                     .takeIf { it.parentId.isNotBlank() && it.videoId.isNotBlank() }
@@ -152,6 +154,7 @@ internal sealed interface RemoteMessage {
     data class Artist(val artistId: String, val action: ArtistAction) : RemoteMessage
     data object Continue : RemoteMessage
     data class Resume(val parentId: String, val videoId: String) : RemoteMessage
+    data class PickSource(val number: Int) : RemoteMessage
 }
 
 internal enum class AlbumAction(val wire: String) {

@@ -92,6 +92,8 @@ sealed interface ServerLine {
     data class MusicLibrary(val ready: Boolean, val artists: List<LibraryArtistInfo>, val albums: List<LibraryAlbum>) : ServerLine
     /** The PC's Continue Watching, newest first. */
     data class Continue(val items: List<ResumeItem>) : ServerLine
+    /** The source list on the TV; null once it closes. */
+    data class Sources(val list: SourceList?) : ServerLine
     data object Other : ServerLine
 
     companion object {
@@ -105,6 +107,7 @@ sealed interface ServerLine {
                 "STATE" -> parseState(parts, nowMs)?.let(::State) ?: Other
                 "LIBRARY" -> LibraryLines.parse(line) ?: Other
                 "CONTINUE" -> LibraryLines.parseContinue(line) ?: Other
+                "SOURCES" -> LibraryLines.parseSources(line) ?: Other
                 "THEME" -> RemoteTheme.parse(parts)?.let(::Theme) ?: Other
                 else -> Other
             }
@@ -255,6 +258,9 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     /** Plays it on the TV from the same source, from where it stopped. The PC answers OPENING or CANT_OPEN. */
     fun resume(parentId: String, videoId: String) = send("RESUME ${RemoteProtocol.encode(parentId)} ${RemoteProtocol.encode(videoId)}")
+
+    /** Plays the source at [number] (from 1) in the list on the TV. The PC answers OPENING or CANT_OPEN. */
+    fun pickSource(number: Int) = send("PICK_SOURCE $number")
 
     fun album(browseId: String, action: AlbumAction) = send("PLAY_ALBUM ${RemoteProtocol.encode(browseId)} ${action.wire}")
 

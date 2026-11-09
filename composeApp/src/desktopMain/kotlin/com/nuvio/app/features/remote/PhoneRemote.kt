@@ -22,6 +22,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.toArgb
 import com.nuvio.app.core.ui.AppTheme
 import com.nuvio.app.core.ui.ThemeColors
@@ -67,6 +70,7 @@ internal object PhoneRemote {
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var stateWatch: Job? = null
     private var themeWatch: Job? = null
+    private var sourcesWatch: Job? = null
 
     @Synchronized
     fun ensureLoaded() {
@@ -128,6 +132,7 @@ internal object PhoneRemote {
         server = created
         watchState(created)
         watchTheme(created)
+        watchSources(created)
         _state.update { it.copy(listening = created.port != null, port = created.port, addresses = localAddresses()) }
     }
 
@@ -136,6 +141,8 @@ internal object PhoneRemote {
         stateWatch = null
         themeWatch?.cancel()
         themeWatch = null
+        sourcesWatch?.cancel()
+        sourcesWatch = null
         server?.stop()
         server = null
         _state.update { it.copy(listening = false, port = null, connectedDevices = emptyList()) }
@@ -217,6 +224,7 @@ internal object PhoneRemote {
         override fun onArtist(artistId: String, action: ArtistAction): String? = PhoneRemoteLibrary.artist(artistId, action)
         override fun onContinue(): String? = PhoneRemoteLibrary.continueLine()
         override fun onResume(parentId: String, videoId: String): String? = PhoneRemoteLibrary.resume(parentId, videoId)
+        override fun onPickSource(number: Int): String? = pickSource(number)
     }
 
     // --- fork:phone-remote: now playing on the phone ---
@@ -255,6 +263,34 @@ internal object PhoneRemote {
                 )
             }.distinctUntilChanged().collect(target::publishTheme)
         }
+    }
+
+    /**
+     * fork:phone-remote sources: the source list on screen goes to the phone as it fills, at most a few times a second
+     * (each provider that answers re-sorts it), and once more when it closes.
+     */
+    private fun watchSources(target: PhoneRemoteServer) {
+        sourcesWatch?.cancel()
+        sourcesWatch = CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            RemoteSources.current
+                .map(PhoneRemoteLibraryLines::sourcesLine)
+                .distinctUntilChanged()
+                .conflate()
+                .collect { line ->
+                    target.publishSources(line)
+                    delay(SOURCES_THROTTLE_MS)
+                }
+        }
+    }
+
+    /** Plays the [number]th source on screen as a click on it would; null when there is none to play. */
+    private fun pickSource(number: Int): String? {
+        val list = RemoteSources.current.value ?: return null
+        val source = list.sources.getOrNull(number - 1)?.takeIf { it.playable } ?: return null
+        val target = com.nuvio.app.features.voice.VoiceScreenTargets.sources ?: return null
+        log.i { "Phone remote: playing source $number of ${list.sources.size}" }
+        mainScope.launch { target(number)?.let { problem -> log.w { "Phone remote: source $number: $problem" } } }
+        return source.name
     }
 
     internal fun musicNowPlaying(state: MusicPlayerState): RemoteNowPlaying? {
@@ -402,6 +438,7 @@ internal object PhoneRemote {
     }
 
     private const val SEEK_STEP_MS = 10_000L
+    private const val SOURCES_THROTTLE_MS = 300L
     private const val VOLUME_STEP = 5
 
     private fun computerName(): String =

@@ -155,6 +155,33 @@ object DemoTv {
 
     private fun themeLine(): String = "THEME " + themes[themeIndex]
 
+    // ------------------------------------------------------------------------------------------ The source list
+
+    /** The title and line the source list on screen is for; null while none shows. */
+    private var sourcesFor: Pair<String, String>? = null
+
+    private fun sourcesLine(complete: Boolean): String {
+        val showing = synchronized(this) { sourcesFor } ?: return "SOURCES 0 0 - -"
+        fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+        val shown = if (complete) DEMO_SOURCES else DEMO_SOURCES.take(2)
+        return "SOURCES 1 ${if (complete) 0 else 1} ${f(showing.first)} " + shown.joinToString(";") { src ->
+            listOf(f(src.name), f(src.detail), f(src.addon), src.sizeBytes?.toString() ?: "-", if (src.instant) "1" else "0", if (src.playable) "1" else "0")
+                .joinToString(",")
+        }
+    }
+
+    /** As the TV does after Play on a title: the list opens, fills over a couple of seconds, and waits for a pick. */
+    private fun showSources(title: String, subtitle: String) {
+        synchronized(this) { sourcesFor = title to subtitle }
+        broadcast(sourcesLine(complete = false))
+        ticker.schedule({ broadcast(sourcesLine(complete = true)) }, 2, TimeUnit.SECONDS)
+    }
+
+    private fun closeSources() {
+        synchronized(this) { sourcesFor = null }
+        broadcast(sourcesLine(complete = true))
+    }
+
     private fun broadcastState() {
         val line = stateLine()
         clients.forEach { if (it.subscribed) it.send(line) }
@@ -262,11 +289,16 @@ object DemoTv {
                 RemoteKey.VolumeDown -> volume = (volume - 5).coerceAtLeast(0)
                 RemoteKey.Mute -> muted = !muted
                 // Back out of the player, as on the TV.
-                RemoteKey.Back -> if (mode != Mode.Browsing) mode = Mode.Browsing
+                RemoteKey.Back -> when {
+                    sourcesFor != null -> sourcesFor = null
+                    mode != Mode.Browsing -> mode = Mode.Browsing
+                }
+                RemoteKey.Sources -> if (mode == Mode.Film) film?.let { sourcesFor = it.title to it.subtitle }
                 else -> Unit
             }
         }
         if (key in STATE_KEYS) broadcastState()
+        if (key == RemoteKey.Back || key == RemoteKey.Sources) broadcast(sourcesLine(complete = true))
     }
 
     private fun libraryLine(kind: String): String {
@@ -361,6 +393,7 @@ object DemoTv {
                     subscribed = true
                     send(stateLine())
                     send(themeLine())
+                    send(sourcesLine(complete = true))
                 }
                 "KEY" -> onKey(parts.getOrElse(1) { "" })
                 "TEXT" -> note("Typed \"${RemoteProtocol.decode(parts.getOrElse(1) { "" })}\"")
@@ -388,8 +421,8 @@ object DemoTv {
                         send("CANT_OPEN")
                     } else {
                         send("OPENING ${RemoteProtocol.encode(title.name)}")
-                        note("Opened ${title.name}; plays in 2 s, as if a source was picked")
-                        ticker.schedule({ playFilm(title.name, listOfNotNull(title.year, title.section).joinToString(" · ")) }, 2, TimeUnit.SECONDS)
+                        note("Opened ${title.name}; its sources fill in over 2 s")
+                        showSources(title.name, listOfNotNull(title.year, title.section).joinToString(" · "))
                     }
                 }
                 "PLAY_ALBUM" -> {
@@ -424,6 +457,19 @@ object DemoTv {
                         }, 2, TimeUnit.SECONDS)
                     }
                 }
+                "PICK_SOURCE" -> {
+                    val number = parts.getOrNull(1)?.toIntOrNull() ?: return
+                    val source = DEMO_SOURCES.getOrNull(number - 1)
+                    val pending = synchronized(DemoTv) { sourcesFor }
+                    if (source == null || pending == null || !source.playable) {
+                        send("CANT_OPEN")
+                    } else {
+                        send("OPENING ${RemoteProtocol.encode(source.name)}")
+                        note("Picked source $number: ${source.name}")
+                        closeSources()
+                        playFilm(pending.first, pending.second)
+                    }
+                }
                 "OPEN" -> {
                     val link = RemoteProtocol.decode(parts.getOrElse(1) { "" })
                     note("Sent a link: $link")
@@ -456,6 +502,22 @@ object DemoTv {
 }
 
 data class DemoTitle(val section: String, val type: String, val id: String, val name: String, val year: String?, val watched: Boolean)
+
+data class DemoSource(
+    val name: String,
+    val detail: String?,
+    val addon: String,
+    val sizeBytes: Long?,
+    val instant: Boolean,
+    val playable: Boolean,
+)
+
+private val DEMO_SOURCES = listOf(
+    DemoSource("Demo 4K HDR", "Pretend.Title.2160p.HDR.WEB-DL.mkv\n💾 18.4 GB  👤 212", "Demo addon", 18_400_000_000L, instant = true, playable = true),
+    DemoSource("Demo 1080p", "Pretend.Title.1080p.BluRay.x264.mkv\n💾 9.1 GB  👤 88", "Demo addon", 9_100_000_000L, instant = true, playable = true),
+    DemoSource("Demo 720p", "Pretend.Title.720p.WEB.mkv\n💾 2.3 GB  👤 14", "Second demo addon", 2_300_000_000L, instant = false, playable = true),
+    DemoSource("Demo P2P 1080p", "No debrid service: the TV greys this one out", "Second demo addon", 8_700_000_000L, instant = false, playable = false),
+)
 
 data class DemoResume(
     val type: String,

@@ -103,6 +103,27 @@ internal object PhoneRemoteLibraryLines {
             )
         }
 
+    /**
+     * `SOURCES <open 0|1> <loading 0|1> <title> <sources>`: the source list on screen, pushed whenever it changes, and
+     * `SOURCES 0 0 - -` once it closes. Each source: name, detail, addon, size in bytes, instant, playable. The phone
+     * picks one with `PICK_SOURCE <n>` (from 1, in this order).
+     */
+    fun sourcesLine(list: RemoteSourceList?): String {
+        if (list == null) return "SOURCES 0 0 - -"
+        return "SOURCES 1 ${flag(list.loading)} ${text(list.title)} " + records(list.sources) { source ->
+            listOf(
+                text(source.name), detail(source.detail), text(source.addon),
+                source.sizeBytes?.takeIf { it > 0L }?.toString() ?: "-", flag(source.instant), flag(source.playable),
+            )
+        }
+    }
+
+    /** A source's description runs to several lines (file name, size, seeders); kept whole, up to a point. */
+    private fun detail(value: String?): String = value?.trim()?.take(MAX_DETAIL_CHARS)?.takeIf { it.isNotEmpty() }
+        ?.let(PhoneRemoteProtocol::encode) ?: "-"
+
+    private const val MAX_DETAIL_CHARS = 400
+
     private fun flag(value: Boolean) = if (value) "1" else "0"
 
     private fun text(value: String?): String = value?.trim()?.take(MAX_TEXT_CHARS)?.takeIf { it.isNotEmpty() }
