@@ -154,12 +154,12 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 ### Phone remote: film extras, music extras and the More sheet
 
-- [ ] Film screen: everything fits without scrolling on your phone (top panel, Subtitles and Audio tiles, Speed and Sleep timer tiles, play buttons, volume slider, Skip / Next episode when shown); a smaller phone may scroll a little
+- [ ] Film screen: top panel, Subtitles and Audio tiles, play buttons, volume slider and Skip / Next episode (when shown) fit without scrolling on your phone; a smaller phone may scroll a little
 - [ ] Under the play button a slim volume slider changes the TV's volume, and the number follows
-- [ ] Tapping the Speed tile steps the film's speed on the TV through 1x, 1.25x, 1.5x, 2x, 0.75x; the TV's own speed panel agrees
+- [ ] More > Playback has Speed chips on a film (0.75x to 2x); tapping one changes the film's speed on the TV and the chip lights; the TV's own speed panel agrees; Speed is not shown for music
 - [ ] During a show's intro (or recap, credits) a "Skip intro" (or "Skip credits", "Skip recap") button shows above the card; tapping it jumps the TV past it; it disappears once the part is over
 - [ ] On a show with a next episode, "Next episode" shows and tapping it starts that episode on the TV; on a film it is not there
-- [ ] Sleep timer tile: tap once for 15 min (the tile says "N min left"), again for 30, again for 60, again for Off; when it ends the TV pauses; More has chips for the same
+- [ ] More > Playback > Sleep: 15 / 30 / 60 min starts a timer and the row says "N min left"; when it ends the TV (or music) pauses; Off cancels it
 - [ ] Music screen: a row of Shuffle, Repeat, Like and Radio under the play button. Shuffle and Repeat (off, all, one) change the TV's queue and light up; Radio starts a radio from the playing song
 - [ ] Like shows only when signed in to YouTube Music on the TV; tapping it fills or empties the heart and the TV's heart agrees
 - [ ] More sheet is in three groups (Playback with volume and sleep, Display with pad and dark mode, Device with Type and Other PC) and scrolls on a small phone

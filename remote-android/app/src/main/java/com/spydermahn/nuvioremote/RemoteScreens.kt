@@ -372,23 +372,7 @@ private fun FilmBody(
                     viewModel.press(RemoteKey.Audio)
                 }
             }
-            // Speed and Sleep sit with the other tiles, a tap steps through their choices: no sheet, no scrolling to find them.
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val speed = playing.speedPercent
-                if (speed != null) {
-                    StatTile("Speed", speedLabel(speed), Modifier.weight(1f)) {
-                        val next = nextSpeed(speed)
-                        viewModel.control("SPEED $next") { it.copy(speedPercent = next) }
-                    }
-                } else {
-                    Spacer(Modifier.weight(1f))
-                }
-                StatTile("Sleep timer", if (playing.sleepMinutes > 0) "${playing.sleepMinutes} min left" else "Off", Modifier.weight(1f)) {
-                    val next = nextSleep(playing.sleepMinutes)
-                    viewModel.control("SLEEP $next") { it.copy(sleepMinutes = next) }
-                }
-            }
-            Transport(playing, viewModel, Modifier.padding(top = 12.dp))
+            Transport(playing, viewModel, Modifier.padding(top = 18.dp))
             FilmExtras(playing, viewModel, Modifier.padding(top = 12.dp, bottom = 4.dp))
         }
         BottomKeys {
@@ -922,24 +906,12 @@ private fun FilmExtras(playing: NowPlaying, viewModel: RemoteViewModel, modifier
     }
 }
 
-private val SPEED_STEPS = listOf(100, 125, 150, 200, 75)
-
 /** "1x", "1.25x", "0.75x". */
 private fun speedLabel(percent: Int): String = when {
     percent % 100 == 0 -> "${percent / 100}x"
     percent % 10 == 0 -> "%.1fx".format(percent / 100.0)
     else -> "%.2fx".format(percent / 100.0)
 }
-
-/** The next speed in 1x, 1.25x, 1.5x, 2x, 0.75x; any other current speed goes to the first step above it, else back to 1x. */
-internal fun nextSpeed(current: Int): Int {
-    val at = SPEED_STEPS.indexOf(current)
-    if (at >= 0) return SPEED_STEPS[(at + 1) % SPEED_STEPS.size]
-    return SPEED_STEPS.filter { it > current }.minOrNull() ?: SPEED_STEPS.first()
-}
-
-/** Off goes to 15 minutes; a running timer goes up to the next of 15, 30, 60, and the last one turns it off. */
-internal fun nextSleep(minutesLeft: Int): Int = listOf(15, 30, 60).firstOrNull { it > minutesLeft } ?: 0
 
 /** A label, then chips that scroll sideways when they do not fit. */
 @Composable
@@ -948,6 +920,18 @@ private fun ChipRow(label: String, chips: @Composable androidx.compose.foundatio
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = g.textMuted, fontSize = 12.sp, modifier = Modifier.width(48.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), content = chips)
+    }
+}
+
+/** The film's speed: 0.75x to 2x, the one in use lit. */
+@Composable
+private fun SpeedChips(speed: Int, viewModel: RemoteViewModel) {
+    ChipRow("Speed") {
+        listOf(75, 100, 125, 150, 200).forEach { percent ->
+            GlassTag(speedLabel(percent), accent = speed == percent, onClick = {
+                viewModel.control("SPEED $percent") { it.copy(speedPercent = percent) }
+            })
+        }
     }
 }
 
@@ -1172,7 +1156,10 @@ private fun MoreSheet(state: UiState, viewModel: RemoteViewModel, onType: () -> 
                 GlassKey(Icons.AutoMirrored.Rounded.VolumeDown, "Vol −", repeat = true) { viewModel.press(RemoteKey.VolumeDown) }
                 GlassKey(Icons.AutoMirrored.Rounded.VolumeUp, "Vol +", repeat = true) { viewModel.press(RemoteKey.VolumeUp) }
             }
-            state.nowPlaying?.let { SleepChips(it, viewModel) }
+            state.nowPlaying?.let { playing ->
+                playing.speedPercent?.let { speed -> SpeedChips(speed, viewModel) }
+                SleepChips(playing, viewModel)
+            }
 
             GlassLabel("Display")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

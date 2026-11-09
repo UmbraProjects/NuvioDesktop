@@ -5,7 +5,7 @@ From the UX review of Nov 9 2026 (nine demo screenshots, so nothing here says ho
 ## Build order
 
 1. [x] **Sources cards**: badges for resolution, HDR / Dolby Vision, codec and size; release name demoted; filter chips. Phone only (Nov 9)
-2. [x] **Film Remote controls**: volume slider, speed, sleep timer, Skip intro and Next episode under the transport row (Nov 9)
+2. [x] **Film Remote controls**: volume slider, Skip intro and Next episode under the transport row; speed and sleep timer live in More (Nov 9; they were tiles on the screen first, but four tiles looked cluttered)
 3. [x] **Music Remote extras**: shuffle, repeat, like and Radio under the transport (Nov 9)
 4. [x] **More sheet regrouped**: Playback, Display, Device (Nov 9)
 5. [ ] **Second-screen music mode**: facts, credits and Wikipedia text for the playing song; Other versions and Cut to fit. Largest piece, last

@@ -84,15 +84,4 @@ class RemoteProtocolTest {
         assertEquals(0, old.sleepMinutes)
         assertEquals(false, old.canNextEpisode)
     }
-
-    @Test
-    fun speedAndSleepTilesStepThroughTheirChoices() {
-        assertEquals(125, nextSpeed(100))
-        assertEquals(75, nextSpeed(200))
-        assertEquals(100, nextSpeed(75))
-        assertEquals(200, nextSpeed(175))
-        assertEquals(15, nextSleep(0))
-        assertEquals(30, nextSleep(24))
-        assertEquals(0, nextSleep(60))
-    }
 }
