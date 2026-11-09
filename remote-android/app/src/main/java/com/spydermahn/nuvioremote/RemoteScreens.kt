@@ -85,6 +85,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -130,8 +132,9 @@ fun ConnectedScreen(state: UiState, viewModel: RemoteViewModel) {
                     color = g.text,
                     fontSize = 14.sp,
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
+                        // At the top, clear of the keys along the bottom.
+                        .align(Alignment.TopCenter)
+                        .padding(top = 12.dp, start = 16.dp, end = 16.dp)
                         .glass(RoundedCornerShape(16.dp), fill = Color(0xF01B1C22))
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 )
@@ -167,7 +170,8 @@ private enum class Showing { Browsing, Film, Music }
 private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
     var typing by rememberSaveable { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
-    var padOverMusic by rememberSaveable { mutableStateOf(false) }
+    // Film and music: the touchpad (or D-pad) in place of what is playing, from the tag in the header.
+    var padOverPlaying by rememberSaveable { mutableStateOf(false) }
     val playing = state.nowPlaying
     val showing = when {
         playing == null -> Showing.Browsing
@@ -178,6 +182,8 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
         viewModel.press(RemoteKey.Search)
         typing = true
     }
+    // The next film or album opens on what is playing, not on a pad left up from the last one.
+    LaunchedEffect(showing) { if (showing == Showing.Browsing) padOverPlaying = false }
 
     Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 20.dp)) {
         RemoteHeader(
@@ -189,11 +195,19 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
             },
             onRetry = viewModel::reconnect,
             trailing = {
-                if (showing == Showing.Music) {
+                if (showing != Showing.Browsing) {
                     GlassTag(
-                        if (padOverMusic) "Now playing" else "Touchpad",
-                        icon = if (padOverMusic) Icons.Rounded.MusicNote else Icons.Rounded.CropSquare,
-                        onClick = { padOverMusic = !padOverMusic },
+                        when {
+                            padOverPlaying -> "Now playing"
+                            state.padMode == PadMode.Touchpad -> "Touchpad"
+                            else -> "D-pad"
+                        },
+                        icon = when {
+                            !padOverPlaying -> Icons.Rounded.CropSquare
+                            showing == Showing.Music -> Icons.Rounded.MusicNote
+                            else -> Icons.Rounded.Movie
+                        },
+                        onClick = { padOverPlaying = !padOverPlaying },
                     )
                 }
             },
@@ -202,8 +216,15 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
         if (typing) TypingPanel(viewModel, onClose = { typing = false })
 
         when {
-            showing == Showing.Film && playing != null -> FilmBody(playing, state.cover, state.padMode, viewModel, onMore = { more = true })
-            showing == Showing.Music && playing != null && !padOverMusic -> MusicBody(playing, state.cover, viewModel, onSearch = search, onMore = { more = true })
+            showing == Showing.Film && playing != null && !padOverPlaying -> FilmBody(
+                playing,
+                state.cover,
+                viewModel,
+                // The sources panel is a menu on the TV: the pad comes up to move around it.
+                onSources = { padOverPlaying = true },
+                onMore = { more = true },
+            )
+            showing == Showing.Music && playing != null && !padOverPlaying -> MusicBody(playing, state.cover, viewModel, onSearch = search, onMore = { more = true })
             else -> BrowseBody(state.padMode, viewModel, onSearch = search, onMore = { more = true })
         }
     }
@@ -269,10 +290,10 @@ private fun BrowseBody(padMode: PadMode, viewModel: RemoteViewModel, onSearch: (
 }
 
 @Composable
-private fun FilmBody(playing: NowPlaying, cover: Bitmap?, padMode: PadMode, viewModel: RemoteViewModel, onMore: () -> Unit) {
+private fun FilmBody(playing: NowPlaying, cover: Bitmap?, viewModel: RemoteViewModel, onSources: () -> Unit, onMore: () -> Unit) {
+    // What is playing and its controls, with the keys pinned at the bottom. The pad is a tap away (the tag in the
+    // header): on a phone there was no room left for a usable one under all of this.
     Column(Modifier.fillMaxSize()) {
-        // The middle scrolls rather than squeezing: with everything above it, a weighted pad was left with no room at
-        // all on a phone. The keys stay pinned at the bottom, never half under the tab bar.
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
             NowPlayingPanel(playing, cover, viewModel, Modifier.padding(top = 8.dp))
             Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -283,12 +304,14 @@ private fun FilmBody(playing: NowPlaying, cover: Bitmap?, padMode: PadMode, view
                     viewModel.press(RemoteKey.Audio)
                 }
             }
-            Transport(playing, viewModel, Modifier.padding(top = 14.dp))
-            NavPanel(padMode, viewModel, Modifier.height(FILM_PAD_HEIGHT).fillMaxWidth().padding(top = 12.dp), compact = true)
+            Transport(playing, viewModel, Modifier.padding(top = 18.dp))
         }
         BottomKeys {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 56.dp) { viewModel.press(RemoteKey.Back) }
-            GlassKey(Icons.AutoMirrored.Rounded.List, "Sources", size = 56.dp) { viewModel.press(RemoteKey.Sources) }
+            GlassKey(Icons.AutoMirrored.Rounded.List, "Sources", size = 56.dp) {
+                viewModel.press(RemoteKey.Sources)
+                onSources()
+            }
             GlassKey(Icons.Rounded.DarkMode, "Dark", size = 56.dp) { viewModel.setDark(true) }
             GlassKey(Icons.Rounded.MoreHoriz, "More", size = 56.dp, onPress = onMore)
         }
@@ -526,8 +549,6 @@ private fun Touchpad(onKey: (RemoteKey) -> Unit, compact: Boolean, modifier: Mod
 
 private val STEP = 44.dp
 
-/** The film screen's pad: room for the D-pad or a usable touchpad, whatever is above it. */
-private val FILM_PAD_HEIGHT = 250.dp
 
 @Composable
 private fun DPad(viewModel: RemoteViewModel, size: androidx.compose.ui.unit.Dp) {
