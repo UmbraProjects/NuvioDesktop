@@ -118,7 +118,8 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Lyrics follow to the next song by themselves; a song with none says so
 - [~] Lyrics on the phone look like the stage's Loud style: each line big in its own face and colour, words outlined and landing as sung (on the beat for word-timed songs); the next line small underneath (2026-11-09): works, but the words were too big: the next line went off the box and the words ran under the List tag
   - [~] Re-check after the fix (2026-11-09): fits now, but long lines were cut short with … instead of shown whole
-  - [ ] Re-check after the second fix: every line shows whole, split into as many rows (up to five) as set it biggest, between the List tag and the next line; never …
+  - [~] Re-check after the second fix (2026-11-09): whole lines now, but the last row of a two- or three-row line was cut off at the bottom ("ALL FOR NOTHING", "DID YOU REALLY WANT ?")
+  - [ ] Re-check after the third fix: every row of a long line is fully visible, none cut at the bottom, and the next line still shows under it
 - [ ] The List / Loud tag in the lyrics' corner switches to the scrolling list and back
 - [ ] Demo TV: an album's queue and pretend timed lyrics
 

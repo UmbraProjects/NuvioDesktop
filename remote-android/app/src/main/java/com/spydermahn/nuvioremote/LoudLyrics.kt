@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -298,8 +300,10 @@ fun LoudLyricsView(lines: List<LyricLine>, playing: NowPlaying, modifier: Modifi
                 val sizesPx = layout.second
                 val cut = false
                 val progress = lineProgress(lines, shown, position + LYRIC_LEAD_MS)
+                // The sizes above are an estimate from widths; the faces' real heights vary (marker strokes and tilted
+                // rows run taller than their size), so the stack is measured as laid out and scaled down to fit the box.
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp).fitInside(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     shownChunks.forEachIndexed { ci, chunk ->
@@ -348,6 +352,23 @@ fun LoudLyricsView(lines: List<LyricLine>, playing: NowPlaying, modifier: Modifi
         }
     }
 }
+
+/** Lays the content out at its natural height, then scales it (about its centre) to fit the box, never up; with a margin for ink past the line box. */
+private fun Modifier.fitInside(): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+    val boxW = if (constraints.hasBoundedWidth) constraints.maxWidth else placeable.width
+    val boxH = if (constraints.hasBoundedHeight) constraints.maxHeight else placeable.height
+    val scale = minOf(1f, boxH * FIT_MARGIN / placeable.height.coerceAtLeast(1), boxW / placeable.width.coerceAtLeast(1).toFloat())
+    layout(boxW, boxH) {
+        placeable.placeWithLayer((boxW - placeable.width) / 2, (boxH - placeable.height) / 2) {
+            scaleX = scale
+            scaleY = scale
+        }
+    }
+}
+
+/** Share of the box the stack may fill, leaving room for strokes, shadows and tilt that draw past the rows. */
+private const val FIT_MARGIN = 0.9f
 
 /** An outline waiting, and over it the filled word that flies in when it is sung. */
 @Composable
