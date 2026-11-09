@@ -29,7 +29,8 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Remote while browsing: touchpad, swipe moves one tile per short swipe and keeps going on a long one, tap is OK; Back, Home, Search (opens the TV's search and the phone keyboard), More (2026-11-08)
 - [ ] **BROKEN** Moving around Nuvio's Settings from the phone (2026-11-08): neither the touchpad nor the D-pad moves there, and a controller does not either, so Settings ignores the arrow and OK presses the pad layer sends
   - [ ] **BROKEN** Re-check after the first fix (2026-11-08): still broken
-  - [ ] Re-check after the second fix: opening Settings puts the highlight on the open category in the sidebar; from there the phone's touchpad and D-pad, a controller's D-pad and the keyboard's arrows move between categories and rows, OK opens or toggles the row, and Left/Right still change a slider or move in a text box
+  - [ ] **BROKEN** Re-check after the second fix (2026-11-09): nothing highlighted and Down seemed to do nothing, with all three inputs. Focus was moving (OK after two Downs opened Screensaver); Settings simply draws no focus ring
+  - [ ] Re-check after the third fix: a ring in the theme's focus colour sits on the open category when Settings opens, and moves with the phone's touchpad and D-pad, a controller's D-pad and the keyboard's arrows over categories, rows, switches and buttons; OK opens or toggles what has the ring; the ring hides when the mouse moves
 - [x] Touchpad / D-pad switch (the tag in the panel's corner, or More) is remembered after closing the app (2026-11-08)
 - [x] Remote during a film: Now playing card, Subtitles and Audio tiles show the current track and tap to the next, back 10s / play-pause / ahead 10s, Back / Sources / More (2026-11-08)
 - [x] Remote during music: cover, title, artist, seek, previous / play-pause / next; the Touchpad tag switches to the pad and back (2026-11-08)

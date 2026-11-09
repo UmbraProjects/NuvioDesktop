@@ -105,6 +105,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.foundation.focusable
 import com.nuvio.app.core.ui.arrowFocusDirection
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.LocalIndication
+import com.nuvio.app.core.ui.rememberKeyboardFocusIndication
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -364,6 +366,13 @@ fun SettingsScreen(
         }
     }
 
+    // fork:settings-arrows - a ring on the row or control holding keyboard focus (see KeyboardFocusIndication).
+    val settingsIndication = if (isDesktop) {
+        rememberKeyboardFocusIndication(MaterialTheme.nuvio.colors.focusRing)
+    } else {
+        LocalIndication.current
+    }
+    CompositionLocalProvider(LocalIndication provides settingsIndication) {
     BoxWithConstraints(
         modifier = modifier.then(homeKeyModifier).then(arrowKeyModifier).fillMaxSize(),
     ) {
@@ -787,6 +796,7 @@ fun SettingsScreen(
             target = pendingDownloadsDelete,
             onDismiss = { pendingDownloadsDelete = null },
         )
+    }
     }
 }
 
