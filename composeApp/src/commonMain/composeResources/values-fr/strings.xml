@@ -475,7 +475,6 @@
     <string name="downloads_status_downloading">Téléchargement • %1$s</string>
     <string name="downloads_status_failed">Échoué</string>
     <string name="downloads_status_paused">En pause • %1$s</string>
-    <string name="downloads_status_merging">Fusion des parties • %1$s</string>
     <string name="downloads_status_queued">En attente • %1$s</string>
     <string name="downloads_status_eta">%1$s restant</string>
     <string name="episodes_cd_watched">Vu</string>
@@ -2594,6 +2593,14 @@
     <string name="settings_rating_prompt_title">Me demander de noter après un final</string>
     <string name="settings_rating_prompt_description">Propose de donner un avis sur le service de bibliothèque choisi.</string>
     <string name="settings_rating_prompt_unavailable">Règle la source de la bibliothèque sur MDBList, SIMKL ou Floppy et connecte-la pour activer les notes.</string>
+    <string name="settings_rating_source_title">Enregistrer les notes sur</string>
+    <string name="settings_rating_source_description">Où sont enregistrées les notes données depuis les détails et après un final.</string>
+    <string name="settings_rating_source_library">Comme la bibliothèque</string>
+    <string name="settings_rating_source_library_active">Suit la source de la bibliothèque : les notes vont sur %1$s.</string>
+    <string name="settings_rating_source_library_unavailable">La source de la bibliothèque n’accepte pas les notes, la notation est donc désactivée. Choisissez plutôt SIMKL, MDBList ou Floppy.</string>
+    <string name="settings_rating_source_not_connected">%1$s n’est pas connecté, la notation est donc désactivée jusqu’à ce que vous vous connectiez.</string>
+    <string name="settings_rating_prompt_description_source">Demande une note sur le service choisi dans Enregistrer les notes sur.</string>
+    <string name="settings_rating_prompt_no_source">Choisissez un service connecté dans Enregistrer les notes sur pour activer ceci.</string>
     <string name="settings_library_source_not_connected">Non connecté - la bibliothèque utilise Nuvio Sync jusqu’à ta connexion.</string>
     <string name="settings_calendar_source_section">Calendrier</string>
     <string name="settings_calendar_source_title">Source du calendrier</string>
@@ -2803,6 +2810,8 @@
     <string name="settings_playback_desktop_audio_channels_desc">Stéréo mixe les pistes surround sur deux canaux dans le lecteur. Essaie si les dialogues varient sans cesse en volume sur une TV ou une barre de son. Auto utilise la disposition réglée sur le périphérique audio Windows.</string>
     <string name="settings_playback_desktop_audio_dialogue_boost">Renforcement des dialogues (downmix)</string>
     <string name="settings_playback_desktop_audio_dialogue_boost_desc">Augmente le canal central (dialogues) quand une piste surround est mixée sur moins de canaux, par exemple avec Canaux audio réglé sur Stéréo.</string>
+    <string name="settings_playback_desktop_headphone_surround">Surround pour casque</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">Pour casques et écouteurs : les pistes surround semblent venir d\'enceintes placées autour de vous au lieu d\'être mixées à plat en gauche et droite. Les sources stéréo jouent un peu moins fort. Sans effet en passthrough audio.</string>
     <string name="settings_playback_desktop_custom_mpv_options">Options MPV</string>
     <string name="settings_playback_desktop_custom_mpv_options_desc">Une option par ligne sous la forme clé=valeur. Appliquées en plus des valeurs par défaut de Nuvio ; les options invalides sont ignorées.</string>
     <string name="settings_playback_desktop_custom_mpv_options_hint">p. ex.\nprofile=gpu-hq\ndeband=no</string>
@@ -4467,6 +4476,7 @@
     <string name="player_hud_less_bass">Moins de basses</string>
     <string name="player_hud_audio_channels">Canaux audio</string>
     <string name="player_hud_dialogue_boost_downmix">Renforcement des dialogues (downmix)</string>
+    <string name="player_hud_headphone_surround">Surround pour casque</string>
     <string name="player_hud_on_off_during_audio_passthrough">Activé (désactivé pendant le passthrough audio)</string>
     <string name="player_hud_on_off_while_svp_runs">Activé (désactivé pendant que SVP tourne)</string>
     <string name="player_hud_anime_svp">SVP Anime</string>

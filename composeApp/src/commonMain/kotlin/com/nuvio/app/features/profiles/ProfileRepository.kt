@@ -263,6 +263,7 @@ object ProfileRepository {
         ContinueWatchingSourceRepository.onProfileChanged()
         LibrarySourceRepository.onProfileChanged()
         RatingPromptRepository.onProfileChanged()
+        com.nuvio.app.features.tracking.TrackingRatingSourceRepository.onProfileChanged()
         SearchHistoryRepository.onProfileChanged()
         CollectionRepository.onProfileChanged()
         com.nuvio.app.features.playlist.PlaylistRepository.onProfileChanged()

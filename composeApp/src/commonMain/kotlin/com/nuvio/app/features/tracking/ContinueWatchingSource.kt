@@ -51,6 +51,8 @@ internal expect object ContinueWatchingSourceStorage {
     fun saveCalendarSelection(value: String)
     fun loadRatingPromptEnabled(): String?
     fun saveRatingPromptEnabled(value: String)
+    fun loadRatingSource(): String?
+    fun saveRatingSource(value: String)
 }
 
 /**

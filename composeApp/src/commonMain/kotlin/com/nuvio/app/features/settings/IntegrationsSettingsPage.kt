@@ -25,6 +25,9 @@ import com.nuvio.app.features.tmdb.TmdbSettingsRepository
 import com.nuvio.app.features.trakt.MoreLikeThisSourcePreference
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.tracking.trackingProvider
+import com.nuvio.app.features.tracking.TrackingRatingSource
+import com.nuvio.app.features.tracking.TrackingRatingSourceRepository
+import com.nuvio.app.features.tracking.trackingRatingProviderDisplayName
 import com.nuvio.app.features.tracking.trackingRatingProviderFor
 import com.nuvio.app.isDesktop
 import nuvio.composeapp.generated.resources.compose_settings_page_debrid
@@ -74,8 +77,9 @@ internal fun LazyListScope.integrationsContent(
                 ) {
                     LibrarySourceRow(isTablet = isTablet)
                     SettingsGroupDivider(isTablet = isTablet)
-                    // Under the Library source because that selection is what decides where a
-                    // rating is written, and whether it can be written at all.
+                    // Under the Library source because "Same as Library" (the default) follows it.
+                    RatingSourceRow(isTablet = isTablet)
+                    SettingsGroupDivider(isTablet = isTablet)
                     RatingPromptRow(isTablet = isTablet)
                 }
                 SettingsGroupDivider(isTablet = isTablet)
@@ -248,10 +252,55 @@ private fun LibrarySourceRow(isTablet: Boolean) {
 }
 
 /**
+ * Where ratings from Details and the finale prompt are saved. "Same as Library" follows the Library
+ * source; naming a service lets a Trakt or local Library still rate on SIMKL, MDBList or Floppy.
+ * The description says when the choice leaves ratings off, so the row explains a missing button.
+ */
+@Composable
+private fun RatingSourceRow(isTablet: Boolean) {
+    val selected by remember {
+        TrackingRatingSourceRepository.ensureLoaded()
+        TrackingRatingSourceRepository.uiState
+    }.collectAsStateWithLifecycle()
+    val librarySource by LibrarySourceRepository.uiState.collectAsStateWithLifecycle()
+    val connected by TrackingProviderRegistry.connectedProviderIds.collectAsStateWithLifecycle()
+
+    val providerId = trackingRatingProviderFor(selected, librarySource)
+    val labels = linkedMapOf(
+        TrackingRatingSource.LIBRARY to stringResource(Res.string.settings_rating_source_library),
+        TrackingRatingSource.SIMKL to trackingRatingProviderDisplayName(TrackingProviderId.SIMKL),
+        TrackingRatingSource.MDBLIST to trackingRatingProviderDisplayName(TrackingProviderId.MDBLIST),
+        TrackingRatingSource.YAMTRACK to trackingRatingProviderDisplayName(TrackingProviderId.YAMTRACK),
+        TrackingRatingSource.OFF to stringResource(Res.string.settings_more_like_this_off),
+    )
+    val description = when {
+        selected == TrackingRatingSource.OFF -> stringResource(Res.string.settings_rating_source_description)
+        providerId == null -> stringResource(Res.string.settings_rating_source_library_unavailable)
+        providerId !in connected -> stringResource(
+            Res.string.settings_rating_source_not_connected,
+            trackingRatingProviderDisplayName(providerId),
+        )
+        selected == TrackingRatingSource.LIBRARY -> stringResource(
+            Res.string.settings_rating_source_library_active,
+            trackingRatingProviderDisplayName(providerId),
+        )
+        else -> stringResource(Res.string.settings_rating_source_description)
+    }
+    SettingsChoiceRow(
+        title = stringResource(Res.string.settings_rating_source_title),
+        description = description,
+        options = labels.map { (value, label) -> SettingsChoiceOption(value, label) },
+        selectedValue = selected,
+        isTablet = isTablet,
+        onSelected = TrackingRatingSourceRepository::setSource,
+    )
+}
+
+/**
  * Offers a rating after a movie, season finale or series finale.
  *
- * Shown as disabled — rather than hidden — when the Library source cannot take a rating, so the
- * setting does not silently vanish depending on an unrelated choice made elsewhere on this page.
+ * Shown as disabled — rather than hidden — when Ratings go to leads nowhere connected, so the
+ * setting does not silently vanish depending on another choice made on this page.
  */
 @Composable
 private fun RatingPromptRow(isTablet: Boolean) {
@@ -260,17 +309,21 @@ private fun RatingPromptRow(isTablet: Boolean) {
         RatingPromptRepository.isEnabled
     }.collectAsStateWithLifecycle()
     val librarySource by LibrarySourceRepository.uiState.collectAsStateWithLifecycle()
+    val ratingSource by remember {
+        TrackingRatingSourceRepository.ensureLoaded()
+        TrackingRatingSourceRepository.uiState
+    }.collectAsStateWithLifecycle()
     val connected by TrackingProviderRegistry.connectedProviderIds.collectAsStateWithLifecycle()
 
-    val ratingProviderId = trackingRatingProviderFor(librarySource)
+    val ratingProviderId = trackingRatingProviderFor(ratingSource, librarySource)
     val canRate = ratingProviderId != null && ratingProviderId in connected
 
     SettingsSwitchRow(
         title = stringResource(Res.string.settings_rating_prompt_title),
         description = if (canRate) {
-            stringResource(Res.string.settings_rating_prompt_description)
+            stringResource(Res.string.settings_rating_prompt_description_source)
         } else {
-            stringResource(Res.string.settings_rating_prompt_unavailable)
+            stringResource(Res.string.settings_rating_prompt_no_source)
         },
         checked = isEnabled && canRate,
         enabled = canRate,

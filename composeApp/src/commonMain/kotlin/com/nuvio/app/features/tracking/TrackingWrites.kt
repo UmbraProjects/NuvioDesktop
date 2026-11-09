@@ -125,6 +125,12 @@ interface TrackingRatingWriter {
         media: TrackingMediaReference,
         rating: Int?,
     ): TrackingMutationResult
+
+    /**
+     * The 1-10 rating the user already gave [media] on this service, or null when there is none or
+     * the service cannot say. Used to show the saved score when the rating dialog opens.
+     */
+    suspend fun currentRating(profileId: Int, media: TrackingMediaReference): Int? = null
 }
 
 interface TrackingScrobbler {

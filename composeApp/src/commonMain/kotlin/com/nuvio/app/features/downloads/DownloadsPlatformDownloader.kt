@@ -20,9 +20,6 @@ internal expect object DownloadsPlatformDownloader {
     fun start(
         request: DownloadPlatformRequest,
         onProgress: (downloadedBytes: Long, totalBytes: Long?) -> Unit,
-        // Called while the pieces of a multi-connection download are joined after the last byte
-        // has arrived; mergedBytes runs from 0 to totalBytes.
-        onMerging: (mergedBytes: Long, totalBytes: Long) -> Unit,
         onSuccess: (localFileUri: String, totalBytes: Long?) -> Unit,
         // isTransient distinguishes a server/transport fault (5xx, 429, timeout) from a verdict on
         // the source, so callers can retry the same stream instead of failing over to a worse one.

@@ -998,7 +998,6 @@
   <string name="downloads_status_downloading">Download in corso • %1$s</string>
   <string name="downloads_status_failed">Fallito</string>
   <string name="downloads_status_paused">In pausa • %1$s</string>
-  <string name="downloads_status_merging">Unione delle parti • %1$s</string>
   <string name="downloads_status_queued">In coda • %1$s</string>
   <string name="downloads_status_eta">%1$s rimanenti</string>
   <string name="episodes_cd_watched">Visto</string>
@@ -1523,6 +1522,14 @@
   <string name="settings_rating_prompt_title">Chiedimi di valutare dopo un finale</string>
   <string name="settings_rating_prompt_description">Propone di lasciare una valutazione sul servizio di libreria scelto.</string>
   <string name="settings_rating_prompt_unavailable">Imposta la sorgente della libreria su MDBList, SIMKL o Floppy e connettila per abilitare le valutazioni.</string>
+  <string name="settings_rating_source_title">Salva i voti su</string>
+  <string name="settings_rating_source_description">Dove vengono salvati i voti dati dai dettagli e dopo un finale.</string>
+  <string name="settings_rating_source_library">Come la libreria</string>
+  <string name="settings_rating_source_library_active">Segue la fonte della libreria: i voti vanno su %1$s.</string>
+  <string name="settings_rating_source_library_unavailable">La fonte della libreria non accetta voti, quindi i voti sono disattivati. Scegli SIMKL, MDBList o Floppy.</string>
+  <string name="settings_rating_source_not_connected">%1$s non è collegato, quindi i voti sono disattivati finché non accedi.</string>
+  <string name="settings_rating_prompt_description_source">Chiede un voto sul servizio scelto in Salva i voti su.</string>
+  <string name="settings_rating_prompt_no_source">Scegli un servizio collegato in Salva i voti su per attivarlo.</string>
   <string name="settings_library_source_not_connected">Non connesso - la Libreria usa Nuvio Sync finché non accedi.</string>
   <string name="settings_calendar_source_section">Calendario</string>
   <string name="settings_calendar_source_title">Sorgente del calendario</string>
@@ -1850,6 +1857,8 @@
   <string name="settings_playback_desktop_audio_channels_desc">Stereo riduce le tracce surround a due canali nel lettore. Provalo se i dialoghi cambiano continuamente di volume su una TV o una soundbar. Auto usa il layout impostato sul dispositivo audio di Windows.</string>
   <string name="settings_playback_desktop_audio_dialogue_boost">Potenziamento dialoghi (downmix)</string>
   <string name="settings_playback_desktop_audio_dialogue_boost_desc">Alza il canale centrale (dialoghi) quando una traccia surround viene ridotta a meno canali, ad esempio con Canali audio impostato su Stereo.</string>
+    <string name="settings_playback_desktop_headphone_surround">Surround per cuffie</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">Per cuffie e auricolari: le tracce surround suonano come se provenissero da altoparlanti intorno a te, invece di essere mixate piatte su sinistra e destra. Le sorgenti stereo suonano un po' più basse. Nessun effetto con il passthrough audio.</string>
   <string name="settings_playback_desktop_custom_mpv_options">Opzioni MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Un'opzione per riga nel formato chiave=valore. Applicate sopra le impostazioni predefinite di Nuvio; le opzioni non valide vengono ignorate.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">es.\nprofile=gpu-hq\ndeband=no</string>
@@ -4465,6 +4474,7 @@
   <string name="player_hud_less_bass">Meno bassi</string>
   <string name="player_hud_audio_channels">Canali audio</string>
   <string name="player_hud_dialogue_boost_downmix">Dialoghi potenziati (downmix)</string>
+    <string name="player_hud_headphone_surround">Surround per cuffie</string>
   <string name="player_hud_on_off_during_audio_passthrough">On (off durante l'audio passthrough)</string>
   <string name="player_hud_on_off_while_svp_runs">On (off mentre SVP è in esecuzione)</string>
   <string name="player_hud_anime_svp">SVP per anime</string>

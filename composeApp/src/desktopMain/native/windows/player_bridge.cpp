@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <clocale>
 #include <cmath>
 #include <condition_variable>
 #include <cctype>
@@ -1215,6 +1216,17 @@ MpvApi &mpvApi() {
 #endif
     return api;
 }
+
+// libmpv refuses to start (mpv_create returns null) unless LC_NUMERIC is "C": a comma-decimal
+// locale would corrupt its option parsing. The CRT starts in "C", but anything in the process
+// (a JVM library, a shell extension, a driver) can call setlocale. Java formats numbers through
+// java.util.Locale, so resetting the C locale here does not change what the app shows.
+// Upstream e8f626efd.
+mpv_handle *createMpvHandle(MpvApi &api) {
+    setlocale(LC_NUMERIC, "C");
+    return api.create();
+}
+
 
 class WindowsMpvWebPlayer;
 LRESULT CALLBACK messageWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -3850,7 +3862,7 @@ public:
     void runThumbnailWorker() {
         if (thumbnailStopping.load() || shuttingDown.load()) return;
         MpvApi &api = mpvApi();
-        mpv_handle *thumbnailMpv = api.create();
+        mpv_handle *thumbnailMpv = createMpvHandle(api);
         if (!thumbnailMpv) return;
         auto destroyThumbnailMpv = [&]() {
             if (thumbnailMpv) {
@@ -4712,7 +4724,7 @@ private:
         MpvApi &api = mpvApi();
         {
             std::lock_guard<std::mutex> lock(mpvMutex);
-            mpv = api.create();
+            mpv = createMpvHandle(api);
             if (!mpv) {
                 throw std::runtime_error("mpv_create failed.");
             }
@@ -6381,7 +6393,7 @@ public:
         const std::string spotUrl = separateAudio ? externalAudioUrl : thumbnailSourceUrl;
         if (shuttingDown.load() || spotUrl.empty()) return -1;
         MpvApi &api = mpvApi();
-        mpv_handle *probe = api.create();
+        mpv_handle *probe = createMpvHandle(api);
         if (!probe) return -1;
         const std::string aid = mirroredString("aid", "");
         const bool numericAid = !separateAudio && !aid.empty() && std::all_of(aid.begin(), aid.end(), ::isdigit);

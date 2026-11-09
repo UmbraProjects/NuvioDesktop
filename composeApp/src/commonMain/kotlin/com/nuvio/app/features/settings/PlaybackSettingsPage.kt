@@ -76,6 +76,8 @@ import com.nuvio.app.features.player.AvailableLanguageOptions
 import com.nuvio.app.features.player.DesktopAnimeMode
 import com.nuvio.app.features.player.DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY
 import com.nuvio.app.features.player.DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY
+import com.nuvio.app.features.player.DESKTOP_HEADPHONE_SURROUND_ON
+import com.nuvio.app.features.player.DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY
 import com.nuvio.app.features.player.desktopAudioChannelChoices
 import com.nuvio.app.features.player.desktopAudioDialogueChoices
 import com.nuvio.app.features.player.selectedFor
@@ -1559,6 +1561,20 @@ private fun PlaybackSettingsSection(
                                 PlayerSettingsRepository.setDesktopMpvPropertyOverride(
                                     key = DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY,
                                     value = choice.value.takeUnless { choice.isDefault },
+                                )
+                            },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_headphone_surround),
+                            description = stringResource(Res.string.settings_playback_desktop_headphone_surround_desc),
+                            checked = mpvOverrides[DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY] == DESKTOP_HEADPHONE_SURROUND_ON,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("desktop-headphone-surround")),
+                            onCheckedChange = { enabled ->
+                                PlayerSettingsRepository.setDesktopMpvPropertyOverride(
+                                    key = DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY,
+                                    value = DESKTOP_HEADPHONE_SURROUND_ON.takeIf { enabled },
                                 )
                             },
                         )

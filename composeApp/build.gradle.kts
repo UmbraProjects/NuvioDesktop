@@ -1862,7 +1862,8 @@ kotlin {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.ktor.client.cio)
-                implementation("com.squareup.okhttp3:okhttp:4.12.0")
+                // 5.x: InnerTubeX's Ktor OkHttp engine resolves it there anyway, so state what ships.
+                implementation("com.squareup.okhttp3:okhttp:5.3.2")
                 // fork:music - reads MusicBrainz's .tar.xz data dumps for the offline copy (pure Java, public domain).
                 implementation("org.tukaani:xz:1.10")
                 implementation(libs.quickjs.kt)
@@ -1909,7 +1910,8 @@ kotlin {
                 @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
                 implementation(compose.uiTest)
                 // Serves byte ranges to the AutoSync embedded-subtitle index loader tests.
-                implementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+                // Must match OkHttp's major version: 4.x needs okhttp3.internal.Util, gone in OkHttp 5.
+                implementation("com.squareup.okhttp3:mockwebserver:5.3.2")
             }
         }
     }

@@ -69,17 +69,7 @@ data class DownloadItem(
     val failureIsTransient: Boolean = false,
     val createdAtEpochMs: Long,
     val updatedAtEpochMs: Long,
-    /**
-     * Set while a multi-connection download joins its pieces into the final file (0..1). Every
-     * byte is already on disk then, so without this the row sat at 100% for as long as the copy
-     * took. Live state only: an interrupted merge is redone on resume.
-     */
-    @kotlinx.serialization.Transient
-    val mergeFraction: Float? = null,
 ) {
-    val isMerging: Boolean
-        get() = status == DownloadStatus.Downloading && mergeFraction != null
-
     val isEpisode: Boolean
         // Anime-native entries use absolute episode numbers with no season coordinate.
         get() = episodeNumber != null

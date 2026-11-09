@@ -1048,7 +1048,6 @@
     <string name="downloads_status_downloading">Downloading • %1$s</string>
     <string name="downloads_status_failed">Failed</string>
     <string name="downloads_status_paused">Paused • %1$s</string>
-    <string name="downloads_status_merging">Merging parts • %1$s</string>
     <string name="downloads_status_queued">Queued • %1$s</string>
     <string name="downloads_status_eta">%1$s left</string>
     <string name="episodes_cd_watched">Watched</string>
@@ -1592,6 +1591,14 @@
     <string name="settings_rating_prompt_title">Ask me to rate after a finale</string>
     <string name="settings_rating_prompt_description">Prompts to review on your chosen library service.</string>
     <string name="settings_rating_prompt_unavailable">Set Library source to MDBList, SIMKL or Floppy and connect it to enable ratings.</string>
+    <string name="settings_rating_source_title">Ratings go to</string>
+    <string name="settings_rating_source_description">Where ratings from Details and the finale prompt are saved.</string>
+    <string name="settings_rating_source_library">Same as Library</string>
+    <string name="settings_rating_source_library_active">Following your Library source: ratings go to %1$s.</string>
+    <string name="settings_rating_source_library_unavailable">Your Library source can't take ratings, so rating is off. Pick SIMKL, MDBList or Floppy instead.</string>
+    <string name="settings_rating_source_not_connected">%1$s isn't connected, so rating is off until you sign in.</string>
+    <string name="settings_rating_prompt_description_source">Asks for a rating on the service chosen under Ratings go to.</string>
+    <string name="settings_rating_prompt_no_source">Choose a connected service under Ratings go to to enable this.</string>
     <string name="settings_library_source_not_connected">Not connected - Library is using Nuvio Sync until you sign in.</string>
     <string name="settings_calendar_source_section">Calendar</string>
     <string name="settings_calendar_source_title">Calendar source</string>
@@ -1929,6 +1936,8 @@
     <string name="settings_playback_desktop_audio_channels_desc">Stereo mixes surround tracks down to two channels in the player. Try it if dialogue keeps getting louder and quieter on a TV or soundbar. Auto uses the layout the Windows audio device is set to.</string>
     <string name="settings_playback_desktop_audio_dialogue_boost">Dialogue boost (downmix)</string>
     <string name="settings_playback_desktop_audio_dialogue_boost_desc">Raises the centre (dialogue) channel when a surround track is mixed down to fewer channels, for example with Audio channels set to Stereo.</string>
+    <string name="settings_playback_desktop_headphone_surround">Headphone surround</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">For headphones and earbuds: surround tracks sound as if they come from speakers around you, instead of being mixed flat into left and right. Stereo sources play a little quieter. Has no effect during audio passthrough.</string>
     <string name="settings_playback_desktop_custom_mpv_options">MPV Options</string>
     <string name="settings_playback_desktop_custom_mpv_options_desc">One option per line as key=value. Applied on top of Nuvio's defaults; invalid options are ignored.</string>
     <string name="settings_playback_desktop_custom_mpv_options_hint">e.g.\nprofile=gpu-hq\ndeband=no</string>
@@ -4598,6 +4607,7 @@
     <string name="player_hud_less_bass">Less bass</string>
     <string name="player_hud_audio_channels">Audio channels</string>
     <string name="player_hud_dialogue_boost_downmix">Dialogue boost (downmix)</string>
+    <string name="player_hud_headphone_surround">Headphone surround</string>
     <string name="player_hud_on_off_during_audio_passthrough">On (off during audio passthrough)</string>
     <string name="player_hud_on_off_while_svp_runs">On (off while SVP runs)</string>
     <string name="player_hud_anime_svp">Anime SVP</string>

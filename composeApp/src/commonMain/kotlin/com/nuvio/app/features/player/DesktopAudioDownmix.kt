@@ -18,6 +18,13 @@ import com.nuvio.app.core.i18n.localizedString
 const val DESKTOP_AUDIO_CHANNELS_OVERRIDE_KEY = "audio-channels"
 const val DESKTOP_AUDIO_SWRESAMPLE_OVERRIDE_KEY = "audio-swresample-o"
 
+/**
+ * Headphone surround (binaural rendering of surround tracks). Not an mpv property: the desktop
+ * player turns it into part of the `af` chain, see DesktopHeadphoneSurround.kt.
+ */
+const val DESKTOP_HEADPHONE_SURROUND_OVERRIDE_KEY = "@nuvio-headphone-surround"
+const val DESKTOP_HEADPHONE_SURROUND_ON = "on"
+
 data class DesktopAudioChoice(val label: String, val value: String, val isDefault: Boolean = false)
 
 /** mpv's own default is `auto-safe`: the layout the Windows audio device is set to. */

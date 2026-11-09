@@ -387,7 +387,6 @@
     <string name="downloads_status_downloading">Descargando • %1$s</string>
     <string name="downloads_status_failed">Falló</string>
     <string name="downloads_status_paused">Pausado • %1$s</string>
-    <string name="downloads_status_merging">Uniendo partes • %1$s</string>
     <string name="episodes_cd_watched">Visto</string>
     <string name="episodes_season">Temporada %1$d</string>
     <string name="episodes_specials">Especiales</string>
@@ -2202,6 +2201,14 @@
     <string name="settings_rating_prompt_title">Pedirme calificar tras un final</string>
     <string name="settings_rating_prompt_description">Solicita una reseña en el servicio de biblioteca que elegiste.</string>
     <string name="settings_rating_prompt_unavailable">Establece la Fuente de la biblioteca en MDBList, SIMKL o Floppy y conéctala para activar las calificaciones.</string>
+    <string name="settings_rating_source_title">Guardar valoraciones en</string>
+    <string name="settings_rating_source_description">Dónde se guardan las valoraciones de Detalles y del aviso tras un final.</string>
+    <string name="settings_rating_source_library">Igual que la biblioteca</string>
+    <string name="settings_rating_source_library_active">Sigue la fuente de la biblioteca: las valoraciones van a %1$s.</string>
+    <string name="settings_rating_source_library_unavailable">La fuente de la biblioteca no admite valoraciones, así que valorar está desactivado. Elige SIMKL, MDBList o Floppy.</string>
+    <string name="settings_rating_source_not_connected">%1$s no está conectado, así que valorar está desactivado hasta que inicies sesión.</string>
+    <string name="settings_rating_prompt_description_source">Pide una valoración en el servicio elegido en Guardar valoraciones en.</string>
+    <string name="settings_rating_prompt_no_source">Elige un servicio conectado en Guardar valoraciones en para activarlo.</string>
     <string name="settings_library_source_not_connected">No conectado - la Biblioteca usa Nuvio Sync hasta que inicies sesión.</string>
     <string name="settings_calendar_source_section">Calendario</string>
     <string name="settings_calendar_source_title">Fuente del calendario</string>
@@ -2422,6 +2429,8 @@
     <string name="settings_playback_desktop_audio_channels_desc">Estéreo mezcla las pistas envolventes a dos canales en el reproductor. Pruébalo si el diálogo sube y baja de volumen en un TV o barra de sonido. Auto usa la disposición configurada en el dispositivo de audio de Windows.</string>
     <string name="settings_playback_desktop_audio_dialogue_boost">Realce de diálogos (downmix)</string>
     <string name="settings_playback_desktop_audio_dialogue_boost_desc">Sube el canal central (diálogos) cuando una pista envolvente se mezcla a menos canales, por ejemplo con Canales de audio en Estéreo.</string>
+    <string name="settings_playback_desktop_headphone_surround">Sonido envolvente para auriculares</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">Para auriculares: las pistas envolventes suenan como si vinieran de altavoces a tu alrededor, en lugar de mezclarse planas en izquierda y derecha. Las fuentes estéreo suenan un poco más bajo. No tiene efecto con el passthrough de audio.</string>
     <string name="settings_playback_desktop_custom_mpv_options">Opciones de MPV</string>
     <string name="settings_playback_desktop_custom_mpv_options_desc">Una opción por línea como clave=valor. Se aplican sobre los valores predeterminados de Nuvio; las opciones no válidas se ignoran.</string>
     <string name="settings_playback_desktop_custom_mpv_options_hint">p. ej.\nprofile=gpu-hq\ndeband=no</string>
@@ -4467,6 +4476,7 @@
     <string name="player_hud_less_bass">Menos graves</string>
     <string name="player_hud_audio_channels">Canales de audio</string>
     <string name="player_hud_dialogue_boost_downmix">Refuerzo de diálogos (downmix)</string>
+    <string name="player_hud_headphone_surround">Sonido envolvente para auriculares</string>
     <string name="player_hud_on_off_during_audio_passthrough">Activado (desactivado durante el passthrough de audio)</string>
     <string name="player_hud_on_off_while_svp_runs">Activado (desactivado mientras SVP está en ejecución)</string>
     <string name="player_hud_anime_svp">SVP para anime</string>

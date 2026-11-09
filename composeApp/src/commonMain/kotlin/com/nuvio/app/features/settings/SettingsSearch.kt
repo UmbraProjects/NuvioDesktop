@@ -648,6 +648,16 @@ private fun settingsSearchEntries(
     )
     addRow(
         page = SettingsPage.Integrations,
+        key = "rating-source",
+        title = resolve(Res.string.settings_rating_source_title),
+        description = resolve(Res.string.settings_rating_source_description),
+        pageLabel = integrationsPage,
+        section = resolve(Res.string.settings_integrations_sources_section),
+        icon = Icons.Rounded.Link,
+        anchor = SettingsScrollAnchor.searchKey("library-source"),
+    )
+    addRow(
+        page = SettingsPage.Integrations,
         key = "rating-prompt",
         title = resolve(Res.string.settings_rating_prompt_title),
         description = resolve(Res.string.settings_rating_prompt_description),
@@ -1669,6 +1679,11 @@ private fun settingsSearchEntries(
                 "desktop-audio-dialogue-boost",
                 resolve(Res.string.settings_playback_desktop_audio_dialogue_boost),
                 resolve(Res.string.settings_playback_desktop_audio_dialogue_boost_desc),
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-headphone-surround",
+                resolve(Res.string.settings_playback_desktop_headphone_surround),
+                resolve(Res.string.settings_playback_desktop_headphone_surround_desc),
             ) else null,
         ),
     )

@@ -20,4 +20,38 @@ class TrackingRatingTargetTest {
         assertNull(trackingRatingProviderFor(LibrarySourceMode.LOCAL))
         assertNull(trackingRatingProviderFor(LibrarySourceMode.TRAKT))
     }
+
+    @Test
+    fun `same as library follows the library source`() {
+        assertEquals(
+            TrackingProviderId.SIMKL,
+            trackingRatingProviderFor(TrackingRatingSource.LIBRARY, LibrarySourceMode.SIMKL),
+        )
+        assertNull(trackingRatingProviderFor(TrackingRatingSource.LIBRARY, LibrarySourceMode.TRAKT))
+    }
+
+    @Test
+    fun `a named service wins over the library source`() {
+        assertEquals(
+            TrackingProviderId.MDBLIST,
+            trackingRatingProviderFor(TrackingRatingSource.MDBLIST, LibrarySourceMode.TRAKT),
+        )
+        assertEquals(
+            TrackingProviderId.YAMTRACK,
+            trackingRatingProviderFor(TrackingRatingSource.YAMTRACK, LibrarySourceMode.SIMKL),
+        )
+    }
+
+    @Test
+    fun `off rates nowhere`() {
+        assertNull(trackingRatingProviderFor(TrackingRatingSource.OFF, LibrarySourceMode.SIMKL))
+    }
+
+    @Test
+    fun `stored choices round trip and unknown values are rejected`() {
+        TrackingRatingSource.entries.forEach {
+            assertEquals(it, TrackingRatingSource.fromStorage(it.storageId))
+        }
+        assertNull(TrackingRatingSource.fromStorage("trakt"))
+    }
 }

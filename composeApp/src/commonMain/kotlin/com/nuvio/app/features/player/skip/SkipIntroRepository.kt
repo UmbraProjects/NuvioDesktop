@@ -291,26 +291,16 @@ object SkipIntroRepository {
             if (showIds.isEmpty()) return emptyList()
 
             for (showId in showIds) {
-                val query = "{ findEpisodesByShowId(showId: \"$showId\") { season number timestamps { at type { name } } } }"
+                val query = "{ findEpisodesByShowId(showId: \"$showId\") { season number baseDuration timestamps { at type { name } } } }"
                 val response = SkipIntroApi.queryAnimeSkip(clientId, query) ?: continue
                 val episodes = response.data?.findEpisodesByShowId ?: continue
 
-                val targetEpisode = episodes.firstOrNull { ep ->
-                    ep.number?.toIntOrNull() == episode &&
-                        (season == null || ep.season?.toIntOrNull() == season)
-                } ?: continue
-
-                val sorted = (targetEpisode.timestamps ?: continue).sortedBy { it.at }
-                val result = sorted.mapIndexedNotNull { i, ts ->
-                    val endTime = sorted.getOrNull(i + 1)?.at ?: Double.MAX_VALUE
-                    val type = when (ts.type.name.lowercase()) {
-                        "intro", "new intro" -> "op"
-                        "credits" -> "ed"
-                        "recap" -> "recap"
-                        else -> return@mapIndexedNotNull null
+                val result = episodes
+                    .filter { ep ->
+                        ep.number?.toIntOrNull() == episode &&
+                            (season == null || ep.season?.toIntOrNull() == season)
                     }
-                    SkipInterval(startTime = ts.at, endTime = endTime, type = type, provider = "animeskip")
-                }
+                    .bestAnimeSkipIntervals()
                 if (result.isNotEmpty()) return result
             }
             emptyList()
@@ -497,4 +487,56 @@ internal fun mergeMovieSkipIntervals(
             credits.none { scene.startTime > it.startTime && scene.startTime < it.endTime }
     }
     return (chosen + scenes).sortedBy(SkipInterval::startTime)
+}
+
+/**
+ * A show can hold several community entries for the same episode number, some of them incomplete.
+ * Picks the entry covering the most kinds (opening / ending / recap), then the one with the most
+ * segments; on a tie the earlier entry wins. Upstream 68156d224.
+ */
+internal fun List<AnimeSkipEpisode>.bestAnimeSkipIntervals(): List<SkipInterval> =
+    map { it.timestamps.orEmpty().toAnimeSkipIntervals(it.baseDuration) }
+        .filter { it.isNotEmpty() }
+        .maxWithOrNull(
+            compareBy<List<SkipInterval>>(
+                { intervals -> intervals.mapNotNull { animeSkipCategory(it.type) }.toSet().size },
+                { it.size },
+            ),
+        )
+        .orEmpty()
+
+/**
+ * Anime-Skip timestamps only mark where a segment starts; each one ends where the next begins, so
+ * the last one has no known end. Only an ending may run to the end of the episode, and only when
+ * it starts in the second half (when Anime-Skip knows the duration). An open-ended intro or recap
+ * is dropped: stretched to the end it skipped the whole episode, and the button stayed up until
+ * then (One Piece 1042 and 1044 have only an "Intro" marker). Upstream 030fe83eb.
+ */
+internal fun List<AnimeSkipTimestamp>.toAnimeSkipIntervals(baseDuration: Double? = null): List<SkipInterval> {
+    val sorted = sortedBy { it.at }
+    return sorted.mapIndexedNotNull { i, ts ->
+        val type = when (ts.type.name.lowercase()) {
+            "intro", "new intro" -> "op"
+            "credits", "new credits" -> "ed"
+            "mixed intro" -> "mixed-op"
+            "mixed credits" -> "mixed-ed"
+            "recap" -> "recap"
+            else -> return@mapIndexedNotNull null
+        }
+        val next = sorted.getOrNull(i + 1)
+        val endTime = when {
+            next != null -> next.at.takeIf { it > ts.at } ?: return@mapIndexedNotNull null
+            animeSkipCategory(type) == "ending" && (baseDuration == null || ts.at >= baseDuration / 2) ->
+                Double.MAX_VALUE
+            else -> return@mapIndexedNotNull null
+        }
+        SkipInterval(startTime = ts.at, endTime = endTime, type = type, provider = "animeskip")
+    }
+}
+
+private fun animeSkipCategory(type: String): String? = when (type.lowercase()) {
+    "op", "mixed-op" -> "opening"
+    "ed", "mixed-ed" -> "ending"
+    "recap" -> "recap"
+    else -> null
 }
