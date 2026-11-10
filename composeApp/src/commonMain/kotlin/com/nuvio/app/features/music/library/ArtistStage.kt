@@ -66,9 +66,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -137,6 +139,8 @@ import kotlinx.coroutines.launch
 internal enum class ArtistLens(val label: String) {
     Essentials("Essentials"),
     Discography("Discography"),
+    /** fork:artist-story - a career timeline worked out from release dates. */
+    Story("Story"),
 }
 
 /** Windows narrower than this keep the old artist page even with the setting on (the three panels would not fit). */
@@ -342,6 +346,13 @@ internal fun ArtistStage(
                             hold = hold,
                             onOpen = onOpen,
                             onInfo = onInfo,
+                            addonKeys = addonKeys,
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                        )
+                        ArtistLens.Story -> StoryLens(
+                            artist = artist,
+                            releaseActions = releaseActions,
+                            hold = hold,
                             addonKeys = addonKeys,
                             modifier = Modifier.fillMaxWidth().weight(1f),
                         )
@@ -994,6 +1005,107 @@ private fun StageAlbumTile(release: LibraryRelease, addon: Boolean, onFocus: () 
         )
     }
 }
+
+/**
+ * Story: the artist's career as a short timeline worked out from release dates (see ArtistStory.kt), each point linked to the
+ * record from then. Every row is the same height and every point has its record, so nothing moves with the content.
+ */
+@Composable
+private fun StoryLens(
+    artist: LibraryArtist,
+    releaseActions: ReleaseMenuActions,
+    hold: HoldToSelectState,
+    addonKeys: Set<String>,
+    modifier: Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val points = remember(artist.releases, artist.topAlbumKeys, artist.beginYear, artist.type, artist.ended) { artistStoryPoints(artist) }
+    val summary = remember(artist.releases) { artistStorySummary(artist) }
+    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("CAREER", style = MaterialTheme.typography.labelMedium, letterSpacing = 1.4.sp, color = colors.textMuted, modifier = Modifier.weight(1f))
+            Text(summary.orEmpty(), style = MaterialTheme.typography.labelMedium, color = colors.textMuted, maxLines = 1)
+        }
+        if (points.size < 2) {
+            Text(
+                "Not enough dated releases in the library yet to tell this artist's story.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.textMuted,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            )
+        }
+        points.forEachIndexed { index, point ->
+            StoryRow(
+                point = point,
+                first = index == 0,
+                last = index == points.lastIndex,
+                addon = point.release.key in addonKeys,
+                actions = releaseActions,
+                hold = hold,
+            )
+        }
+        Text(
+            "Worked out from the library's release dates.",
+            style = MaterialTheme.typography.bodySmall,
+            color = colors.textMuted,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+        )
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+/** One point of the story: the year, a dot on the rail, what it is, and the record from then (a tap opens it). */
+@Composable
+private fun StoryRow(point: StoryPoint, first: Boolean, last: Boolean, addon: Boolean, actions: ReleaseMenuActions, hold: HoldToSelectState) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(12.dp)
+    val release = point.release
+    val menu = rememberMusicMenu()
+    MusicItemMenu(menu) { releaseMenu(release, actions) }
+    val open = { actions.open(release) }
+    val rail = Color.White.copy(alpha = 0.16f)
+    val dot = colors.accent
+    Row(
+        Modifier.fillMaxWidth().height(STORY_ROW_HEIGHT).clip(shape)
+            .musicMenuTrigger(menu, hold, onSelect = open)
+            .musicKeyFocusRing(shape)
+            .clickable(onClick = open)
+            .alpha(if (release.isPlayable || addon) 1f else 0.5f)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(point.year.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = colors.accent, modifier = Modifier.width(60.dp))
+        Box(
+            Modifier.width(24.dp).fillMaxHeight().drawBehind {
+                val x = size.width / 2f
+                val mid = size.height / 2f
+                val stroke = 2.dp.toPx()
+                if (!first) drawLine(rail, Offset(x, 0f), Offset(x, mid), stroke)
+                if (!last) drawLine(rail, Offset(x, mid), Offset(x, size.height), stroke)
+                drawCircle(dot, radius = 5.dp.toPx(), center = Offset(x, mid))
+            },
+        )
+        Column(Modifier.weight(1f).padding(start = 12.dp, end = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(point.kind.label, style = MaterialTheme.typography.labelMedium, letterSpacing = 1.4.sp, color = colors.textMuted, maxLines = 1)
+            Text(point.line, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Row(Modifier.width(STORY_RECORD_WIDTH), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(56.dp)) {
+                ReleaseCover(release, Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)))
+                // An overlay on the cover, so the row does not change when the addon's answer arrives.
+                if (addon) com.nuvio.app.features.music.nebula.LosslessPill(Modifier.align(Alignment.TopStart).padding(3.dp))
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(release.title, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(release.kind.label, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** A story row's height and the width of its record slot: fixed, so a long title or a missing cover moves nothing. */
+private val STORY_ROW_HEIGHT = 84.dp
+private val STORY_RECORD_WIDTH = 250.dp
 
 /** Discography: the old page's filter and release grid, inside the centre panel. */
 @OptIn(ExperimentalLayoutApi::class)
