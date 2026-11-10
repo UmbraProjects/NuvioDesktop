@@ -26,6 +26,11 @@ internal object MusicRateLimit {
 
     /** Seconds until requests resume, or 0. */
     fun secondsLeft(now: Long = epochMs()): Int = ((blockedUntilMs - now + 999) / 1000).toInt().coerceAtLeast(0)
+
+    /** Lifts the pause. For tests only: this is process-wide state, so a test that records a refusal would block every later one. */
+    internal fun resetForTests() {
+        blockedUntilMs = 0L
+    }
 }
 
 /**

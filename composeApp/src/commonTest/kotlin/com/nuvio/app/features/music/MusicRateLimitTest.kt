@@ -1,11 +1,17 @@
 package com.nuvio.app.features.music
 
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class MusicRateLimitTest {
+    @AfterTest
+    fun liftTheRateLimitPause() {
+        MusicRateLimit.resetForTests()
+    }
+
     private val farFuture = Long.MAX_VALUE / 2
 
     @Test
