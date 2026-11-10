@@ -2805,6 +2805,25 @@ private fun settingsSearchEntries(
         }
     }
 
+    // fork:search-rows
+    for (row in forkSearchRowsForPlatform()) {
+        val label = if (row.page == SettingsPage.ContinueWatching && isDesktop) {
+            homeLayoutPage
+        } else {
+            resolve(row.pageLabel)
+        }
+        addRow(
+            page = row.page,
+            key = row.key,
+            title = resolve(row.title),
+            description = row.description?.let { resolve(it) }.orEmpty(),
+            pageLabel = label,
+            section = resolve(row.section),
+            category = if (row.noCategory) "" else generalCategory,
+            icon = forkSearchIcon,
+        )
+    }
+
     // Every page exposed by Settings must remain discoverable. Keep the assertion beside the
     // registry so adding a new SettingsPage without a search entry fails immediately in debug/test
     // builds instead of silently producing another unreachable option.
