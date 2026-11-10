@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Artist Page Story: Years That Add Up** - the Story tab's timeline now has a year line drawn to scale above its rows, so 1993 to 1996 no longer looks as long as 1996 to 2017: a tick for every studio album, a dot for each point, the decades marked, and the longest break between albums dashed with its length ("7-year break"). Only studio albums count: reissues, deluxe and anniversary editions fold into the album's first year, and best-ofs, singles collections, live and remix albums are left out, so Jamiroquai reads 8 studio albums rather than 16, and the right panel's tile ("Studio albums") gives the same number. The comeback says what it came back from ("Back 7 years after Rock Dust Light Star (2010)"), and LATEST skips a release with no cover that plays nowhere. Fork-only. Not yet tried on the HTPC.
+
 - **Tonight: Back Works From The Keyboard And Every Remote** - Esc on the keyboard did nothing on the Tonight screens; Back now acts when the key comes up, as the rest of the app does. A pad's B and the mouse's back button, which go through the app's Back shortcut rather than arriving as a key, are taken too. Tonight now takes Back while a mode is open and does what Back does on that screen (a question back, the cards to the launcher, undo in Knockout and so on); on the launcher Back is left to the app as before. Not yet tried on the HTPC.
 
 - **Settings Search Finds The Tonight Picker** - "Open on Tonight", "Bedtime" and "Let the AI refine The Map" (at the top of Settings > Random Play) are now found by typing "Tonight", "bedtime" or "map" into the Settings search, and the Random Play page's sidebar lists the Tonight picker section first. Not yet tried on the HTPC.

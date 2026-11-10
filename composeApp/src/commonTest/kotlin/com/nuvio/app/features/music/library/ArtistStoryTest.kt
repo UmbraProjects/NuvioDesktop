@@ -12,7 +12,12 @@ class ArtistStoryTest {
         kind: ReleaseKind = ReleaseKind.Album,
         secondary: List<String> = emptyList(),
         date: String? = null,
-    ) = LibraryRelease(key = key, title = "Title $key", kind = kind, secondaryTypes = secondary, year = year, releaseDate = date)
+        title: String = "Title $key",
+        playable: Boolean = true,
+    ) = LibraryRelease(
+        key = key, title = title, kind = kind, secondaryTypes = secondary, year = year, releaseDate = date,
+        ytBrowseId = if (playable) "MPREb_$key" else null,
+    )
 
     private fun artist(
         releases: List<LibraryRelease>,
@@ -51,7 +56,7 @@ class ArtistStoryTest {
     fun theComebackIsTheLongestGapOfFourYearsOrMoreBetweenAlbumsAndEps() {
         val points = artistStoryPoints(artist(career, top = listOf("hardtoearn")))
         val comeback = points.first { it.kind == StoryKind.Comeback }
-        assertEquals("Back after 16 years without a new album or EP", comeback.line)
+        assertEquals("Back 16 years after Title ownlane (2003)", comeback.line)
         // Live records and compilations do not fill the gap.
         val noGap = artistStoryPoints(artist(listOf(rel("a", "2000"), rel("b", "2003"), rel("c", "2006"))))
         assertTrue(noGap.none { it.kind == StoryKind.Comeback })
@@ -98,7 +103,63 @@ class ArtistStoryTest {
             rel("a", "1989"), rel("b", "1991"), rel("ep", "1993", ReleaseKind.EP),
             rel("live", "1995", secondary = listOf("Live")), rel("s", "1998", ReleaseKind.Single),
         )
-        assertEquals("2 albums · 1 EP · 1989–1998", artistStorySummary(artist(releases)))
-        assertEquals("1 album · 1989", artistStorySummary(artist(listOf(rel("a", "1989")))))
+        assertEquals("2 studio albums · 1 EP · 1989–1998", artistStorySummary(artist(releases)))
+        assertEquals("1 studio album · 1989", artistStorySummary(artist(listOf(rel("a", "1989")))))
+    }
+
+    /** Jamiroquai as the library held it on Nov 10: reissues, a best-of and a live album listed as plain albums. */
+    private val jamiroquai = listOf(
+        rel("emerg", "1993", title = "Emergency On Planet Earth"),
+        rel("emerg13", "2013", title = "Emergency On Planet Earth (Remastered)"),
+        rel("space", "1994", title = "The Return Of The Space Cowboy"),
+        rel("twm", "1996", title = "Travelling Without Moving"),
+        rel("twm16", "2016", title = "Travelling Without Moving - 20th Anniversary Edition"),
+        rel("sync", "1999", title = "Synkronized"),
+        rel("funk", "2001", title = "A Funk Odyssey"),
+        rel("dyn", "2005", title = "Dynamite"),
+        rel("high", "2006", title = "High Times: Singles 1992-2006"),
+        rel("rdls", "2010", title = "Rock Dust Light Star"),
+        rel("rdls13", "2013", title = "Rock Dust Light Star (Deluxe Edition)"),
+        rel("live", "2016", title = "Live at Montreux 2003"),
+        rel("auto", "2017", title = "Automaton"),
+        rel("debut", "1992", ReleaseKind.Single, title = "When You Gonna Learn?"),
+        rel("ghost", "2025", ReleaseKind.Single, title = "Your Window", playable = false),
+    )
+
+    @Test
+    fun reissuesBestOfsAndLiveAlbumsAreNotStudioAlbums() {
+        val a = artist(jamiroquai, begin = "1992")
+        assertEquals(8, studioAlbumCount(a))
+        assertEquals("8 studio albums · 1992–2025", artistStorySummary(a))
+        // A remaster folds into the album's first year.
+        assertEquals(1993, storyRecords(a).first { it.release.key.startsWith("emerg") }.year)
+    }
+
+    @Test
+    fun theComebackNamesWhatItCameBackFrom() {
+        val comeback = artistStoryPoints(artist(jamiroquai, top = listOf("twm"), begin = "1992")).first { it.kind == StoryKind.Comeback }
+        assertEquals(2017, comeback.year)
+        assertEquals("Back 7 years after Rock Dust Light Star (2010)", comeback.line)
+    }
+
+    @Test
+    fun theLatestNeedsACoverOrToPlay() {
+        val points = artistStoryPoints(artist(jamiroquai, top = listOf("twm"), begin = "1992"))
+        // The 2025 single has no cover and plays nowhere, so Automaton is both the comeback and the latest: one point.
+        assertTrue(points.none { it.release.key == "ghost" })
+        assertEquals(2017, points.last().year)
+        // The addon having it is enough.
+        val withAddon = artistStoryPoints(artist(jamiroquai, top = listOf("twm"), begin = "1992"), addonKeys = setOf("ghost"))
+        assertEquals("ghost", withAddon.last().release.key)
+    }
+
+    @Test
+    fun theRulerSpansThePointsWithEveryStudioAlbumAndTheBreak() {
+        val a = artist(jamiroquai, top = listOf("twm"), begin = "1992")
+        val ruler = artistStoryRuler(a, artistStoryPoints(a))!!
+        assertEquals(1992, ruler.from)
+        assertEquals(2017, ruler.to)
+        assertEquals(listOf(1993, 1994, 1996, 1999, 2001, 2005, 2010, 2017), ruler.albumYears)
+        assertEquals(2010 to 2017, ruler.gapFrom to ruler.gapTo)
     }
 }

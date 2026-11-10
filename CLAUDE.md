@@ -11,6 +11,13 @@ the cloud session; there `git fetch <bundle> HEAD` and `git push origin FETCH_HE
 `git fetch` on the PC. The commits keep their hashes, so the next `build.cmd` pull is a no-op. The Android remote (`remote-android/`)
 is still built on GitHub (android-remote.yml), as is the Windows build that publishes Nightly; both stay on.
 
+Git on his PC (Nick, Nov 10: stop losing ten minutes to lock files): commands run in a Linux sandbox that sees this
+folder through a share and refuses to delete files until Nick allows it, once per session. Git deletes its own `.lock`
+files, so without that every commit, pull or merge stalls and leaves `.git/index.lock` behind. **As soon as the folder
+is granted, before any git command, ask for delete permission on `D:\NuvioBuild\NuvioDesktop`.** The checkout has
+Windows line endings and `core.autocrlf=true` is set in this repo's own `.git/config`; if `git status` ever lists
+hundreds of changed files, check `git diff --ignore-cr-at-eol --stat` before touching anything.
+
 ## Testing checklist: keep TESTING.md up to date
 
 Every feature or fix on this branch adds its checks to `TESTING.md` (one thing to try on the TV per line) in the same

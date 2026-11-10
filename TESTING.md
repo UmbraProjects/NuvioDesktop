@@ -272,7 +272,11 @@ Needs this Nuvio and the new NuvioRemote app together.
 - [ ] Artist page, Essentials: an artist with a full list of 10 looks and plays exactly as before
 - [ ] Previously on: pick up a half-watched episode of a show (Continue Watching or the phone's Resume) after more than your break (3 days by default): the "Previously on" cards show before it carries on from where you stopped
 - [ ] Previously on: pick up a half-watched episode you left a few hours ago: no cards, it just resumes (with "Only after a break" off, every resume gets the cards)
-- [ ] Artist page, Story tab (third tab beside Essentials and Discography): a timeline of a few points (DEBUT, FIRST ALBUM, BEST KNOWN, COMEBACK, LATEST), each with the year, a line saying why, and the record from then; OK on a row opens that record; More menu works on a row
+- [~] Artist page, Story tab (third tab beside Essentials and Discography): a timeline of a few points (DEBUT, FIRST ALBUM, BEST KNOWN, COMEBACK, LATEST), each with the year, a line saying why, and the record from then; OK on a row opens that record; More menu works on a row (2026-11-10): works, but the years did not make sense (Jamiroquai: rows evenly spaced, "back after 7 years" from an album not on the line, 16 albums in the heading vs 17 on the right, a 2025 single with no cover as LATEST)
+  - [ ] Re-check (Jamiroquai): a year line above the rows runs 1992 to 2017 to scale, a tick for each of the 8 studio albums, a dot per point, the decades marked, and the 2010 to 2017 gap dashed with "7-year break" over it
+  - [ ] Re-check: the heading reads "8 studio albums · ... · 1992–2025" and the right panel's tile says "Studio albums 8" (reissues, deluxe editions, best-ofs and live albums no longer count)
+  - [ ] Re-check: COMEBACK reads "Back 7 years after Rock Dust Light Star (2010)"
+  - [ ] Re-check: LATEST is never a release with no cover that plays nowhere (Jamiroquai's 2025 single is gone; Automaton is the last point)
 - [ ] Artist page, Story tab: nothing moves or resizes between artists (every row the same height, the record slot the same width, long titles cut); an artist with almost no dated releases says so instead of showing an empty panel
 
 ## Profiles and the phone app (Nov 10)

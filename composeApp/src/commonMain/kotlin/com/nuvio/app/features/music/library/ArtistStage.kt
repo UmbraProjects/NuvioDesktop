@@ -71,6 +71,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -789,7 +791,7 @@ private fun StageLibraryPanel(
         val counts = discography.filterCounts
         LensFactGrid(
             listOf(
-                LensFact("Albums", "${counts[ReleaseFilter.Albums] ?: 0}"),
+                LensFact("Studio albums", "${remember(artist.releases) { studioAlbumCount(artist) }}"),
                 LensFact("Singles & EPs", "${(counts[ReleaseFilter.Singles] ?: 0) + (counts[ReleaseFilter.EPs] ?: 0)}"),
                 LensFact("Only on addon", if (addonCount == 0) "None" else "$addonCount"),
                 LensFact("Demos", if (discography.demos.isEmpty()) "None" else "${discography.demos.size}"),
@@ -1019,8 +1021,9 @@ private fun StoryLens(
     modifier: Modifier,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    val points = remember(artist.releases, artist.topAlbumKeys, artist.beginYear, artist.type, artist.ended) { artistStoryPoints(artist) }
+    val points = remember(artist.releases, artist.topAlbumKeys, artist.beginYear, artist.type, artist.ended, addonKeys) { artistStoryPoints(artist, addonKeys) }
     val summary = remember(artist.releases) { artistStorySummary(artist) }
+    val ruler = remember(points) { artistStoryRuler(artist, points) }
     Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("CAREER", style = MaterialTheme.typography.labelMedium, letterSpacing = 1.4.sp, color = colors.textMuted, modifier = Modifier.weight(1f))
@@ -1034,6 +1037,7 @@ private fun StoryLens(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             )
         }
+        if (ruler != null) StoryRulerBar(ruler)
         points.forEachIndexed { index, point ->
             StoryRow(
                 point = point,
@@ -1102,6 +1106,79 @@ private fun StoryRow(point: StoryPoint, first: Boolean, last: Boolean, addon: Bo
         }
     }
 }
+
+/**
+ * The story's years to scale (Nick, Nov 10: evenly spaced rows made 1993 to 1996 look as long as 1996 to 2017). A line from
+ * the first point's year to the last, a tick for every studio album, a dot for each point, the decades marked under it and
+ * the longest break between albums drawn dashed over a band with its length. Fixed height, so it never moves the rows.
+ */
+@Composable
+private fun StoryRulerBar(ruler: StoryRuler) {
+    val colors = MaterialTheme.nuvio.colors
+    val measurer = rememberTextMeasurer()
+    val small = MaterialTheme.typography.labelSmall.copy(color = colors.textMuted)
+    val rail = Color.White.copy(alpha = 0.22f)
+    val tick = Color.White.copy(alpha = 0.55f)
+    val accent = colors.accent
+    val span = (ruler.to - ruler.from).toFloat()
+    val gapLabel = if (ruler.gapFrom != null && ruler.gapTo != null) "${ruler.gapTo - ruler.gapFrom}-year break" else null
+    Row(
+        Modifier.fillMaxWidth().height(STORY_RULER_HEIGHT).padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(ruler.from.toString(), style = MaterialTheme.typography.labelMedium, color = colors.textSecondary, modifier = Modifier.width(44.dp))
+        androidx.compose.foundation.Canvas(Modifier.weight(1f).fillMaxHeight()) {
+            val inset = 8.dp.toPx()
+            val axisY = size.height * 0.55f
+            fun x(year: Int): Float = inset + (year - ruler.from) / span * (size.width - 2 * inset)
+            val stroke = 2.dp.toPx()
+            val gapStart = ruler.gapFrom?.let(::x)
+            val gapEnd = ruler.gapTo?.let(::x)
+            if (gapStart != null && gapEnd != null) {
+                drawRect(accent.copy(alpha = 0.10f), Offset(gapStart, axisY - 7.dp.toPx()), androidx.compose.ui.geometry.Size(gapEnd - gapStart, 14.dp.toPx()))
+                drawLine(rail, Offset(inset, axisY), Offset(gapStart, axisY), stroke)
+                drawLine(
+                    rail, Offset(gapStart, axisY), Offset(gapEnd, axisY), stroke,
+                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 5.dp.toPx())),
+                )
+                drawLine(rail, Offset(gapEnd, axisY), Offset(size.width - inset, axisY), stroke)
+                if (gapLabel != null) {
+                    val laid = measurer.measure(gapLabel, small)
+                    if (laid.size.width < gapEnd - gapStart - 8.dp.toPx()) {
+                        drawText(laid, topLeft = Offset((gapStart + gapEnd - laid.size.width) / 2f, axisY - 9.dp.toPx() - laid.size.height))
+                    }
+                }
+            } else {
+                drawLine(rail, Offset(inset, axisY), Offset(size.width - inset, axisY), stroke)
+            }
+            val decadeEdge = 26.dp.toPx()
+            var decade = (ruler.from / 10 + 1) * 10
+            while (decade < ruler.to) {
+                val dx = x(decade)
+                if (dx > decadeEdge && dx < size.width - decadeEdge) {
+                    val laid = measurer.measure(decade.toString(), small)
+                    drawLine(rail, Offset(dx, axisY + 3.dp.toPx()), Offset(dx, axisY + 7.dp.toPx()), 1.dp.toPx())
+                    drawText(laid, topLeft = Offset(dx - laid.size.width / 2f, axisY + 9.dp.toPx()))
+                }
+                decade += 10
+            }
+            ruler.albumYears.forEach { year ->
+                val ax = x(year)
+                drawLine(tick, Offset(ax, axisY - 6.dp.toPx()), Offset(ax, axisY + 6.dp.toPx()), 1.5.dp.toPx())
+            }
+            ruler.pointYears.forEach { year -> drawCircle(accent, radius = 5.dp.toPx(), center = Offset(x(year), axisY)) }
+        }
+        Text(
+            ruler.to.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = colors.textSecondary,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            modifier = Modifier.width(44.dp),
+        )
+    }
+}
+
+private val STORY_RULER_HEIGHT = 56.dp
 
 /** A story row's height and the width of its record slot: fixed, so a long title or a missing cover moves nothing. */
 private val STORY_ROW_HEIGHT = 84.dp
