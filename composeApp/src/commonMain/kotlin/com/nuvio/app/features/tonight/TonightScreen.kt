@@ -473,7 +473,7 @@ internal fun Modifier.tonightKeysWithHold(onHoldOk: () -> Unit, handle: (Tonight
             }
             else -> false
         }
-    }.tonightKeys(handle)
+    }.tonightKeys(handle = handle)
 }
 
 @Composable
