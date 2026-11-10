@@ -221,6 +221,26 @@ internal object PhoneRemoteLibraryLines {
     }
 
     /** A source's description runs to several lines (file name, size, seeders); kept whole, up to a point. */
+    /**
+     * fork:phone-remote tonight - `TONIGHT 0` while the Tonight picker is not on screen, else
+     * `TONIGHT 1 <view> <mode> <loading> <number> <total> <countFrom> <countLeft> <reshuffleLeft> <prompt> <leftLabel>
+     * <leftDetail> <rightLabel> <rightDetail> <answers> <cards>`: always sixteen fields, `-` for an empty one. Answers
+     * are records of one field; each card is slot, name, why, meta, poster. The phone answers with
+     * `TONIGHT_DO <action> [n]` (see RemoteTonightAction). Mirrored by `parseTonight` in the app's LibraryLines.kt.
+     */
+    fun tonightLine(screen: com.nuvio.app.features.remote.RemoteTonightScreen?): String {
+        if (screen == null) return "TONIGHT 0"
+        return listOf(
+            "TONIGHT", "1",
+            text(screen.view), text(screen.mode), flag(screen.loading),
+            screen.number.toString(), screen.total.toString(), screen.countFrom.toString(), screen.countLeft.toString(),
+            flag(screen.reshuffleLeft),
+            text(screen.prompt), text(screen.leftLabel), text(screen.leftDetail), text(screen.rightLabel), text(screen.rightDetail),
+            records(screen.answers) { listOf(text(it)) },
+            records(screen.cards) { c -> listOf(text(c.slot), text(c.name), text(c.why), text(c.meta), url(c.poster)) },
+        ).joinToString(" ")
+    }
+
     private fun detail(value: String?): String = value?.trim()?.take(MAX_DETAIL_CHARS)?.takeIf { it.isNotEmpty() }
         ?.let(PhoneRemoteProtocol::encode) ?: "-"
 

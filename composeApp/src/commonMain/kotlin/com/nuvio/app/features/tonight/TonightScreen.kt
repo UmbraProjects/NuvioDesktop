@@ -21,7 +21,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import com.nuvio.app.features.remote.RemoteTonight
+import com.nuvio.app.features.remote.RemoteTonightAction
+import com.nuvio.app.features.remote.RemoteTonightCard
+import com.nuvio.app.features.remote.RemoteTonightScreen
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -150,6 +156,95 @@ fun TonightHost(
     val order = remember(clock.night, clock.year) { tonightQuestionOrder(clock.night, clock.year - 3) }
     val current = narrowed.lastOrNull() ?: pool
     val question = if (view == TonightView.Questions) tonightNextQuestion(order, asked, current) else null
+
+    fun answer(q: TonightQuestion, side: TonightSide) {
+        asked += q.id
+        answers += when (side) {
+            TonightSide.Left -> q.left.label
+            TonightSide.Right -> q.right.label
+            TonightSide.Skip -> "Either"
+        }
+        narrowed += tonightApply(current, q, side)
+    }
+
+    fun questionBack() {
+        if (asked.isEmpty()) {
+            view = TonightView.Launcher
+        } else {
+            asked.removeAt(asked.lastIndex)
+            answers.removeAt(answers.lastIndex)
+            if (narrowed.isNotEmpty()) narrowed.removeAt(narrowed.lastIndex)
+        }
+    }
+
+    val reshuffleLeft = settings.reshuffleUsedNight != clock.night
+
+    fun reshuffle() {
+        if (settings.reshuffleUsedNight == clock.night) return
+        TonightSettingsRepository.markReshuffleUsed(clock.night)
+        deal(dealtFrom, reshuffle = true)
+    }
+
+    fun openThreeCards() {
+        TonightSettingsRepository.setLastMode(TonightMode.ThreeCards)
+        answers.clear()
+        deal(pool, reshuffle = false)
+    }
+
+    // fork:phone-remote tonight - the phone mirrors the launcher, Three Questions and Three Cards; its taps run here.
+    val remoteOwner = remember { Any() }
+    val loadingTitles = poolState.loading && poolState.titles.isEmpty()
+    val remoteScreen = when (view) {
+        TonightView.Launcher -> RemoteTonightScreen(RemoteTonightScreen.LAUNCHER, mode = settings.lastMode.name, loading = loadingTitles)
+        TonightView.Questions -> RemoteTonightScreen(
+            view = RemoteTonightScreen.QUESTION,
+            loading = loadingTitles || question == null,
+            number = (asked.size + 1).coerceAtMost(TONIGHT_QUESTION_COUNT),
+            total = TONIGHT_QUESTION_COUNT,
+            countFrom = pool.size,
+            countLeft = current.size,
+            prompt = question?.prompt,
+            leftLabel = question?.left?.label,
+            leftDetail = question?.left?.detail,
+            rightLabel = question?.right?.label,
+            rightDetail = question?.right?.detail,
+            answers = answers.toList(),
+        )
+        TonightView.Cards -> RemoteTonightScreen(
+            view = RemoteTonightScreen.CARDS,
+            loading = loadingTitles,
+            reshuffleLeft = reshuffleLeft,
+            answers = answers.filter { it != "Either" },
+            cards = hand.map { card ->
+                RemoteTonightCard(
+                    slot = card.slot.label(),
+                    name = card.title.name,
+                    why = card.why,
+                    meta = card.title.tonightMetaLine(clock, minutesUntilBed),
+                    poster = card.title.poster ?: card.title.backdrop,
+                )
+            },
+        )
+        else -> RemoteTonightScreen(RemoteTonightScreen.OTHER, mode = view.name)
+    }
+    val remoteHandler by rememberUpdatedState { action: RemoteTonightAction, number: Int ->
+        when (action) {
+            RemoteTonightAction.OpenQuestions -> startQuestions()
+            RemoteTonightAction.OpenCards -> openThreeCards()
+            RemoteTonightAction.Left -> question?.let { answer(it, TonightSide.Left) }
+            RemoteTonightAction.Right -> question?.let { answer(it, TonightSide.Right) }
+            RemoteTonightAction.Either -> question?.let { answer(it, TonightSide.Skip) }
+            RemoteTonightAction.Back -> {
+                if (view == TonightView.Questions) questionBack() else view = TonightView.Launcher
+            }
+            RemoteTonightAction.Play -> if (view == TonightView.Cards) hand.getOrNull(number - 1)?.let { onPlay(it.title.type, it.title.id) }
+            RemoteTonightAction.Details -> if (view == TonightView.Cards) hand.getOrNull(number - 1)?.let { onOpenDetails(it.title.type, it.title.id) }
+            RemoteTonightAction.Reshuffle -> if (view == TonightView.Cards) reshuffle()
+        }
+        Unit
+    }
+    LaunchedEffect(remoteScreen) { RemoteTonight.publish(remoteOwner, remoteScreen) { a, n -> remoteHandler(a, n) } }
+    DisposableEffect(Unit) { onDispose { RemoteTonight.clear(remoteOwner) } }
     // Out of questions (three asked, or nothing left to split): deal from what is left.
     LaunchedEffect(view, question, poolState.loading) {
         if (view == TonightView.Questions && question == null && !poolState.loading && pool.isNotEmpty()) deal(current, reshuffle = false)
@@ -175,11 +270,7 @@ fun TonightHost(
                 onOpen = { mode ->
                     when (mode) {
                         TonightMode.ThreeQuestions -> startQuestions()
-                        TonightMode.ThreeCards -> {
-                            TonightSettingsRepository.setLastMode(TonightMode.ThreeCards)
-                            answers.clear()
-                            deal(pool, reshuffle = false)
-                        }
+                        TonightMode.ThreeCards -> openThreeCards()
                         TonightMode.CoinToss -> {
                             TonightSettingsRepository.setLastMode(TonightMode.CoinToss)
                             view = TonightView.CoinToss
@@ -216,24 +307,8 @@ fun TonightHost(
                 totalCount = pool.size,
                 leftCount = current.size,
                 loading = poolState.loading && poolState.titles.isEmpty(),
-                onAnswer = { q, side ->
-                    asked += q.id
-                    answers += when (side) {
-                        TonightSide.Left -> q.left.label
-                        TonightSide.Right -> q.right.label
-                        TonightSide.Skip -> "Either"
-                    }
-                    narrowed += tonightApply(current, q, side)
-                },
-                onBack = {
-                    if (asked.isEmpty()) {
-                        view = TonightView.Launcher
-                    } else {
-                        asked.removeAt(asked.lastIndex)
-                        answers.removeAt(answers.lastIndex)
-                        if (narrowed.isNotEmpty()) narrowed.removeAt(narrowed.lastIndex)
-                    }
-                },
+                onAnswer = ::answer,
+                onBack = ::questionBack,
             )
             TonightView.CoinToss -> TonightCoinTossView(
                 pool = pool,
@@ -298,11 +373,8 @@ fun TonightHost(
                 clock = clock,
                 minutesUntilBed = minutesUntilBed,
                 loading = poolState.loading && poolState.titles.isEmpty(),
-                reshuffleLeft = settings.reshuffleUsedNight != clock.night,
-                onReshuffle = {
-                    TonightSettingsRepository.markReshuffleUsed(clock.night)
-                    deal(dealtFrom, reshuffle = true)
-                },
+                reshuffleLeft = reshuffleLeft,
+                onReshuffle = ::reshuffle,
                 onPlay = { card -> onPlay(card.title.type, card.title.id) },
                 onDetails = { card -> onOpenDetails(card.title.type, card.title.id) },
                 onBack = { view = TonightView.Launcher },

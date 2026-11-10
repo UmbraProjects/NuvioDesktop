@@ -75,6 +75,7 @@ internal object PhoneRemote {
     private var stateWatch: Job? = null
     private var themeWatch: Job? = null
     private var sourcesWatch: Job? = null
+    private var tonightWatch: Job? = null // fork:phone-remote tonight
 
     @Synchronized
     fun ensureLoaded() {
@@ -138,6 +139,7 @@ internal object PhoneRemote {
         watchState(created)
         watchTheme(created)
         watchSources(created)
+        watchTonight(created)
         _state.update { it.copy(listening = created.port != null, port = created.port, addresses = localAddresses()) }
     }
 
@@ -148,6 +150,8 @@ internal object PhoneRemote {
         themeWatch = null
         sourcesWatch?.cancel()
         sourcesWatch = null
+        tonightWatch?.cancel()
+        tonightWatch = null
         server?.stop()
         server = null
         _state.update { it.copy(listening = false, port = null, connectedDevices = emptyList()) }
@@ -245,6 +249,9 @@ internal object PhoneRemote {
         override fun onPlayEpisode(type: String, id: String, videoId: String): String? = PhoneRemoteLibrary.playEpisode(type, id, videoId)
         override fun onAlbumTracks(browseId: String, reply: (String) -> Unit) = PhoneRemoteMusic.albumTracks(browseId, reply)
         override fun onPlayTrack(browseId: String, index: Int): String? = PhoneRemoteMusic.playTrack(browseId, index)
+        override fun onTonight(action: RemoteTonightAction, number: Int) {
+            mainScope.launch { RemoteTonight.act(action, number) }
+        }
     }
 
     // --- fork:phone-remote: now playing on the phone ---
@@ -354,6 +361,17 @@ internal object PhoneRemote {
                     background = palette.background.toArgb(),
                 )
             }.distinctUntilChanged().collect(target::publishTheme)
+        }
+    }
+
+    /** fork:phone-remote tonight: the Tonight picker as the phone mirrors it, whenever it changes. */
+    private fun watchTonight(target: PhoneRemoteServer) {
+        tonightWatch?.cancel()
+        tonightWatch = CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            RemoteTonight.current
+                .map(PhoneRemoteLibraryLines::tonightLine)
+                .distinctUntilChanged()
+                .collect(target::publishTonight)
         }
     }
 

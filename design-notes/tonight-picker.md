@@ -93,8 +93,13 @@ Each phase ships behind Settings > "Tonight picker" (off by default) and adds it
 - **The Map** (`TonightMapRules.kt`, `TonightMapScreen.kt`): x = (1 - lightness) / 2 (light left), y = (1 - novelty) / 2 (new at the top), each with a small stable jitter per title (more vertically, as novelty comes in a few steps). The lens is 0.14 of the field's width in radius, moves 0.05 per arrow, starts at the average place of what the user keeps. Titles inside the lens show posters and grow toward its centre; the nearest one is "under the lens". Uses the bedtime-filtered pool.
 - **AI** (`TonightMapAi.kt`): only Light/Heavy is refined (Comfort/New stays the user's history). Final lightness = 0.35 rules + 0.65 AI tone. Requests only while The Map is open, only with the switch on (new `AiConsentTarget.TonightMap`, so the shared consent dialog), twelve titles per request through `DiscoverAiClient`, 8 s apart, at most 25 a day, stops on a rate limit. Tones kept forever per title key in the `nuvio_tonight` store (`tones`); a title the AI skipped is asked again after a day.
 
+## Tonight on the phone remote (Nov 10)
+
+User's choice: **mirror the TV** for **Three Questions and Three Cards** (the launcher too); other modes stay on the TV. `TonightHost` publishes a `RemoteTonightScreen` (launcher / question / cards / other) to `RemoteTonight`; the PC sends it as one `TONIGHT` line (16 fields) on every change and after SUBSCRIBE; the phone's taps come back as `TONIGHT_DO <action> [n]` (questions, cards, left, right, either, back, play n, details n, reshuffle) and run in the host exactly as the TV's keys. On the phone the mirror replaces the Remote tab's body while nothing plays; the header tag swaps it for the pad. The demo TV does not imitate it yet.
+
 ## Still open
 
 - The set of rotating questions for Three Questions.
 - There is no Settings page yet to undo Not interested (Never show / Let it go); Discover has no undo either.
+- The phone's demo TV has no Tonight mirror.
 - What exactly counts as "your taste" for New to you vs Wildcard (Discover's taste profile is the first candidate).

@@ -54,6 +54,31 @@ data class ResumeItem(
         }
 }
 
+/** One of the three cards on the TV's Tonight picker (`TONIGHT` line). [number] is what `TONIGHT_DO play` sends back. */
+data class TonightCardInfo(val number: Int, val slot: String, val name: String, val why: String, val meta: String, val poster: String?)
+
+/**
+ * The TV's Tonight picker as the phone mirrors it (`TONIGHT` line): [view] is "launcher", "question", "cards" or
+ * "other" (a mode the phone leaves to the TV; [mode] names it).
+ */
+data class TonightScreenInfo(
+    val view: String,
+    val mode: String?,
+    val loading: Boolean,
+    val number: Int,
+    val total: Int,
+    val countFrom: Int,
+    val countLeft: Int,
+    val reshuffleLeft: Boolean,
+    val prompt: String?,
+    val leftLabel: String?,
+    val leftDetail: String?,
+    val rightLabel: String?,
+    val rightDetail: String?,
+    val answers: List<String>,
+    val cards: List<TonightCardInfo>,
+)
+
 /** One row of the source list on the TV (`SOURCES` line), in the order the TV draws them. */
 data class SourceInfo(
     /** Its place in the list, from 1: what PICK_SOURCE sends back. */
@@ -171,6 +196,42 @@ object LibraryLines {
                     progress = ((f[10]?.toIntOrNull() ?: 0) / 1000f).coerceIn(0f, 1f),
                 )
             },
+        )
+    }
+
+    /**
+     * `TONIGHT 0`, or `TONIGHT 1 <view> <mode> <loading> <number> <total> <countFrom> <countLeft> <reshuffleLeft> <prompt>
+     * <leftLabel> <leftDetail> <rightLabel> <rightDetail> <answers> <cards>`; mirrors `tonightLine` in the PC's
+     * PhoneRemoteLibraryLines.kt.
+     */
+    fun parseTonight(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 2 || parts[0] != "TONIGHT") return null
+        if (parts[1] != "1") return ServerLine.Tonight(null)
+        if (parts.size < 17) return null
+        fun f(i: Int) = parts[i].takeUnless { it == "-" || it.isEmpty() }?.let(RemoteProtocol::decode)
+        val cards = records(parts[16]).mapIndexedNotNull { index, r ->
+            if (r.size < 5) return@mapIndexedNotNull null
+            TonightCardInfo(index + 1, r[0] ?: "", r[1] ?: return@mapIndexedNotNull null, r[2] ?: "", r[3] ?: "", r[4])
+        }
+        return ServerLine.Tonight(
+            TonightScreenInfo(
+                view = f(2) ?: return null,
+                mode = f(3),
+                loading = parts[4] == "1",
+                number = parts[5].toIntOrNull() ?: 0,
+                total = parts[6].toIntOrNull() ?: 0,
+                countFrom = parts[7].toIntOrNull() ?: 0,
+                countLeft = parts[8].toIntOrNull() ?: 0,
+                reshuffleLeft = parts[9] == "1",
+                prompt = f(10),
+                leftLabel = f(11),
+                leftDetail = f(12),
+                rightLabel = f(13),
+                rightDetail = f(14),
+                answers = records(parts[15]).mapNotNull { it.firstOrNull() },
+                cards = cards,
+            ),
         )
     }
 

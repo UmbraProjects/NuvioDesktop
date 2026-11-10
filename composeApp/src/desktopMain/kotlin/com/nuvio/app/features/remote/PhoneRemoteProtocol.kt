@@ -41,6 +41,8 @@ import java.nio.charset.StandardCharsets
  * phone: SPEED <percent> | SKIP_INTRO | NEXT_EPISODE | SLEEP <minutes, 0 off>      film extras (STATE carries the answers)
  * phone: SHUFFLE <0|1> | REPEAT <0 off|1 all|2 one> | LIKE | RADIO                   music extras
  * phone: SEEK <ms> | VOLUME <0..volumeMax>
+ * pc:    TONIGHT 0 | TONIGHT 1 <view> ...    the Tonight picker on screen (PhoneRemoteLibraryLines.tonightLine), on change
+ * phone: TONIGHT_DO <action> [n]        a tap on the phone's mirror of it (RemoteTonightAction)
  * phone: OPEN <url>                     a link from the phone's share menu
  * pc:    OPENING <what> | CANT_OPEN     (only for OPEN)
  * ```
@@ -184,6 +186,10 @@ internal object PhoneRemoteProtocol {
                 parts.getOrNull(1)?.toIntOrNull()?.takeIf { it >= 0 }?.let { RemoteMessage.Control(action, it) }
             }
             "SKIP_INTRO", "NEXT_EPISODE", "LIKE", "RADIO" -> ControlAction.fromWire(parts[0])?.let { RemoteMessage.Control(it, 0) }
+            // fork:phone-remote tonight: a tap on the phone's mirror of the Tonight picker.
+            "TONIGHT_DO" -> parts.getOrNull(1)?.let(com.nuvio.app.features.remote.RemoteTonightAction::fromWire)?.let { action ->
+                RemoteMessage.TonightDo(action, parts.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 99) ?: 0)
+            }
             "RESUME" -> if (parts.size >= 3) {
                 RemoteMessage.Resume(parentId = decode(parts[1]), videoId = decode(parts[2]))
                     .takeIf { it.parentId.isNotBlank() && it.videoId.isNotBlank() }
@@ -223,6 +229,7 @@ internal sealed interface RemoteMessage {
     data class AlbumTracks(val browseId: String) : RemoteMessage
     data class PlayTrack(val browseId: String, val index: Int) : RemoteMessage
     data class Control(val action: ControlAction, val value: Int) : RemoteMessage
+    data class TonightDo(val action: com.nuvio.app.features.remote.RemoteTonightAction, val number: Int) : RemoteMessage
 }
 
 /** The film and music extras the phone can ask for. [value] is the speed in percent, the sleep minutes (0 off), 0/1, or the repeat mode. */

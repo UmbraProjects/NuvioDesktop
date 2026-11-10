@@ -103,6 +103,8 @@ sealed interface ServerLine {
     data class MusicLibrary(val ready: Boolean, val artists: List<LibraryArtistInfo>, val albums: List<LibraryAlbum>) : ServerLine
     /** The PC's Continue Watching, newest first. */
     data class Continue(val items: List<ResumeItem>) : ServerLine
+    /** The TV's Tonight picker as mirrored on the phone; null while it is not on screen. */
+    data class Tonight(val screen: TonightScreenInfo?) : ServerLine
     /** The source list on the TV; null once it closes. */
     data class Sources(val list: SourceList?) : ServerLine
     /** The film player's audio tracks (the same row type as subtitles; no Off, no groups). */
@@ -135,6 +137,7 @@ sealed interface ServerLine {
                 "LIBRARY" -> LibraryLines.parse(line) ?: Other
                 "CONTINUE" -> LibraryLines.parseContinue(line) ?: Other
                 "SOURCES" -> LibraryLines.parseSources(line) ?: Other
+                "TONIGHT" -> LibraryLines.parseTonight(line) ?: Other
                 "SEARCH_RESULTS" -> LibraryLines.parseSearch(line) ?: Other
                 "QUEUE" -> LibraryLines.parseQueue(line) ?: Other
                 "EPISODES" -> LibraryLines.parseEpisodes(line) ?: Other
@@ -309,6 +312,9 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     /** Plays it on the TV from the same source, from where it stopped. The PC answers OPENING or CANT_OPEN. */
     fun resume(parentId: String, videoId: String) = send("RESUME ${RemoteProtocol.encode(parentId)} ${RemoteProtocol.encode(videoId)}")
+
+    /** A tap on the phone's mirror of the Tonight picker: [action] as the PC's RemoteTonightAction, [number] a card from 1. */
+    fun tonight(action: String, number: Int = 0) = send(if (number > 0) "TONIGHT_DO $action $number" else "TONIGHT_DO $action")
 
     /** Plays the source at [number] (from 1) in the list on the TV. The PC answers OPENING or CANT_OPEN. */
     fun pickSource(number: Int) = send("PICK_SOURCE $number")

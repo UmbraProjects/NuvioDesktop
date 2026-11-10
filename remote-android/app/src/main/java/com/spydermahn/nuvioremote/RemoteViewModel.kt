@@ -40,6 +40,8 @@ data class UiState(
     val video: VideoLibraryState = VideoLibraryState(),
     /** The PC's Continue Watching; empty from a PC that does not send it. */
     val continueWatching: List<ResumeItem> = emptyList(),
+    /** The TV's Tonight picker while it is on screen; the remote mirrors it. */
+    val tonight: TonightScreenInfo? = null,
     /** The source list while the TV shows one; the remote shows it to pick from. */
     val sources: SourceList? = null,
     /** Nuvio's catalog search for the Watch tab's query; null until asked. */
@@ -423,6 +425,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                     is ServerLine.MusicLibrary -> onMusicLibrary(line)
                     is ServerLine.Continue -> _state.update { it.copy(continueWatching = line.items) }
                     is ServerLine.Sources -> _state.update { it.copy(sources = line.list) }
+                    is ServerLine.Tonight -> _state.update { it.copy(tonight = line.screen) }
                     is ServerLine.Audio -> _state.update { it.copy(audio = line) }
                     is ServerLine.Subtitles -> _state.update { it.copy(subtitles = line) }
                     is ServerLine.Queue -> _state.update { it.copy(queue = line) }
@@ -493,7 +496,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     private fun closeSession() {
         session?.close()
         session = null
-        _state.update { it.copy(nowPlaying = null, cover = null, sources = null) }
+        _state.update { it.copy(nowPlaying = null, cover = null, sources = null, tonight = null) }
     }
 
     /** A ping every few seconds, so a PC that went to sleep shows as offline before the next press. */
@@ -689,6 +692,9 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun pickSource(source: SourceInfo) = sendOrReconnect { it.pickSource(source.number) }
+
+    /** A tap on the Tonight mirror; see RemoteSession.tonight. */
+    fun tonight(action: String, number: Int = 0) = sendOrReconnect { it.tonight(action, number) }
 
     fun resume(item: ResumeItem) = sendOrReconnect { it.resume(item.parentId, item.videoId) }
 

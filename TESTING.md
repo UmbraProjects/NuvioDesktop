@@ -165,6 +165,19 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] More sheet is in three groups (Playback with volume and sleep, Display with pad and dark mode, Device with Type and Other PC) and scrolls on a small phone (2026-11-10)
 - [ ] Demo TV: the film shows "Skip intro" for its first minute; speed, sleep, shuffle, repeat and like all answer
 
+### Phone remote: Tonight on the phone (Nov 10)
+
+Needs this Nuvio and the new NuvioRemote app together.
+
+- [ ] With the Tonight picker on the TV, the phone's Remote tab says "Choosing tonight" and shows Three Questions and Three Cards as two big buttons (the one used last marked LAST TIME)
+- [ ] Tapping Three Questions starts it on the TV; the phone shows the same question, "Question 2 of 3", "214 → 41 left" and two big answers
+- [ ] Tapping an answer answers it on the TV; "Either is fine" and "Back a question" do what Down and Back do on the TV; the buttons never move between questions
+- [ ] After the questions, the three cards show on the phone with their posters, SAFE / NEW TO YOU / WILDCARD, the reason and "ends 23:06"; tapping a card plays it on the TV, Details opens its page
+- [ ] Reshuffle on the phone deals three new cards once, then says "No reshuffles left"
+- [ ] Opening Knockout, Coin Toss or another mode on the TV makes the phone say it is on the TV, with Back to the start; the header tag swaps to the pad and back
+- [ ] Choosing something with the TV remote while the phone is open keeps the phone in step
+- [ ] Once a title starts playing, the phone switches to the film screen as usual
+
 ## Music playback
 
 - [x] Gapless: songs in an album run straight into each other (2026-11-08)

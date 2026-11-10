@@ -203,12 +203,17 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
     var padOverSources by rememberSaveable { mutableStateOf(false) }
     val sourcesOpen = state.sources != null
     LaunchedEffect(sourcesOpen) { if (!sourcesOpen) padOverSources = false }
+    // The TV's Tonight picker opens as its mirror here; the tag swaps to the pad (for the modes the phone leaves to the TV).
+    var padOverTonight by rememberSaveable { mutableStateOf(false) }
+    val tonightOpen = state.tonight != null
+    LaunchedEffect(tonightOpen) { if (!tonightOpen) padOverTonight = false }
 
     Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 20.dp)) {
         RemoteHeader(
             state = state,
             status = when {
                 state.sources != null -> "Choosing a source"
+                state.tonight != null -> "Choosing tonight"
                 showing == Showing.Browsing -> "Connected · browsing"
                 showing == Showing.Film -> "Playing a film"
                 else -> "Playing music"
@@ -220,6 +225,12 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
                         if (padOverSources) "Sources" else if (state.padMode == PadMode.Touchpad) "Touchpad" else "D-pad",
                         icon = if (padOverSources) Icons.AutoMirrored.Rounded.List else Icons.Rounded.CropSquare,
                         onClick = { padOverSources = !padOverSources },
+                    )
+                } else if (state.tonight != null && showing == Showing.Browsing) {
+                    GlassTag(
+                        if (padOverTonight) "Tonight" else if (state.padMode == PadMode.Touchpad) "Touchpad" else "D-pad",
+                        icon = if (padOverTonight) Icons.Rounded.Movie else Icons.Rounded.CropSquare,
+                        onClick = { padOverTonight = !padOverTonight },
                     )
                 } else if (showing != Showing.Browsing) {
                     GlassTag(
@@ -243,9 +254,12 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
         if (typing) TypingPanel(viewModel, onClose = { typing = false })
 
         val sources = state.sources
+        val tonight = state.tonight
         when {
             // The TV is showing its source list: pick one here (the pad, from the header tag, still drives the TV).
             sources != null && !padOverSources -> SourcesBody(sources, viewModel, onPad = { padOverSources = true })
+            // Only while nothing plays: once a card starts a film, the film screen takes over.
+            tonight != null && showing == Showing.Browsing && !padOverTonight -> TonightBody(tonight, viewModel)
             showing == Showing.Film && playing != null && !padOverPlaying -> FilmBody(
                 playing,
                 state.cover,

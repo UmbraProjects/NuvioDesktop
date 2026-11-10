@@ -53,6 +53,10 @@ queue, and can "sleep" to try Wake. A strip shows what it was sent. This is for 
   album from it. An artist has Shuffle all and Radio.
 
 **Other**
+- **Tonight:** while the TV shows the Tonight picker (Movies & TV's "How shall we choose tonight?"), the Remote tab
+  mirrors it: start Three Questions or Three Cards, answer each question with a big tap (Left, Right, Either is fine,
+  Back), and tap a card to play it on the TV (Details opens its page; Reshuffle once a night). The other modes stay on the
+  TV; the header tag swaps to the pad for them. Needs a Nuvio from Nov 10, 2026 or later.
 - **Send to Nuvio:** share a YouTube or YouTube Music link from any app and it plays on the TV.
 - **Wake:** when the PC is asleep or off, the app offers to wake it with Wake-on-LAN. The PC sends its network card and
   broadcast addresses while connected. Wake-on-LAN must be on in the PC's BIOS and network adapter settings.
@@ -73,6 +77,7 @@ source lines are built in `PhoneRemoteLibraryLines.kt` and answered in `PhoneRem
 | Library | `LIBRARY`, `OPEN_TITLE`, `CONTINUE`, `RESUME`, `EPISODES`, `PLAY_EPISODE`, `SEARCH` | `LIBRARY`, `CONTINUE`, `EPISODES`, `SEARCH_RESULTS` |
 | Music | `PLAY_ALBUM`, `ALBUM_TRACKS`, `PLAY_TRACK`, `ARTIST`, `QUEUE`, `QUEUE_PLAY`, `QUEUE_NEXT`, `QUEUE_REMOVE` | `ALBUM_TRACKS`, `QUEUE` |
 | Sources | `PICK_SOURCE` | `SOURCES` |
+| Tonight | `TONIGHT_DO` | `TONIGHT` (after `SUBSCRIBE`, whenever it changes) |
 | Links | `OPEN` | `OPENING`, `CANT_OPEN` |
 
 The QR code holds `nuvioremote://pair?n=<name>&p=<port>&c=<code>&a=<addresses>`. The app tries each address until one

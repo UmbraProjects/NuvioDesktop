@@ -72,6 +72,8 @@ internal interface PhoneRemoteListener {
     fun onAlbumTracks(browseId: String, reply: (String) -> Unit) = Unit
     /** Plays the album from its [index]th song; what is opening, or null. */
     fun onPlayTrack(browseId: String, index: Int): String? = null
+    /** fork:phone-remote tonight: a tap on the phone's Tonight mirror. */
+    fun onTonight(action: com.nuvio.app.features.remote.RemoteTonightAction, number: Int) = Unit
 }
 
 /**
@@ -158,6 +160,15 @@ internal class PhoneRemoteServer(
     /** This PC's WAKE line (see PhoneRemoteProtocol.wakeLine), for phones to wake it from sleep later. */
     @Volatile
     var wakeLine: String? = null
+
+    @Volatile
+    private var lastTonight: String? = null
+
+    /** The Tonight picker as the phone mirrors it (see PhoneRemoteLibraryLines.tonightLine), for every subscribed phone. */
+    fun publishTonight(line: String) {
+        lastTonight = line
+        clients.forEach { session -> if (session.subscribed) session.trySend(line) }
+    }
 
     /** The source list on screen (see PhoneRemoteLibraryLines.sourcesLine), for every subscribed phone. */
     fun publishSources(line: String) {
@@ -295,6 +306,7 @@ internal class PhoneRemoteServer(
                                 send(lastState)
                                 lastTheme?.let(::send)
                                 lastSources?.let(::send)
+                                lastTonight?.let(::send)
                                 wakeLine?.let(::send)
                             }
                             is RemoteMessage.Seek -> listener.onSeek(message.positionMs)
@@ -320,6 +332,7 @@ internal class PhoneRemoteServer(
                             is RemoteMessage.PlayEpisode -> sendOpening(listener.onPlayEpisode(message.type, message.id, message.videoId))
                             is RemoteMessage.AlbumTracks -> listener.onAlbumTracks(message.browseId, ::trySend)
                             is RemoteMessage.PlayTrack -> sendOpening(listener.onPlayTrack(message.browseId, message.index))
+                            is RemoteMessage.TonightDo -> listener.onTonight(message.action, message.number)
                             else -> Unit
                         }
                     }
