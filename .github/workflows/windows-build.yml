@@ -106,26 +106,59 @@ jobs:
           "-Pnuvio.windows.bundleFullRuntime=true"
           "-Pnuvio.engine.optional=true"
 
-      # fork:hardening - tests that compile but were never run in CI (storage, the fork's YouTube tab tests). They run here
-      # in their own step with continue-on-error, so a failure shows up red on the run without stopping the Nightly. Once a
-      # few runs have passed, move a filter into the step above to make it blocking.
-      - name: Unit tests (extra, not blocking)
+      # fork:hardening - the whole desktop test suite, not blocking. Only the packages above gate the build; the other tests
+      # (player, home, streams, discover, iptv, ...) compile but were never run in CI, so nobody knows if they pass. This step
+      # runs them all with --continue (every failure is reported, not just the first) and continue-on-error, so a failure shows
+      # red on the run without stopping the Nightly. The next step lists the failures in the run summary. Once a package is
+      # green here for a few runs, add it to the blocking filter above.
+      - name: Unit tests (all, not blocking)
         continue-on-error: true
         shell: pwsh
         env:
           WIX_PATH: ${{ runner.temp }}\wix-unused
         run: >
-          ./gradlew.bat :composeApp:desktopTest --no-configuration-cache "-Pcompose.desktop.application.downloadWix=false" -I .github/mirror.init.gradle
-          --tests "com.nuvio.app.core.storage.*"
-          --tests "*YouTubeWebClientTest"
-          --tests "*YouTubeSignedOutTest"
-          --tests "*YouTubeFeedParserTest"
+          ./gradlew.bat :composeApp:desktopTest --continue --no-configuration-cache "-Pcompose.desktop.application.downloadWix=false" -I .github/mirror.init.gradle
           "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
           "-Pnuvio.windows.allowWhisperAvfilter=true"
           "-Pnuvio.windows.bundleFullRuntime=true"
           "-Pnuvio.engine.optional=true"
+
+      - name: Failed tests (summary)
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path composeApp/build/test-results -Recurse -Filter *.xml -ErrorAction SilentlyContinue
+          $total = 0; $failed = @()
+          foreach ($f in $files) {
+            [xml]$x = Get-Content -LiteralPath $f.FullName
+            foreach ($c in $x.testsuite.testcase) {
+              $total++
+              if ($c.failure -or $c.error) { $failed += "$($c.classname).$($c.name)" }
+            }
+          }
+          $lines = @("### Unit tests: $($failed.Count) failed of $total run (full suite, not blocking)")
+          if ($failed.Count -gt 0) {
+            $lines += ""
+            $groups = $failed | Group-Object { ($_ -split '\.')[0..5] -join '.' } | Sort-Object Count -Descending
+            foreach ($g in $groups) { $lines += "- **$($g.Name)**: $($g.Count)" }
+            $lines += ""
+            $lines += ($failed | Select-Object -First 200 | ForEach-Object { "- ``$_``" })
+          }
+          $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $lines | ForEach-Object { Write-Host $_ }
+
+      - name: Upload test reports
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-test-reports
+          path: composeApp/build/reports/tests
+          if-no-files-found: ignore
+          retention-days: 7
 
       # Portable app folder: no WiX needed. With the WiX download off, the Compose plugin still asks for a WiX folder
       # (wixToolsetDir) when it sets this task up, so WIX_PATH points it at an empty one it never uses.
