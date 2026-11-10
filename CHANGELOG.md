@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Tonight: Back Works From The Remote** - a pad's B, the phone remote's Back and the mouse's back button go through the app's Back shortcut rather than arriving as a key, so on the Tonight screens they did nothing (only Esc on a keyboard worked). Tonight now takes Back while a mode is open and does what Back does on that screen (a question back, the cards to the launcher, undo in Knockout and so on); on the launcher Back is left to the app as before. Not yet tried on the HTPC.
+- **Tonight: Back Works From The Keyboard And Every Remote** - Esc on the keyboard did nothing on the Tonight screens; Back now acts when the key comes up, as the rest of the app does. A pad's B and the mouse's back button, which go through the app's Back shortcut rather than arriving as a key, are taken too. Tonight now takes Back while a mode is open and does what Back does on that screen (a question back, the cards to the launcher, undo in Knockout and so on); on the launcher Back is left to the app as before. Not yet tried on the HTPC.
 
 - **Settings Search Finds The Tonight Picker** - "Open on Tonight", "Bedtime" and "Let the AI refine The Map" (at the top of Settings > Random Play) are now found by typing "Tonight", "bedtime" or "map" into the Settings search, and the Random Play page's sidebar lists the Tonight picker section first. Not yet tried on the HTPC.
 

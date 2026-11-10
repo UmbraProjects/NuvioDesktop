@@ -409,10 +409,18 @@ internal object TonightBackBus {
 }
 
 @Composable
-internal fun Modifier.tonightKeys(handle: (TonightKey) -> Boolean): Modifier {
+internal fun Modifier.tonightKeys(passBack: Boolean = false, handle: (TonightKey) -> Boolean): Modifier {
     val latest by rememberUpdatedState(handle)
     LaunchedEffect(Unit) { TonightBackBus.presses.collect { latest(TonightKey.Back) } }
     return onPreviewKeyEvent { event ->
+        // Back acts when the key comes up: on the HTPC Esc's key-down never reached these screens (Nov 10), while
+        // the rest of the app goes back on its key-up. Its key-down is still taken so nothing else acts on it too.
+        if (event.key in BackKeys) {
+            // The launcher leaves Back to the app, as before.
+            if (passBack) return@onPreviewKeyEvent false
+            if (event.type == KeyEventType.KeyUp) latest(TonightKey.Back)
+            return@onPreviewKeyEvent event.type == KeyEventType.KeyUp || event.type == KeyEventType.KeyDown
+        }
         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
         val key = when (event.key) {
             Key.DirectionLeft -> TonightKey.Left
@@ -420,13 +428,13 @@ internal fun Modifier.tonightKeys(handle: (TonightKey) -> Boolean): Modifier {
             Key.DirectionUp -> TonightKey.Up
             Key.DirectionDown -> TonightKey.Down
             Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Spacebar -> TonightKey.Ok
-            Key.Escape, Key.Back, Key.Backspace -> TonightKey.Back
             else -> null
         } ?: return@onPreviewKeyEvent false
         latest(key)
     }
 }
 
+private val BackKeys = setOf(Key.Escape, Key.Back, Key.Backspace)
 private val OkKeys = setOf(Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Spacebar)
 private const val HOLD_MS = 500L
 
@@ -523,7 +531,7 @@ private fun TonightLauncher(
             .fillMaxSize()
             .focusRequester(focus)
             .focusable()
-            .tonightKeys { key ->
+            .tonightKeys(passBack = true) { key ->
                 val s = selected
                 when {
                     s == SEL_BED -> when (key) {
