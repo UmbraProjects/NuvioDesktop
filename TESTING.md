@@ -293,6 +293,7 @@ Needs this Nuvio and the new NuvioRemote app together.
 
 Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
 
+- [ ] Typing "Tonight" or "bedtime" in the Settings search finds the Tonight picker rows and opens Random Play at that section (also listed first in the Random Play page's sidebar)
 - [ ] With the switch on, Nuvio opens on "How shall we choose tonight?" instead of the Home rows; with it off, Home is as before
 - [ ] The launcher's eight tiles keep their size; the six unbuilt ones are dimmed with "COMING SOON", and OK on one says it is coming later
 - [ ] The tile used last time has "LAST TIME" on it and is selected when the launcher opens
