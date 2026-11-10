@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Tonight: Back Works From The Remote** - a pad's B, the phone remote's Back and the mouse's back button go through the app's Back shortcut rather than arriving as a key, so on the Tonight screens they did nothing (only Esc on a keyboard worked). Tonight now takes Back while a mode is open and does what Back does on that screen (a question back, the cards to the launcher, undo in Knockout and so on); on the launcher Back is left to the app as before. Not yet tried on the HTPC.
+
 - **Settings Search Finds The Tonight Picker** - "Open on Tonight", "Bedtime" and "Let the AI refine The Map" (at the top of Settings > Random Play) are now found by typing "Tonight", "bedtime" or "map" into the Settings search, and the Random Play page's sidebar lists the Tonight picker section first. Not yet tried on the HTPC.
 
 - **Phone Remote: Tonight On The Phone** - while the TV shows the Tonight picker, the remote's Remote tab mirrors it: the launcher's Three Questions and Three Cards as two big buttons, each question with its two answers as big taps (plus Either is fine and Back), and the three cards with their posters, reason and finishing time; tapping a card plays it on the TV, Details opens its page, Reshuffle deals once a night. The phone and the TV stay in step whichever you use. The other Tonight modes stay on the TV (the header tag swaps to the pad). New lines `TONIGHT` (PC to phone, on every change) and `TONIGHT_DO` (phone to PC). Needs this Nuvio and the new app together. Not yet tried on the HTPC.

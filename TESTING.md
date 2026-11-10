@@ -293,6 +293,8 @@ Needs this Nuvio and the new NuvioRemote app together.
 
 Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
 
+- [ ] **BROKEN** Back from Three Cards (2026-11-10): the remote's Back did nothing; fixed the same evening
+  - [ ] Re-check: the remote's Back (and a pad's B, the phone remote's Back, the mouse's back button) leaves every Tonight mode: cards and questions step back, the modes return to the launcher; on the launcher Back does what it did before
 - [ ] Typing "Tonight" or "bedtime" in the Settings search finds the Tonight picker rows and opens Random Play at that section (also listed first in the Random Play page's sidebar)
 - [ ] With the switch on, Nuvio opens on "How shall we choose tonight?" instead of the Home rows; with it off, Home is as before
 - [ ] The launcher's eight tiles keep their size; the six unbuilt ones are dimmed with "COMING SOON", and OK on one says it is coming later

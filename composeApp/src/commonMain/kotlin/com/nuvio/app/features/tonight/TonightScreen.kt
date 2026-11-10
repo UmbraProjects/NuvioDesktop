@@ -191,6 +191,10 @@ fun TonightHost(
         deal(pool, reshuffle = false)
     }
 
+    // A pad's B and the phone remote's Back arrive as the app's GoBack, not as a key: while a mode is open, Tonight
+    // takes them (the screen showing runs its own Back); on the launcher they go on to the app as before.
+    com.nuvio.app.core.ui.TabBackHandler(enabled = view != TonightView.Launcher) { TonightBackBus.press() }
+
     // fork:phone-remote tonight - the phone mirrors the launcher, Three Questions and Three Cards; its taps run here.
     val remoteOwner = remember { Any() }
     val loadingTitles = poolState.loading && poolState.titles.isEmpty()
@@ -391,18 +395,36 @@ fun TonightHost(
 
 internal enum class TonightKey { Left, Right, Up, Down, Ok, Back }
 
-internal fun Modifier.tonightKeys(handle: (TonightKey) -> Boolean): Modifier = onPreviewKeyEvent { event ->
-    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-    val key = when (event.key) {
-        Key.DirectionLeft -> TonightKey.Left
-        Key.DirectionRight -> TonightKey.Right
-        Key.DirectionUp -> TonightKey.Up
-        Key.DirectionDown -> TonightKey.Down
-        Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Spacebar -> TonightKey.Ok
-        Key.Escape, Key.Back, Key.Backspace -> TonightKey.Back
-        else -> null
-    } ?: return@onPreviewKeyEvent false
-    handle(key)
+/**
+ * Back that does not arrive as a key: a pad's B and the phone remote's Back go through the app's GoBack shortcut
+ * (DesktopNavigationGestureBridge), which [TonightHost] claims with a TabBackHandler while a mode is open and
+ * forwards here, to whichever Tonight screen is showing.
+ */
+internal object TonightBackBus {
+    private val _presses = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+    val presses: kotlinx.coroutines.flow.SharedFlow<Unit> = _presses
+    fun press() {
+        _presses.tryEmit(Unit)
+    }
+}
+
+@Composable
+internal fun Modifier.tonightKeys(handle: (TonightKey) -> Boolean): Modifier {
+    val latest by rememberUpdatedState(handle)
+    LaunchedEffect(Unit) { TonightBackBus.presses.collect { latest(TonightKey.Back) } }
+    return onPreviewKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        val key = when (event.key) {
+            Key.DirectionLeft -> TonightKey.Left
+            Key.DirectionRight -> TonightKey.Right
+            Key.DirectionUp -> TonightKey.Up
+            Key.DirectionDown -> TonightKey.Down
+            Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Spacebar -> TonightKey.Ok
+            Key.Escape, Key.Back, Key.Backspace -> TonightKey.Back
+            else -> null
+        } ?: return@onPreviewKeyEvent false
+        latest(key)
+    }
 }
 
 private val OkKeys = setOf(Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Spacebar)
