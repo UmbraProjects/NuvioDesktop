@@ -72,7 +72,7 @@ internal val TextDim = Color(0xFFB9B6AD)
 internal val TextFaint = Color(0xFF8F8C84)
 internal val Side = 56.dp
 
-private enum class TonightView { Launcher, Questions, Cards, CoinToss, Knockout, Flick }
+private enum class TonightView { Launcher, Questions, Cards, CoinToss, Knockout, Flick, EndsBy, Pile }
 
 /** The wall clock, re-read every 20 s so "ends 23:06" and the bedtime filter stay true. */
 internal data class TonightClock(val minuteOfDay: Int, val isoDate: String, val previousIsoDate: String, val dayName: String, val year: Int) {
@@ -192,6 +192,14 @@ fun TonightHost(
                             TonightSettingsRepository.setLastMode(TonightMode.ChannelFlick)
                             view = TonightView.Flick
                         }
+                        TonightMode.EndsBy -> {
+                            TonightSettingsRepository.setLastMode(TonightMode.EndsBy)
+                            view = TonightView.EndsBy
+                        }
+                        TonightMode.ThePile -> {
+                            TonightSettingsRepository.setLastMode(TonightMode.ThePile)
+                            view = TonightView.Pile
+                        }
                         else -> Unit
                     }
                 },
@@ -231,6 +239,25 @@ fun TonightHost(
                 loading = poolState.loading && poolState.titles.isEmpty(),
                 onPlay = { onPlay(it.type, it.id) },
                 onDetails = { onOpenDetails(it.type, it.id) },
+                onBack = { view = TonightView.Launcher },
+            )
+            // Ends By and The Pile show everything (Ends By fades what runs past bedtime).
+            TonightView.EndsBy -> TonightEndsByView(
+                titles = poolState.titles,
+                taste = taste,
+                clock = clock,
+                settings = settings,
+                minutesUntilBed = minutesUntilBed,
+                loading = poolState.loading && poolState.titles.isEmpty(),
+                onPlay = { onPlay(it.type, it.id) },
+                onBack = { view = TonightView.Launcher },
+            )
+            TonightView.Pile -> TonightPileView(
+                titles = poolState.titles,
+                clock = clock,
+                minutesUntilBed = minutesUntilBed,
+                loading = poolState.loading && poolState.titles.isEmpty(),
+                onPlay = { onPlay(it.type, it.id) },
                 onBack = { view = TonightView.Launcher },
             )
             TonightView.Flick -> TonightFlickView(

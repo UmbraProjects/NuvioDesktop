@@ -322,3 +322,14 @@ Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
 - [ ] Knockout: Down plays a 20-second taste of the left title, Down again (or the end) the right one, then back to the posters; Left/Right still keep one while tasting; Back stops the tastes
 - [ ] Three Cards: holding OK on a card plays its trailer in place of the cards; a quick OK still plays the title; Back returns to the cards
 
+### Tonight picker: Ends By and The Pile (phase 4, Nov 10)
+
+- [ ] Ends By opens on "It's 21:10. Bed at 23:30." with hour marks, a white NOW line and a BED line
+- [ ] Films are bars from now ending in "ends 22:52"; shows are a block per episode that fits ("3 eps · 22:40") with one faded block past bed
+- [ ] Rows that fit come first (the one that fills the evening best on top); ones that run past bedtime are faded at the bottom
+- [ ] Up/Down move through the rows (six at a time; the list moves, rows never resize); Left/Right move bedtime and the bars and order update; OK plays the row
+- [ ] The Pile lists library titles you have never started, newest on top, each spine with "added 3 days ago" ... "added 8 months ago"; older spines are dustier and fainter
+- [ ] The chosen spine slides out and the panel shows how long it has waited, its poster, length and genres
+- [ ] OK plays it; Left once asks "again to let it go", Left again removes it from the pile and from Discover's suggestions (Not interested)
+- [ ] With nothing on the pile it says so instead of showing an empty panel
+

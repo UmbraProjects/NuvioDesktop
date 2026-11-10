@@ -1,6 +1,6 @@
 # Movies & TV "Tonight" picker
 
-Decided with the user on Nov 10, 2026. **Phases 0 to 3 built on Nov 10** (behind Settings > Random Play > Tonight picker > "Open on Tonight", off by default; not yet tried on the TV, checks in `TESTING.md`). Phases 4 and 5 are not built.
+Decided with the user on Nov 10, 2026. **Phases 0 to 4 built on Nov 10** (behind Settings > Random Play > Tonight picker > "Open on Tonight", off by default; not yet tried on the TV, checks in `TESTING.md`). Phase 5 (The Map + AI) is not built.
 
 ## The problem
 
@@ -83,7 +83,13 @@ Each phase ships behind Settings > "Tonight picker" (off by default) and adds it
 - **Channel Flick** (`TonightFlick.kt`, `TonightFlickScreen.kt`): line-up = unseen first (+0.4), taste, rating, plus a seeded shuffle. Right next, Left = `DiscoverRecommendationsRepository.markNotInterested` + gone for the visit, Up = `LibraryRepository.addToAllLibraries` (not for titles already in the library) and next, OK play. A title with no trailer leaves the line-up for the visit only.
 - **Knockout tastes**: Down plays 20 s of the left title, then the right, then back to the posters. **Three Cards**: OK now acts on release (`tonightKeysWithHold`); held for half a second it plays the selected card's trailer in place of the hand.
 
+## How phase 4 was built (Nov 10)
+
+- **Ends By** (`TonightEndsBy.kt`, `TonightEndsByPileScreen.kt`): rows from the whole pool (not bedtime-filtered) with a known length. A film is one bar; a show is one block per episode that fits (up to four) plus one faded block past bed. Order: fits first, then 0.5 x how much of the evening it fills + 0.3 taste + 0.2 rating. Axis from the hour before now to a whole hour at least 30 minutes past bed, 3 to 6 hours. Six rows visible in a moving window. Left/Right nudge bedtime (same setting as the chip).
+- **The Pile**: library titles never started or watched with a saved date, newest first; dust rises from a week old to full at six months (dots and fading). Let it go needs Left twice and uses Discover's Not interested (the title stays in the library). Nine spines visible in a moving window.
+
 ## Still open
 
 - The set of rotating questions for Three Questions.
+- There is no Settings page yet to undo Not interested (Never show / Let it go); Discover has no undo either.
 - What exactly counts as "your taste" for New to you vs Wildcard (Discover's taste profile is the first candidate).
