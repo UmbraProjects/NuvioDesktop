@@ -2080,6 +2080,14 @@ compose.desktop {
             // peaked ~550 MB in that day's logs, so 1 GB leaves ~2x headroom; if an
             // OutOfMemoryError ever appears in nuvio.log, raise this rather than remove it.
             "-Xmx1g",
+            // fork:huge-methods - HotSpot never JIT-compiles a method over 8000 bytes of bytecode, so it runs in the
+            // interpreter for the whole session. The CI step "Huge methods (summary)" (scripts/huge-methods.py) found 28 of
+            // them on 2026-11-10, and they are composables that run again on every recomposition: HomeScreen 47,570 bytes,
+            // MetaDetailsScreen 31,076, MainAppContent 27,858, AlbumContent 19,795, DesktopHomeHeroFrame 17,071,
+            // YouTubeTabScreen 15,954, StreamsScreen 9,643 and others. This lets the compiler take them. Cost: compile time
+            // on the background compiler threads for those few methods. If Home hitches in its first minute, or CPU stays
+            // high after start, take this line out and say so in TESTING.md; the better long-term fix is splitting them.
+            "-XX:-DontCompileHugeMethods",
             smokePlayerUrl?.takeIf { it.isNotBlank() }?.let { "-Dnuvio.desktop.smokePlayerUrl=$it" },
         )
 

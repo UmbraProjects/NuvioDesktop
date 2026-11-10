@@ -266,3 +266,4 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 
 - [ ] Set something different in two profiles (Settings, Gamepad dead zone; Games, backdrop style; Playback, anime filler badges), then switch profile from the profile picker: each profile shows its own values straight away, without restarting Nuvio
 - [ ] Phone remote: pairing still works after the update (scan the QR or enter the address and PIN), and it reconnects the next day without asking again
+- [ ] Home, the movie/show page and the album page (JIT flag for the biggest screens): after about a minute of use, scrolling Home and opening a title or an album feels the same or smoother than before; say if Home hitches in its first minute, or Task Manager shows Nuvio's CPU staying high after it has settled
