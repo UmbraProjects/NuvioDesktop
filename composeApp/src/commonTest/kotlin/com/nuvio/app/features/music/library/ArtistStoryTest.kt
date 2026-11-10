@@ -74,7 +74,7 @@ class ArtistStoryTest {
         // The first album is also the best known: it is one point, not two.
         assertEquals(1, points.count { it.release.key == "album" })
 
-        val oneHit = artistStoryPoints(artist(listOf(rel("first", "1990"), rel("second", "1995")), top = listOf("first")))
+        val oneHit = artistStoryPoints(artist(listOf(rel("first", "1990"), rel("second", "1995")), top = listOf("first"), type = "Person"))
         assertEquals("Where the story starts, and still the one they are best known for", oneHit.first().line)
     }
 
