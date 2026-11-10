@@ -855,6 +855,8 @@
   <string name="settings_advanced_section_diagnostics">ΔΙΑΓΝΩΣΤΙΚΑ</string>
   <string name="settings_advanced_performance_logging">Καταγραφή απόδοσης</string>
   <string name="settings_advanced_performance_logging_description">Καταγράφει στο αρχείο καταγραφής της εφαρμογής πού πηγαίνει ο χρόνος κάθε καρέ ενώ κάνετε κύλιση. Είναι απενεργοποιημένο από προεπιλογή· ενεργοποιήστε το μόνο αν σας ζητηθεί αρχείο καταγραφής, καθώς προσθέτει λίγη επιπλέον εργασία σε κάθε καρέ.</string>
+  <string name="settings_advanced_memory_overlay">Επικάλυψη μνήμης</string>
+  <string name="settings_advanced_memory_overlay_description">Δείχνει ζωντανά πού πηγαίνει η μνήμη της εφαρμογής, σε ένα μικρό πλαίσιο πάνω από την εφαρμογή και την αναπαραγωγή: ό,τι μετρά η Διαχείριση εργασιών, μνήμη οδηγού γραφικών, το heap της Java, τις κρυφές μνήμες εικόνων και την προσωρινή μνήμη της αναπαραγωγής.</string>
   <string name="settings_advanced_section_cache">ΠΡΟΣΩΡΙΝΗ ΜΝΗΜΗ</string>
   <string name="settings_updates_section">ΕΝΗΜΕΡΩΣΕΙΣ</string>
   <string name="settings_updates_channel">Κανάλι ενημερώσεων</string>
@@ -1977,6 +1979,10 @@
   <string name="settings_playback_show_loading_overlay_description">Εμφάνιση του αρχικού overlay φόρτωσης ενώ ξεκινά η αναπαραγωγή μιας ροής.</string>
   <string name="settings_playback_pip_browse">Περιήγηση σε εικόνα σε εικόνα</string>
   <string name="settings_playback_pip_browse_description">Η εικόνα σε εικόνα αποκτά ένα κουμπί που επαναφέρει την εφαρμογή με το βίντεο σε μια γωνία της, ώστε να περιηγείστε όσο παίζει. Τα τρέιλερ μένουν ανενεργά στο μεταξύ. Ισχύει από το επόμενο βίντεο.</string>
+  <string name="settings_playback_double_click">Διπλό κλικ στο βίντεο</string>
+  <string name="settings_playback_double_click_description">Τι κάνει ένα διπλό κλικ στο βίντεο που παίζει. Στην εικόνα σε εικόνα επαναφέρει πάντα το βίντεο.</string>
+  <string name="settings_playback_double_click_pip">Εικόνα σε εικόνα</string>
+  <string name="settings_playback_double_click_fullscreen">Πλήρης οθόνη / παράθυρο</string>
   <string name="settings_playback_subtitle_background_color">Χρώμα φόντου</string>
   <string name="settings_playback_subtitle_blur">Θόλωμα</string>
   <string name="settings_playback_subtitle_bold">Έντονα</string>
@@ -2872,6 +2878,18 @@
   <string name="details_season_view_text">Κείμενο</string>
   <string name="details_show_details">Λεπτομέρειες σειράς</string>
   <string name="details_status">Κατάσταση</string>
+  <string name="details_status_airing">Προβάλλεται</string>
+  <string name="details_status_ended">Ολοκληρώθηκε</string>
+  <string name="details_status_cancelled">Ακυρώθηκε</string>
+  <string name="details_status_upcoming">Έρχεται σύντομα</string>
+  <string name="details_form_series_from">Σειρά (%1$s)</string>
+  <string name="details_form_limited_series_from">Μίνι σειρά (%1$s)</string>
+  <string name="details_form_limited_series">Μίνι σειρά</string>
+  <string name="details_form_film_from">Ταινία (%1$s)</string>
+  <plurals name="details_status_cancelled_after_seasons">
+    <item quantity="one">Ακυρώθηκε μετά από %1$d σεζόν</item>
+    <item quantity="other">Ακυρώθηκε μετά από %1$d σεζόν</item>
+  </plurals>
   <string name="details_videos">Βίντεο</string>
   <string name="details_episode_badge_file">ΑΡΧΕΙΟ</string>
   <string name="downloads_enqueue_insufficient_space">Δεν υπάρχει αρκετός ελεύθερος χώρος στον δίσκο για αυτή τη λήψη</string>

@@ -1666,6 +1666,8 @@ class WindowsMpvWebPlayer : public std::enable_shared_from_this<WindowsMpvWebPla
     };
 
 public:
+    struct SourceReplacement; // defined with the replacement state below
+
     void nuvioMpvLogAppend(const std::string &line) {
         const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - startupStartedAt).count();
@@ -1827,6 +1829,32 @@ public:
         stopMpvCalls();
     }
 
+    // Loads another source into this instance (see SourceReplacement). Returns false, leaving the
+    // request's sink with the caller, when the instance is not fit to be reused; the caller then
+    // disposes it and creates a fresh player as before.
+    bool requestSourceReplacement(const std::shared_ptr<SourceReplacement> &request, std::string &refusal) {
+        if (shuttingDown.load() || stopping.load()) { refusal = "shutting down"; return false; }
+        if (passiveSurface) { refusal = "passive surface"; return false; }
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            if (!mpv) { refusal = "no mpv"; return false; }
+        }
+        if (!eventThread.joinable()) { refusal = "no event thread"; return false; }
+        // An EDL with separate audio is built once in startMpv.
+        if (!externalAudioUrl.empty() || !extraAudioTracks.empty()) { refusal = "separate audio"; return false; }
+        // The failed demuxer, its error state and whatever it left in mpv are what a fresh player
+        // exists to get away from.
+        if (playbackFailureDetected.load()) { refusal = "playback failed"; return false; }
+        // stream-lavf-o's reconnect options were set for one kind of source at create.
+        const bool isLocalFile = request->sourceUrl.find("://") == std::string::npos ||
+            request->sourceUrl.rfind("file://", 0) == 0;
+        if (isLocalFile != sourceIsLocalFile.load()) { refusal = "local/remote changed"; return false; }
+        sourceSwitchInProgress.store(true);
+        auto self = shared_from_this();
+        postMpvCall([self, request]() { self->runSourceReplacementOnCallThread(request); });
+        return true;
+    }
+
     // fork:music-stage - public entry for the rounded video corners (the members behind it are private).
     void setCornerRadius(int radiusPx) {
         cornerRadiusPx.store(radiusPx);
@@ -1840,18 +1868,26 @@ public:
 
         nuvioBridgeLog("shutdown begin");
         stopping.store(true);
+        {
+            // A queued replacement waits on the event thread, which is about to stop.
+            std::lock_guard<std::mutex> lock(replacementMutex);
+        }
+        replacementCv.notify_all();
         // Before the handle can go away below. A call already running finishes first.
         stopMpvCalls();
+        std::thread thumbnailWorker;
         {
             // Serialize against lazy worker creation so a request cannot create a joinable thread
-            // after shutdown has already checked it.
+            // after shutdown has already checked it. Taken out under the lock: a replacement on
+            // the event thread may be retiring the same worker.
             std::lock_guard<std::mutex> lock(thumbnailMutex);
             thumbnailStopping.store(true);
             ++thumbnailRequestGeneration;
+            thumbnailWorker = std::move(thumbnailThread);
         }
         thumbnailCv.notify_all();
-        if (thumbnailThread.joinable()) {
-            thumbnailThread.join();
+        if (thumbnailWorker.joinable()) {
+            thumbnailWorker.join();
         }
         {
             std::lock_guard<std::mutex> lock(mpvMutex);
@@ -1904,11 +1940,21 @@ public:
             // thread. Serialize final JNI ref deletion with both paths so a late callback cannot
             // invoke Java through a global reference teardown has just released.
             std::lock_guard<std::mutex> eventLock(eventSinkMutex);
-            if (eventSink) {
+            jobject unusedReplacementSink = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(replacementMutex);
+                if (pendingReplacement) {
+                    unusedReplacementSink = pendingReplacement->sink;
+                    pendingReplacement->sink = nullptr;
+                    pendingReplacement.reset();
+                }
+            }
+            if (eventSink || unusedReplacementSink) {
                 bool didAttach = false;
                 JNIEnv *env = jniEnvDidAttach(&didAttach);
                 if (env) {
-                    env->DeleteGlobalRef(eventSink);
+                    if (eventSink) env->DeleteGlobalRef(eventSink);
+                    if (unusedReplacementSink) env->DeleteGlobalRef(unusedReplacementSink);
                 }
                 if (didAttach) {
                     javaVm->DetachCurrentThread();
@@ -1934,6 +1980,7 @@ public:
 
     void onTimer() {
         if (shuttingDown.load()) return;
+        checkControlsPageReady();
         layoutNativeSubviews(false);
         syncControls();
         if (subtitleAssOverrideInitialCheckPending.load() &&
@@ -1945,6 +1992,7 @@ public:
 
     void runJavaScript(const std::string &script) {
         postUiTask([self = shared_from_this(), script]() {
+            self->rememberReplayableControlsScript(script);
             if (!self->webView || !self->controlsWebReady.load()) {
                 // The controls page is still loading (or the WebView isn't up yet). Queue the
                 // script so early UI calls — e.g. the failover "trying next source" pill sent
@@ -1960,6 +2008,67 @@ public:
         });
     }
 
+    static constexpr int kControlsReadyTimeoutMs = 6000;
+    static constexpr int kMaxControlsReloads = 3;
+
+    void rememberReplayableControlsScript(const std::string &script) {
+        size_t start = script.find_first_not_of(" \t\r\n");
+        if (start == std::string::npos) return;
+        size_t paren = script.find('(', start);
+        if (paren == std::string::npos) return;
+        std::string name = script.substr(start, paren - start);
+        if (name.rfind("window.nuvioSet", 0) != 0 && name.rfind("window.nuvioSync", 0) != 0) return;
+        for (auto &entry : replayableControlsScripts) {
+            if (entry.first == name) {
+                entry.second = script;
+                return;
+            }
+        }
+        if (replayableControlsScripts.size() < 32) replayableControlsScripts.emplace_back(name, script);
+    }
+
+    // UI thread. Loads (or loads again) the HUD page and starts the ready watchdog.
+    void navigateControlsPage() {
+        if (!webView || controlsPageUrl.empty()) return;
+        controlsWebReady.store(false);
+        controlsNavigateStartedAt = std::chrono::steady_clock::now();
+        controlsNavigatePending = true;
+        webView->Navigate(controlsPageUrl.c_str());
+    }
+
+    // UI thread. The page is dead or never came up: load it again and hand it the state it missed.
+    void reloadControlsPage(const std::string &reason) {
+        if (shuttingDown.load() || !webView || controlsPageUrl.empty()) return;
+        if (controlsReloadCount >= kMaxControlsReloads) {
+            if (controlsNavigatePending) {
+                logBridge("hud reload limit reached; leaving page as is reason=" + reason);
+                controlsNavigatePending = false;
+            }
+            return;
+        }
+        controlsReloadCount++;
+        logBridge("hud reload #" + std::to_string(controlsReloadCount) + " reason=" + reason);
+        {
+            std::lock_guard<std::mutex> lock(controlsMutex);
+            if (pendingControlsJson.empty()) pendingControlsJson = lastControlsJson;
+        }
+        // The state setters first, then whatever was queued while the page was down (newer).
+        std::vector<std::string> replay;
+        replay.reserve(replayableControlsScripts.size() + pendingControlsScripts.size());
+        for (const auto &entry : replayableControlsScripts) replay.push_back(entry.second);
+        replay.insert(replay.end(), pendingControlsScripts.begin(), pendingControlsScripts.end());
+        pendingControlsScripts = std::move(replay);
+        navigateControlsPage();
+    }
+
+    void checkControlsPageReady() {
+        if (!controlsNavigatePending || controlsWebReady.load()) return;
+        auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - controlsNavigateStartedAt).count();
+        if (waited < kControlsReadyTimeoutMs) return;
+        reloadControlsPage("no controlsReady after " + std::to_string(waited) + "ms");
+    }
+
     void setCursorHidden(bool hidden) {
         postUiTask([self = shared_from_this(), hidden]() {
             if (self->cursorHidden == hidden) return;
@@ -1973,6 +2082,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(controlsMutex);
             pendingControlsJson = controlsJson;
+            lastControlsJson = controlsJson;
         }
         postUiTask([self = shared_from_this()]() {
             self->flushPendingControlsJsonIfReady();
@@ -2186,6 +2296,26 @@ public:
     // If the parameters never resolve, apply the position anyway but skip the reset — keeping a
     // possibly-late position beats silently sending the user back to the start.
     // Event-thread only; must not be called while holding mpvMutex.
+    // Reports the file's HDR state as soon as its video parameters exist, instead of waiting for
+    // FILE_LOADED or a property-change notice. mpv only notifies an observer when a value differs
+    // from the last one it sent, so on a reused player the next episode's "bt.709" after the
+    // previous one's never arrived, and its HDR state stayed unknown until a later decoder switch
+    // forced a second full video-profile pass just after the first frame (2026-11-09, ~12 dropped
+    // frames per reused start). Event thread; a no-op once reported and after the startup window.
+    void tryReportHdrStateFromParams() {
+        if (lastReportedHdrState != -1) return;
+        if (std::chrono::steady_clock::now() - startupStartedAt > std::chrono::seconds(30)) return;
+        // The same gate the resume seek and the SVP install use: this file's real stream.
+        if (!videoParametersLookResolved()) return;
+        const std::string primaries = stringProperty("video-params/primaries", "");
+        if (primaries.empty()) return;
+        const std::string gamma = stringProperty("video-params/gamma", "");
+        if (gamma.empty()) return;
+        const bool hdr = isHdrContent(primaries, gamma);
+        lastReportedHdrState = hdr ? 1 : 0;
+        sendPlayerEvent("videoParams", hdr ? 1.0 : 0.0);
+    }
+
     void tryApplyInitialResume(const char *reason) {
         if (initialResumeApplied) return;
         const bool parametersResolved = videoParametersLookResolved();
@@ -2734,6 +2864,27 @@ public:
         }
         mpvApi().freeNodeContents(&state);
         return true;
+    }
+
+    // What mpv's demuxer cache holds now, for the memory overlay: all of it, and the part ahead of
+    // the playhead. -1 for either when mpv has no cache state. Takes mpvMutex; call off the UI thread.
+    void demuxerCacheBytes(long long &total, long long &ahead) {
+        total = -1;
+        ahead = -1;
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv || !mpvApi().getProperty || !mpvApi().freeNodeContents) return;
+        mpv_node state{};
+        if (mpvApi().getProperty(mpv, "demuxer-cache-state", MPV_FORMAT_NODE, &state) < 0) return;
+        if (state.format == MPV_FORMAT_NODE_MAP && state.u.list) {
+            for (int i = 0; i < state.u.list->num; ++i) {
+                const std::string key = state.u.list->keys[i] ? state.u.list->keys[i] : "";
+                const mpv_node &value = state.u.list->values[i];
+                if (value.format != MPV_FORMAT_INT64) continue;
+                if (key == "total-bytes") total = value.u.int64;
+                else if (key == "fw-bytes") ahead = value.u.int64;
+            }
+        }
+        mpvApi().freeNodeContents(&state);
     }
 
     // A seek target moved into a seekable range: kept where it is inside one, otherwise onto the
@@ -3328,10 +3479,12 @@ public:
     }
 
     long long durationMs() {
+        if (sourceSwitchInProgress.load()) return 0;
         return (long long)std::llround(mirroredDouble("duration", 0.0) * 1000.0);
     }
 
     long long positionMs() {
+        if (sourceSwitchInProgress.load()) return 0;
         // While steps are being coalesced the HUD must track the accumulated target:
         // time-pos still sits at the pre-burst position until the seek is actually issued,
         // which would otherwise make a held arrow key look like it had stopped responding.
@@ -3344,11 +3497,13 @@ public:
 
 
     long long bufferedPositionMs() {
+        if (sourceSwitchInProgress.load()) return 0;
         double buffered = rawPositionSeconds() + cacheAheadSeconds();
         return (long long)std::llround(std::max(buffered, 0.0) * 1000.0);
     }
 
     bool isLoading() {
+        if (sourceSwitchInProgress.load()) return true;
         if (initialResumeTransactionPending.load()) return true;
         bool paused = isPaused();
         bool eofReached = isEnded();
@@ -3367,27 +3522,32 @@ public:
         // "ended" during that window incorrectly marks a title fully watched (and drops it out
         // of Continue Watching) if the user backs out within the first couple of seconds.
         if (playbackFailureDetected.load()) return false;
+        if (sourceSwitchInProgress.load()) return false;
         if (initialResumeTransactionPending.load()) return false;
         if (std::chrono::steady_clock::now() < eofSuppressedUntil.load()) return false;
         return mirroredFlag("eof-reached", false);
     }
 
     std::string audioTracksJson() {
+        if (sourceSwitchInProgress.load()) return "[]";
         std::lock_guard<std::mutex> lock(trackJsonMutex);
         return sharedAudioTracksJson;
     }
 
     std::string subtitleTracksJson() {
+        if (sourceSwitchInProgress.load()) return "[]";
         std::lock_guard<std::mutex> lock(trackJsonMutex);
         return sharedSubtitleTracksJson;
     }
 
     std::string videoTracksJson() {
+        if (sourceSwitchInProgress.load()) return "[]";
         std::lock_guard<std::mutex> lock(trackJsonMutex);
         return sharedVideoTracksJson;
     }
 
     std::string chaptersJson() {
+        if (sourceSwitchInProgress.load()) return "[]";
         std::lock_guard<std::mutex> lock(trackJsonMutex);
         return sharedChaptersJson;
     }
@@ -3772,6 +3932,15 @@ public:
     void setMpvPropertyString(const std::string &key, const std::string &value) {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
+        // vf is cleared outright by a replacement; "@nuvio-..." keys are bridge-only.
+        if (!key.empty() && key[0] != '@' && key != "vf" &&
+            runtimePropertyBaseline.find(key) == runtimePropertyBaseline.end()) {
+            char *current = nullptr;
+            if (mpvApi().getProperty(mpv, key.c_str(), MPV_FORMAT_STRING, &current) >= 0 && current) {
+                runtimePropertyBaseline.emplace(key, current);
+            }
+            if (current) mpvApi().freeValue(current);
+        }
         // The runtime video profile (applyDesktopVideoProfile / applyDesktopAnimeProfile) owns these
         // keys and re-asserts them on every file load and settings change, which would put the
         // source-sized allocations back a frame after startMpv stripped them out. Pin them instead
@@ -4100,11 +4269,63 @@ private:
     jmethodID eventMethod = nullptr;
     std::mutex eventSinkMutex;
 
+    // The next file of a binge (or a source picked from the panel) loads into this instance with
+    // loadfile instead of a torn-down and recreated player. Recreating destroyed the D3D11 device
+    // on every episode, which let Windows unload the NVIDIA driver while NvAPI's own thread still
+    // held the old device; its next call into it was a control-flow-guard fail-fast that killed
+    // the app (dump 2026-11-09, nvapi64_impl -> d3d11!...QueryInterface, FAST_FAIL code 0xa).
+    // The request is filled on the JNI thread, queued behind earlier mpv calls, and performed on
+    // the event thread, which owns the per-file startup state machines.
+public:
+    struct SourceReplacement {
+        std::string sourceUrl;
+        std::vector<std::string> headerLines;
+        bool playWhenReady = true;
+        long long initialPositionMs = 0;
+        double initialProgressFraction = 0.0;
+        std::string animeSvpFilter;
+        std::string mediaTitle;
+        std::string traceId;
+        jobject sink = nullptr; // global ref; handed to eventSink when performed
+        bool done = false;      // replacementMutex
+    };
+private:
+    std::mutex replacementMutex;
+    std::condition_variable replacementCv;
+    std::shared_ptr<SourceReplacement> pendingReplacement; // replacementMutex
+    std::atomic_bool replacementRequested{false};
+    // From the moment a replacement is accepted until the new file's START_FILE, the app's reads
+    // (position, duration, ended, tracks) answer "nothing loaded yet" rather than the outgoing
+    // file's values: progress saved against the new episode at the old one's playhead would be
+    // wrong in a way no later write corrects.
+    std::atomic_bool sourceSwitchInProgress{false};
+    // Between the replacing loadfile and the new file's START_FILE every dequeued event belongs to
+    // the outgoing file and is dropped. Event thread only.
+    bool awaitingReplacementStart = false;
+    std::chrono::steady_clock::time_point awaitingReplacementDeadline{}; // event thread
+    // The value each property had before the app first wrote it through setMpvPropertyString, so
+    // a replacement can put the instance back to how a fresh one starts. mpvMutex.
+    std::unordered_map<std::string, std::string> runtimePropertyBaseline;
+
     std::atomic_bool controlsWebReady = false;
     std::mutex controlsMutex;
     std::string pendingControlsJson;
     // Scripts queued by runJavaScript before the controls page reported ready. UI thread only.
     std::vector<std::string> pendingControlsScripts;
+    // HUD page health, UI thread only. controls.js reports controlsReady as its last statement; a
+    // page whose script died or whose renderer crashed never does, and it went on drawing its
+    // static controls while ignoring every update and click for the rest of the session. The
+    // bridge now notices that (no ready in time, ProcessFailed) and loads the page again.
+    std::wstring controlsPageUrl;
+    std::chrono::steady_clock::time_point controlsNavigateStartedAt{};
+    bool controlsNavigatePending = false;
+    int controlsReloadCount = 0;
+    int hudErrorLogCount = 0;
+    // The latest full controls push (controlsMutex), replayed into a reloaded page.
+    std::string lastControlsJson;
+    // The latest call of each window.nuvioSet*/nuvioSync* state setter, replayed into a reloaded
+    // page. One-shot calls (pills, panels) are not: a reload must not repeat an old toast.
+    std::vector<std::pair<std::string, std::string>> replayableControlsScripts;
     std::atomic<double> initialStartSeconds{0.0};
     double initialStartProgressFraction = 0.0;
     bool initialResumeApplied = false;
@@ -4715,10 +4936,51 @@ private:
                                         ).Get(),
                                         &controllerSelf->messageToken
                                     );
+                                    auto healthWeakSelf = controllerWeakSelf;
+                                    EventRegistrationToken navigationCompletedToken = {};
+                                    controllerSelf->webView->add_NavigationCompleted(
+                                        Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                                            [healthWeakSelf](ICoreWebView2 *, ICoreWebView2NavigationCompletedEventArgs *args) -> HRESULT {
+                                                auto healthSelf = healthWeakSelf.lock();
+                                                if (!healthSelf || healthSelf->shuttingDown.load() || !args) return S_OK;
+                                                BOOL success = FALSE;
+                                                args->get_IsSuccess(&success);
+                                                if (success) {
+                                                    healthSelf->logBridge("webview navigation completed");
+                                                } else {
+                                                    COREWEBVIEW2_WEB_ERROR_STATUS status = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+                                                    args->get_WebErrorStatus(&status);
+                                                    healthSelf->logBridge("webview navigation failed status=" + std::to_string((int)status));
+                                                }
+                                                return S_OK;
+                                            }
+                                        ).Get(),
+                                        &navigationCompletedToken
+                                    );
+                                    EventRegistrationToken processFailedToken = {};
+                                    controllerSelf->webView->add_ProcessFailed(
+                                        Callback<ICoreWebView2ProcessFailedEventHandler>(
+                                            [healthWeakSelf](ICoreWebView2 *, ICoreWebView2ProcessFailedEventArgs *args) -> HRESULT {
+                                                auto healthSelf = healthWeakSelf.lock();
+                                                if (!healthSelf || healthSelf->shuttingDown.load() || !args) return S_OK;
+                                                COREWEBVIEW2_PROCESS_FAILED_KIND kind = COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED;
+                                                args->get_ProcessFailedKind(&kind);
+                                                healthSelf->logBridge("webview process failed kind=" + std::to_string((int)kind));
+                                                // The page's renderer died or hung: load the page again. A dead browser
+                                                // process takes the whole WebView with it, which a reload cannot fix.
+                                                if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED ||
+                                                    kind == COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_UNRESPONSIVE) {
+                                                    healthSelf->reloadControlsPage("render process failed kind=" + std::to_string((int)kind));
+                                                }
+                                                return S_OK;
+                                            }
+                                        ).Get(),
+                                        &processFailedToken
+                                    );
                                     controllerSelf->layoutNativeSubviews();
-                                    std::wstring url = toWide(controlsUrl);
+                                    controllerSelf->controlsPageUrl = toWide(controlsUrl);
                                     controllerSelf->logBridge("webview navigate controls");
-                                    controllerSelf->webView->Navigate(url.c_str());
+                                    controllerSelf->navigateControlsPage();
                                     if (controlsFocusable) {
                                         createdController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
                                     } else {
@@ -4751,6 +5013,41 @@ private:
         const std::string &animeSvpFilter
     ) {
         nuvioBridgeLog("mpv create");
+        audioPassthroughRequested = false;
+        audioPassthroughFallbackApplied = false;
+        resetPerFileStartupState(playWhenReady);
+        setPythonHomeEnvironmentVariable();
+        MpvApi &api = mpvApi();
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            mpv = createMpvHandle(api);
+            if (!mpv) {
+                throw std::runtime_error("mpv_create failed.");
+            }
+            armInitialResumeLocked(initialPositionMs, initialProgressFraction, playWhenReady);
+            startMpvLocked(api, sourceUrl, headerLines, nvidiaRtxSuperResolutionEnabled, nvidiaRtxHdrEnabled, animeSvpFilter);
+        }
+
+        setPaused(!playWhenReady);
+        auto self = shared_from_this();
+        nuvioBridgeLog("mpv event thread starting");
+        eventThread = std::thread([self]() { self->drainMpvEvents(); });
+        nuvioBridgeLog("mpv start complete");
+    }
+
+    // The resume target and play intent of the file about to load. Caller holds mpvMutex.
+    void armInitialResumeLocked(long long initialPositionMs, double initialProgressFraction, bool playWhenReady) {
+        initialStartSeconds.store(initialPositionMs > 0 ? (double)initialPositionMs / 1000.0 : 0.0);
+        initialStartProgressFraction = initialPositionMs <= 0 ? initialProgressFraction : 0.0;
+        initialResumeTransactionPending.store(initialPositionMs > 0 || initialProgressFraction > 0.0);
+        initialResumeShouldPlay.store(playWhenReady);
+        initialResumeSeekRetried.store(false);
+    }
+
+    // Startup state that belongs to one file rather than to the mpv instance. Runs before the
+    // first load (startMpv) and again before each source replacement (replaceSource), so a reused
+    // instance starts the next file exactly as a fresh one would. Must not hold mpvMutex.
+    void resetPerFileStartupState(bool playWhenReady) {
         fileLoadedForCurrentSource = false;
         startupPlaybackReady = false;
         {
@@ -4761,8 +5058,6 @@ private:
         }
         markTrackJsonDirty();
         startupFailureReported = false;
-        audioPassthroughRequested = false;
-        audioPassthroughFallbackApplied = false;
         playbackFailureDetected.store(false);
         lastHttpPlaybackError.clear();
         lastHttpPlaybackErrorAt = {};
@@ -4801,20 +5096,18 @@ private:
         svpStartupProfileApplied.store(false);
         svpProfileSettleDeadline = {};
         svpPrerollDeadline = {};
-        setPythonHomeEnvironmentVariable();
-        MpvApi &api = mpvApi();
-        {
-            std::lock_guard<std::mutex> lock(mpvMutex);
-            mpv = createMpvHandle(api);
-            if (!mpv) {
-                throw std::runtime_error("mpv_create failed.");
-            }
-            initialStartSeconds.store(initialPositionMs > 0 ? (double)initialPositionMs / 1000.0 : 0.0);
-            initialStartProgressFraction = initialPositionMs <= 0 ? initialProgressFraction : 0.0;
-            initialResumeTransactionPending.store(initialPositionMs > 0 || initialProgressFraction > 0.0);
-            initialResumeShouldPlay.store(playWhenReady);
-            initialResumeSeekRetried.store(false);
+    }
 
+    // Options, initialize and the first loadfile of a freshly created handle. Caller holds mpvMutex.
+    void startMpvLocked(
+        MpvApi &api,
+        const std::string &sourceUrl,
+        const std::vector<std::string> &headerLines,
+        bool nvidiaRtxSuperResolutionEnabled,
+        bool nvidiaRtxHdrEnabled,
+        const std::string &animeSvpFilter
+    ) {
+        {
             // Capture mpv's own log beside nuvio.log so filter/hwdec issues are visible.
             // Verbose ("v") level is only requested when diagnosing the RTX pipeline or when
             // NUVIO_MPV_VERBOSE is set: at "v" mpv emits hundreds of messages during open/probe
@@ -5188,12 +5481,6 @@ private:
             nuvioBridgeLog("mpv loadfile accepted");
 
         }
-
-        setPaused(!playWhenReady);
-        auto self = shared_from_this();
-        nuvioBridgeLog("mpv event thread starting");
-        eventThread = std::thread([self]() { self->drainMpvEvents(); });
-        nuvioBridgeLog("mpv start complete");
     }
 
     // fork:music-stage - rounded corners for the Now Playing video: the player's own container window is cut to a rounded
@@ -5393,7 +5680,22 @@ private:
             }
             return;
         }
+        if (type == "hudError") {
+            // Reported by the guard in controls.html; capped so a looping error can't flood the log.
+            if (hudErrorLogCount < 20) {
+                hudErrorLogCount++;
+                logBridge("hud script error: " + extractJsonString(messageJson, L"detail"));
+            }
+            return;
+        }
         if (type == "controlsReady") {
+            if (controlsNavigatePending) {
+                auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - controlsNavigateStartedAt).count();
+                logBridge("hud controls ready after " + std::to_string(waited) + "ms" +
+                    (controlsReloadCount > 0 ? " (reload #" + std::to_string(controlsReloadCount) + ")" : std::string()));
+            }
+            controlsNavigatePending = false;
             controlsWebReady.store(true);
             flushPendingControlsJsonIfReady();
             if (webView) {
@@ -5700,6 +6002,268 @@ private:
         return true;
     }
 
+    // mpv call thread: hands the request to the event thread and holds the call queue until it
+    // has been performed, so the app's writes that follow the replacement (volume, subtitle
+    // configuration, resize mode) land on the new file instead of being undone by its reset.
+    void runSourceReplacementOnCallThread(const std::shared_ptr<SourceReplacement> &request) {
+        {
+            std::lock_guard<std::mutex> lock(replacementMutex);
+            if (stopping.load()) return;
+            pendingReplacement = request;
+        }
+        replacementRequested.store(true);
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            if (mpv) mpvApi().wakeup(mpv);
+        }
+        std::unique_lock<std::mutex> lock(replacementMutex);
+        const bool performed = replacementCv.wait_for(lock, std::chrono::seconds(10), [&]() {
+            return request->done || stopping.load();
+        });
+        if (!performed) nuvioBridgeLog("source replace still waiting on the event thread");
+    }
+
+    // The preview decoder is a second mpv bound to the source it was started with. Retire it so
+    // the next request starts one on the new source. Event thread.
+    void retireThumbnailWorker(const std::string &sourceUrl, const std::vector<std::string> &headerLines) {
+        std::thread worker;
+        {
+            std::lock_guard<std::mutex> lock(thumbnailMutex);
+            thumbnailStopping.store(true);
+            ++thumbnailRequestGeneration;
+            worker = std::move(thumbnailThread);
+        }
+        thumbnailCv.notify_all();
+        if (worker.joinable()) worker.join();
+        std::lock_guard<std::mutex> lock(thumbnailMutex);
+        thumbnailSourceUrl = sourceUrl;
+        thumbnailHeaderLines = headerLines;
+        if (!stopping.load()) thumbnailStopping.store(false);
+    }
+
+    // Forgets the outgoing file's mirrored values, so position, duration and the end state read
+    // as "nothing loaded yet" until the new file reports its own. Pause, volume, mute and speed
+    // belong to the instance and stay.
+    void clearPerFileMirror() {
+        std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+        for (const char *name : {"time-pos", "duration", "demuxer-cache-time", "demuxer-cache-duration",
+                                 "eof-reached", "core-idle", "seeking", "paused-for-cache",
+                                 "track-list/count", "aid", "sid", "current-tracks/sub/id"}) {
+            propertyMirror.erase(name);
+        }
+    }
+
+    // Fills back, from mpv itself, the entries clearPerFileMirror dropped that the new file has
+    // not reported. mpv only notifies an observer when a value differs from the last one it sent,
+    // and the replacement drops every event until START_FILE, so a value the next file shares
+    // with the previous one never arrives: the next episode of the same release has the same
+    // track-list, track count and sid, which left the track JSON at "[]" and the app with no
+    // tracks to apply its subtitle preference to (2026-11-10, reused starts began with no
+    // subtitle). Entries already reported are left alone. Event thread, at FILE_LOADED.
+    void reseedPerFileMirror() {
+        std::vector<std::pair<std::string, MirroredProperty>> values;
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            if (!mpv) return;
+            MpvApi &api = mpvApi();
+            for (const char *name : {"time-pos", "duration", "demuxer-cache-time", "demuxer-cache-duration"}) {
+                MirroredProperty value;
+                double number = 0.0;
+                if (api.getProperty(mpv, name, MPV_FORMAT_DOUBLE, &number) >= 0 && std::isfinite(number)) {
+                    value.valid = true;
+                    value.number = number;
+                }
+                values.emplace_back(name, std::move(value));
+            }
+            for (const char *name : {"eof-reached", "core-idle", "seeking", "paused-for-cache"}) {
+                MirroredProperty value;
+                int flag = 0;
+                if (api.getProperty(mpv, name, MPV_FORMAT_FLAG, &flag) >= 0) {
+                    value.valid = true;
+                    value.number = flag != 0 ? 1.0 : 0.0;
+                }
+                values.emplace_back(name, std::move(value));
+            }
+            {
+                MirroredProperty value;
+                int64_t count = 0;
+                if (api.getProperty(mpv, "track-list/count", MPV_FORMAT_INT64, &count) >= 0) {
+                    value.valid = true;
+                    value.number = (double)count;
+                }
+                values.emplace_back("track-list/count", std::move(value));
+            }
+            for (const char *name : {"aid", "sid", "current-tracks/sub/id"}) {
+                MirroredProperty value;
+                char *text = nullptr;
+                if (api.getProperty(mpv, name, MPV_FORMAT_STRING, &text) >= 0 && text) {
+                    value.valid = true;
+                    value.text = text;
+                }
+                if (text) api.freeValue(text);
+                values.emplace_back(name, std::move(value));
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(propertyMirrorMutex);
+            for (auto &[name, value] : values) {
+                propertyMirror.emplace(name, std::move(value)); // no-op when already reported
+            }
+        }
+        markTrackJsonDirty();
+    }
+
+    // Event thread.
+    void performSourceReplacement() {
+        std::shared_ptr<SourceReplacement> request;
+        {
+            std::lock_guard<std::mutex> lock(replacementMutex);
+            request = std::move(pendingReplacement);
+            pendingReplacement.reset();
+        }
+        replacementRequested.store(false);
+        if (!request) return;
+        applySourceReplacement(*request);
+        {
+            std::lock_guard<std::mutex> lock(replacementMutex);
+            request->done = true;
+        }
+        replacementCv.notify_all();
+    }
+
+    // Event thread; must not hold mpvMutex.
+    void applySourceReplacement(SourceReplacement &request) {
+        if (!request.traceId.empty()) appTraceId = request.traceId;
+        startupStartedAt = std::chrono::steady_clock::now();
+        nuvioBridgeLog(
+            "source replace requested source=" + redactedSourceSummary(request.sourceUrl) +
+            " host=" + sourceHostSummary(request.sourceUrl) +
+            " playWhenReady=" + (request.playWhenReady ? "yes" : "no") +
+            " initialMs=" + std::to_string(request.initialPositionMs) +
+            " initialProgress=" + std::to_string(request.initialProgressFraction) +
+            " animeSvp=" + (request.animeSvpFilter.empty() ? "no" : "yes")
+        );
+
+        // From here every event reaches the new session's sink; the outgoing session's sink is
+        // stale on the Kotlin side already (its attach generation moved on).
+        {
+            std::lock_guard<std::mutex> eventLock(eventSinkMutex);
+            jobject previous = eventSink;
+            eventSink = request.sink;
+            request.sink = nullptr;
+            if (previous) {
+                bool didAttach = false;
+                JNIEnv *env = jniEnvDidAttach(&didAttach);
+                if (env) env->DeleteGlobalRef(previous);
+                if (didAttach) javaVm->DetachCurrentThread();
+            }
+        }
+
+        retireThumbnailWorker(request.sourceUrl, request.headerLines);
+
+        // Everything a fresh instance starts a file with (see startMpv and the member defaults).
+        deferredAnimeSvpFilter = request.animeSvpFilter;
+        resetPerFileStartupState(request.playWhenReady);
+        playbackRestartPendingForFile = false;
+        startupMetricsDue = {};
+        effectiveSvpActive.store(false);
+        svpPendingPipelineUpdate = false;
+        svpBypassedForSpeed = false;
+        firstProfileApplied = false;
+        profileRenderPending.store(false);
+        profileRenderReady.store(false);
+        profileRedrawIssued.store(false);
+        subtitleAssOverrideInitialCheckPending = false;
+        eofSuppressedUntil.store(std::chrono::steady_clock::time_point{});
+        liveHrSeekOffsetApplied.store(false);
+        clearPerFileMirror();
+        {
+            std::lock_guard<std::mutex> lock(trackJsonMutex);
+            sharedAudioTracksJson = "[]";
+            sharedSubtitleTracksJson = "[]";
+            sharedVideoTracksJson = "[]";
+            sharedChaptersJson = "[]";
+        }
+
+        std::string loadFailure;
+        {
+            std::lock_guard<std::mutex> lock(mpvMutex);
+            if (!mpv) {
+                sourceSwitchInProgress.store(false);
+                return;
+            }
+            MpvApi &api = mpvApi();
+            profileChanged = false;
+            profileOwnsPause = false;
+            profileResumeRequested = false;
+            profileTransactionActive.store(false);
+            profileRenderBaseline.clear();
+            subtitleRefreshPending = false;
+            pendingSeekTargetSeconds = -1.0;
+            pendingSeekIssuedAt = {};
+            armInitialResumeLocked(request.initialPositionMs, request.initialProgressFraction, request.playWhenReady);
+
+            // The new file probes with no filter, as on a fresh instance: the RTX chain and the
+            // deferred SVP graph are installed again at its FILE_LOADED.
+            requestedVideoFilters.clear();
+            appliedVideoFilters.clear();
+            svpBypassVideoFilters.clear();
+            videoPipelineManaged = false;
+            api.setPropertyString(mpv, "vf", "");
+            // What the app changed at run time goes back to the instance's starting value; the
+            // video profile pass sets it again for the new file.
+            for (const auto &[key, value] : runtimePropertyBaseline) {
+                api.setPropertyString(mpv, key.c_str(), value.c_str());
+            }
+            runtimePropertyBaseline.clear();
+            // Track choices and the subtitle offset were the previous file's; the app picks and
+            // applies them again once the new track list is in.
+            api.setPropertyString(mpv, "aid", "auto");
+            api.setPropertyString(mpv, "sid", "no");
+            api.setPropertyString(mpv, "sub-delay", "0");
+            // The previous file's pre-roll dropped log delivery to "info" once it finished
+            // (finishSvpPreroll). This file's pre-roll needs VapourSynth's verbose runtime-ready
+            // line again, as at startMpv; without it every reused SVP start sat out the 8 s timeout.
+            if (!request.animeSvpFilter.empty() && vsrLogActive && api.requestLogMessages) {
+                api.requestLogMessages(mpv, "v");
+            }
+
+            std::string headers;
+            for (size_t index = 0; index < request.headerLines.size(); index++) {
+                if (index > 0) headers.push_back(',');
+                for (char c : request.headerLines[index]) {
+                    if (c == '\\' || c == ',') headers.push_back('\\');
+                    headers.push_back(c);
+                }
+            }
+            api.setPropertyString(mpv, "http-header-fields", headers.c_str());
+            if (!request.mediaTitle.empty()) {
+                api.setPropertyString(mpv, "force-media-title", request.mediaTitle.c_str());
+            }
+
+            awaitingReplacementStart = true;
+            awaitingReplacementDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            const char *loadCommand[] = {"loadfile", request.sourceUrl.c_str(), "replace", nullptr};
+            nuvioBridgeLog("mpv loadfile (replace)");
+            const int commandResult = api.command(mpv, loadCommand);
+            if (commandResult < 0) {
+                awaitingReplacementStart = false;
+                loadFailure = std::string("mpv loadfile failed: ") + api.errorText(commandResult);
+            } else {
+                nuvioBridgeLog("mpv loadfile accepted");
+            }
+        }
+        if (!loadFailure.empty()) {
+            nuvioBridgeLog(loadFailure);
+            sourceSwitchInProgress.store(false);
+            startupFailureReported = true;
+            playbackFailureDetected.store(true);
+            sendPlayerEvent("mpvStartupError:" + loadFailure, 0.0);
+            return;
+        }
+        setPaused(!request.playWhenReady);
+    }
+
     void drainMpvEvents() {
         gPlaybackThreadLog = playbackLogPath;
         while (!stopping.load()) {
@@ -5716,6 +6280,39 @@ private:
             // the idle 0.5s, which while paused (few spontaneous events) would otherwise let it
             // land hundreds of ms late.
             mpv_event *event = mpvApi().waitEvent(current, (deferredSeekPending() || subtitleRefreshQueued() || initialResumeTransactionPending.load() || svpPrerollPending || profileRenderPending.load()) ? 0.05 : 0.5);
+            if (event && event->event_id == MPV_EVENT_SHUTDOWN) {
+                return;
+            }
+            if (replacementRequested.load()) {
+                // Whatever this wait returned was queued by the outgoing file.
+                performSourceReplacement();
+                continue;
+            }
+            if (awaitingReplacementStart) {
+                if (std::chrono::steady_clock::now() >= awaitingReplacementDeadline) {
+                    awaitingReplacementStart = false;
+                    sourceSwitchInProgress.store(false);
+                    nuvioBridgeLog("source replace: no START_FILE within 10s; resuming event handling");
+                } else if (event && event->event_id == MPV_EVENT_START_FILE) {
+                    awaitingReplacementStart = false;
+                    sourceSwitchInProgress.store(false);
+                    trackJsonDirty.store(true);
+                    nuvioBridgeLog("media open started");
+                    continue;
+                } else {
+                    // The instance's own values still have to reach the mirror: mpv reports a
+                    // change once, and pause/volume/mute/speed carry over to the new file.
+                    if (event && event->event_id == MPV_EVENT_PROPERTY_CHANGE &&
+                        event->reply_userdata == propertyMirrorReplyId && event->data) {
+                        const auto &property = *static_cast<mpv_event_property *>(event->data);
+                        const std::string name = property.name ? property.name : "";
+                        if (name == "pause" || name == "volume" || name == "mute" || name == "speed") {
+                            updatePropertyMirror(property);
+                        }
+                    }
+                    continue;
+                }
+            }
             if (event && event->event_id == MPV_EVENT_PROPERTY_CHANGE &&
                 event->reply_userdata == propertyMirrorReplyId) {
                 if (event->data) updatePropertyMirror(*static_cast<mpv_event_property *>(event->data));
@@ -5735,6 +6332,9 @@ private:
             // after FILE_LOADED with no event of its own — so they are retried on the tick rather
             // than applied once at load. Each is a cheap no-op after it has run.
             tryApplyInitialResume("params-retry");
+            // Ahead of the SVP install: once vf changes, video-params read empty while the graph
+            // builds, and the profile pass at fileLoaded would run without the HDR state.
+            tryReportHdrStateFromParams();
             tryApplyDeferredAnimeSvp("params-retry");
             scheduleAutoCropIfDue();
             if (!event) continue;
@@ -5968,6 +6568,10 @@ private:
                 onAutoCropFileLoaded();
                 fileLoadedForCurrentSource = true;
                 playbackRestartPendingForFile = true;
+                // The track list is complete here. On a reused instance its change notice may
+                // never come (see reseedPerFileMirror), so publish it now either way.
+                reseedPerFileMirror();
+                rebuildTrackJsonIfDirty();
                 tryApplyInitialResume("fileLoaded");
                 // Ahead of the HDR event on purpose: both land in the same burst, and Kotlin holds
                 // the anime shader chain back while the size is unknown, so reporting the size
@@ -5975,9 +6579,14 @@ private:
                 reportVideoSourceSize();
                 const std::string resolvedPrimaries = stringProperty("video-params/primaries", "");
                 const std::string resolvedGamma = stringProperty("video-params/gamma", "");
-                const bool hdrStateKnown = !resolvedPrimaries.empty() && !resolvedGamma.empty();
-                const bool resolvedHdr = hdrStateKnown && isHdrContent(resolvedPrimaries, resolvedGamma);
-                if (hdrStateKnown) {
+                const bool hdrStateRead = !resolvedPrimaries.empty() && !resolvedGamma.empty();
+                // A just-installed SVP graph leaves video-params empty here; the tick read them
+                // before it went in (tryReportHdrStateFromParams).
+                const bool hdrStateKnown = hdrStateRead || lastReportedHdrState != -1;
+                const bool resolvedHdr = hdrStateRead
+                    ? isHdrContent(resolvedPrimaries, resolvedGamma)
+                    : lastReportedHdrState == 1;
+                if (hdrStateRead) {
                     const int nextHdrState = resolvedHdr ? 1 : 0;
                     if (lastReportedHdrState != nextHdrState) {
                         lastReportedHdrState = nextHdrState;
@@ -6452,8 +7061,20 @@ public:
     // Average bytes per second of the playing source (size over duration), so the sampled stretches
     // can be sized to a download budget. Negative when the size is unknown (live, some HLS) and for
     // local files, which cost nothing to read.
+    // The playing source for the auxiliary decoders. A replacement swaps it under thumbnailMutex.
+    std::string currentThumbnailSourceUrl() {
+        std::lock_guard<std::mutex> lock(thumbnailMutex);
+        return thumbnailSourceUrl;
+    }
+
+    std::vector<std::string> currentThumbnailHeaderLines() {
+        std::lock_guard<std::mutex> lock(thumbnailMutex);
+        return thumbnailHeaderLines;
+    }
+
     double speechSourceBytesPerSecond() {
-        if (thumbnailSourceUrl.rfind("http://", 0) != 0 && thumbnailSourceUrl.rfind("https://", 0) != 0) return -1.0;
+        const std::string sourceUrl = currentThumbnailSourceUrl();
+        if (sourceUrl.rfind("http://", 0) != 0 && sourceUrl.rfind("https://", 0) != 0) return -1.0;
         const long long size = int64Property("file-size", -1);
         const double duration = mirroredDouble("duration", 0.0);
         return size > 0 && duration > 0.0 ? (double)size / duration : -1.0;
@@ -6549,11 +7170,11 @@ public:
             return decodeAudioUrlToFile(movedOnUrl, movedOnHeaders, std::string(), startSeconds, durationSeconds, outputPath,
                                         sampleRate, channelCount, &shuttingDown);
         }
-        const std::string spotUrl = !localCopy.empty() ? localCopy : (separateAudio ? externalAudioUrl : thumbnailSourceUrl);
+        const std::string spotUrl = !localCopy.empty() ? localCopy : (separateAudio ? externalAudioUrl : currentThumbnailSourceUrl());
         if (shuttingDown.load() || spotUrl.empty()) return -1;
         const std::string aid = mirroredString("aid", "");
         const bool numericAid = !separateAudio && !aid.empty() && std::all_of(aid.begin(), aid.end(), ::isdigit);
-        return decodeAudioUrlToFile(spotUrl, localCopy.empty() ? thumbnailHeaderLines : std::vector<std::string>(),
+        return decodeAudioUrlToFile(spotUrl, localCopy.empty() ? currentThumbnailHeaderLines() : std::vector<std::string>(),
                                     numericAid ? aid : std::string(), startSeconds, durationSeconds, outputPath,
                                     sampleRate, channelCount, &shuttingDown);
     }
@@ -7291,6 +7912,45 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_dispose(JNIEnv *, 
     // copy keeps the object alive until it returns, and shutdown() runs outside the lock.
     std::shared_ptr<WindowsMpvWebPlayer> player = unregisterPlayer(handle);
     if (player) player->shutdown();
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_replaceSource(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring sourceUrl,
+    jobjectArray headerLines,
+    jboolean playWhenReady,
+    jlong initialPositionMs,
+    jdouble initialProgressFraction,
+    jstring animeSvpFilter,
+    jstring mediaTitle,
+    jstring traceId,
+    jobject eventSink
+) {
+    auto player = playerFromHandle(handle);
+    if (!player || !eventSink) return JNI_FALSE;
+    auto request = std::make_shared<WindowsMpvWebPlayer::SourceReplacement>();
+    request->sourceUrl = jstringToUtf8(env, sourceUrl);
+    request->headerLines = jstringArrayToVector(env, headerLines);
+    request->playWhenReady = playWhenReady == JNI_TRUE;
+    request->initialPositionMs = initialPositionMs;
+    request->initialProgressFraction = initialProgressFraction;
+    request->animeSvpFilter = animeSvpFilter ? jstringToUtf8(env, animeSvpFilter) : std::string();
+    request->mediaTitle = mediaTitle ? jstringToUtf8(env, mediaTitle) : std::string();
+    request->traceId = traceId ? jstringToUtf8(env, traceId) : std::string();
+    // The sink's onPlayerEvent method is the interface method create() already resolved, so the
+    // player's stored jmethodID stays valid for this new sink object.
+    request->sink = env->NewGlobalRef(eventSink);
+    std::string refusal;
+    if (!player->requestSourceReplacement(request, refusal)) {
+        env->DeleteGlobalRef(request->sink);
+        request->sink = nullptr;
+        nuvioMpvLogAppend("[nuvio-bridge] source replace refused: " + refusal + "\n");
+        return JNI_FALSE;
+    }
+    return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -8571,6 +9231,232 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_systemIdleMs(JNIEn
     // still right across the wrap.
     const DWORD idle = GetTickCount() - info.dwTime;
     return static_cast<jlong>(idle);
+}
+
+// The memory diagnostics overlay and the playback-start memory log (MemoryBreakdown.kt). Process-wide;
+// lives here for the same reason as systemIdleMs: this is the process's only native surface.
+namespace {
+// PROCESS_MEMORY_COUNTERS_EX2 (Windows 11 22H2+), declared here so an older SDK still builds. On an
+// older Windows the call with this size fails and the _EX form is used without the private working set.
+struct NuvioProcessMemoryCountersEx2 {
+    DWORD cb;
+    DWORD PageFaultCount;
+    SIZE_T PeakWorkingSetSize;
+    SIZE_T WorkingSetSize;
+    SIZE_T QuotaPeakPagedPoolUsage;
+    SIZE_T QuotaPagedPoolUsage;
+    SIZE_T QuotaPeakNonPagedPoolUsage;
+    SIZE_T QuotaNonPagedPoolUsage;
+    SIZE_T PagefileUsage;
+    SIZE_T PeakPagefileUsage;
+    SIZE_T PrivateUsage;
+    SIZE_T PrivateWorkingSetSize;
+    ULONG64 SharedCommitUsage;
+};
+
+using GetProcessMemoryInfoFn = BOOL(WINAPI *)(HANDLE, void *, DWORD);
+
+GetProcessMemoryInfoFn processMemoryInfoFn() {
+    static GetProcessMemoryInfoFn fn = [] () -> GetProcessMemoryInfoFn {
+        HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
+        return kernel ? reinterpret_cast<GetProcessMemoryInfoFn>(GetProcAddress(kernel, "K32GetProcessMemoryInfo")) : nullptr;
+    }();
+    return fn;
+}
+
+// This process's use of each hardware adapter's memory (local = dedicated VRAM, non-local = system
+// memory the GPU maps), summed over the adapters. -1 when DXGI cannot say.
+void processVideoMemory(long long &local, long long &nonLocal) {
+    local = -1;
+    nonLocal = -1;
+    using CreateDXGIFactory1Fn = HRESULT(WINAPI *)(REFIID, void **);
+    static CreateDXGIFactory1Fn createFactory = [] () -> CreateDXGIFactory1Fn {
+        HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
+        return dxgi ? reinterpret_cast<CreateDXGIFactory1Fn>(GetProcAddress(dxgi, "CreateDXGIFactory1")) : nullptr;
+    }();
+    if (!createFactory) return;
+    static std::mutex adaptersMutex;
+    static std::vector<Microsoft::WRL::ComPtr<IDXGIAdapter3>> adapters;
+    static bool adaptersListed = false;
+    std::lock_guard<std::mutex> lock(adaptersMutex);
+    if (!adaptersListed) {
+        adaptersListed = true;
+        Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+        if (SUCCEEDED(createFactory(IID_PPV_ARGS(&factory)))) {
+            Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+            for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+                DXGI_ADAPTER_DESC1 desc{};
+                if (SUCCEEDED(adapter->GetDesc1(&desc)) && !(desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
+                    Microsoft::WRL::ComPtr<IDXGIAdapter3> adapter3;
+                    if (SUCCEEDED(adapter.As(&adapter3))) adapters.push_back(adapter3);
+                }
+                adapter.Reset();
+            }
+        }
+    }
+    if (adapters.empty()) return;
+    long long localSum = 0;
+    long long nonLocalSum = 0;
+    for (const auto &adapter : adapters) {
+        DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+        if (SUCCEEDED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
+            localSum += static_cast<long long>(info.CurrentUsage);
+        }
+        if (SUCCEEDED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL, &info))) {
+            nonLocalSum += static_cast<long long>(info.CurrentUsage);
+        }
+    }
+    local = localSum;
+    nonLocal = nonLocalSum;
+}
+} // namespace
+
+// Fills out[0..8]: private commit, working set, private working set (-1 before Windows 11 22H2),
+// then committed memory by region kind from a VirtualQuery walk of this process (write-combined
+// private = what graphics drivers map into it; other private; image = loaded DLLs and EXE; mapped
+// files), then this process's dedicated and shared video memory. Unknown values are -1.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_processMemoryBreakdown(
+    JNIEnv *env,
+    jobject,
+    jlongArray out
+) {
+    if (!out || env->GetArrayLength(out) < 9) return JNI_FALSE;
+    jlong values[9];
+    for (jlong &value : values) value = -1;
+
+    if (auto fn = processMemoryInfoFn()) {
+        NuvioProcessMemoryCountersEx2 counters{};
+        counters.cb = sizeof(counters);
+        if (fn(GetCurrentProcess(), &counters, sizeof(counters))) {
+            values[2] = static_cast<jlong>(counters.PrivateWorkingSetSize);
+        } else {
+            counters = {};
+            // PROCESS_MEMORY_COUNTERS_EX is the same layout up to PrivateWorkingSetSize.
+            counters.cb = static_cast<DWORD>(offsetof(NuvioProcessMemoryCountersEx2, PrivateWorkingSetSize));
+            if (!fn(GetCurrentProcess(), &counters, counters.cb)) counters.cb = 0;
+        }
+        if (counters.cb != 0) {
+            values[0] = static_cast<jlong>(counters.PrivateUsage);
+            values[1] = static_cast<jlong>(counters.WorkingSetSize);
+        }
+    }
+
+    long long writeCombined = 0;
+    long long privateOther = 0;
+    long long image = 0;
+    long long mapped = 0;
+    MEMORY_BASIC_INFORMATION info{};
+    const char *address = nullptr;
+    while (VirtualQuery(address, &info, sizeof(info)) == sizeof(info)) {
+        if (info.State == MEM_COMMIT) {
+            const long long size = static_cast<long long>(info.RegionSize);
+            if (info.Type == MEM_PRIVATE) {
+                if (info.Protect & PAGE_WRITECOMBINE) writeCombined += size;
+                else privateOther += size;
+            } else if (info.Type == MEM_IMAGE) {
+                image += size;
+            } else if (info.Type == MEM_MAPPED) {
+                mapped += size;
+            }
+        }
+        const char *next = static_cast<const char *>(info.BaseAddress) + info.RegionSize;
+        if (next <= address) break;
+        address = next;
+    }
+    values[3] = writeCombined;
+    values[4] = privateOther;
+    values[5] = image;
+    values[6] = mapped;
+
+    long long local = -1;
+    long long nonLocal = -1;
+    processVideoMemory(local, nonLocal);
+    values[7] = local;
+    values[8] = nonLocal;
+
+    env->SetLongArrayRegion(out, 0, 9, values);
+    return JNI_TRUE;
+}
+
+// out[0] = bytes in [handle]'s demuxer cache, out[1] = the part ahead of the playhead; -1 when unknown.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_demuxerCacheBytes(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jlongArray out
+) {
+    if (!out || env->GetArrayLength(out) < 2) return JNI_FALSE;
+    auto player = playerFromHandle(handle);
+    if (!player) return JNI_FALSE;
+    long long total = -1;
+    long long ahead = -1;
+    player->demuxerCacheBytes(total, ahead);
+    jlong values[2] = {static_cast<jlong>(total), static_cast<jlong>(ahead)};
+    env->SetLongArrayRegion(out, 0, 2, values);
+    return JNI_TRUE;
+}
+
+// Another process's private working set (Task Manager's Memory column), for the memory overlay's
+// child-process row: WebView2's browser and renderer processes, SVP's Python, a cast's ffmpeg.
+// -1 when it cannot be opened or read, or before Windows 11 22H2.
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_processPrivateWorkingSet(
+    JNIEnv *,
+    jobject,
+    jlong pid
+) {
+    auto fn = processMemoryInfoFn();
+    if (!fn || pid <= 0) return -1;
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+    if (!process) return -1;
+    NuvioProcessMemoryCountersEx2 counters{};
+    counters.cb = sizeof(counters);
+    const jlong result = fn(process, &counters, sizeof(counters))
+        ? static_cast<jlong>(counters.PrivateWorkingSetSize)
+        : -1;
+    CloseHandle(process);
+    return result;
+}
+
+// File names of the DLLs loaded in this process, ';'-separated, for the memory overlay to say which
+// native engines (mpv, Whisper, QuickJS, libtorrent, VapourSynth, Python) are holding memory.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_loadedModuleNames(JNIEnv *env, jobject) {
+    using EnumModulesFn = BOOL(WINAPI *)(HANDLE, HMODULE *, DWORD, LPDWORD);
+    using ModuleNameFn = DWORD(WINAPI *)(HANDLE, HMODULE, LPWSTR, DWORD);
+    static EnumModulesFn enumModules = [] () -> EnumModulesFn {
+        HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
+        return kernel ? reinterpret_cast<EnumModulesFn>(GetProcAddress(kernel, "K32EnumProcessModules")) : nullptr;
+    }();
+    static ModuleNameFn moduleName = [] () -> ModuleNameFn {
+        HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
+        return kernel ? reinterpret_cast<ModuleNameFn>(GetProcAddress(kernel, "K32GetModuleBaseNameW")) : nullptr;
+    }();
+    if (!enumModules || !moduleName) return env->NewStringUTF("");
+    std::vector<HMODULE> modules(512);
+    DWORD needed = 0;
+    HANDLE self = GetCurrentProcess();
+    if (!enumModules(self, modules.data(), static_cast<DWORD>(modules.size() * sizeof(HMODULE)), &needed)) {
+        return env->NewStringUTF("");
+    }
+    if (needed > modules.size() * sizeof(HMODULE)) {
+        modules.resize(needed / sizeof(HMODULE));
+        if (!enumModules(self, modules.data(), static_cast<DWORD>(modules.size() * sizeof(HMODULE)), &needed)) {
+            return env->NewStringUTF("");
+        }
+    }
+    const size_t count = (std::min)(modules.size(), static_cast<size_t>(needed / sizeof(HMODULE)));
+    std::wstring names;
+    wchar_t name[MAX_PATH];
+    for (size_t i = 0; i < count; ++i) {
+        const DWORD length = moduleName(self, modules[i], name, MAX_PATH);
+        if (length == 0) continue;
+        if (!names.empty()) names.push_back(L';');
+        names.append(name, length);
+    }
+    return env->NewString(reinterpret_cast<const jchar *>(names.c_str()), static_cast<jsize>(names.size()));
 }
 
 // Keeps the display (and the system) awake during playback, ported from upstream. The

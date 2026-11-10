@@ -855,6 +855,8 @@
   <string name="settings_advanced_section_diagnostics">TANILAMA</string>
   <string name="settings_advanced_performance_logging">Performans günlüğü</string>
   <string name="settings_advanced_performance_logging_description">Kaydırırken her karenin süresinin nereye gittiğini uygulama günlüğüne kaydeder. Varsayılan olarak kapalı; her kareye küçük bir iş yükü eklediği için yalnızca günlük istenirse aç.</string>
+  <string name="settings_advanced_memory_overlay">Bellek katmanı</string>
+  <string name="settings_advanced_memory_overlay_description">Uygulamanın belleğinin nereye gittiğini, uygulamanın ve oynatıcının üzerindeki küçük bir panelde canlı gösterir: Görev Yöneticisinin saydığı, grafik sürücüsü belleği, Java yığını, görsel önbellekleri ve oynatıcının arabelleği.</string>
   <string name="settings_advanced_section_cache">ÖNBELLEK</string>
   <string name="settings_updates_section">GÜNCELLEMELER</string>
   <string name="settings_updates_channel">Güncelleme Kanalı</string>
@@ -1977,6 +1979,10 @@
   <string name="settings_playback_show_loading_overlay_description">Yayın başlarken açılış yükleme katmanını göster.</string>
   <string name="settings_playback_pip_browse">Resim içinde resimdeyken gezin</string>
   <string name="settings_playback_pip_browse_description">Resim içinde resme, uygulamayı video bir köşesinde olacak şekilde geri getiren bir düğme eklenir; böylece video oynarken gezinebilirsiniz. Bu sırada fragmanlar kapalı kalır. Bir sonraki videodan itibaren geçerlidir.</string>
+  <string name="settings_playback_double_click">Videoya çift tıklama</string>
+  <string name="settings_playback_double_click_description">Oynatılan videoya çift tıklamanın ne yapacağı. Resim içinde resimde videoyu her zaman geri getirir.</string>
+  <string name="settings_playback_double_click_pip">Resim içinde resim</string>
+  <string name="settings_playback_double_click_fullscreen">Tam ekran / pencere</string>
   <string name="settings_playback_subtitle_background_color">Arka Plan Rengi</string>
   <string name="settings_playback_subtitle_blur">Bulanıklık</string>
   <string name="settings_playback_subtitle_bold">Kalın</string>
@@ -2872,6 +2878,17 @@
   <string name="details_season_view_text">Metin</string>
   <string name="details_show_details">Dizi detayları</string>
   <string name="details_status">Durum</string>
+  <string name="details_status_airing">Yayında</string>
+  <string name="details_status_ended">Sona erdi</string>
+  <string name="details_status_cancelled">İptal edildi</string>
+  <string name="details_status_upcoming">Yakında</string>
+  <string name="details_form_series_from">Dizi (%1$s)</string>
+  <string name="details_form_limited_series_from">Mini dizi (%1$s)</string>
+  <string name="details_form_limited_series">Mini dizi</string>
+  <string name="details_form_film_from">Film (%1$s)</string>
+  <plurals name="details_status_cancelled_after_seasons">
+    <item quantity="other">%1$d sezon sonra iptal edildi</item>
+  </plurals>
   <string name="details_videos">Videolar</string>
   <string name="details_episode_badge_file">DOSYA</string>
   <string name="downloads_enqueue_insufficient_space">Bu indirme için yeterli boş disk alanı yok</string>

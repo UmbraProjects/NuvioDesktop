@@ -1232,6 +1232,7 @@ object TmdbMetadataService {
             releaseInfo = enrichment.releaseInfo,
             lastAirDate = enrichment.lastAirDate,
             status = enrichment.status,
+            seriesType = enrichment.seriesType,
             imdbRating = enrichment.rating?.formatRating(),
             ageRating = enrichment.ageRating,
             runtime = enrichment.runtimeMinutes?.formatRuntime(),
@@ -1298,6 +1299,7 @@ object TmdbMetadataService {
                 releaseInfo = updated.releaseInfo?.takeIf(String::isNotBlank) ?: enrichment.releaseInfo,
                 lastAirDate = updated.lastAirDate?.takeIf(String::isNotBlank) ?: enrichment.lastAirDate,
                 status = updated.status?.takeIf(String::isNotBlank) ?: enrichment.status,
+                seriesType = updated.seriesType ?: enrichment.seriesType,
                 ageRating = updated.ageRating?.takeIf(String::isNotBlank) ?: enrichment.ageRating,
                 runtime = updated.runtime?.takeIf(String::isNotBlank) ?: enrichment.runtimeMinutes?.formatRuntime(),
                 country = updated.country?.takeIf(String::isNotBlank)
@@ -1309,6 +1311,7 @@ object TmdbMetadataService {
                 releaseInfo = enrichment.releaseInfo ?: updated.releaseInfo,
                 lastAirDate = enrichment.lastAirDate ?: updated.lastAirDate,
                 status = enrichment.status ?: updated.status,
+                seriesType = enrichment.seriesType ?: updated.seriesType,
                 ageRating = enrichment.ageRating ?: updated.ageRating,
                 runtime = enrichment.runtimeMinutes?.formatRuntime() ?: updated.runtime,
                 country = enrichment.countries.takeIf { it.isNotEmpty() }?.joinToString(", ") ?: updated.country,
@@ -1365,8 +1368,10 @@ object TmdbMetadataService {
                             },
                             overview = video.overview?.takeIf(String::isNotBlank)
                                 ?: enrichmentForEpisode.overview.takeIf { settings.useEpisodes },
-                            thumbnail = video.thumbnail?.takeIf(String::isNotBlank)
-                                ?: enrichmentForEpisode.thumbnail.takeIf { settings.useEpisodes },
+                            thumbnail = keptRecordThumbnail(
+                                video = video,
+                                tmdb = enrichmentForEpisode.takeIf { settings.useEpisodes },
+                            ),
                             seasonPoster = video.seasonPoster?.takeIf(String::isNotBlank)
                                 ?: enrichmentForEpisode.seasonPoster.takeIf { settings.useSeasonPosters },
                             runtime = video.runtime ?: enrichmentForEpisode.runtimeMinutes.takeIf { settings.useEpisodes },
@@ -1592,6 +1597,7 @@ object TmdbMetadataService {
             runtimeMinutes = details.runtime ?: details.episodeRunTime.firstOrNull(),
             ageRating = ageRating,
             status = details.status?.trim()?.takeIf(String::isNotBlank),
+            seriesType = details.type?.trim()?.takeIf(String::isNotBlank)?.takeIf { mediaType == "tv" },
             countries = details.productionCountries
                 .mapNotNull { it.iso31661?.trim()?.takeIf(String::isNotBlank) }
                 .ifEmpty { details.originCountry.filter(String::isNotBlank) },
@@ -1650,7 +1656,10 @@ object TmdbMetadataService {
                             (season to episodeNumber) to TmdbEpisodeEnrichment(
                                 title = episode.name?.trim()?.takeIf(String::isNotBlank),
                                 overview = episode.overview?.trim()?.takeIf(String::isNotBlank),
-                                thumbnail = buildImageUrl(episode.stillPath, "w500"),
+                                // w1280: a TV Mode Continue Watching card is about 1000 device
+                                // pixels wide, and w500 was visibly soft there. TMDB serves a still
+                                // at most at its upload size (usually 1280 or 1920 wide).
+                                thumbnail = buildImageUrl(episode.stillPath, "w1280"),
                                 seasonPoster = buildImageUrl(details.posterPath, "w500"),
                                 airDate = episode.airDate?.trim()?.takeIf(String::isNotBlank),
                                 runtimeMinutes = episode.runtime,
@@ -2209,6 +2218,7 @@ internal data class TmdbEnrichment(
     val runtimeMinutes: Int?,
     val ageRating: String?,
     val status: String?,
+    val seriesType: String? = null,
     val countries: List<String>,
     val language: String?,
     val productionCompanies: List<MetaCompany>,
@@ -2246,6 +2256,27 @@ internal data class TmdbEnrichment(
 }
 
 /** Whether this record keeps its own text and episodes under the user's [TmdbShowEnrichment] choice. */
+/**
+ * The still for an episode of a record kept from TheTVDB or Kitsu ([keepsAddonRecord]). Its own
+ * still stays, except a TheTVDB or Kitsu one (400x225 or 640x360, soft on a large card) when TMDB has
+ * one for the same episode: same air date or same title. Numbering alone is not enough, since TMDB
+ * orders some shows' seasons differently and its episode at the same number may be another one.
+ */
+internal fun keptRecordThumbnail(video: MetaVideo, tmdb: TmdbEpisodeEnrichment?): String? {
+    val own = video.thumbnail?.takeIf(String::isNotBlank)
+    val tmdbStill = tmdb?.thumbnail?.takeIf(String::isNotBlank)
+    if (own == null || tmdbStill == null) return own ?: tmdbStill
+    val lowerOwn = own.lowercase()
+    if (SourceStillHosts.none(lowerOwn::contains)) return own
+    val sameDay = video.released?.take(10)?.takeIf { it.length == 10 } != null &&
+        video.released?.take(10) == tmdb.airDate?.take(10)
+    val sameTitle = normalizedEpisodeTitle(video.title).let { it.isNotEmpty() && it == normalizedEpisodeTitle(tmdb.title) }
+    return if (sameDay || sameTitle) tmdbStill else own
+}
+
+private fun normalizedEpisodeTitle(title: String?): String =
+    title.orEmpty().lowercase().filter(Char::isLetterOrDigit)
+
 internal fun TmdbSettings.keepsAddonRecord(meta: MetaDetails): Boolean =
     showEnrichment == TmdbShowEnrichment.SourceAware && meta.isTvdbOrKitsuShowRecord()
 
@@ -2527,6 +2558,8 @@ private data class TmdbDetailsResponse(
     @SerialName("first_air_date") val firstAirDate: String? = null,
     @SerialName("last_air_date") val lastAirDate: String? = null,
     val status: String? = null,
+    /** TV only: "Scripted", "Miniseries", "Documentary", "Reality", "Talk Show", "News". */
+    val type: String? = null,
     @SerialName("vote_average") val voteAverage: Double? = null,
     val runtime: Int? = null,
     @SerialName("episode_run_time") val episodeRunTime: List<Int> = emptyList(),

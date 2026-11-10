@@ -3,8 +3,14 @@ package com.nuvio.app.features.player.desktop
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.storage.DesktopStorage
+import com.nuvio.app.features.player.PlaybackSourceWarmup
 import com.nuvio.app.features.player.isPlaybackPlaceholderUrl
+import com.nuvio.app.features.player.sanitizePlaybackHeaders
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import java.net.URI
 import java.net.http.HttpClient
@@ -150,6 +156,56 @@ internal object PlaybackRedirectResolver {
         endpointVerdicts[endpoint] = verdict
         if (outcome in PERSISTED_OUTCOMES) {
             runCatching { verdictStore.putString(endpoint, "${outcome.name}|${verdict.atMs}") }
+        }
+    }
+
+    init {
+        PlaybackSourceWarmup.warmer = ::warm
+    }
+
+    /**
+     * How long a warmed resolution is used. A pinned link carries the resolver's token; one that
+     * has expired by the time it is opened is caught by the attach's refresh-on-401/403 path.
+     */
+    private const val WARMED_TTL_MS = 20L * 60L * 1000L
+    private const val MAX_WARMED = 6
+
+    private class Warmed(
+        val headers: Map<String, String>,
+        val atMs: Long,
+        val result: Deferred<PlaybackRedirectResolution>,
+    )
+
+    /** Resolutions started ahead of the attach that will want them (see [PlaybackSourceWarmup]). */
+    private val warmed = ConcurrentHashMap<String, Warmed>()
+    private val warmScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Starts resolving [sourceUrl] now, for [takeWarmed] to hand to the attach that opens it. */
+    fun warm(sourceUrl: String, sourceHeaders: Map<String, String>) {
+        val now = System.currentTimeMillis()
+        warmed.entries.removeIf { now - it.value.atMs > WARMED_TTL_MS }
+        val headers = sanitizePlaybackHeaders(sourceHeaders)
+        if (warmed[sourceUrl]?.headers == headers) return
+        warmed[sourceUrl] = Warmed(headers, now, warmScope.async { resolve(sourceUrl, headers) })
+        while (warmed.size > MAX_WARMED) {
+            val oldest = warmed.entries.minByOrNull { it.value.atMs } ?: break
+            warmed.remove(oldest.key)
+        }
+    }
+
+    /**
+     * The warmed resolution of exactly this source and headers, taken once (one still in flight is
+     * awaited, which is the point when the episode ends right after the preload). Null when there
+     * is none, it is too old, or it failed or hit a status clip: those are asked again fresh.
+     */
+    suspend fun takeWarmed(sourceUrl: String, sourceHeaders: Map<String, String>): PlaybackRedirectResolution? {
+        val entry = warmed.remove(sourceUrl) ?: return null
+        if (System.currentTimeMillis() - entry.atMs > WARMED_TTL_MS) return null
+        if (entry.headers != sanitizePlaybackHeaders(sourceHeaders)) return null
+        val result = runCatching { entry.result.await() }.getOrNull() ?: return null
+        return result.takeIf {
+            it.outcome != PlaybackRedirectResolution.Outcome.Failed &&
+                it.outcome != PlaybackRedirectResolution.Outcome.Placeholder
         }
     }
 

@@ -855,6 +855,8 @@
     <string name="settings_advanced_section_diagnostics">DIAGNOSTICS</string>
     <string name="settings_advanced_performance_logging">Performance logging</string>
     <string name="settings_advanced_performance_logging_description">Records where each frame's time goes while you scroll, into the app log. Off by default - turn it on only if asked for a log, as it adds a small amount of work to every frame.</string>
+    <string name="settings_advanced_memory_overlay">Memory overlay</string>
+    <string name="settings_advanced_memory_overlay_description">Shows where the app's memory goes, live, in a small panel over the app and the player: what Task Manager counts, graphics-driver memory, the Java heap, image caches and the player's buffer.</string>
     <string name="settings_advanced_section_cache">CACHE</string>
     <string name="settings_updates_section">UPDATES</string>
     <string name="settings_updates_channel">Update Channel</string>
@@ -2056,6 +2058,10 @@
     <string name="settings_playback_show_loading_overlay_description">Show loading screen until first video frame appears.</string>
     <string name="settings_playback_pip_browse">Browse while in picture in picture</string>
     <string name="settings_playback_pip_browse_description">Picture in picture gets a button that brings the app back with the video in a corner of it, so you can browse while it plays. Trailers stay off meanwhile. Applies from the next video.</string>
+    <string name="settings_playback_double_click">Double-click on the video</string>
+    <string name="settings_playback_double_click_description">What a double-click on the playing video does. In picture in picture it always brings the video back.</string>
+    <string name="settings_playback_double_click_pip">Picture in picture</string>
+    <string name="settings_playback_double_click_fullscreen">Fullscreen / windowed</string>
     <string name="settings_playback_subtitle_background_color">Background Color</string>
     <string name="settings_playback_subtitle_blur">Blur</string>
     <string name="settings_playback_subtitle_bold">Bold</string>
@@ -2957,6 +2963,18 @@
     <string name="details_season_view_text">Text</string>
     <string name="details_show_details">Show Details</string>
     <string name="details_status">Status</string>
+    <string name="details_status_airing">Airing</string>
+    <string name="details_status_ended">Ended</string>
+    <string name="details_status_cancelled">Cancelled</string>
+    <string name="details_status_upcoming">Upcoming</string>
+    <string name="details_form_series_from">%1$s Series</string>
+    <string name="details_form_limited_series_from">%1$s Limited Series</string>
+    <string name="details_form_limited_series">Limited Series</string>
+    <string name="details_form_film_from">%1$s Film</string>
+    <plurals name="details_status_cancelled_after_seasons">
+        <item quantity="one">Cancelled after %1$d season</item>
+        <item quantity="other">Cancelled after %1$d seasons</item>
+    </plurals>
     <string name="details_videos">Videos</string>
     <string name="details_episode_badge_file">FILE</string>
     <string name="downloads_enqueue_insufficient_space">Not enough free disk space for this download</string>

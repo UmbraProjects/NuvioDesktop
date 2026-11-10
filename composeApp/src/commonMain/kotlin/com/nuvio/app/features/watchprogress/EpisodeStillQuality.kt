@@ -17,6 +17,7 @@ internal fun needsEpisodeStillRefresh(
     background: String?,
     contentId: String,
     hasArtworkLoadFailed: (String) -> Boolean = ContinueWatchingArtworkFailures::hasFailed,
+    claimLowResolutionLook: (String) -> Boolean = LowResolutionStillLooks::claim,
 ): Boolean {
     val thumbnail = episodeThumbnail?.trim()?.takeIf(String::isNotBlank) ?: return true
 
@@ -24,6 +25,14 @@ internal fun needsEpisodeStillRefresh(
     // Until this fed back into resolution the card could only ever fall through to the show
     // backdrop, for the whole life of the seed, no matter how many times it was re-rendered.
     if (hasArtworkLoadFailed(thumbnail)) {
+        return true
+    }
+
+    // A TheTVDB or Kitsu still (400x225 or 640x360) works but is soft on a large card, and the
+    // details refetch can now swap in TMDB's still for the same episode (keptRecordThumbnail). A
+    // working still was never re-resolved, so the stored card kept the small one for good: it gets
+    // one look per session, and keeps the small still only when TMDB has nothing for that episode.
+    if (isLowResolutionSourceStill(thumbnail) && claimLowResolutionLook(thumbnail)) {
         return true
     }
 
@@ -69,6 +78,22 @@ private val SeriesLevelArtworkRules: List<Pair<String, Regex>> = listOf(
         RegexOption.IGNORE_CASE,
     ),
 )
+
+/** TheTVDB's and Kitsu's episode stills: real, but small (see [needsEpisodeStillRefresh]). */
+internal fun isLowResolutionSourceStill(url: String): Boolean {
+    val lower = url.lowercase()
+    return "thetvdb.com" in lower || "kitsu.app" in lower || "kitsu.io" in lower
+}
+
+/**
+ * The small stills already sent for a sharper one this session. The first ask for a still claims it;
+ * every later ask is refused, so a card whose episode TMDB does not have is not refetched forever.
+ */
+internal object LowResolutionStillLooks {
+    private val claimed = HashSet<String>()
+
+    fun claim(url: String): Boolean = synchronized(claimed) { claimed.add(url) }
+}
 
 private fun String?.artworkResourceIdentity(): String? = this
     ?.trim()

@@ -5028,6 +5028,14 @@ private fun MainAppContent(
                 com.nuvio.app.features.voice.VoiceControlOverlay()
             }
 
+            // Settings > Advanced > Memory overlay. Draws nothing when off; over the player the HUD
+            // shows it instead, since the video surface covers this layer.
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
+                com.nuvio.app.core.diagnostics.MemoryDiagnosticsOverlay(
+                    modifier = Modifier.padding(top = 16.dp, end = 16.dp),
+                )
+            }
+
             NuvioFloatingPrompt(
                 visible = resumePromptItem != null && !isDesktop,
                 imageUrl = resumePromptItem?.poster ?: resumePromptItem?.imageUrl,

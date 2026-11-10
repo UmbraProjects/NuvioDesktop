@@ -855,6 +855,8 @@
   <string name="settings_advanced_section_diagnostics">DIAGNOSTIKA</string>
   <string name="settings_advanced_performance_logging">Protokolování výkonu</string>
   <string name="settings_advanced_performance_logging_description">Zaznamenává do protokolu aplikace, kam se při posouvání ztrácí čas každého snímku. Ve výchozím nastavení vypnuto – zapněte jen na vyžádání protokolu, protože každý snímek se tím mírně zatěžuje.</string>
+  <string name="settings_advanced_memory_overlay">Překryv paměti</string>
+  <string name="settings_advanced_memory_overlay_description">Živě ukazuje, kam jde paměť aplikace, v malém panelu nad aplikací i přehrávačem: co počítá Správce úloh, paměť grafického ovladače, haldu Javy, mezipaměti obrázků a vyrovnávací paměť přehrávače.</string>
   <string name="settings_advanced_section_cache">MEZIPAMĚŤ</string>
   <string name="settings_updates_section">AKTUALIZACE</string>
   <string name="settings_updates_channel">Kanál aktualizací</string>
@@ -1977,6 +1979,10 @@
   <string name="settings_playback_show_loading_overlay_description">Zobrazovat načítací obrazovku, dokud se neobjeví první snímek videa.</string>
   <string name="settings_playback_pip_browse">Procházet během obrazu v obraze</string>
   <string name="settings_playback_pip_browse_description">Obraz v obraze dostane tlačítko, které vrátí aplikaci s videem v jejím rohu, takže můžete procházet, zatímco video hraje. Upoutávky mezitím zůstanou vypnuté. Platí od dalšího videa.</string>
+  <string name="settings_playback_double_click">Dvojklik na video</string>
+  <string name="settings_playback_double_click_description">Co udělá dvojklik na přehrávané video. V režimu obraz v obraze video vždy vrátí zpět.</string>
+  <string name="settings_playback_double_click_pip">Obraz v obraze</string>
+  <string name="settings_playback_double_click_fullscreen">Celá obrazovka / okno</string>
   <string name="settings_playback_subtitle_background_color">Barva pozadí</string>
   <string name="settings_playback_subtitle_blur">Rozmazání</string>
   <string name="settings_playback_subtitle_bold">Tučné</string>
@@ -2872,6 +2878,20 @@
   <string name="details_season_view_text">Text</string>
   <string name="details_show_details">Podrobnosti o seriálu</string>
   <string name="details_status">Stav</string>
+  <string name="details_status_airing">Vysílá se</string>
+  <string name="details_status_ended">Ukončeno</string>
+  <string name="details_status_cancelled">Zrušeno</string>
+  <string name="details_status_upcoming">Připravuje se</string>
+  <string name="details_form_series_from">Seriál (%1$s)</string>
+  <string name="details_form_limited_series_from">Minisérie (%1$s)</string>
+  <string name="details_form_limited_series">Minisérie</string>
+  <string name="details_form_film_from">Film (%1$s)</string>
+  <plurals name="details_status_cancelled_after_seasons">
+    <item quantity="one">Zrušeno po %1$d řadě</item>
+    <item quantity="few">Zrušeno po %1$d řadách</item>
+    <item quantity="many">Zrušeno po %1$d řadách</item>
+    <item quantity="other">Zrušeno po %1$d řadách</item>
+  </plurals>
   <string name="details_videos">Videa</string>
   <string name="details_episode_badge_file">SOUBOR</string>
   <string name="downloads_enqueue_insufficient_space">Pro toto stažení není dostatek volného místa na disku</string>

@@ -247,8 +247,10 @@ class NextUpArtworkRefreshTest {
                 ),
                 cachedCard(
                     contentId = "tt2",
-                    // TVDB episode stills sit under /episodes/, which must not trip the show-art rule.
-                    episodeThumbnail = "https://artworks.thetvdb.com/banners/episodes/78901/8123456.jpg",
+                    // A real still from another host. TheTVDB's own episode stills are no longer left
+                    // alone: they get one look a session for TMDB's sharper still
+                    // (EpisodeStillQualityTest covers that), so one is not used here.
+                    episodeThumbnail = "https://episodes.metahub.space/tt2/1/5/w780.jpg",
                     background = "https://image.tmdb.org/t/p/original/backdrop.jpg",
                 ),
             ),

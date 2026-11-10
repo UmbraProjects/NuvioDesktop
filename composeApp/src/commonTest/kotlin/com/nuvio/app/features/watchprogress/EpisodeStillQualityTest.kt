@@ -59,10 +59,34 @@ class EpisodeStillQualityTest {
     }
 
     @Test
-    fun `a TVDB episode still is not show artwork`() {
+    fun `a TVDB episode still gets one look for a sharper one, then is kept`() {
+        // Not show artwork, but 400x225 or 640x360: worth one refetch a session, where TMDB's still
+        // for the same episode can replace it. If TMDB has none, the small one stays.
+        val still = "https://artworks.thetvdb.com/banners/v4/episodes/465664/1234.jpg"
+        val claimed = HashSet<String>()
+        fun ask() = needsEpisodeStillRefresh(
+            episodeThumbnail = still,
+            poster = tmdbPoster,
+            background = tmdbBackdrop,
+            contentId = "tt1",
+            hasArtworkLoadFailed = { false },
+            claimLowResolutionLook = { url -> claimed.add(url) },
+        )
+        assertTrue(ask(), "the first ask sends it for a sharper still")
+        assertFalse(ask(), "later asks keep it, so a card TMDB cannot help is not refetched forever")
+    }
+
+    @Test
+    fun `a TMDB still is not sent for a sharper one`() {
         assertFalse(
-            entry("https://artworks.thetvdb.com/banners/v4/episodes/465664/1234.jpg")
-                .needsEpisodeStillRefresh(),
+            needsEpisodeStillRefresh(
+                episodeThumbnail = "https://image.tmdb.org/t/p/w1280/still.jpg",
+                poster = tmdbPoster,
+                background = tmdbBackdrop,
+                contentId = "tt1",
+                hasArtworkLoadFailed = { false },
+                claimLowResolutionLook = { true },
+            ),
         )
     }
 

@@ -77,6 +77,12 @@ internal object StreamPrefetchService {
         val title: String? = null,
         val season: Int? = null,
         val episode: Int? = null,
+        /**
+         * Handed the sweep's answers (annotated, failed providers left out) once it completes.
+         * Not called when the sweep is skipped. Next-episode preload uses it to warm the link of
+         * the stream autoplay will pick (PlaybackSourceWarmup).
+         */
+        val onSwept: ((List<AddonStreamGroup>) -> Unit)? = null,
     )
 
     /** At most this many sweeps may start within [BUDGET_WINDOW_MS]. */
@@ -320,6 +326,10 @@ internal object StreamPrefetchService {
                 "for $contentKey (${target.trigger})"
         }
 
+        target.onSwept?.let { onSwept ->
+            runCatchingUnlessCancelled { onSwept(annotatedGroups.toList()) }
+                .onFailure { log.w(it) { "prefetch onSwept failed for $contentKey" } }
+        }
         prepareTopLink(target, annotatedGroups, effectiveSeason, effectiveEpisode, settings)
     }
 

@@ -68,6 +68,9 @@ import nuvio.composeapp.generated.resources.settings_advanced_image_prewarm_back
 import nuvio.composeapp.generated.resources.settings_advanced_image_prewarm_backdrops_description
 import nuvio.composeapp.generated.resources.settings_advanced_image_prewarm_collection_contents
 import nuvio.composeapp.generated.resources.settings_advanced_image_prewarm_collection_contents_description
+import com.nuvio.app.core.diagnostics.DiagnosticsSettings
+import nuvio.composeapp.generated.resources.settings_advanced_memory_overlay
+import nuvio.composeapp.generated.resources.settings_advanced_memory_overlay_description
 import org.jetbrains.compose.resources.stringResource
 
 internal fun LazyListScope.advancedSettingsContent(
@@ -96,6 +99,16 @@ internal fun LazyListScope.advancedSettingsContent(
                             SettingsScrollAnchor.searchKey("performance-logging"),
                         ),
                         onCheckedChange = PlayerSettingsRepository::setDesktopPerformanceLogging,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    val memoryOverlayEnabled by DiagnosticsSettings.memoryOverlayEnabled.collectAsStateWithLifecycle()
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_advanced_memory_overlay),
+                        description = stringResource(Res.string.settings_advanced_memory_overlay_description),
+                        checked = memoryOverlayEnabled,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("memory-overlay")),
+                        onCheckedChange = DiagnosticsSettings::setMemoryOverlayEnabled,
                     )
                 }
             }

@@ -1088,6 +1088,25 @@ private fun PlaybackSettingsSection(
                             onCheckedChange = com.nuvio.app.features.player.PlayerBrowsePip::setEnabled,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
+                        val doubleClickAction by com.nuvio.app.features.player.PlayerDoubleClick.action.collectAsStateWithLifecycle()
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_playback_double_click),
+                            description = stringResource(Res.string.settings_playback_double_click_description),
+                            options = listOf(
+                                SettingsChoiceOption(
+                                    com.nuvio.app.features.player.PlayerDoubleClickAction.PictureInPicture,
+                                    stringResource(Res.string.settings_playback_double_click_pip),
+                                ),
+                                SettingsChoiceOption(
+                                    com.nuvio.app.features.player.PlayerDoubleClickAction.Fullscreen,
+                                    stringResource(Res.string.settings_playback_double_click_fullscreen),
+                                ),
+                            ),
+                            selectedValue = doubleClickAction,
+                            isTablet = isTablet,
+                            onSelected = com.nuvio.app.features.player.PlayerDoubleClick::setAction,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
                     }
                     // Player preference picker: Internal / External
                     SettingsChoiceRow(

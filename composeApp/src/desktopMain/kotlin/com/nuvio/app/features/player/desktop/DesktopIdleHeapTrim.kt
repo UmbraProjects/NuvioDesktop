@@ -70,9 +70,16 @@ internal object DesktopIdleHeapTrim {
      * On its own daemon thread because a concurrent explicit GC blocks its caller until the cycle
      * completes, and this is called from the UI's coroutine.
      */
+    private const val PlaybackMinuteMillis = 60_000L
+
     fun onPlaybackStarted() {
         thread(isDaemon = true, name = "nuvio-playback-heap-trim") {
             com.nuvio.app.core.ui.MemoryTrimLog.trim(reason = "playback started") { System.gc() }
+            // Where the memory is, once the trim has settled and again when playback has filled its
+            // buffers: so two builds or two sessions can be compared part by part, not by one total.
+            com.nuvio.app.core.diagnostics.MemoryBreakdownSampler.log("playback start")
+            runCatching { Thread.sleep(PlaybackMinuteMillis) }
+            com.nuvio.app.core.diagnostics.MemoryBreakdownSampler.log("playback +1 min")
         }
     }
 }

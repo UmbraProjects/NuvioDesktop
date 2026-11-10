@@ -3157,7 +3157,7 @@ const contextMenuItems = [
         { label: "Adjust custom color…", textKey: "player_hud_adjust_custom_color", action: "colorGradePanel" },
       ] },
       { label: "Anime shader", textKey: "player_hud_anime_shader", dynamicKey: "animeShaders", children: [] },
-      { label: "SVP interpolation", textKey: "player_hud_svp_interpolation", action: "send:keyboardCycleAnimeSvp", toggleKey: "desktopAnimeSvpEnabled" },
+      { label: "SVP interpolation", textKey: "player_hud_svp_interpolation", action: "send:keyboardCycleAnimeSvp", toggleKey: "svpInChain" },
       // This session only; the saved defaults stay in Settings > Playback. Neither runs with SVP.
       { label: "RTX Super Resolution", textKey: "player_hud_rtx_super_resolution", action: "send:toggleRtxVsr", toggleKey: "rtxVsrEnabled" },
       { label: "RTX True HDR", textKey: "player_hud_rtx_true_hdr", action: "send:toggleRtxTrueHdr", toggleKey: "rtxTrueHdrEnabled" },
@@ -3228,10 +3228,19 @@ const setCloseMenuOnSelect = value => {
   }
 };
 
+// What the video-profile pass last pushed (nuvioSetPlaybackInfo, with the playback info panel
+// further down). Declared here, not beside that panel: the context menu is built and its toggles
+// read (svpInChain) while the script is still running top to bottom, and reading a `let` before
+// its line throws, which stopped the whole HUD script before it could take updates or clicks.
+let playbackInfo = { session: "", hdr: "", svp: false, svpInChain: false, video: "", shader: "", quality: "" };
+
 const contextMenuValue = key => {
   if (key === "localMuted") return localMuted;
   if (key === "mpvDiagnosticsEnabled") return mpvDiagnosticsEnabled;
   if (key === "closeMenuOnSelect") return closeMenuOnSelect;
+  // Whether SVP is running on this video, from the video-profile pass. Not desktopAnimeSvpEnabled:
+  // that saved setting is on for live action too, where SVP only runs when forced or set to all videos.
+  if (key === "svpInChain") return playbackInfo.svpInChain;
   if (key === "uiScalePercentValue") return String(Number(state.uiScalePercent) || 0);
   if (key === "hudLayoutValue") return currentHudLayoutValue();
   if (key === "playbackSpeedValue") return parsedPlaybackSpeed().toFixed(1);
@@ -3253,6 +3262,8 @@ const applyOptimisticContextSelection = button => {
   if (!toggleKey || toggleKey === "closeMenuOnSelect") return;
   if (toggleKey === "localMuted") {
     localMuted = !localMuted;
+  } else if (toggleKey === "svpInChain") {
+    playbackInfo = { ...playbackInfo, svpInChain: !playbackInfo.svpInChain };
   } else if (toggleKey === "outlineEnabled" || toggleKey === "shadowEnabled" || toggleKey === "bold" || toggleKey === "italic") {
     const style = { ...(state.subtitleStyle || {}) };
     style[toggleKey] = !style[toggleKey];
@@ -7081,6 +7092,59 @@ window.nuvioSyncMute = muted => {
   syncPlayerVolumeControl();
 };
 
+// The native player loaded the next source into this same page instead of a new one (a binge
+// advance, or a source picked from the panel). Drop what a freshly loaded page would not have:
+// an open panel and the previous file's seek previews.
+window.nuvioSourceReplaced = () => {
+  if (activeModal) closePlayerModal();
+  window.clearTimeout(seekThumbnailRequestTimer);
+  seekThumbnailRequestTimer = 0;
+  pendingSeekThumbnailPosition = -1;
+  seekThumbnailCache.clear();
+  seekThumbnailImage.removeAttribute("src");
+  hideSeekThumbnail();
+};
+
+// Memory overlay (Settings > Advanced) ---------------------------------------
+// The app's live memory breakdown, pushed once a second as [label, value] rows by
+// MemoryDiagnosticsOverlay; null removes it. The app draws the same panel in Compose, but the
+// video surface covers that layer, so over the player it is drawn here. Never on a hero trailer.
+let memoryOverlayPanel = null;
+window.nuvioSetMemoryOverlay = rows => {
+  if (isHeroTrailerSurface) return;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    if (memoryOverlayPanel) {
+      memoryOverlayPanel.remove();
+      memoryOverlayPanel = null;
+    }
+    return;
+  }
+  if (!memoryOverlayPanel) {
+    memoryOverlayPanel = document.createElement("div");
+    memoryOverlayPanel.style.cssText = [
+      "position:fixed", "top:64px", "right:16px", "z-index:2147483000", "pointer-events:none",
+      "background:rgba(16,16,20,0.9)", "border-radius:10px", "padding:10px 14px", "color:#fff",
+      "font:500 12px/1.5 'Nuvio JetBrains Sans',system-ui,sans-serif", "min-width:260px",
+    ].join(";");
+    document.body.appendChild(memoryOverlayPanel);
+  }
+  const heading = document.createElement("div");
+  heading.textContent = "Memory";
+  heading.style.cssText = "font-weight:600;font-size:13px;margin-bottom:2px";
+  const lines = rows.map(row => {
+    const line = document.createElement("div");
+    line.style.cssText = "display:flex;gap:8px";
+    const label = document.createElement("span");
+    label.textContent = String(row[0]);
+    label.style.cssText = "color:#b8b8c0;width:170px;flex:none";
+    const value = document.createElement("span");
+    value.textContent = String(row[1]);
+    line.append(label, value);
+    return line;
+  });
+  memoryOverlayPanel.replaceChildren(heading, ...lines);
+};
+
 // Playback info panel ------------------------------------------------------
 // Two halves meet here: the pipeline rows (HDR / SVP / shader-or-preset) are pushed from the
 // desktop video-profile pass via nuvioSetPlaybackInfo, because only that pass knows what mpv
@@ -7089,7 +7153,7 @@ window.nuvioSyncMute = muted => {
 const playbackInfoPanel = document.getElementById("playbackInfoPanel");
 const playbackInfoRows = document.getElementById("playbackInfoRows");
 const PLAYBACK_INFO_HOLD_MS = 6500;
-let playbackInfo = { session: "", hdr: "", svp: false, video: "", shader: "", quality: "" };
+// playbackInfo itself is declared above contextMenuValue: the context menu reads it while it is built.
 // The session this panel has already been shown for. Showing is per playback attempt: a new file
 // (next episode, source switch) is a new start of playback and earns the panel again, while a
 // settings change that merely re-pushes the same session must not pop it back up.
@@ -7170,12 +7234,14 @@ window.nuvioSetPlaybackInfo = payload => {
     session: String(next.session == null ? "" : next.session),
     hdr: String(next.hdr == null ? "" : next.hdr),
     svp: Boolean(next.svp),
+    svpInChain: Boolean(next.svpInChain),
     video: String(next.video == null ? "" : next.video),
     shader: String(next.shader == null ? "" : next.shader),
     quality: String(next.quality == null ? "" : next.quality),
   };
   renderPlaybackInfoPanel();
   renderTitleBadges();
+  refreshContextMenuIndicators();
 };
 
 // Badges beside the title: the decoded quality (from the video-profile pass, so it is what mpv

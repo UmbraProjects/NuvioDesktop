@@ -133,6 +133,10 @@ internal class DesktopArtworkCacheCoordinator(
         applyMemoryBudget()
     }
 
+    /** The artwork memory cache's size and budget in bytes; null until Coil has built it. */
+    @Synchronized
+    fun memoryBytes(): Pair<Long, Long>? = memoryCache?.let { it.size to it.maxSize }
+
     /** Null until Coil has actually built its cache, which is lazy. */
     @Synchronized
     fun memorySummary(): String? = memoryCache?.let { cache ->

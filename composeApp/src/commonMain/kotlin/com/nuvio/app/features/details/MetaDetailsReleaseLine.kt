@@ -2,7 +2,7 @@ package com.nuvio.app.features.details
 
 import com.nuvio.app.core.format.extractReleaseYearForDisplay
 
-private fun isTvSeriesType(type: String): Boolean =
+internal fun isTvSeriesType(type: String): Boolean =
     when (type.trim().lowercase()) {
         "series", "tv", "show", "tvshow" -> true
         else -> false

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.LocalScreenCovered
 import coil3.compose.LocalPlatformContext
 import coil3.SingletonImageLoader
@@ -4118,6 +4119,14 @@ fun HomeScreen(
                 landscapeMode = immersiveLandscapeMode,
             )
         }
+        // Continue Watching, Next Up and Upcoming fill the shelf's height the way posters do,
+        // rather than keeping their desktop size and leaving the bottom of the shelf empty.
+        val immersiveContinueWatchingCardHeight = immersiveContinueWatchingCardHeightDp(
+            maxWidthDp = maxWidth.value,
+            shelfHeightDp = immersiveShelfHeight.value,
+            sectionPaddingDp = homeSectionPadding.value,
+            itemGapDp = continueWatchingLayout.itemGap.value,
+        ).dp
         val adaptiveHeroLayout = if (adaptiveHeroEnabled && showHeroSlot && !tvModeEnabled) {
             homeHeroLayout(
                 maxWidthDp = maxWidth.value,
@@ -4851,7 +4860,7 @@ fun HomeScreen(
                                     basePosterWidthDpOverride = immersivePosterBaseWidthDp.takeIf {
                                         immersiveLandscapeMode
                                     },
-                                    maxCardHeight = immersiveShelfCardHeightDp(immersiveShelfHeight.value).dp,
+                                    maxCardHeight = immersiveContinueWatchingCardHeight,
                                     focusedItemIndex = tvFocus.itemIndex,
                                     rowState = continueWatchingRowState,
                                     onHoverItem = ::selectHoveredImmersiveItem,
@@ -4875,7 +4884,7 @@ fun HomeScreen(
                                         basePosterWidthDpOverride = immersivePosterBaseWidthDp.takeIf {
                                             immersiveLandscapeMode
                                         },
-                                        maxCardHeight = immersiveShelfCardHeightDp(immersiveShelfHeight.value).dp,
+                                        maxCardHeight = immersiveContinueWatchingCardHeight,
                                         focusedItemIndex = tvFocus.itemIndex,
                                         rowState = nextUpRowState,
                                         onHoverItem = ::selectHoveredImmersiveItem,
@@ -4899,7 +4908,7 @@ fun HomeScreen(
                                         basePosterWidthDpOverride = immersivePosterBaseWidthDp.takeIf {
                                             immersiveLandscapeMode
                                         },
-                                        maxCardHeight = immersiveShelfCardHeightDp(immersiveShelfHeight.value).dp,
+                                        maxCardHeight = immersiveContinueWatchingCardHeight,
                                         focusedItemIndex = tvFocus.itemIndex,
                                         rowState = upcomingRowState,
                                         onHoverItem = ::selectHoveredImmersiveItem,
@@ -5256,6 +5265,26 @@ internal fun immersiveShelfHeightDp(
     (viewportHeightDp * 0.34f).coerceIn(260f, 340f)
 } else {
     (viewportHeightDp * 0.43f).coerceIn(300f, 440f)
+}
+
+/** At least this many landscape Continue Watching cards stay in view once they fill the shelf. */
+private const val IMMERSIVE_CONTINUE_WATCHING_MIN_VISIBLE = 3.5f
+
+/**
+ * The card height Continue Watching, Next Up and Upcoming fill in a TV Mode shelf: the shelf's card
+ * height, unless a landscape card that tall would leave fewer than
+ * [IMMERSIVE_CONTINUE_WATCHING_MIN_VISIBLE] in the row's width.
+ */
+internal fun immersiveContinueWatchingCardHeightDp(
+    maxWidthDp: Float,
+    shelfHeightDp: Float,
+    sectionPaddingDp: Float,
+    itemGapDp: Float,
+): Float {
+    val rowWidth = maxWidthDp - sectionPaddingDp * 2f
+    val widestCard = (rowWidth - itemGapDp * (IMMERSIVE_CONTINUE_WATCHING_MIN_VISIBLE - 0.5f)) /
+        IMMERSIVE_CONTINUE_WATCHING_MIN_VISIBLE
+    return minOf(immersiveShelfCardHeightDp(shelfHeightDp), widestCard / PosterLandscapeAspectRatio)
 }
 
 /** Height left for a card inside a shelf of [shelfHeightDp] once its paddings and row header are out. */

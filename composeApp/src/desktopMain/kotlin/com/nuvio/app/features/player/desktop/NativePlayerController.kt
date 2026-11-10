@@ -123,7 +123,7 @@ internal class NativePlayerController(
 
     private companion object {
         val json = Json { ignoreUnknownKeys = true }
-        const val CONTROLS_PAGE_REVISION = "20261027-hud-labels-1"
+        const val CONTROLS_PAGE_REVISION = "20261109-source-replace-1"
         const val MPV_STARTUP_ERROR_EVENT_PREFIX = "mpvStartupError:"
         const val MPV_PLAYBACK_ERROR_EVENT_PREFIX = "mpvPlaybackError:"
 
@@ -145,6 +145,13 @@ internal class NativePlayerController(
 
     @Volatile
     private var handle: Long = 0L
+
+    // What the live [handle] was started (or last re-sourced) with, and the host it draws into:
+    // the reference canReuseLivePlayer compares the next attach against.
+    @Volatile
+    private var livePending: PendingSource? = null
+    @Volatile
+    private var liveHostViewPtr: Long = 0L
 
     /**
      * Whether a handle of this controller may have touched VapourSynth: SVP requested, the user's
@@ -194,6 +201,15 @@ internal class NativePlayerController(
     // in effect right now (auto-applied preset vs Off) before any session force exists.
     @Volatile
     var isAnimeContentDetected = false
+    // Whether SVP is in this video's filter chain, as the last video-profile pass decided it (the
+    // start-up pre-roll until that pass runs). This, not the saved setting, is what the SVP toggle
+    // flips and what its menu row shows: the saved setting is on for live action too, where SVP
+    // only runs with "all videos" or an in-player toggle.
+    @Volatile
+    private var svpInChain = false
+    // The saved SVP setting from before an in-player press forced SVP on, so pressing it off again
+    // on live action restores it instead of leaving SVP switched on for anime.
+    private var svpSettingBeforeForce: Boolean? = null
     // Where the last definitively failed seek was headed (the bridge reports it just before the
     // error). Read by the engine's rate-limit recovery; cleared by every attach.
     @Volatile
@@ -313,7 +329,7 @@ internal class NativePlayerController(
             } else null,
             extraMpvOptions = buildList {
                 if (tracePlaybackStart && DesktopHostOs.current == DesktopHostOs.WINDOWS) {
-                    add("@nuvio-trace-id=${PlaybackStartTrace.currentId}")
+                    add("$MPV_TRACE_ID_OPTION_PREFIX${PlaybackStartTrace.currentId}")
                 }
                 if (isAnimeContent && DesktopHostOs.current == DesktopHostOs.WINDOWS) {
                     add("@nuvio-anime-layer=${if (animeShaderRequested || animeSvpEnabled) "yes" else "no"}")
@@ -378,11 +394,38 @@ internal class NativePlayerController(
             restoreVolume = restoreVolume,
         )
         pendingSource = pending
+        svpInChain = pending.animeSvpFilter != null
         lastSeekFailureTargetMs = null
         host.onPeerReady = { attachPending() }
         if (host.isDisplayable) {
             attachPending()
         }
+    }
+
+    /**
+     * Whether [pending] can load into the live player instead of a new one (see
+     * [NativePlayerBridge.replaceSource]): the main player moving to a different stream with the
+     * same instance-level setup. Anything else (a trailer, the same stream again for a surface
+     * rebuild or reconnect, live TV, separate audio, a changed RTX/anime/mpv setup) recreates the
+     * player as before. UI thread.
+     */
+    private fun canReuseLivePlayer(pending: PendingSource, hostViewPtr: Long): Boolean {
+        if (!nativePlayerReuseEnabled || DesktopHostOs.current != DesktopHostOs.WINDOWS) return false
+        val live = livePending ?: return false
+        if (synchronized(handleLock) { handle } == 0L) return false
+        if (hostViewPtr == 0L || hostViewPtr != liveHostViewPtr) return false
+        if (!live.tracePlaybackStart || !pending.tracePlaybackStart) return false
+        if (pending.sourceUrl == live.sourceUrl) return false
+        if (live.sourceAudioUrl != null || pending.sourceAudioUrl != null) return false
+        val iptv = com.nuvio.app.features.iptv.IptvPlaybackSession
+        if (iptv.isIptvUrl(live.sourceUrl) || iptv.isIptvUrl(pending.sourceUrl)) return false
+        return live.controlsPageUrl == pending.controlsPageUrl &&
+            live.nvidiaRtxSuperResolutionEnabled == pending.nvidiaRtxSuperResolutionEnabled &&
+            live.nvidiaRtxHdrEnabled == pending.nvidiaRtxHdrEnabled &&
+            live.isAnimeContent == pending.isAnimeContent &&
+            live.animeSvpFilter == pending.animeSvpFilter &&
+            live.restoreVolume == pending.restoreVolume &&
+            mpvOptionsAllowSourceReplacement(live.extraMpvOptions, pending.extraMpvOptions)
     }
 
     private fun attachPending() {
@@ -394,10 +437,12 @@ internal class NativePlayerController(
                 return@invokeLater
             }
             val hostViewPtr = AwtNativeViewResolver.resolveNativeViewPointer(host)
-            val previousHandle = takePlayerHandle()
+            val reuseHandle = if (canReuseLivePlayer(pending, hostViewPtr)) synchronized(handleLock) { handle } else 0L
+            var previousHandle = if (reuseHandle != 0L) 0L else takePlayerHandle()
             keyboardPanelOpen = false
             lastSentControlsStructureKey = null
-            hudLabelsSent = false
+            // A reused player keeps its controls page, which already has its labels.
+            if (reuseHandle == 0L) hudLabelsSent = false
             lastSentMediaSessionKey = null
             lastSentMpvMediaTitle = null
             thread(isDaemon = true, name = "Nuvio-Player-Attach") {
@@ -410,13 +455,37 @@ internal class NativePlayerController(
                     pending.sourceUrl
                 }
                 synchronized(nativeProcessLifecycleLock) {
+                    if (reuseHandle != 0L) {
+                        if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeAttachThread")
+                        if (disposed || generation != attachGeneration.get()) {
+                            return@synchronized
+                        }
+                        if (replaceLiveSource(reuseHandle, pending, generation, mpvSourceUrl)) {
+                            return@synchronized
+                        }
+                        // Refused (the player failed, or cannot take this source): recreate it.
+                        val stillLive = synchronized(handleLock) {
+                            (handle == reuseHandle).also { live ->
+                                if (live) {
+                                    handle = 0L
+                                    NativeAudioDuck.unregister(reuseHandle) // fork:voice-control
+                                }
+                            }
+                        }
+                        livePending = null
+                        if (!stillLive || disposed || generation != attachGeneration.get()) {
+                            return@synchronized
+                        }
+                        hudLabelsSent = false
+                        previousHandle = reuseHandle
+                    }
                     // Replacement is intentionally sequential. Both operations remain on this
                     // worker, so a slow native shutdown delays the next stream without freezing
                     // Compose or allowing shared mpv dependencies to tear down under a new player.
                     if (previousHandle != 0L) {
                         runCatching { NativePlayerBridge.dispose(previousHandle) }
                     }
-                    if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeAttachThread")
+                    if (pending.tracePlaybackStart && reuseHandle == 0L) PlaybackStartTrace.mark("nativeAttachThread")
                     if (disposed || generation != attachGeneration.get()) {
                         return@synchronized
                     }
@@ -465,6 +534,8 @@ internal class NativePlayerController(
                             false
                         } else {
                             handle = newHandle
+                            livePending = pending
+                            liveHostViewPtr = hostViewPtr
                             diagnosticsOverlayEnabled = false
                             NativeAudioDuck.register(newHandle) // fork:voice-control
                             true
@@ -475,35 +546,89 @@ internal class NativePlayerController(
                         return@synchronized
                     }
                     if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeCreateReturned")
-                    // Carry the last-set volume onto the fresh mpv instance so a new episode doesn't
-                    // reset to 100%. The mpv `volume` property is settable before the file finishes
-                    // loading, so applying it here (rather than waiting for fileLoaded) avoids an
-                    // audible full-volume blip at the start of the next episode.
-                    if (pending.restoreVolume) {
-                        persistedVolumeFraction?.let { fraction ->
-                            NativePlayerBridge.setVolume(newHandle, fraction.coerceIn(0f, maxVolumeFraction) * 100f)
-                        }
-                    }
-                    synchronized(pendingMpvProperties) {
-                        pendingMpvProperties.forEach { (key, value) ->
-                            NativePlayerBridge.setMpvProperty(newHandle, key, value)
-                        }
-                    }
-                    lastResizeMode?.let { setResizeMode(it, lastQuickAutoCrop) }
-                    applyPendingSubtitleConfiguration(newHandle)
-                    if (pendingVideoRedraw) {
-                        pendingVideoRedraw = false
-                        NativePlayerBridge.forceVideoRedraw(newHandle)
-                    }
-                    updateControls(controlsState)
+                    finishAttach(newHandle, pending)
                 }
             }
         }
     }
 
+    /**
+     * Loads [pending] into the live player [liveHandle] (see [canReuseLivePlayer]). False when the
+     * bridge refused, and the caller recreates the player. Attach worker, under
+     * [nativeProcessLifecycleLock].
+     */
+    private fun replaceLiveSource(liveHandle: Long, pending: PendingSource, generation: Long, mpvSourceUrl: String): Boolean {
+        // A sink bound to this attach's generation, as for a new player: the outgoing file's
+        // late callbacks still reach the old sink, which this generation has made stale.
+        val generationEventSink = NativePlayerEventSink { type, value ->
+            SwingUtilities.invokeLater {
+                if (!disposed && generation == attachGeneration.get()) {
+                    handlePlayerEvent(type, value)
+                }
+            }
+        }
+        val replaced = runCatching {
+            NativePlayerBridge.replaceSource(
+                handle = liveHandle,
+                sourceUrl = withMpvFilenameHint(mpvSourceUrl, pending.mediaTitle),
+                headerLines = pending.headerLines.toTypedArray(),
+                playWhenReady = pending.playWhenReady,
+                initialPositionMs = pending.initialPositionMs,
+                initialProgressFraction = pending.initialProgressFraction.toDouble(),
+                animeSvpFilter = pending.animeSvpFilter,
+                mediaTitle = pending.mediaTitle.takeIf(String::isNotBlank),
+                traceId = pending.extraMpvOptions
+                    .firstOrNull { it.startsWith(MPV_TRACE_ID_OPTION_PREFIX) }
+                    ?.removePrefix(MPV_TRACE_ID_OPTION_PREFIX),
+                eventSink = generationEventSink,
+            )
+        }.onFailure { error ->
+            playerReuseLog.w { "source replace failed, recreating the player: ${error.message}" }
+        }.getOrDefault(false)
+        if (!replaced) {
+            playerReuseLog.i { "source replace refused by the bridge; recreating the player" }
+            return false
+        }
+        livePending = pending
+        // The bridge put the prefetch limits back to the instance's starting (preset) values.
+        meteredPrefetchFrozen = false
+        if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeSourceReplaced")
+        playerReuseLog.i { "next source loaded into the live player" }
+        // The controls page stays: clear what a freshly loaded page would not have.
+        NativePlayerBridge.runJavaScript(liveHandle, "window.nuvioSourceReplaced && window.nuvioSourceReplaced()")
+        finishAttach(liveHandle, pending)
+        return true
+    }
+
+    /** What every attach applies once its player exists, new or reused. Attach worker. */
+    private fun finishAttach(current: Long, pending: PendingSource) {
+        // Carry the last-set volume onto the fresh mpv instance so a new episode doesn't
+        // reset to 100%. The mpv `volume` property is settable before the file finishes
+        // loading, so applying it here (rather than waiting for fileLoaded) avoids an
+        // audible full-volume blip at the start of the next episode.
+        if (pending.restoreVolume) {
+            persistedVolumeFraction?.let { fraction ->
+                NativePlayerBridge.setVolume(current, fraction.coerceIn(0f, maxVolumeFraction) * 100f)
+            }
+        }
+        synchronized(pendingMpvProperties) {
+            pendingMpvProperties.forEach { (key, value) ->
+                NativePlayerBridge.setMpvProperty(current, key, value)
+            }
+        }
+        lastResizeMode?.let { setResizeMode(it, lastQuickAutoCrop) }
+        applyPendingSubtitleConfiguration(current)
+        if (pendingVideoRedraw) {
+            pendingVideoRedraw = false
+            NativePlayerBridge.forceVideoRedraw(current)
+        }
+        updateControls(controlsState)
+    }
+
     private fun takePlayerHandle(): Long = synchronized(handleLock) {
         val value = handle
         handle = 0L
+        livePending = null
         NativeAudioDuck.unregister(value) // fork:voice-control
         value
     }
@@ -769,7 +894,11 @@ internal class NativePlayerController(
         videoLabel: String,
         shaderLabel: String?,
         qualityLabel: String = "",
+        // The profile's decision; [svpActive] is the native runtime's report, which is also false
+        // while SVP sits out a >= 1.5x speed.
+        svpInChain: Boolean = svpActive,
     ) {
+        this.svpInChain = svpInChain
         // The same signal drives the pad's right stick: with a shader running its down direction
         // cycles the shader chain, and the HDR mode when none is. This pass is the only place that
         // knows which, and it re-runs on every settings change and file load.
@@ -778,6 +907,7 @@ internal class NativePlayerController(
         val payload = "{\"session\":${session.toJsonString()}," +
             "\"hdr\":${(hdrLabel ?: "").toJsonString()}," +
             "\"svp\":$svpActive," +
+            "\"svpInChain\":$svpInChain," +
             "\"video\":${videoLabel.toJsonString()}," +
             "\"shader\":${(shaderLabel ?: "").toJsonString()}," +
             "\"quality\":${qualityLabel.toJsonString()}}"
@@ -1161,17 +1291,31 @@ internal class NativePlayerController(
     }
 
     fun cycleDesktopAnimeSvpMode() {
-        val current = PlayerSettingsRepository.uiState.value.desktopAnimeSvpEnabled
-        val next = !current
-        PlayerSettingsRepository.setDesktopAnimeSvpEnabled(next)
-        // An explicit in-player toggle also forces SVP for this session even when the title isn't
-        // detected as anime (the persisted toggle alone only fires on effectively-anime content).
-        PlayerSettingsRepository.setDesktopAnimeSvpSessionForced(next)
+        val settings = PlayerSettingsRepository.uiState.value
+        // Flip what is running, not the saved setting: on live action without "all videos" the
+        // setting is on while SVP is off, and flipping it made the first press a silent off -> off.
+        val next = !svpInChain
+        svpInChain = next // a second press before the profile pass lands must see this one
         // Name the tuning this video gets, matching the profile choice in applyDesktopAnimeProfile:
         // detected anime, or anime shaders forced on for this session.
-        val sessionPreset = PlayerSettingsRepository.uiState.value.desktopAnimeSessionOverride?.mode
-        val animeTuning = pendingSource?.isAnimeContent == true ||
+        val sessionPreset = settings.desktopAnimeSessionOverride?.mode
+        val animeTuning = isAnimeContentDetected || pendingSource?.isAnimeContent == true ||
             (sessionPreset != null && sessionPreset != DesktopAnimeMode.Off)
+        if (next) {
+            if (!settings.desktopAnimeSvpSessionForced) svpSettingBeforeForce = settings.desktopAnimeSvpEnabled
+            PlayerSettingsRepository.setDesktopAnimeSvpEnabled(true)
+            // An explicit in-player toggle also forces SVP for this session even when the title
+            // isn't detected as anime (the saved setting alone only fires on anime content).
+            PlayerSettingsRepository.setDesktopAnimeSvpSessionForced(true)
+        } else if (settings.desktopAnimeSvpSessionForced && !animeTuning && !settings.desktopSvpAllContentEnabled) {
+            // Running only because of an earlier press this session: undo that press, which puts
+            // the saved setting (SVP on anime) back as the user had it.
+            PlayerSettingsRepository.setDesktopAnimeSvpSessionForced(false)
+            PlayerSettingsRepository.setDesktopAnimeSvpEnabled(svpSettingBeforeForce ?: settings.desktopAnimeSvpEnabled)
+        } else {
+            PlayerSettingsRepository.setDesktopAnimeSvpEnabled(false)
+            PlayerSettingsRepository.setDesktopAnimeSvpSessionForced(false)
+        }
         val label = if (animeTuning) Res.string.player_hud_anime_svp else Res.string.player_hud_cinema_svp
         showPresetPill(localizedString(label),if (next) localizedString(Res.string.compose_action_on) else localizedString(Res.string.compose_action_off))
     }
@@ -1551,7 +1695,12 @@ internal class NativePlayerController(
             // the window; the watch page and its theater setting were never touched).
             "videoDoubleClick" -> {
                 val youTube = com.nuvio.app.features.youtube.YouTubeFeedRepository
-                if (!desktopPictureInPictureState.value && watchPage && !miniPlayer && !youTube.theaterMode.value) {
+                val togglesFullscreen = com.nuvio.app.features.player.PlayerDoubleClick.action.value ==
+                    com.nuvio.app.features.player.PlayerDoubleClickAction.Fullscreen
+                // Settings > Playback > Double-click on the video. Inside PiP it always comes back out.
+                if (togglesFullscreen && !desktopPictureInPictureState.value) {
+                    handlePlayerEvent("toggleFullscreen", 0.0)
+                } else if (!desktopPictureInPictureState.value && watchPage && !miniPlayer && !youTube.theaterMode.value) {
                     youTube.setTheaterMode(true)
                 } else {
                     handlePlayerEvent("pictureInPicture", 0.0)
@@ -1827,6 +1976,7 @@ internal class NativePlayerController(
         val current = synchronized(handleLock) {
             val value = handle
             handle = 0L
+            livePending = null
             NativeAudioDuck.unregister(value) // fork:voice-control
             value
         }
@@ -2753,6 +2903,32 @@ private val controlsJsonLog = Logger.withTag("PlayerControlsJson")
 
 private val audioPassthroughLog = Logger.withTag("PlayerAudioPassthrough")
 private val compactPressLog = Logger.withTag("PlayerPip")
+private val playerReuseLog = Logger.withTag("PlayerReuse")
+
+internal const val MPV_TRACE_ID_OPTION_PREFIX = "@nuvio-trace-id="
+
+/**
+ * Loading the next source into the live player (see NativePlayerController.canReuseLivePlayer) is
+ * on unless a file named `no-player-reuse` sits in the data folder, so a user hit by a regression
+ * can go back to recreating the player per source without a new build.
+ */
+private val nativePlayerReuseEnabled: Boolean by lazy {
+    runCatching { !java.nio.file.Files.exists(DesktopStorage.rootDir.resolve("no-player-reuse")) }
+        .getOrDefault(true)
+}
+
+/**
+ * Whether a player started with [liveOptions] can load a source that would have been started with
+ * [nextOptions]. Everything in them is applied once, before mpv_initialize, so they must match;
+ * only what the bridge re-applies per file on a replacement may differ: the trace id and the media
+ * title. Order counts (a later entry overrides an earlier one with the same key).
+ */
+internal fun mpvOptionsAllowSourceReplacement(liveOptions: List<String>, nextOptions: List<String>): Boolean {
+    fun instanceLevel(options: List<String>) = options.filterNot { option ->
+        option.startsWith(MPV_TRACE_ID_OPTION_PREFIX) || option.startsWith("force-media-title=")
+    }
+    return instanceLevel(liveOptions) == instanceLevel(nextOptions)
+}
 
 /** How long PiP's X waits after giving the window back its size before closing the player. */
 private const val PIP_CLOSE_SETTLE_MS = 400

@@ -28,6 +28,14 @@ data class VoiceModel(
     val url: String,
     val sizeBytes: Long,
     val sha256: String,
+    /**
+     * Memory the model takes while voice commands are on (weights, caches and compute buffers, which
+     * whisper.cpp allocates at load): several times the download. small.en-q5_1 is measured (713 MB,
+     * whisper.cpp's own account, 2026-11-10); tiny and base are whisper.cpp's published per-model
+     * totals scaled by how far small's measured total is above its published one. Once a model has
+     * loaded on this PC, [VoiceControlUiState.measuredMemory] has its real figure instead.
+     */
+    val estimatedMemoryBytes: Long,
 )
 
 object VoiceModels {
@@ -42,6 +50,7 @@ object VoiceModels {
         url = SOURCE + "ggml-base.en-q5_1.bin",
         sizeBytes = 59_721_011L,
         sha256 = "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f",
+        estimatedMemoryBytes = 390_000_000L,
     )
 
     val TinyEn = VoiceModel(
@@ -52,6 +61,7 @@ object VoiceModels {
         url = SOURCE + "ggml-tiny.en-q5_1.bin",
         sizeBytes = 32_166_155L,
         sha256 = "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b",
+        estimatedMemoryBytes = 300_000_000L,
     )
 
     val SmallEn = VoiceModel(
@@ -63,6 +73,7 @@ object VoiceModels {
         url = SOURCE + "ggml-small.en-q5_1.bin",
         sizeBytes = 190_098_681L,
         sha256 = "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30",
+        estimatedMemoryBytes = 713_000_000L,
     )
 
     val all: List<VoiceModel> = listOf(BaseEn, SmallEn, TinyEn)
@@ -139,7 +150,13 @@ data class VoiceControlUiState(
     val wakeListening: Boolean = false,
     /** The Settings test's recording is being played back. */
     val testPlaying: Boolean = false,
+    /** Memory each model took when it last loaded on this PC (whisper.cpp's own account), by id. */
+    val measuredMemory: Map<String, Long> = emptyMap(),
 ) {
+    /** What [model] takes in memory: measured on this PC when it has loaded here, else the estimate. */
+    fun memoryOf(model: VoiceModel): Pair<Long, Boolean> =
+        measuredMemory[model.id]?.takeIf { it > 0 }?.let { it to true } ?: (model.estimatedMemoryBytes to false)
+
     fun stateOf(model: VoiceModel): VoiceModelState = models[model.id] ?: VoiceModelState.NotInstalled
 
     val selectedModel: VoiceModel get() = VoiceModels.byId(settings.modelId) ?: VoiceModels.default

@@ -1268,6 +1268,16 @@ private fun settingsSearchEntries(
         icon = Icons.Rounded.Tune,
     )
     addRow(
+        page = SettingsPage.Advanced,
+        key = "memory-overlay",
+        title = resolve(Res.string.settings_advanced_memory_overlay),
+        description = resolve(Res.string.settings_advanced_memory_overlay_description),
+        pageLabel = advancedPage,
+        section = resolve(Res.string.settings_advanced_section_diagnostics),
+        category = advancedCategory,
+        icon = Icons.Rounded.Tune,
+    )
+    addRow(
         page = SettingsPage.Account,
         key = "remember-last-profile",
         title = resolve(Res.string.settings_advanced_remember_last_profile),
@@ -1536,6 +1546,11 @@ private fun settingsSearchEntries(
                 "pip-browse",
                 resolve(Res.string.settings_playback_pip_browse),
                 resolve(Res.string.settings_playback_pip_browse_description),
+            ),
+            PlaybackSearchRow(
+                "double-click",
+                resolve(Res.string.settings_playback_double_click),
+                resolve(Res.string.settings_playback_double_click_description),
             ),
             PlaybackSearchRow(
                 "external-player",

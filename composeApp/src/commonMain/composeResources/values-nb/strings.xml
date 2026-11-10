@@ -855,6 +855,8 @@
   <string name="settings_advanced_section_diagnostics">DIAGNOSTIKK</string>
   <string name="settings_advanced_performance_logging">Ytelseslogging</string>
   <string name="settings_advanced_performance_logging_description">Registrerer hvor tiden for hver ramme går mens du ruller, i applogen. Av som standard – slå på bare hvis du blir bedt om en logg, siden det gir litt ekstra arbeid for hver ramme.</string>
+  <string name="settings_advanced_memory_overlay">Minneoverlegg</string>
+  <string name="settings_advanced_memory_overlay_description">Viser direkte hvor appens minne går, i et lite panel over appen og spilleren: det Oppgavebehandling teller, minnet til grafikkdriveren, Java-heapen, bildebuffere og spillerens buffer.</string>
   <string name="settings_advanced_section_cache">BUFFER</string>
   <string name="settings_updates_section">OPPDATERINGER</string>
   <string name="settings_updates_channel">Oppdateringskanal</string>
@@ -1977,6 +1979,10 @@
   <string name="settings_playback_show_loading_overlay_description">Vis lasts skjerm til første bilde vises.</string>
   <string name="settings_playback_pip_browse">Bla mens bilde-i-bilde er på</string>
   <string name="settings_playback_pip_browse_description">Bilde-i-bilde får en knapp som henter appen tilbake med videoen i et hjørne, så du kan bla mens den spilles. Trailere er av så lenge. Gjelder fra neste video.</string>
+  <string name="settings_playback_double_click">Dobbeltklikk på videoen</string>
+  <string name="settings_playback_double_click_description">Hva et dobbeltklikk på videoen som spilles av gjør. I bilde-i-bilde henter det alltid videoen tilbake.</string>
+  <string name="settings_playback_double_click_pip">Bilde i bilde</string>
+  <string name="settings_playback_double_click_fullscreen">Fullskjerm / vindu</string>
   <string name="settings_playback_subtitle_background_color">Bakgrunnsfarge</string>
   <string name="settings_playback_subtitle_blur">Uskarphet</string>
   <string name="settings_playback_subtitle_bold">Fet</string>
@@ -2872,6 +2878,18 @@
   <string name="details_season_view_text">Tekst</string>
   <string name="details_show_details">Seriedetaljer</string>
   <string name="details_status">Status</string>
+  <string name="details_status_airing">Sendes nå</string>
+  <string name="details_status_ended">Avsluttet</string>
+  <string name="details_status_cancelled">Kansellert</string>
+  <string name="details_status_upcoming">Kommer snart</string>
+  <string name="details_form_series_from">Serie fra %1$s</string>
+  <string name="details_form_limited_series_from">Miniserie fra %1$s</string>
+  <string name="details_form_limited_series">Miniserie</string>
+  <string name="details_form_film_from">Film fra %1$s</string>
+  <plurals name="details_status_cancelled_after_seasons">
+    <item quantity="one">Kansellert etter %1$d sesong</item>
+    <item quantity="other">Kansellert etter %1$d sesonger</item>
+  </plurals>
   <string name="details_videos">Videoer</string>
   <string name="details_episode_badge_file">FIL</string>
   <string name="downloads_enqueue_insufficient_space">Ikke nok ledig diskplass til denne nedlastingen</string>

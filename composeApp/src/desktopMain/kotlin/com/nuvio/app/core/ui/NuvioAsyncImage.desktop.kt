@@ -301,6 +301,10 @@ internal object ScaledBitmapCache {
         evictToBudget()
     }
 
+    /** Bytes held now, for the memory diagnostics. */
+    @Synchronized
+    fun sizeBytes(): Long = currentBytes
+
     fun key(sourceKey: String, size: IntSize): String = "$sourceKey|${size.width}x${size.height}"
 
     @Synchronized
