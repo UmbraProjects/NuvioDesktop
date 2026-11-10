@@ -855,6 +855,8 @@
   <string name="settings_advanced_section_diagnostics">DIAGNOSTIK</string>
   <string name="settings_advanced_performance_logging">Pencatatan performa</string>
   <string name="settings_advanced_performance_logging_description">Mencatat ke log aplikasi ke mana waktu setiap frame terpakai saat Anda menggulir. Nonaktif secara bawaan - aktifkan hanya jika diminta log, karena menambah sedikit beban pada setiap frame.</string>
+  <string name="settings_advanced_memory_overlay">Overlay memori</string>
+  <string name="settings_advanced_memory_overlay_description">Menampilkan secara langsung ke mana memori aplikasi digunakan, dalam panel kecil di atas aplikasi dan pemutar: yang dihitung Task Manager, memori driver grafis, heap Java, cache gambar, dan buffer pemutar.</string>
   <string name="settings_advanced_section_cache">CACHE</string>
   <string name="settings_updates_section">PEMBARUAN</string>
   <string name="settings_updates_channel">Kanal Pembaruan</string>
@@ -1977,6 +1979,10 @@
   <string name="settings_playback_show_loading_overlay_description">Tampilkan layar pemuatan sampai frame video pertama muncul.</string>
   <string name="settings_playback_pip_browse">Jelajahi saat gambar-dalam-gambar</string>
   <string name="settings_playback_pip_browse_description">Gambar-dalam-gambar mendapat tombol yang mengembalikan aplikasi dengan video di salah satu sudutnya, jadi Anda bisa menjelajah sambil video diputar. Trailer tetap mati selama itu. Berlaku mulai video berikutnya.</string>
+  <string name="settings_playback_double_click">Klik ganda pada video</string>
+  <string name="settings_playback_double_click_description">Yang dilakukan klik ganda pada video yang diputar. Dalam gambar-dalam-gambar, selalu mengembalikan video.</string>
+  <string name="settings_playback_double_click_pip">Gambar dalam gambar</string>
+  <string name="settings_playback_double_click_fullscreen">Layar penuh / jendela</string>
   <string name="settings_playback_subtitle_background_color">Warna Latar Belakang</string>
   <string name="settings_playback_subtitle_blur">Blur</string>
   <string name="settings_playback_subtitle_bold">Tebal</string>
@@ -2872,6 +2878,17 @@
   <string name="details_season_view_text">Teks</string>
   <string name="details_show_details">Detail Serial</string>
   <string name="details_status">Status</string>
+  <string name="details_status_airing">Sedang tayang</string>
+  <string name="details_status_ended">Selesai</string>
+  <string name="details_status_cancelled">Dibatalkan</string>
+  <string name="details_status_upcoming">Segera hadir</string>
+  <string name="details_form_series_from">Serial dari %1$s</string>
+  <string name="details_form_limited_series_from">Miniseri dari %1$s</string>
+  <string name="details_form_limited_series">Miniseri</string>
+  <string name="details_form_film_from">Film dari %1$s</string>
+  <plurals name="details_status_cancelled_after_seasons">
+    <item quantity="other">Dibatalkan setelah %1$d musim</item>
+  </plurals>
   <string name="details_videos">Video</string>
   <string name="details_episode_badge_file">FILE</string>
   <string name="downloads_enqueue_insufficient_space">Ruang disk kosong tidak cukup untuk unduhan ini</string>

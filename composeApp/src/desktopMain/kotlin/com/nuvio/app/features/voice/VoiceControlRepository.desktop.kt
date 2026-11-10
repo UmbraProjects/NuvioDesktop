@@ -58,6 +58,15 @@ actual object VoiceControlRepository {
     /** After the microphone fails to open, the wake-word listener tries again this much later. */
     private const val WAKE_RETRY_MS = 15_000L
 
+    /** What a model took in memory when it last loaded here (whisper.cpp's account), in bytes. */
+    private fun memoryKey(modelId: String) = "memory_$modelId"
+
+    /** After Home's first content, how long the speech model waits for startup's artwork to load. */
+    private const val STARTUP_SETTLE_MS = 10_000L
+
+    /** The latest the model loads after voice settings are read, whether or not Home was shown. */
+    private const val STARTUP_FALLBACK_MS = 60_000L
+
     /** How far the app's own audio goes down while listening, so the microphone hears the person. */
     private const val DUCK_TO = 0.25
 
@@ -140,14 +149,38 @@ actual object VoiceControlRepository {
             it.copy(
                 settings = settings,
                 models = VoiceModels.all.associate { model -> model.id to installedState(model) },
+                measuredMemory = VoiceModels.all.mapNotNull { model ->
+                    store.getString(memoryKey(model.id))?.toLongOrNull()?.takeIf { it > 0 }?.let { model.id to it }
+                }.toMap(),
                 engineProblem = if (WhisperLibrary.resolve() == null) ENGINE_MISSING else null,
                 modelsFolder = modelsDir.absolutePath,
                 phrases = loadPhrases(),
             )
         }
         refreshMicrophones()
-        warmUp()
-        superviseWakeWord()
+        // The model (and the wake word, which needs it) waits for startup to settle: Home's first
+        // content, then [STARTUP_SETTLE_MS] while its artwork loads. Loaded in the middle of that,
+        // its ~700 MB of buffers interleaved with startup's short-lived allocations and the process
+        // kept ~400 MB more than when the same model was switched on later. A press of the voice
+        // key before then still loads it on demand.
+        val started = java.util.concurrent.atomic.AtomicBoolean(false)
+        val startEngine = {
+            if (started.compareAndSet(false, true)) {
+                warmUp()
+                superviseWakeWord()
+            }
+        }
+        com.nuvio.app.core.build.StartupReadySignal.onHomeReady {
+            scope.launch {
+                delay(STARTUP_SETTLE_MS)
+                startEngine()
+            }
+        }
+        // A launch that never shows Home (straight into a deep link, say) still gets its wake word.
+        scope.launch {
+            delay(STARTUP_FALLBACK_MS)
+            startEngine()
+        }
         // "down", "go right 3", "select": the keystrokes a gamepad sends, so every screen that walks
         // with the arrow keys walks by voice too.
         VoiceScreenTargets.pressKey = { key, count ->
@@ -207,8 +240,9 @@ actual object VoiceControlRepository {
     }
 
     /**
-     * While voice control is on, the selected model stays loaded (~150 MB for base.en), so a press
-     * starts listening at once and the first command is not 0.3 s slower than the rest.
+     * While voice control is on, the selected model stays loaded ([VoiceModel.estimatedMemoryBytes]:
+     * ~390 MB for base.en, ~713 MB for small.en), so a press starts listening at once and the first
+     * command is not 0.3 s slower than the rest.
      */
     private fun warmUp() {
         val state = _uiState.value
@@ -883,7 +917,31 @@ actual object VoiceControlRepository {
     private fun transcriberFor(file: File): Result<WhisperTranscriber> = synchronized(engineLock) {
         transcriber?.let { if (it.modelFile == file) return Result.success(it) }
         releaseTranscriber()
-        WhisperTranscriber.open(file).onSuccess { transcriber = it }
+        // What the model holds, for the memory diagnostics: whisper.cpp's own sum of the buffers it
+        // allocated. Only with an older nuvio_whisper.dll, the change in committed memory across the
+        // load instead, which also counts whatever else the app allocated meanwhile (at startup, the
+        // home screen loading), so it reads high.
+        val before = com.nuvio.app.core.diagnostics.MemoryBreakdownSampler.privateCommitBytes()
+        WhisperTranscriber.open(file).onSuccess {
+            transcriber = it
+            val after = com.nuvio.app.core.diagnostics.MemoryBreakdownSampler.privateCommitBytes()
+            val reported = runCatching { WhisperNative.nativeLastLoadBytes() }.getOrDefault(-1L)
+            if (reported > 0) {
+                VoiceModels.all.firstOrNull { model -> model.fileName == file.name }?.let { model ->
+                    store.putString(memoryKey(model.id), reported.toString())
+                    _uiState.update { state -> state.copy(measuredMemory = state.measuredMemory + (model.id to reported)) }
+                }
+            }
+            com.nuvio.app.core.diagnostics.NativeMemoryUsers.voiceModelLoaded(
+                fileName = file.name,
+                costBytes = when {
+                    reported > 0 -> reported
+                    before > 0 && after > 0 -> (after - before).coerceAtLeast(0)
+                    else -> -1
+                },
+                exact = reported > 0,
+            )
+        }
     }
 
     private fun releaseTranscriber(onlyFor: File? = null): Unit = synchronized(engineLock) {
@@ -891,6 +949,7 @@ actual object VoiceControlRepository {
         if (onlyFor != null && current.modelFile != onlyFor) return
         current.close()
         transcriber = null
+        com.nuvio.app.core.diagnostics.NativeMemoryUsers.voiceModelReleased()
     }
 
     private const val ENGINE_MISSING =

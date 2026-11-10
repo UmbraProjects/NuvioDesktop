@@ -62,7 +62,8 @@ internal fun LazyListScope.voiceControlSettingsContent(isTablet: Boolean) {
                     title = "Voice commands",
                     description = if (state.selectedModelInstalled) {
                         "Say what you want, such as “search YouTube for cat videos”, “search movies for " +
-                            "Midsommar” or “open settings”. Keeps the speech model loaded (about 150 MB of memory)."
+                            "Midsommar” or “open settings”. While on, the speech model stays loaded in memory; " +
+                            "each model below says how much."
                     } else {
                         "Download a speech model below first."
                     },
@@ -212,9 +213,15 @@ private fun VoiceModelRow(model: VoiceModel, state: VoiceControlUiState, anyDown
         VoiceModelState.Installed -> if (inUse) "Downloaded · in use" else "Downloaded"
         is VoiceModelState.Failed -> modelState.message
     }
+    val (memoryBytes, measured) = state.memoryOf(model)
+    val memory = if (measured) {
+        "Uses ${megabytes(memoryBytes)} MB of memory while voice commands are on (measured on this PC)."
+    } else {
+        "Uses about ${megabytes(memoryBytes)} MB of memory while voice commands are on."
+    }
     SettingsActionRow(
-        title = "${model.label} · ${megabytes(model.sizeBytes)} MB",
-        description = listOfNotNull(model.description, status).joinToString("\n"),
+        title = "${model.label} · ${megabytes(model.sizeBytes)} MB download",
+        description = listOfNotNull(model.description, memory, status).joinToString("\n"),
         descriptionColor = if (modelState is VoiceModelState.Failed) MaterialTheme.colorScheme.error else null,
         isTablet = isTablet,
     ) {

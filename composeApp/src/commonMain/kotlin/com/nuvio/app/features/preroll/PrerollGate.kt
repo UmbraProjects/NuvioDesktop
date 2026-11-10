@@ -220,7 +220,19 @@ fun PrerollGate(
                 if (!ThemeSongSettings.triviaEnabled.value) return@async null
                 val meta = details()
                 withTimeoutOrNull(THEME_SONG_RESOLVE_WAIT_MS) {
-                    runCatching { ThemeSongRepository.resolve(metaType, meta?.name ?: title, meta?.releaseInfo, metaId) }.getOrNull()
+                    runCatching {
+                        ThemeSongRepository.resolve(
+                            type = metaType,
+                            title = meta?.name ?: title,
+                            releaseInfo = meta?.releaseInfo,
+                            metaId = metaId,
+                            isAnime = meta != null && com.nuvio.app.features.player.isAnimeFromGenres(
+                                genres = meta.genres,
+                                originalLanguage = meta.language,
+                                originCountries = listOfNotNull(meta.country),
+                            ),
+                        )
+                    }.getOrNull()
                 }
             }
             // Fanart is fetched alongside the pack, so by the time the trailers end both are ready.

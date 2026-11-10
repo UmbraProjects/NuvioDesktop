@@ -29,6 +29,12 @@ internal object WhisperNative {
 
     external fun nativeFree(handle: Long)
 
+    /**
+     * What the last [nativeInit] allocated by whisper.cpp's own account (weights, KV caches, compute
+     * buffers), in bytes; -1 when unknown. Throws UnsatisfiedLinkError with an older nuvio_whisper.dll.
+     */
+    external fun nativeLastLoadBytes(): Long
+
     /** ggml's CPU feature line ("AVX = 1 | AVX2 = 1 | ..."), for the log. */
     external fun nativeSystemInfo(): String
 }

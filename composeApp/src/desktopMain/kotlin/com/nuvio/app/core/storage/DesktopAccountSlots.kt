@@ -30,6 +30,7 @@ internal val MACHINE_STORE_NAMES = setOf(
     "nuvio_hs_err_pid",
     "nuvio_safepoint_pid",
     "nuvio_local_library",
+    "nuvio_diagnostics",
     "nuvio_downloads",
     "nuvio_library_pvr",
     "nuvio_addon_subtitle_download",

@@ -2923,6 +2923,11 @@ fun MetaDetailsScreen(
                             metaName = meta.name,
                             releaseInfo = meta.releaseInfo,
                             metaId = meta.id,
+                            isAnime = com.nuvio.app.features.player.isAnimeFromGenres(
+                                genres = meta.genres,
+                                originalLanguage = meta.language,
+                                originCountries = listOfNotNull(meta.country),
+                            ),
                             deferredWorkAllowed = deferredMetaWorkAllowed,
                             leavingDetails = isLeavingDetails,
                             heroTrailerAudible = heroTrailerSourceUrl != null && heroTrailerPlayWhenReady && !heroTrailerMuted,

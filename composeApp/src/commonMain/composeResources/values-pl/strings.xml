@@ -855,6 +855,8 @@
   <string name="settings_advanced_section_diagnostics">DIAGNOSTYKA</string>
   <string name="settings_advanced_performance_logging">Rejestrowanie wydajności</string>
   <string name="settings_advanced_performance_logging_description">Zapisuje w dzienniku aplikacji, na co schodzi czas każdej klatki podczas przewijania. Domyślnie wyłączone - włącz tylko na prośbę o dziennik, ponieważ dodaje niewielką pracę do każdej klatki.</string>
+  <string name="settings_advanced_memory_overlay">Nakładka pamięci</string>
+  <string name="settings_advanced_memory_overlay_description">Pokazuje na żywo, gdzie idzie pamięć aplikacji, w małym panelu nad aplikacją i odtwarzaczem: to, co liczy Menedżer zadań, pamięć sterownika grafiki, sterta Javy, pamięci podręczne obrazów i bufor odtwarzacza.</string>
   <string name="settings_advanced_section_cache">PAMIĘĆ PODRĘCZNA</string>
   <string name="settings_updates_section">AKTUALIZACJE</string>
   <string name="settings_updates_channel">Kanał aktualizacji</string>
@@ -1977,6 +1979,10 @@
   <string name="settings_playback_show_loading_overlay_description">Pokaż nakładkę ładowania podczas uruchamiania strumienia.</string>
   <string name="settings_playback_pip_browse">Przeglądanie w trybie obrazu w obrazie</string>
   <string name="settings_playback_pip_browse_description">Obraz w obrazie zyskuje przycisk, który przywraca aplikację z wideo w jej rogu, dzięki czemu możesz przeglądać w trakcie odtwarzania. Zwiastuny są w tym czasie wyłączone. Działa od następnego wideo.</string>
+  <string name="settings_playback_double_click">Dwuklik na wideo</string>
+  <string name="settings_playback_double_click_description">Co robi dwuklik na odtwarzanym wideo. W trybie obrazu w obrazie zawsze przywraca wideo.</string>
+  <string name="settings_playback_double_click_pip">Obraz w obrazie</string>
+  <string name="settings_playback_double_click_fullscreen">Pełny ekran / okno</string>
   <string name="settings_playback_subtitle_background_color">Kolor tła</string>
   <string name="settings_playback_subtitle_blur">Rozmycie</string>
   <string name="settings_playback_subtitle_bold">Pogrubienie</string>
@@ -2872,6 +2878,20 @@
   <string name="details_season_view_text">Tekst</string>
   <string name="details_show_details">Szczegóły serialu</string>
   <string name="details_status">Status</string>
+  <string name="details_status_airing">Emitowany</string>
+  <string name="details_status_ended">Zakończony</string>
+  <string name="details_status_cancelled">Anulowany</string>
+  <string name="details_status_upcoming">Wkrótce</string>
+  <string name="details_form_series_from">Serial (%1$s)</string>
+  <string name="details_form_limited_series_from">Miniserial (%1$s)</string>
+  <string name="details_form_limited_series">Miniserial</string>
+  <string name="details_form_film_from">Film (%1$s)</string>
+  <plurals name="details_status_cancelled_after_seasons">
+    <item quantity="one">Anulowany po %1$d sezonie</item>
+    <item quantity="few">Anulowany po %1$d sezonach</item>
+    <item quantity="many">Anulowany po %1$d sezonach</item>
+    <item quantity="other">Anulowany po %1$d sezonach</item>
+  </plurals>
   <string name="details_videos">Filmy</string>
   <string name="details_episode_badge_file">PLIK</string>
   <string name="downloads_enqueue_insufficient_space">Za mało wolnego miejsca na dysku dla tego pobierania</string>

@@ -700,6 +700,10 @@
     <string name="settings_playback_show_loading_overlay_description">Das einleitende Lade-Overlay anzeigen, während ein Stream startet.</string>
     <string name="settings_playback_pip_browse">Im Bild-im-Bild-Modus weiterstöbern</string>
     <string name="settings_playback_pip_browse_description">Bild-im-Bild bekommt eine Taste, die die App mit dem Video in einer Ecke zurückholt, sodass du stöbern kannst, während es läuft. Trailer bleiben solange aus. Gilt ab dem nächsten Video.</string>
+    <string name="settings_playback_double_click">Doppelklick auf das Video</string>
+    <string name="settings_playback_double_click_description">Was ein Doppelklick auf das laufende Video macht. Im Bild-im-Bild-Modus holt er das Video immer zurück.</string>
+    <string name="settings_playback_double_click_pip">Bild im Bild</string>
+    <string name="settings_playback_double_click_fullscreen">Vollbild / Fenster</string>
     <string name="settings_playback_skip_intro_outro_recap">Intro/Outro/Rückblick überspringen</string>
     <string name="settings_playback_skip_intro_outro_recap_description">Skip-Schaltfläche bei erkannten Intro-, Outro- und Rückblick-Segmenten anzeigen.</string>
     <string name="settings_playback_source_scope">Quellbereich</string>
@@ -1158,6 +1162,18 @@
     <string name="details_season_view_text">Text</string>
     <string name="details_show_details">Seriendetails</string>
     <string name="details_status">Status</string>
+    <string name="details_status_airing">Läuft</string>
+    <string name="details_status_ended">Beendet</string>
+    <string name="details_status_cancelled">Abgesetzt</string>
+    <string name="details_status_upcoming">Demnächst</string>
+    <string name="details_form_series_from">Serie (%1$s)</string>
+    <string name="details_form_limited_series_from">Miniserie (%1$s)</string>
+    <string name="details_form_limited_series">Miniserie</string>
+    <string name="details_form_film_from">Film (%1$s)</string>
+    <plurals name="details_status_cancelled_after_seasons">
+        <item quantity="one">Nach %1$d Staffel abgesetzt</item>
+        <item quantity="other">Nach %1$d Staffeln abgesetzt</item>
+    </plurals>
     <string name="details_videos">Videos</string>
     <string name="details_episode_badge_file">DATEI</string>
     <string name="downloads_enqueue_missing_url">Kein direkter Stream-Link verfügbar</string>
@@ -1678,6 +1694,8 @@
     <string name="settings_advanced_section_diagnostics">DIAGNOSE</string>
     <string name="settings_advanced_performance_logging">Leistungsprotokollierung</string>
     <string name="settings_advanced_performance_logging_description">Zeichnet im App-Log auf, wohin die Zeit jedes Frames beim Scrollen geht. Standardmäßig aus - aktiviere sie nur, wenn ein Log angefordert wird, da sie jedem Frame etwas Arbeit hinzufügt.</string>
+    <string name="settings_advanced_memory_overlay">Speicher-Overlay</string>
+    <string name="settings_advanced_memory_overlay_description">Zeigt live in einem kleinen Panel über App und Player, wohin der Speicher der App geht: was der Task-Manager zählt, Speicher des Grafiktreibers, den Java-Heap, Bild-Caches und den Puffer des Players.</string>
     <string name="settings_advanced_section_cache">CACHE</string>
     <string name="settings_updates_section">UPDATES</string>
     <string name="settings_updates_channel">Update-Kanal</string>

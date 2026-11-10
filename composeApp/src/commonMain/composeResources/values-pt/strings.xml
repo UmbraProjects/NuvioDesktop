@@ -855,6 +855,8 @@
   <string name="settings_advanced_section_diagnostics">DIAGNÓSTICO</string>
   <string name="settings_advanced_performance_logging">Registo de desempenho</string>
   <string name="settings_advanced_performance_logging_description">Regista no registo da app onde gasta tempo cada fotograma enquanto te deslocas. Desativado por predefinição - ativa apenas se te pedirem um registo, pois acrescenta um pouco de trabalho a cada fotograma.</string>
+  <string name="settings_advanced_memory_overlay">Sobreposição de memória</string>
+  <string name="settings_advanced_memory_overlay_description">Mostra em direto para onde vai a memória da app, num pequeno painel sobre a app e o leitor: o que o Gestor de tarefas conta, a memória do controlador gráfico, o heap Java, as caches de imagens e o buffer do leitor.</string>
   <string name="settings_advanced_section_cache">CACHE</string>
   <string name="settings_updates_section">ATUALIZAÇÕES</string>
   <string name="settings_updates_channel">Canal de Atualização</string>
@@ -1977,6 +1979,10 @@
   <string name="settings_playback_show_loading_overlay_description">Mostra o ecrã de carregamento até que surja o primeiro fotograma do vídeo.</string>
   <string name="settings_playback_pip_browse">Navegar em imagem em imagem</string>
   <string name="settings_playback_pip_browse_description">A imagem em imagem ganha um botão que traz de volta a app com o vídeo num canto, para poder navegar enquanto reproduz. Os trailers ficam desligados entretanto. Aplica-se a partir do próximo vídeo.</string>
+  <string name="settings_playback_double_click">Duplo clique no vídeo</string>
+  <string name="settings_playback_double_click_description">O que faz um duplo clique no vídeo em reprodução. Em imagem na imagem, traz sempre o vídeo de volta.</string>
+  <string name="settings_playback_double_click_pip">Imagem na imagem</string>
+  <string name="settings_playback_double_click_fullscreen">Ecrã inteiro / janela</string>
   <string name="settings_playback_subtitle_background_color">Cor de fundo</string>
   <string name="settings_playback_subtitle_blur">Desfoque</string>
   <string name="settings_playback_subtitle_bold">Negrito</string>
@@ -2872,6 +2878,18 @@
   <string name="details_season_view_text">Texto</string>
   <string name="details_show_details">Detalhes da série</string>
   <string name="details_status">Estado</string>
+  <string name="details_status_airing">Em exibição</string>
+  <string name="details_status_ended">Terminada</string>
+  <string name="details_status_cancelled">Cancelada</string>
+  <string name="details_status_upcoming">Em breve</string>
+  <string name="details_form_series_from">Série (%1$s)</string>
+  <string name="details_form_limited_series_from">Minissérie (%1$s)</string>
+  <string name="details_form_limited_series">Minissérie</string>
+  <string name="details_form_film_from">Filme (%1$s)</string>
+  <plurals name="details_status_cancelled_after_seasons">
+    <item quantity="one">Cancelada após %1$d temporada</item>
+    <item quantity="other">Cancelada após %1$d temporadas</item>
+  </plurals>
   <string name="details_videos">Vídeos</string>
   <string name="details_episode_badge_file">FICHEIRO</string>
   <string name="downloads_enqueue_insufficient_space">Não há espaço livre suficiente no disco para esta transferência</string>

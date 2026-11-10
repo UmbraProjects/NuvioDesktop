@@ -1708,14 +1708,48 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         // The same identity launchPlayerNextEpisodeAutoPlay loads, or the cache key would differ.
         val nextVideo = playerMetaVideos.firstOrNull { it.id == next.videoId }
         BingeAdvanceLog.i { "preloading next episode sources for ${next.videoId} lead=${leadMs}ms" }
+        val nextSeason = nextVideo?.playbackSeasonNumber() ?: next.season
+        val nextEpisode = nextVideo?.playbackEpisodeNumber() ?: next.episode
+        // Captured now: the sweep answers on a background thread, after the player may have moved on.
+        val affinity = sourceAffinity
+        val pickerSettings = settings
+        val bingeGroup = currentStreamBingeGroup
+        val playingStream = activeStream
+        val metaId = parentMetaId
+        val type = contentType ?: parentMetaType
+        val warmPredictedPick = !shouldOpenManualNextEpisodeSelection(
+            mode = settings.streamAutoPlayMode,
+            manualNextEpisodeEnabled = settings.streamAutoPlayManualNextEpisode,
+            sourceAffinity = affinity,
+        )
         StreamPrefetchService.request(
             StreamPrefetchService.Target(
                 trigger = StreamPrefetchService.Trigger.NextEpisode,
-                type = contentType ?: parentMetaType,
-                parentMetaId = parentMetaId,
+                type = type,
+                parentMetaId = metaId,
                 videoId = next.videoId,
-                season = nextVideo?.playbackSeasonNumber() ?: next.season,
-                episode = nextVideo?.playbackEpisodeNumber() ?: next.episode,
+                season = nextSeason,
+                episode = nextEpisode,
+                // Autoplay will pick from these same answers: make its pick now and warm that
+                // stream's link, so the attach after this episode does not wait on it.
+                onSwept = if (!warmPredictedPick) null else { groups ->
+                    val streams = eligibleAutoPlayStreams(groups.flatMap { it.streams }, affinity)
+                    val predicted = nextEpisodeAutoPlayPicker(
+                        settings = pickerSettings,
+                        sourceAffinity = affinity,
+                        currentStreamBingeGroup = bingeGroup,
+                        currentStream = playingStream,
+                        nextSeasonNumber = nextSeason,
+                        nextEpisodeNumber = nextEpisode,
+                        parentMetaId = metaId,
+                        contentType = type,
+                    ).predict(streams)
+                    if (predicted != null && PlaybackSourceWarmup.warm(predicted)) {
+                        BingeAdvanceLog.i {
+                            "warming the predicted next-episode link for ${next.videoId} via ${predicted.addonName}"
+                        }
+                    }
+                },
             ),
         )
     }

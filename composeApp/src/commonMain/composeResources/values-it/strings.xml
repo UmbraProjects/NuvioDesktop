@@ -855,6 +855,8 @@
   <string name="settings_advanced_section_diagnostics">DIAGNOSTICA</string>
   <string name="settings_advanced_performance_logging">Registro delle prestazioni</string>
   <string name="settings_advanced_performance_logging_description">Registra nel log dell'app dove va il tempo di ogni frame durante lo scorrimento. Disattivato per impostazione predefinita: attivalo solo se ti viene chiesto un log, perché aggiunge un po' di lavoro a ogni frame.</string>
+  <string name="settings_advanced_memory_overlay">Sovrimpressione memoria</string>
+  <string name="settings_advanced_memory_overlay_description">Mostra in tempo reale dove va la memoria dell'app, in un piccolo pannello sopra l'app e il lettore: ciò che conta Gestione attività, la memoria del driver grafico, l'heap Java, le cache delle immagini e il buffer del lettore.</string>
   <string name="settings_advanced_section_cache">CACHE</string>
   <string name="settings_updates_section">AGGIORNAMENTI</string>
   <string name="settings_updates_channel">Canale di aggiornamento</string>
@@ -1977,6 +1979,10 @@
   <string name="settings_playback_show_loading_overlay_description">Mostra una schermata di caricamento all'avvio della riproduzione di un flusso.</string>
   <string name="settings_playback_pip_browse">Naviga durante il picture-in-picture</string>
   <string name="settings_playback_pip_browse_description">Il picture-in-picture ha un pulsante che riporta l’app con il video in un angolo, così puoi navigare mentre è in riproduzione. Nel frattempo i trailer restano disattivati. Vale dal prossimo video.</string>
+  <string name="settings_playback_double_click">Doppio clic sul video</string>
+  <string name="settings_playback_double_click_description">Cosa fa un doppio clic sul video in riproduzione. In picture in picture riporta sempre indietro il video.</string>
+  <string name="settings_playback_double_click_pip">Picture in picture</string>
+  <string name="settings_playback_double_click_fullscreen">Schermo intero / finestra</string>
   <string name="settings_playback_subtitle_background_color">Colore di sfondo</string>
   <string name="settings_playback_subtitle_blur">Sfocatura</string>
   <string name="settings_playback_subtitle_bold">Grassetto</string>
@@ -2872,6 +2878,18 @@
   <string name="details_season_view_text">Testo</string>
   <string name="details_show_details">Dettagli serie</string>
   <string name="details_status">Stato</string>
+  <string name="details_status_airing">In onda</string>
+  <string name="details_status_ended">Conclusa</string>
+  <string name="details_status_cancelled">Cancellata</string>
+  <string name="details_status_upcoming">Prossimamente</string>
+  <string name="details_form_series_from">Serie (%1$s)</string>
+  <string name="details_form_limited_series_from">Miniserie (%1$s)</string>
+  <string name="details_form_limited_series">Miniserie</string>
+  <string name="details_form_film_from">Film (%1$s)</string>
+  <plurals name="details_status_cancelled_after_seasons">
+    <item quantity="one">Cancellata dopo %1$d stagione</item>
+    <item quantity="other">Cancellata dopo %1$d stagioni</item>
+  </plurals>
   <string name="details_videos">Video</string>
   <string name="details_episode_badge_file">FILE</string>
   <string name="downloads_enqueue_insufficient_space">Spazio libero su disco insufficiente per questo download</string>

@@ -268,6 +268,9 @@ private fun availablePhysicalMemoryBytes(): Long? = runCatching {
     (osBean as com.sun.management.OperatingSystemMXBean).freeMemorySize
 }.getOrNull()?.takeIf { it > 0L }
 
+/** Bytes of decoded animation frames held now, for the memory diagnostics. */
+internal fun decodedAnimationCacheBytes(): Long = DecodedImageCache.sizeBytes()
+
 private object DecodedImageCache {
     /**
      * The most this cache may hold on this machine, decided once from total RAM.
@@ -292,6 +295,9 @@ private object DecodedImageCache {
 
     @Synchronized
     fun stats(): String = "entries=${map.size} bytes=${currentBytes / (1024 * 1024)}MB"
+
+    @Synchronized
+    fun sizeBytes(): Long = currentBytes
 
     @Synchronized
     fun put(key: String, image: SkiaAnimatedImage) {

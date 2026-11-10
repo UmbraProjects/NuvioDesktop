@@ -847,6 +847,32 @@
     <div class="pip-resize-handle pip-resize-nw" data-pip-resize="8"></div>
   </div>
 
+  <script>
+    // Reports script errors to the player's log (nuvio-mpv.log, "hud script error"). Inline and
+    // ahead of controls.js so it also catches that file failing to load or parse: a HUD whose
+    // script dies still draws its controls, then ignores every update and click.
+    (function () {
+      var post = function (detail) {
+        try {
+          var bridge = window.chrome && window.chrome.webview;
+          if (bridge) bridge.postMessage({ type: "hudError", value: 0, detail: String(detail).slice(0, 600) });
+        } catch (_) {}
+      };
+      window.addEventListener("error", function (event) {
+        var target = event.target;
+        if (target && target !== window && (target.src || target.href)) {
+          post("failed to load " + String(target.src || target.href).split("/").pop());
+          return;
+        }
+        post((event.message || "error") + " @" + String(event.filename || "").split("/").pop() +
+          ":" + (event.lineno || 0) + ":" + (event.colno || 0));
+      }, true);
+      window.addEventListener("unhandledrejection", function (event) {
+        var reason = event.reason;
+        post("unhandled rejection: " + (reason && (reason.stack || reason.message) || reason));
+      });
+    })();
+  </script>
   <script src="controls.js?v=20261106-dock-panels-8"></script>
 </body>
 </html>

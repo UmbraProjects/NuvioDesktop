@@ -663,6 +663,10 @@
     <string name="settings_playback_show_loading_overlay_description">Mostrar la superposición de carga inicial mientras empieza a reproducirse un stream.</string>
     <string name="settings_playback_pip_browse">Navegar con imagen en imagen</string>
     <string name="settings_playback_pip_browse_description">La imagen en imagen gana un botón que devuelve la app con el vídeo en una esquina, para que puedas navegar mientras se reproduce. Los tráileres se desactivan mientras tanto. Se aplica desde el próximo vídeo.</string>
+    <string name="settings_playback_double_click">Doble clic en el vídeo</string>
+    <string name="settings_playback_double_click_description">Lo que hace un doble clic en el vídeo en reproducción. En imagen en imagen siempre devuelve el vídeo.</string>
+    <string name="settings_playback_double_click_pip">Imagen en imagen</string>
+    <string name="settings_playback_double_click_fullscreen">Pantalla completa / ventana</string>
     <string name="settings_playback_skip_intro_outro_recap">Saltar intro/outro/resumen</string>
     <string name="settings_playback_skip_intro_outro_recap_description">Mostrar botón de salto durante segmentos detectados de intro, outro y resumen.</string>
     <string name="settings_playback_source_scope">Ámbito de fuentes</string>
@@ -1120,6 +1124,18 @@
     <string name="details_season_view_text">Texto</string>
     <string name="details_show_details">Detalles de la serie</string>
     <string name="details_status">Estado</string>
+    <string name="details_status_airing">En emisión</string>
+    <string name="details_status_ended">Finalizada</string>
+    <string name="details_status_cancelled">Cancelada</string>
+    <string name="details_status_upcoming">Próximamente</string>
+    <string name="details_form_series_from">Serie de %1$s</string>
+    <string name="details_form_limited_series_from">Miniserie de %1$s</string>
+    <string name="details_form_limited_series">Miniserie</string>
+    <string name="details_form_film_from">Película de %1$s</string>
+    <plurals name="details_status_cancelled_after_seasons">
+        <item quantity="one">Cancelada tras %1$d temporada</item>
+        <item quantity="other">Cancelada tras %1$d temporadas</item>
+    </plurals>
     <string name="details_videos">Videos</string>
     <string name="details_episode_badge_file">ARCHIVO</string>
     <string name="downloads_enqueue_missing_url">No hay enlace directo del stream disponible</string>
@@ -1675,6 +1691,8 @@
     <string name="settings_advanced_section_diagnostics">DIAGNÓSTICO</string>
     <string name="settings_advanced_performance_logging">Registro de rendimiento</string>
     <string name="settings_advanced_performance_logging_description">Registra en el log de la app en qué se va el tiempo de cada fotograma mientras te desplazas. Desactivado por defecto: actívalo solo si te piden un registro, ya que agrega un poco de trabajo a cada fotograma.</string>
+    <string name="settings_advanced_memory_overlay">Superposición de memoria</string>
+    <string name="settings_advanced_memory_overlay_description">Muestra en directo a dónde va la memoria de la app, en un pequeño panel sobre la app y el reproductor: lo que cuenta el Administrador de tareas, la memoria del controlador gráfico, el heap de Java, las cachés de imágenes y el búfer del reproductor.</string>
     <string name="settings_advanced_section_cache">CACHÉ</string>
     <string name="settings_updates_section">ACTUALIZACIONES</string>
     <string name="settings_updates_channel">Canal de actualizaciones</string>

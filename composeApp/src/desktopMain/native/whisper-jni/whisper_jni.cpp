@@ -20,8 +20,31 @@
 
 namespace {
 
-// whisper.cpp and ggml log every model load and decode to stderr; the app's own log says what matters.
-void quietLog(enum ggml_log_level, const char *, void *) {}
+// While a model loads: the bytes whisper.cpp reports allocating. It logs each buffer it makes ("CPU
+// total size = 190.10 MB" for the weights, "kv self size", "kv cross size", "kv pad size", and
+// "compute buffer (conv|encode|cross|decode)"), always in decimal MB. Their sum is the model's real
+// footprint; the change in the process's committed memory across the load, used before, also
+// counted whatever else the app allocated at the same moment (the home screen, at startup).
+std::atomic<bool> g_measuringLoad{false};
+std::atomic<long long> g_loadBytes{0};
+std::atomic<long long> g_lastLoadBytes{-1};
+
+void countAllocation(const char *text) {
+    if (text == nullptr) return;
+    const std::string line(text);
+    const bool isBuffer = line.find("size") != std::string::npos || line.find("compute buffer") != std::string::npos;
+    const size_t equals = line.rfind('=');
+    const size_t unit = line.rfind("MB");
+    if (!isBuffer || equals == std::string::npos || unit == std::string::npos || unit < equals) return;
+    const double megabytes = std::atof(line.c_str() + equals + 1);
+    if (megabytes > 0.0) g_loadBytes += static_cast<long long>(megabytes * 1e6);
+}
+
+// whisper.cpp and ggml log every model load and decode to stderr; the app's own log says what
+// matters. Only the buffer sizes of a load are read, and only while one is in progress.
+void quietLog(enum ggml_log_level, const char *text, void *) {
+    if (g_measuringLoad.load()) countAllocation(text);
+}
 
 std::atomic<bool> g_logSilenced{false};
 
@@ -154,8 +177,18 @@ JNIEXPORT jlong JNICALL Java_com_nuvio_app_features_voice_WhisperNative_nativeIn
     whisper_context_params params = whisper_context_default_params();
     params.use_gpu = false;
     params.flash_attn = false;
+    // Loads are serialised by the Kotlin side (one transcriber, under its engine lock).
+    g_loadBytes = 0;
+    g_measuringLoad = true;
     whisper_context *ctx = whisper_init_from_file_with_params(path.c_str(), params);
+    g_measuringLoad = false;
+    g_lastLoadBytes = ctx != nullptr && g_loadBytes.load() > 0 ? g_loadBytes.load() : -1;
     return reinterpret_cast<jlong>(ctx);
+}
+
+// What the last nativeInit allocated by whisper.cpp's own account, in bytes; -1 when unknown.
+JNIEXPORT jlong JNICALL Java_com_nuvio_app_features_voice_WhisperNative_nativeLastLoadBytes(JNIEnv *, jobject) {
+    return static_cast<jlong>(g_lastLoadBytes.load());
 }
 
 JNIEXPORT jstring JNICALL Java_com_nuvio_app_features_voice_WhisperNative_nativeTranscribe(

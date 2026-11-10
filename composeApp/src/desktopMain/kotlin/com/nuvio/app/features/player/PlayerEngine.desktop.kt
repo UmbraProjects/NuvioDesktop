@@ -704,9 +704,13 @@ private fun NativePlayerSurface(
         // Follow the addon's redirect chain once here rather than letting FFmpeg re-walk it on
         // every seek (see PlaybackRedirectResolver). The source URL stays the stream's identity;
         // only what mpv opens changes.
+        // A next episode's link was usually resolved during the previous one (PlaybackSourceWarmup).
+        var warmedResolution = false
         var resolution = redirectResolutions[sourceUrl]
-            ?: PlaybackRedirectResolver.resolve(sourceUrl, playbackHeaders)
-                .also { redirectResolutions[sourceUrl] = it }
+            ?: (
+                PlaybackRedirectResolver.takeWarmed(sourceUrl, playbackHeaders)?.also { warmedResolution = true }
+                    ?: PlaybackRedirectResolver.resolve(sourceUrl, playbackHeaders)
+                ).also { redirectResolutions[sourceUrl] = it }
         // A TorBox node that rate-limited us earlier this session keeps refusing our IP for over
         // an hour, and addons hand back their cached link on that same node. Start on another
         // node instead of opening straight into the ban.
@@ -739,6 +743,7 @@ private fun NativePlayerSurface(
                     " sourceHost=${PlaybackRedirectResolver.hostOf(sourceUrl)}" +
                     " playbackHost=${PlaybackRedirectResolver.hostOf(resolution.playbackUrl)}" +
                     " redirect=${resolution.outcome.name.lowercase()}/${resolution.hops}" +
+                    (if (warmedResolution) " warmed=yes" else "") +
                     " sourceUrl=${com.nuvio.app.features.iptv.redactIptvCredentials(sourceUrl).takeLast(48)}",
             )
         }
@@ -1376,6 +1381,7 @@ private fun NativePlayerSurface(
                         )
                     },
                     svpActive = videoState.svpActive,
+                    svpInChain = animeProfile.svpActive,
                     // Both, not one or the other: a shader chain runs on top of the colour preset,
                     // it does not replace it.
                     videoLabel = desktopColorProfileInfoLabel(

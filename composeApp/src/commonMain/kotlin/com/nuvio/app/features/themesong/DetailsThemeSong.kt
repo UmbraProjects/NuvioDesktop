@@ -34,6 +34,8 @@ fun DetailsThemeSong(
     heroTrailerAudible: Boolean,
     modalVisible: Boolean,
     heroTrailerPending: Boolean = false,
+    /** Anime is searched as its opening; see [themeSongSearchQuery]. */
+    isAnime: Boolean = false,
 ) {
     val enabled by ThemeSongSettings.detailsEnabled.collectAsStateWithLifecycle()
     val volume by ThemeSongSettings.volume.collectAsStateWithLifecycle()
@@ -43,7 +45,7 @@ fun DetailsThemeSong(
         if (!enabled || !deferredWorkAllowed || heroTrailerPending) return@LaunchedEffect
         delay(THEME_SONG_DETAILS_DELAY_MS)
         source = runCatching {
-            ThemeSongRepository.resolve(metaType, metaName, releaseInfo, metaId)
+            ThemeSongRepository.resolve(metaType, metaName, releaseInfo, metaId, isAnime)
         }.getOrNull()
     }
     val toPlay = source.takeIf { enabled && !leavingDetails && !heroTrailerAudible && !modalVisible }

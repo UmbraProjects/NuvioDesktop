@@ -8,6 +8,7 @@ import com.nuvio.app.features.tvdb.TvdbImageService
 import com.nuvio.app.features.details.CastEpisodeCountVisibility
 import com.nuvio.app.features.details.CastViewStorage
 import com.nuvio.app.features.mdblist.linkFor
+import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -84,9 +85,14 @@ import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioPosterHoverTooltip
 import com.nuvio.app.features.details.GenreSubgenres
 import com.nuvio.app.features.details.allKeywords
+import com.nuvio.app.features.details.DetailForm
+import com.nuvio.app.features.details.DetailStatus
+import com.nuvio.app.features.details.DetailStatusLine
+import com.nuvio.app.features.details.buildDetailStatusLine
 import androidx.compose.ui.graphics.graphicsLayer
 import com.nuvio.app.core.ui.NuvioDesktopImageScaling
 import com.nuvio.app.core.ui.NuvioScrimRamp
+import com.nuvio.app.core.ui.rememberHeroLogoModel
 import com.nuvio.app.core.ui.nuvioDitheredScrim
 import com.nuvio.app.core.ui.NuvioAsyncImage as AsyncImage
 import com.nuvio.app.features.details.MetaCompany
@@ -103,6 +109,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import nuvio.composeapp.generated.resources.*
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
 object DetailHeroPeoplePanelToggleTrigger {
@@ -541,6 +548,7 @@ private val DetailHeroLaneStart = 64.dp
 private val DetailHeroLaneMaxWidth = 760.dp
 /** Width over which the content lane fades out ahead of an overlapping docked picker. */
 private val LaneFadeRamp = 96.dp
+private val DetailHeroRatingsLaneHeight = 26.dp
 
 @Composable
 private fun DetailDesktopHeroOverlay(
@@ -637,6 +645,23 @@ private fun DetailDesktopHeroOverlay(
             }
         }
 
+        // The status line takes room above the actions, so the logo and metadata sit higher with
+        // one and keep their original lanes without one.
+        val statusLine = remember(meta.type, meta.status, meta.seriesType, meta.country, meta.language, meta.videos, meta.genres, meta.director, meta.tmdbKeywords, meta.mdblistKeywords) {
+            buildDetailStatusLine(meta)
+        }
+        val hasStatusLine = showOverview && statusLine != null
+        // Every lane below sits this far under its original spot, so the block reads as centred in
+        // the hero rather than hung from the back button; the cast still clears the season tabs.
+        val laneShift = 12.dp
+        // With MDBList ratings on, a title is about to have a ratings row even while they are
+        // still loading, so its lane is held open from the start: the status line below it then
+        // stays put instead of being pushed down when the ratings arrive.
+        val mdbListSettings by MdbListSettingsRepository.uiState.collectAsState()
+        val reserveRatingsLane = mdbListSettings.enabled &&
+            mdbListSettings.apiKey.isNotBlank() &&
+            mdbListSettings.enabledProvidersInPriorityOrder().isNotEmpty()
+        val metadataTop = (if (hasStatusLine) 222.dp else 238.dp) + laneShift
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -675,18 +700,21 @@ private fun DetailDesktopHeroOverlay(
                 logoLoadError = logoLoadError,
                 onLogoLoadError = onLogoLoadError,
                 modifier = Modifier
-                    .padding(top = 70.dp)
+                    // The logo rests on the box's bottom edge, 24dp above the metadata. Its
+                    // transparent margins are trimmed (rememberHeroLogoModel), so that gap is the
+                    // same for every title rather than whatever empty rows the artwork carries.
+                    .padding(top = metadataTop - 174.dp)
                     .width(headingWidth)
                     .height(150.dp),
                 titleTextAlign = TextAlign.Center,
-                logoAlignment = Alignment.Center,
+                logoAlignment = Alignment.BottomCenter,
                 isTablet = true,
             )
 
             if (showOverview) {
                 Column(
                     modifier = Modifier
-                        .padding(top = 238.dp)
+                        .padding(top = metadataTop)
                         .width(headingWidth),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -695,9 +723,11 @@ private fun DetailDesktopHeroOverlay(
                         meta = meta,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    if (meta.externalRatings.isNotEmpty()) {
+                    if (meta.externalRatings.isNotEmpty() || reserveRatingsLane) {
                         Box(
-                            modifier = Modifier.fillMaxWidth(),
+                            // Fixed height: the tallest badge (a certified Rotten Tomatoes one) is
+                            // 24dp, so a row with or without it, or not loaded yet, takes the same room.
+                            modifier = Modifier.fillMaxWidth().height(DetailHeroRatingsLaneHeight),
                             contentAlignment = Alignment.Center,
                         ) {
                             RatingsRow(
@@ -707,6 +737,7 @@ private fun DetailDesktopHeroOverlay(
                             )
                         }
                     }
+                    statusLine?.let { DetailHeroStatusLine(line = it, modifier = Modifier.fillMaxWidth()) }
                 }
             }
 
@@ -714,7 +745,7 @@ private fun DetailDesktopHeroOverlay(
                 val isSeriesMeta = meta.type.trim().lowercase() in setOf("series", "show", "tv", "tvshow")
                 DetailActionButtons(
                     modifier = Modifier
-                        .padding(top = 328.dp)
+                        .padding(top = 328.dp + laneShift)
                         .width(headingWidth),
                     playLabel = playButtonLabel,
                     secondaryActions = listOfNotNull(
@@ -804,7 +835,7 @@ private fun DetailDesktopHeroOverlay(
                 Text(
                     text = meta.description,
                     modifier = Modifier
-                        .padding(top = 418.dp)
+                        .padding(top = 418.dp + laneShift)
                         .width(headingWidth)
                         .heightIn(max = 100.dp)
                         .verticalScroll(rememberScrollState()),
@@ -816,7 +847,7 @@ private fun DetailDesktopHeroOverlay(
             if (canShowCast || canShowProduction) {
                 Column(
                     modifier = Modifier
-                        .padding(top = 552.dp)
+                        .padding(top = 552.dp + laneShift)
                         .width(headingWidth),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
@@ -1128,7 +1159,7 @@ private fun DetailHeroLogoOrTitle(
 ) {
     if (logoUrl != null && !logoLoadError) {
         AsyncImage(
-            model = logoUrl,
+            model = rememberHeroLogoModel(logoUrl),
             contentDescription = stringResource(Res.string.detail_logo_content_description, meta.name),
             modifier = modifier,
             alignment = logoAlignment,
@@ -1167,9 +1198,6 @@ private fun DetailHeroMetadataRow(
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?.uppercase()
-    val countryBadge = meta.country
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
     // Each genre is its own hoverable entry (every one opens the title's single sub-genre card);
     // they are still drawn as one "Drama • Thriller" group, spaced like the joined string used to
     // be rather than like the wider bullets between fields.
@@ -1190,7 +1218,6 @@ private fun DetailHeroMetadataRow(
         runtimeText?.let { add(listOf(DetailMetadataEntry(it))) }
         ageBadge?.let { add(listOf(DetailMetadataEntry(it))) }
         languageBadge?.let { add(listOf(DetailMetadataEntry(it))) }
-        countryBadge?.let { add(listOf(DetailMetadataEntry(it))) }
     }
         // Drop any blank entry so the bullet separators (drawn between items) never end up
         // orphaned next to an empty value.
@@ -1225,6 +1252,51 @@ private fun DetailHeroMetadataRow(
             }
         }
     }
+}
+
+/**
+ * "Airing · Japanese Series", "British Limited Series", "Cancelled after 2 seasons": a
+ * quieter caption under the ratings. The country lives here rather than in the metadata row.
+ */
+@Composable
+private fun DetailHeroStatusLine(
+    line: DetailStatusLine,
+    modifier: Modifier = Modifier,
+) {
+    val text = detailStatusLineText(line) ?: return
+    Text(
+        text = text,
+        modifier = modifier,
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun detailStatusLineText(line: DetailStatusLine): String? {
+    val status = when (line.status) {
+        DetailStatus.Airing -> stringResource(Res.string.details_status_airing)
+        DetailStatus.Ended -> stringResource(Res.string.details_status_ended)
+        DetailStatus.Upcoming -> stringResource(Res.string.details_status_upcoming)
+        DetailStatus.Cancelled -> line.cancelledAfterSeasons?.let { seasons ->
+            pluralStringResource(Res.plurals.details_status_cancelled_after_seasons, seasons, seasons)
+        } ?: stringResource(Res.string.details_status_cancelled)
+        null -> null
+    }
+    val country = line.country
+    val form = when (line.form) {
+        DetailForm.Series -> country?.let { stringResource(Res.string.details_form_series_from, it) }
+        DetailForm.LimitedSeries -> country?.let { stringResource(Res.string.details_form_limited_series_from, it) }
+            ?: stringResource(Res.string.details_form_limited_series)
+        DetailForm.Film -> country?.let { stringResource(Res.string.details_form_film_from, it) }
+        null -> null
+    }
+    val directors = line.directors?.let { stringResource(Res.string.hero_badge_label_directed_by, it) }
+    return listOfNotNull(status, form, directors).joinToString(" · ").ifBlank { null }
 }
 
 private data class DetailMetadataEntry(

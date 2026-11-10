@@ -429,18 +429,11 @@ private fun HomeContinueWatchingSectionContent(
         tvModeEnabled = homeCatalogSettings.tvModeEnabled,
         catalogLandscapeModeEnabled = posterCardStyle.catalogLandscapeModeEnabled,
     )
+    // maxCardHeight comes only from a TV Mode shelf, which the cards fill (growing or shrinking)
+    // the way the shelf's posters do, instead of keeping their desktop size under empty space.
     val fittedPosterWidthDpOverride = basePosterWidthDpOverride
-        ?: maxCardHeight?.let { limit ->
-            continueWatchingCardBaseWidthDpFittingHeight(
-                naturalBaseWidthDp = effectiveContinueWatchingCardBaseWidthDp(
-                    basePosterWidthDpOverride = null,
-                    savedPosterWidthDp = posterCardStyle.widthDp,
-                    tvModeEnabled = homeCatalogSettings.tvModeEnabled,
-                ),
-                maxHeight = limit,
-            )
-        }
-    val fittedLayout = maxCardHeight?.let { layout.fittingPosterCardHeight(it) } ?: layout
+        ?: maxCardHeight?.let(::continueWatchingCardBaseWidthDpFillingHeight)
+    val fittedLayout = maxCardHeight?.let { layout.fillingPosterCardHeight(it) } ?: layout
 
     val itemOrderKey = remember(items) {
         items.joinToString(separator = "|") { item -> item.continueWatchingRowOrderKey() }
@@ -746,14 +739,23 @@ private fun BoxScope.ContinueWatchingSourceShortcutButton(
  */
 internal fun continueWatchingCardBaseWidthDpFittingHeight(naturalBaseWidthDp: Int, maxHeight: Dp): Int? {
     if (continueWatchingLandscapeCardHeight(naturalBaseWidthDp) <= maxHeight) return null
-    return (maxHeight.value * PosterLandscapeAspectRatio / PosterLandscapeWidthScale).toInt()
+    return continueWatchingCardBaseWidthDpFillingHeight(maxHeight)
 }
+
+/** The poster base width whose Card-style card is [height] tall, larger or smaller than the natural card. */
+internal fun continueWatchingCardBaseWidthDpFillingHeight(height: Dp): Int =
+    (height.value * PosterLandscapeAspectRatio / PosterLandscapeWidthScale).toInt()
 
 /** The Poster style shrunk (keeping its aspect) until poster plus title block fit [maxHeight]. */
 internal fun ContinueWatchingLayout.fittingPosterCardHeight(maxHeight: Dp): ContinueWatchingLayout {
     val natural = posterCardHeight + posterTitleBlockHeight
     if (natural <= maxHeight) return this
-    val posterHeight = (maxHeight - posterTitleBlockHeight).coerceAtLeast(posterCardHeight / 2)
+    return fillingPosterCardHeight(maxHeight)
+}
+
+/** The Poster style scaled (keeping its aspect, up or down) so poster plus title block is [height]. */
+internal fun ContinueWatchingLayout.fillingPosterCardHeight(height: Dp): ContinueWatchingLayout {
+    val posterHeight = (height - posterTitleBlockHeight).coerceAtLeast(posterCardHeight / 2)
     val scale = posterHeight / posterCardHeight
     return copy(posterCardWidth = posterCardWidth * scale, posterCardHeight = posterHeight)
 }

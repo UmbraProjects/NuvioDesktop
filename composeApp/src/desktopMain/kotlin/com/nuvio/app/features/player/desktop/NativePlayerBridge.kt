@@ -56,6 +56,26 @@ internal object NativePlayerBridge {
     ): Long
 
     external fun dispose(handle: Long)
+
+    /**
+     * Loads [sourceUrl] into the live player [handle] instead of disposing it and creating a new
+     * one; from then on the player's events go to [eventSink]. False when the player cannot be
+     * reused (failed playback, separate audio, a local/remote change), and the caller then
+     * recreates it as before. See NativePlayerController.attachPending.
+     */
+    external fun replaceSource(
+        handle: Long,
+        sourceUrl: String,
+        headerLines: Array<String>,
+        playWhenReady: Boolean,
+        initialPositionMs: Long,
+        initialProgressFraction: Double,
+        animeSvpFilter: String?,
+        mediaTitle: String?,
+        traceId: String?,
+        eventSink: NativePlayerEventSink,
+    ): Boolean
+
     external fun updateControls(handle: Long, controlsJson: String)
     external fun runJavaScript(handle: Long, script: String)
     external fun requestSeekThumbnail(handle: Long, positionMs: Long)
@@ -210,6 +230,23 @@ internal object NativePlayerBridge {
      * [pollGamepads].
      */
     external fun systemIdleMs(): Long
+
+    /**
+     * This process's memory, for the memory diagnostics ([com.nuvio.app.core.diagnostics.MemoryBreakdownSampler]).
+     * Fills [out] (9 longs, bytes, -1 = unknown): private commit, working set, private working set,
+     * committed write-combined (graphics-driver) memory, other private, images, mapped files,
+     * dedicated video memory, shared video memory. Same reason for living here as [pollGamepads].
+     */
+    external fun processMemoryBreakdown(out: LongArray): Boolean
+
+    /** [handle]'s demuxer cache: [out][0] bytes held, [out][1] the part ahead of the playhead; -1 = unknown. */
+    external fun demuxerCacheBytes(handle: Long, out: LongArray): Boolean
+
+    /** Another process's private working set in bytes (for child processes); -1 = unknown. */
+    external fun processPrivateWorkingSet(pid: Long): Long
+
+    /** File names of the DLLs loaded in this process, ';'-separated. */
+    external fun loadedModuleNames(): String
 
     /**
      * Holds (or releases) a keep-awake request for the display and system while a video plays.

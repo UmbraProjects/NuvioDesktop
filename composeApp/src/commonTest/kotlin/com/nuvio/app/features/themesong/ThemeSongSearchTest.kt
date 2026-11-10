@@ -180,4 +180,117 @@ class ThemeSongSearchTest {
         // Neither upload was thrown out for lacking "US"; the one that has it comes first.
         assertEquals(listOf("us", "plain"), ranked.map { it.videoId })
     }
+
+    // The cases below are real picks from the app's log (2026-11) that played the wrong thing.
+
+    @Test
+    fun animeSearchesForItsOpening() {
+        assertEquals("Sword Art Online opening", themeSongSearchQuery("Sword Art Online", "2012", isSeries = true, isAnime = true))
+    }
+
+    @Test
+    fun titleThatIsTheSubtitleOfAGameIsRejected() {
+        val ranked = rankThemeSongHits(
+            listOf(
+                hit("game", "Fallout 76: The Pitt Theme OST", views = 2_000_000),
+                hit("show", "The Pitt - Main Title Theme"),
+            ),
+            title = "The Pitt",
+            year = "2025",
+        )
+        assertEquals(listOf("show"), ranked.map { it.videoId })
+    }
+
+    @Test
+    fun wrestlingEntranceThemeIsRejected() {
+        val ranked = rankThemeSongHits(
+            listOf(
+                hit("wrestler", "Drew Galloway 2nd TNA Theme Song''Ghosts In Us by Dale Oliver''"),
+                hit("show", "Ghosts Theme Song"),
+            ),
+            title = "Ghosts (US)",
+            year = "2021",
+        )
+        assertEquals(listOf("show"), ranked.map { it.videoId })
+    }
+
+    @Test
+    fun countryQualifierCountsOnlyAsWritten() {
+        val ranked = rankThemeSongHits(
+            listOf(
+                hit("pronoun", "Ghosts In Us Theme"),
+                hit("us", "Ghosts US Theme Song"),
+            ),
+            title = "Ghosts (US)",
+            year = "2021",
+        )
+        assertEquals("us", ranked.first().videoId)
+    }
+
+    @Test
+    fun coversFeaturettesAndDanceClipsAreRejected() {
+        val ranked = rankThemeSongHits(
+            listOf(
+                hit("cover", "Sword Art Online - \"Crossing Field\" (Opening) | ENGLISH ver", channel = "AmaLee", views = 9_000_000),
+                hit("op", "Sword Art Online Opening 1 Full - Crossing Field"),
+            ),
+            title = "Sword Art Online",
+            year = "2012",
+        )
+        assertEquals(listOf("op"), ranked.map { it.videoId })
+        assertTrue(
+            rankThemeSongHits(
+                listOf(hit("featurette", "Station Eleven With Dan Romer & Patrick Somerville - \"Birth Of A Theme\" (Spoilers)", verified = true)),
+                title = "Station Eleven",
+                year = "2021",
+            ).isEmpty(),
+        )
+        // A clip of the cast dancing to the theme is the last resort, behind the opening itself.
+        assertEquals(
+            "opening",
+            rankThemeSongHits(
+                listOf(
+                    hit("dance", "Georgie & Mandy's First Marriage 1x01 Theme Song Dance | Young Sheldon Spinoff", verified = true),
+                    hit("opening", "Georgie & Mandy's First Marriage - Season 1 Opening Theme"),
+                ),
+                title = "Georgie & Mandy's First Marriage",
+                year = "2025",
+            ).first().videoId,
+        )
+    }
+
+    @Test
+    fun characterAndBattleCuesLoseToTheMainTheme() {
+        val rick = rankThemeSongHits(
+            listOf(
+                hit("evil", "Rick and Morty Soundtrack - Evil Morty's Theme (Quality Extended)", views = 20_000_000),
+                hit("main", "Rick and Morty Theme Song", views = 50_000),
+            ),
+            title = "Rick and Morty",
+            year = "2013",
+        )
+        assertEquals("main", rick.first().videoId)
+        val broly = rankThemeSongHits(
+            listOf(hit("battle", "Dragon Ball Super Broly OST - Gogeta vs Broly Full Theme Song")),
+            title = "Dragon Ball Super: Broly",
+            year = "2018",
+        )
+        assertTrue(broly.isEmpty())
+    }
+
+    @Test
+    fun goodPicksStillPass() {
+        val friends = rankThemeSongHits(
+            listOf(hit("friends", "The Rembrandts - I'll Be There For You (Theme From FRIENDS)", channel = "RHINO", verified = true)),
+            title = "Friends",
+            year = "1994",
+        )
+        assertEquals(listOf("friends"), friends.map { it.videoId })
+        val institute = rankThemeSongHits(
+            listOf(hit("shout", "Shout (The Institute Theme Song)", channel = "The Lumineers - Topic")),
+            title = "The Institute",
+            year = "2025",
+        )
+        assertEquals(listOf("shout"), institute.map { it.videoId })
+    }
 }

@@ -20,6 +20,8 @@ data class MetaDetails(
     /** TV: ISO last air date from TMDB (or addon) for year-range display. */
     val lastAirDate: String? = null,
     val status: String? = null,
+    /** TMDB's TV `type` ("Miniseries", "Scripted", ...); null for movies and addon-only records. */
+    val seriesType: String? = null,
     val imdbRating: String? = null,
     val ageRating: String? = null,
     val runtime: String? = null,

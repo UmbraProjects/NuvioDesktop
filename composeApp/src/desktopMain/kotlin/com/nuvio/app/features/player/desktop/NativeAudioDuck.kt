@@ -34,6 +34,9 @@ internal object NativeAudioDuck {
         before -= handle
     }
 
+    /** Every player handle alive now (full player and hero trailers), for the memory diagnostics. */
+    fun liveHandles(): List<Long> = synchronized(lock) { live.toList() }
+
     /** Sets every live player to [toFraction] of its volume until [restore]. */
     fun duck(toFraction: Double) = synchronized(lock) {
         if (ducked) return
