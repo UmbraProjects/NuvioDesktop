@@ -168,7 +168,7 @@ jobs:
         shell: pwsh
         run: |
           $dir = "composeApp/build/classes/kotlin/desktop/main"
-          if (Test-Path $dir) { python scripts/huge-methods.py $dir 8000 60 | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8 }
+          if (Test-Path $dir) { python scripts/huge-methods.py $dir 8000 60 | Tee-Object -FilePath huge-methods.md | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8; Get-Content huge-methods.md | ForEach-Object { Write-Host $_ } }
           else { Write-Host "no compiled classes at $dir" }
 
       # Portable app folder: no WiX needed. With the WiX download off, the Compose plugin still asks for a WiX folder
