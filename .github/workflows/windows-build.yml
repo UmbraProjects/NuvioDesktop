@@ -106,6 +106,27 @@ jobs:
           "-Pnuvio.windows.bundleFullRuntime=true"
           "-Pnuvio.engine.optional=true"
 
+      # fork:hardening - tests that compile but were never run in CI (storage, the fork's YouTube tab tests). They run here
+      # in their own step with continue-on-error, so a failure shows up red on the run without stopping the Nightly. Once a
+      # few runs have passed, move a filter into the step above to make it blocking.
+      - name: Unit tests (extra, not blocking)
+        continue-on-error: true
+        shell: pwsh
+        env:
+          WIX_PATH: ${{ runner.temp }}\wix-unused
+        run: >
+          ./gradlew.bat :composeApp:desktopTest --no-configuration-cache "-Pcompose.desktop.application.downloadWix=false" -I .github/mirror.init.gradle
+          --tests "com.nuvio.app.core.storage.*"
+          --tests "*YouTubeWebClientTest"
+          --tests "*YouTubeSignedOutTest"
+          --tests "*YouTubeFeedParserTest"
+          "-Pnuvio.innertubex=true"
+          "-Pnuvio.webview2.dir=C:/libs/webview2"
+          "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
+          "-Pnuvio.windows.allowWhisperAvfilter=true"
+          "-Pnuvio.windows.bundleFullRuntime=true"
+          "-Pnuvio.engine.optional=true"
+
       # Portable app folder: no WiX needed. With the WiX download off, the Compose plugin still asks for a WiX folder
       # (wixToolsetDir) when it sets this task up, so WIX_PATH points it at an empty one it never uses.
       - name: Build portable distributable

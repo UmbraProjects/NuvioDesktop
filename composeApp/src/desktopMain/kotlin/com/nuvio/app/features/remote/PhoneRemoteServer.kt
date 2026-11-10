@@ -93,7 +93,12 @@ internal class PhoneRemoteServer(
     private val discoveryPort: Int = PhoneRemoteProtocol.DISCOVERY_PORT,
     private val readTimeoutMs: Int = 20_000,
     private val now: () -> Long = System::currentTimeMillis,
+    /** fork:hardening - open connections (paired or not) beyond this are closed on arrival. */
+    private val maxConnections: Int = MAX_CONNECTIONS,
+    /** fork:hardening - how long a new connection has to finish pairing before it is dropped. */
+    private val handshakeTimeoutMs: Long = HANDSHAKE_TIMEOUT_MS,
 ) {
+    private val openConnections = java.util.concurrent.atomic.AtomicInteger(0)
     private var server: ServerSocket? = null
     private var discovery: DatagramSocket? = null
     private val clients = CopyOnWriteArrayList<Session>()
@@ -196,7 +201,24 @@ internal class PhoneRemoteServer(
             } catch (_: IOException) {
                 break
             }
-            thread(isDaemon = true, name = "phone-remote-conn") { Session(client).run() }
+            // One thread per connection, so without a cap anyone on the network could open sockets until
+            // the PC ran out of threads. A phone uses one connection (two while it reconnects).
+            if (openConnections.incrementAndGet() > maxConnections) {
+                openConnections.decrementAndGet()
+                log("Phone remote: connection from ${client.inetAddress?.hostAddress} refused, $maxConnections already open")
+                try {
+                    client.close()
+                } catch (_: IOException) {
+                }
+                continue
+            }
+            thread(isDaemon = true, name = "phone-remote-conn") {
+                try {
+                    Session(client).run()
+                } finally {
+                    openConnections.decrementAndGet()
+                }
+            }
         }
     }
 
@@ -314,7 +336,10 @@ internal class PhoneRemoteServer(
 
         /** Returns the phone's name once it is trusted, or null after telling it why not. */
         private fun handshake(reader: BufferedReader): String? {
-            val hello = PhoneRemoteProtocol.parse(readLine(reader) ?: return null) as? RemoteMessage.Hello ?: return null
+            // fork:hardening - the read timeout restarts with every byte, so a peer dripping one character
+            // at a time could keep a thread for ever; the whole handshake gets one deadline.
+            val deadline = now() + handshakeTimeoutMs
+            val hello = PhoneRemoteProtocol.parse(readLine(reader, deadline) ?: return null) as? RemoteMessage.Hello ?: return null
             if (hello.version != PhoneRemoteProtocol.VERSION) {
                 send("UNSUPPORTED ${PhoneRemoteProtocol.VERSION}")
                 return null
@@ -330,8 +355,8 @@ internal class PhoneRemoteServer(
                     send("LOCKED")
                     return null
                 }
-                val pair = PhoneRemoteProtocol.parse(readLine(reader) ?: return null) as? RemoteMessage.Pair ?: return null
-                if (pair.pin == pairing.pin()) {
+                val pair = PhoneRemoteProtocol.parse(readLine(reader, deadline) ?: return null) as? RemoteMessage.Pair ?: return null
+                if (java.security.MessageDigest.isEqual(pair.pin.toByteArray(StandardCharsets.UTF_8), pairing.pin().toByteArray(StandardCharsets.UTF_8))) {
                     failures.remove(address)
                     val token = pairing.issueToken(deviceName)
                     send("PAIRED $token ${PhoneRemoteProtocol.encode(name())}")
@@ -351,9 +376,10 @@ internal class PhoneRemoteServer(
          * buffer without limit. A line this long is not something the remote sends; the connection
          * is dropped rather than the line parsed.
          */
-        private fun readLine(reader: BufferedReader): String? {
+        private fun readLine(reader: BufferedReader, deadline: Long = 0L): String? {
             val line = StringBuilder()
             while (true) {
+                if (deadline != 0L && now() > deadline) throw IOException("handshake took too long")
                 val next = reader.read()
                 if (next == -1) return if (line.isEmpty()) null else line.toString()
                 val char = next.toChar()
@@ -385,5 +411,7 @@ internal class PhoneRemoteServer(
 
     private companion object {
         const val LOCKOUT_MS = 60_000L
+        const val MAX_CONNECTIONS = 16
+        const val HANDSHAKE_TIMEOUT_MS = 30_000L
     }
 }
