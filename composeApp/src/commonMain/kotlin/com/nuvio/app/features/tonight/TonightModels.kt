@@ -57,10 +57,10 @@ data class TonightCard(
 enum class TonightMode(val built: Boolean) {
     ThreeQuestions(true),
     ThreeCards(true),
-    Knockout(false),
+    Knockout(true),
     TheMap(false),
     EndsBy(false),
     ChannelFlick(false),
-    CoinToss(false),
+    CoinToss(true),
     ThePile(false),
 }

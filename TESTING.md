@@ -297,3 +297,16 @@ Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
 - [ ] Titles marked "Not interested" in Discover never appear
 - [ ] A mouse works too: hovering a tile or card selects it, clicking plays or opens
 
+### Tonight picker: Coin Toss and Knockout (phase 2, Nov 10)
+
+- [ ] The launcher's Knockout and Coin Toss tiles are no longer "coming soon" and open their modes
+- [ ] Coin Toss: one title with its poster, name and "ends 23:06" line, and a ring counting down from 10; doing nothing plays it
+- [ ] Left tosses again with a new title and a fresh countdown; a vetoed title never comes back that evening
+- [ ] The "What your no's said" panel lists the last three vetoes with a reason ("too long", "too heavy"...) and a lean ("leaning shorter and lighter"), and the next tosses follow it
+- [ ] Up holds the countdown (the ring greys and shows II) and Up again restarts it; OK plays at once; Down opens the title's page
+- [ ] Knockout: eight titles (fewer only if fewer fit before bed) in a bracket on the left; two at a time in the middle, with the pair highlighted in the bracket
+- [ ] Left or Right keeps one; losers are struck through; three rounds, the last called "THE FINAL"
+- [ ] Back undoes the last pick (Back with nothing picked goes to the launcher)
+- [ ] The winner shows with a five-second ring and then plays; OK plays at once, Back reopens the final
+- [ ] Clicking a poster with the mouse keeps it in Knockout
+

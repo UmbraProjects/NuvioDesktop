@@ -1,6 +1,6 @@
 # Movies & TV "Tonight" picker
 
-Decided with the user on Nov 10, 2026. **Phases 0 and 1 built on Nov 10** (behind Settings > Random Play > Tonight picker > "Open on Tonight", off by default; not yet tried on the TV, checks in `TESTING.md`). Phases 2 to 5 are not built.
+Decided with the user on Nov 10, 2026. **Phases 0, 1 and 2 built on Nov 10** (behind Settings > Random Play > Tonight picker > "Open on Tonight", off by default; not yet tried on the TV, checks in `TESTING.md`). Phases 3 to 5 are not built.
 
 ## The problem
 
@@ -71,6 +71,11 @@ Each phase ships behind Settings > "Tonight picker" (off by default) and adds it
 - Cards: Safe is a started or watched title (started ranks highest); New is unseen with taste at or above the median of unseen titles; Wildcard unseen and below it. The pick is random among the top five of each, preferring a genre not already on the table. Taste = genre weights from Continue watching (x2), watched (x1.5) and library (x1). The night runs to 6 am. OK plays via `DetailRoute(autoPlay = true)`, Down opens the page.
 - Bedtime: films must end by bedtime (10 minutes grace; a half-watched film counts what is left); shows need one episode to fit; unknown lengths pass; under 20 minutes to bedtime the filter switches off.
 - Pool enrichment: up to 60 titles missing genres, length or year are filled through `MetaDetailsRepository.fetchLightweightMeta` (four at a time); trending is 20 films and 20 shows from `TmdbBrowse` (Trending, the app's TMDB region). Rebuilt when ten minutes old and once the library has loaded.
+
+## How phase 2 was built (Nov 10)
+
+- **Coin Toss** (`TonightCoinToss.kt`, screen in `TonightModesScreen.kt`): the hat is the twelve strongest unvetoed titles (taste + rating), drawn by weight; each veto halves the chances of titles that share its trait. A veto's trait is whatever stands out most against tonight's pool: length (against the median of the same kind, weighted 1.5x because lightness already leans on length), heavy or light, seen before, unfamiliar trending, or film/show when the pool is mixed; nothing if nothing stands out. Length is matched against the vetoed title itself (as long, or longer). Keys: Left veto, OK play, Up hold/restart, Down page, Back launcher. 10 second countdown.
+- **Knockout** (`TonightKnockout.kt`): `TonightBracket` (entrants + winners in play order; columns keep their width for drawing). Entrants: a shortlist of three times the bracket from the strongest, one per genre first, shuffled by the night. 8, 4 or 2 entrants depending on the pool. The 20 s tastes on Down wait for phase 3. Winner plays after 5 s.
 
 ## Still open
 

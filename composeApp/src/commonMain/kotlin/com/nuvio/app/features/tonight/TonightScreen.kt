@@ -65,17 +65,17 @@ import java.util.Locale
  * a title has a longer name or a card is missing.
  */
 
-private val Ground = Color(0xFF0B0C12)
-private val GlassFill = Color.White.copy(alpha = 0.06f)
-private val GlassEdge = Color.White.copy(alpha = 0.14f)
-private val TextDim = Color(0xFFB9B6AD)
-private val TextFaint = Color(0xFF8F8C84)
-private val Side = 56.dp
+internal val Ground = Color(0xFF0B0C12)
+internal val GlassFill = Color.White.copy(alpha = 0.06f)
+internal val GlassEdge = Color.White.copy(alpha = 0.14f)
+internal val TextDim = Color(0xFFB9B6AD)
+internal val TextFaint = Color(0xFF8F8C84)
+internal val Side = 56.dp
 
-private enum class TonightView { Launcher, Questions, Cards }
+private enum class TonightView { Launcher, Questions, Cards, CoinToss, Knockout }
 
 /** The wall clock, re-read every 20 s so "ends 23:06" and the bedtime filter stay true. */
-private data class TonightClock(val minuteOfDay: Int, val isoDate: String, val previousIsoDate: String, val dayName: String, val year: Int) {
+internal data class TonightClock(val minuteOfDay: Int, val isoDate: String, val previousIsoDate: String, val dayName: String, val year: Int) {
     val night: String get() = tonightNightOf(isoDate, minuteOfDay, previousIsoDate)
 
     companion object {
@@ -180,6 +180,14 @@ fun TonightHost(
                             answers.clear()
                             deal(pool, reshuffle = false)
                         }
+                        TonightMode.CoinToss -> {
+                            TonightSettingsRepository.setLastMode(TonightMode.CoinToss)
+                            view = TonightView.CoinToss
+                        }
+                        TonightMode.Knockout -> {
+                            TonightSettingsRepository.setLastMode(TonightMode.Knockout)
+                            view = TonightView.Knockout
+                        }
                         else -> Unit
                     }
                 },
@@ -211,6 +219,25 @@ fun TonightHost(
                     }
                 },
             )
+            TonightView.CoinToss -> TonightCoinTossView(
+                pool = pool,
+                taste = taste,
+                clock = clock,
+                minutesUntilBed = minutesUntilBed,
+                loading = poolState.loading && poolState.titles.isEmpty(),
+                onPlay = { onPlay(it.type, it.id) },
+                onDetails = { onOpenDetails(it.type, it.id) },
+                onBack = { view = TonightView.Launcher },
+            )
+            TonightView.Knockout -> TonightKnockoutView(
+                pool = pool,
+                taste = taste,
+                clock = clock,
+                minutesUntilBed = minutesUntilBed,
+                loading = poolState.loading && poolState.titles.isEmpty(),
+                onPlay = { onPlay(it.type, it.id) },
+                onBack = { view = TonightView.Launcher },
+            )
             TonightView.Cards -> TonightCards(
                 hand = hand,
                 answers = answers.filter { it != "Either" },
@@ -236,9 +263,9 @@ fun TonightHost(
 
 // ---- Keys --------------------------------------------------------------------------------------
 
-private enum class TonightKey { Left, Right, Up, Down, Ok, Back }
+internal enum class TonightKey { Left, Right, Up, Down, Ok, Back }
 
-private fun Modifier.tonightKeys(handle: (TonightKey) -> Boolean): Modifier = onPreviewKeyEvent { event ->
+internal fun Modifier.tonightKeys(handle: (TonightKey) -> Boolean): Modifier = onPreviewKeyEvent { event ->
     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
     val key = when (event.key) {
         Key.DirectionLeft -> TonightKey.Left
@@ -253,7 +280,7 @@ private fun Modifier.tonightKeys(handle: (TonightKey) -> Boolean): Modifier = on
 }
 
 @Composable
-private fun rememberScreenFocus(key: Any?): FocusRequester {
+internal fun rememberScreenFocus(key: Any?): FocusRequester {
     val requester = remember { FocusRequester() }
     LaunchedEffect(key) { runCatching { requester.requestFocus() } }
     return requester
@@ -467,7 +494,7 @@ private fun ModeTile(
 }
 
 @Composable
-private fun GlassPill(text: String, selected: Boolean, accent: Color, onClick: () -> Unit, enabled: Boolean = true) {
+internal fun GlassPill(text: String, selected: Boolean, accent: Color, onClick: () -> Unit, enabled: Boolean = true) {
     val shape = RoundedCornerShape(14.dp)
     Box(
         modifier = Modifier
