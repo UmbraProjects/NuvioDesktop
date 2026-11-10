@@ -261,3 +261,8 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Previously on: pick up a half-watched episode you left a few hours ago: no cards, it just resumes (with "Only after a break" off, every resume gets the cards)
 - [ ] Artist page, Story tab (third tab beside Essentials and Discography): a timeline of a few points (DEBUT, FIRST ALBUM, BEST KNOWN, COMEBACK, LATEST), each with the year, a line saying why, and the record from then; OK on a row opens that record; More menu works on a row
 - [ ] Artist page, Story tab: nothing moves or resizes between artists (every row the same height, the record slot the same width, long titles cut); an artist with almost no dated releases says so instead of showing an empty panel
+
+## Profiles and the phone app (Nov 10)
+
+- [ ] Set something different in two profiles (Settings, Gamepad dead zone; Games, backdrop style; Playback, anime filler badges), then switch profile from the profile picker: each profile shows its own values straight away, without restarting Nuvio
+- [ ] Phone remote: pairing still works after the update (scan the QR or enter the address and PIN), and it reconnects the next day without asking again
