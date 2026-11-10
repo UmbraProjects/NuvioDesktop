@@ -125,7 +125,7 @@ internal fun TonightFlickView(
                         .smoothBorder(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(6.dp)),
                 ) {
                     if (art != null) {
-                        NuvioAsyncImage(model = art, contentDescription = upcoming.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        NuvioAsyncImage(model = art, contentDescription = upcoming?.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                     }
                 }
             }
