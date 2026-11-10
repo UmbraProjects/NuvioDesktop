@@ -333,3 +333,15 @@ Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
 - [ ] OK plays it; Left once asks "again to let it go", Left again removes it from the pile and from Discover's suggestions (Not interested)
 - [ ] With nothing on the pile it says so instead of showing an empty panel
 
+### Tonight picker: The Map and the AI (phase 5, Nov 10)
+
+- [ ] The Map tile opens a field with no rows: LIGHT left, HEAVY right, SOMETHING NEW top, COMFORT bottom, and a ring (the lens)
+- [ ] The lens starts over the kind of thing you keep; the arrows move it; titles near it grow and show their posters, the rest stay small and dim
+- [ ] The side panel shows the title nearest the lens (picture, name, "ends 23:06", "Light, and new to you", up to two nearby titles) and its lines never move
+- [ ] Light things (comedies, family) sit left and heavy ones (war, drama) right; things you're watching sit low, trending ones you've never seen high
+- [ ] OK plays the title under the lens; clicking a small tile moves the lens to it, clicking the one under the lens plays it
+- [ ] The bedtime chip at the top says "Ends before 23:30" and nothing on the field runs past it
+- [ ] Settings > Random Play > Tonight picker > "Let the AI refine The Map": turning it on asks for AI consent if not given yet
+- [ ] With it on and The Map open, the panel's footer counts titles "placed with the AI's reading of their tone" and some tiles shift sideways; a dark comedy moves right of a family comedy
+- [ ] With it off, nothing is sent to the AI (no "Tonight map" lines in the log)
+

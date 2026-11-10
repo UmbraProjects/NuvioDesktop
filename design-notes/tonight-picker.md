@@ -1,6 +1,6 @@
 # Movies & TV "Tonight" picker
 
-Decided with the user on Nov 10, 2026. **Phases 0 to 4 built on Nov 10** (behind Settings > Random Play > Tonight picker > "Open on Tonight", off by default; not yet tried on the TV, checks in `TESTING.md`). Phase 5 (The Map + AI) is not built.
+Decided with the user on Nov 10, 2026. **All phases (0 to 5) built on Nov 10** (behind Settings > Random Play > Tonight picker > "Open on Tonight", off by default; not yet tried on the TV, checks in `TESTING.md`).
 
 ## The problem
 
@@ -87,6 +87,11 @@ Each phase ships behind Settings > "Tonight picker" (off by default) and adds it
 
 - **Ends By** (`TonightEndsBy.kt`, `TonightEndsByPileScreen.kt`): rows from the whole pool (not bedtime-filtered) with a known length. A film is one bar; a show is one block per episode that fits (up to four) plus one faded block past bed. Order: fits first, then 0.5 x how much of the evening it fills + 0.3 taste + 0.2 rating. Axis from the hour before now to a whole hour at least 30 minutes past bed, 3 to 6 hours. Six rows visible in a moving window. Left/Right nudge bedtime (same setting as the chip).
 - **The Pile**: library titles never started or watched with a saved date, newest first; dust rises from a week old to full at six months (dots and fading). Let it go needs Left twice and uses Discover's Not interested (the title stays in the library). Nine spines visible in a moving window.
+
+## How phase 5 was built (Nov 10)
+
+- **The Map** (`TonightMapRules.kt`, `TonightMapScreen.kt`): x = (1 - lightness) / 2 (light left), y = (1 - novelty) / 2 (new at the top), each with a small stable jitter per title (more vertically, as novelty comes in a few steps). The lens is 0.14 of the field's width in radius, moves 0.05 per arrow, starts at the average place of what the user keeps. Titles inside the lens show posters and grow toward its centre; the nearest one is "under the lens". Uses the bedtime-filtered pool.
+- **AI** (`TonightMapAi.kt`): only Light/Heavy is refined (Comfort/New stays the user's history). Final lightness = 0.35 rules + 0.65 AI tone. Requests only while The Map is open, only with the switch on (new `AiConsentTarget.TonightMap`, so the shared consent dialog), twelve titles per request through `DiscoverAiClient`, 8 s apart, at most 25 a day, stops on a rate limit. Tones kept forever per title key in the `nuvio_tonight` store (`tones`); a title the AI skipped is asked again after a day.
 
 ## Still open
 

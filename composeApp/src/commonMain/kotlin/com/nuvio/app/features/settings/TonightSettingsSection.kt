@@ -2,6 +2,9 @@ package com.nuvio.app.features.settings
 
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.tonight.TonightSettingsRepository
@@ -20,6 +23,8 @@ internal fun LazyListScope.tonightSettingsContent(isTablet: Boolean) {
             val settings by TonightSettingsRepository.state.collectAsStateWithLifecycle()
             // 20:00 to 02:00, in minutes past the evening's midnight (so 01:00 is 1500).
             val bedValue = settings.bedMinuteOfDay.let { if (it < 12 * 60) it + 24 * 60 else it }
+            var consentPromptFor by remember { mutableStateOf<AiConsentTarget?>(null) }
+            val ai = remember(settings.mapAiEnabled) { DiscoverAiSettingsRepository.snapshot() }
             SettingsGroup(isTablet = isTablet) {
                 SettingsSwitchRow(
                     title = stringResource(Res.string.tonight_enable),
@@ -40,7 +45,22 @@ internal fun LazyListScope.tonightSettingsContent(isTablet: Boolean) {
                     isTablet = isTablet,
                     onValueChange = TonightSettingsRepository::setBedtime,
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.tonight_map_ai),
+                    description = stringResource(Res.string.tonight_map_ai_description),
+                    checked = settings.mapAiEnabled,
+                    isTablet = isTablet,
+                    onCheckedChange = { on ->
+                        when {
+                            !on -> TonightSettingsRepository.setMapAiEnabled(false)
+                            ai.apiKey.isNotBlank() && !ai.consentGiven -> consentPromptFor = AiConsentTarget.TonightMap
+                            else -> TonightSettingsRepository.setMapAiEnabled(true)
+                        }
+                    },
+                )
             }
+            AiConsentDialog(target = consentPromptFor, onDismiss = { consentPromptFor = null })
         }
     }
 }

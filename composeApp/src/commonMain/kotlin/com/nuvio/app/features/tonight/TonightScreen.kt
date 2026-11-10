@@ -72,7 +72,7 @@ internal val TextDim = Color(0xFFB9B6AD)
 internal val TextFaint = Color(0xFF8F8C84)
 internal val Side = 56.dp
 
-private enum class TonightView { Launcher, Questions, Cards, CoinToss, Knockout, Flick, EndsBy, Pile }
+private enum class TonightView { Launcher, Questions, Cards, CoinToss, Knockout, Flick, EndsBy, Pile, Map }
 
 /** The wall clock, re-read every 20 s so "ends 23:06" and the bedtime filter stay true. */
 internal data class TonightClock(val minuteOfDay: Int, val isoDate: String, val previousIsoDate: String, val dayName: String, val year: Int) {
@@ -192,6 +192,10 @@ fun TonightHost(
                             TonightSettingsRepository.setLastMode(TonightMode.ChannelFlick)
                             view = TonightView.Flick
                         }
+                        TonightMode.TheMap -> {
+                            TonightSettingsRepository.setLastMode(TonightMode.TheMap)
+                            view = TonightView.Map
+                        }
                         TonightMode.EndsBy -> {
                             TonightSettingsRepository.setLastMode(TonightMode.EndsBy)
                             view = TonightView.EndsBy
@@ -256,6 +260,16 @@ fun TonightHost(
                 titles = poolState.titles,
                 clock = clock,
                 minutesUntilBed = minutesUntilBed,
+                loading = poolState.loading && poolState.titles.isEmpty(),
+                onPlay = { onPlay(it.type, it.id) },
+                onBack = { view = TonightView.Launcher },
+            )
+            TonightView.Map -> TonightMapView(
+                pool = pool,
+                clock = clock,
+                settings = settings,
+                minutesUntilBed = minutesUntilBed,
+                bedtimeFilters = bedtimeFilters,
                 loading = poolState.loading && poolState.titles.isEmpty(),
                 onPlay = { onPlay(it.type, it.id) },
                 onBack = { view = TonightView.Launcher },

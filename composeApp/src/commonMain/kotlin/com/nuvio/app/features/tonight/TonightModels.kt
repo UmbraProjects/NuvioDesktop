@@ -58,7 +58,7 @@ enum class TonightMode(val built: Boolean) {
     ThreeQuestions(true),
     ThreeCards(true),
     Knockout(true),
-    TheMap(false),
+    TheMap(true),
     EndsBy(true),
     ChannelFlick(true),
     CoinToss(true),

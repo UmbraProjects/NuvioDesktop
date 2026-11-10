@@ -5125,4 +5125,6 @@
     <string name="tonight_enable_description">The app opens on a picker that helps you choose a film or show instead of the Home rows. &quot;Just browse everything&quot; still goes to Home.</string>
     <string name="tonight_bedtime">Bedtime</string>
     <string name="tonight_bedtime_description">Films that would end after this are left out; shows offer the episodes that fit.</string>
+    <string name="tonight_map_ai">Let the AI refine The Map</string>
+    <string name="tonight_map_ai_description">While The Map is open, your AI provider reads each title&apos;s tone (a dark comedy is not light) and moves it along Light to Heavy. Twelve titles to a request, at most 25 requests a day; each answer is kept. Uses your AI key from Discover.</string>
 </resources>

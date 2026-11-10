@@ -19,6 +19,8 @@ data class TonightSettings(
     val lastMode: TonightMode = TonightMode.ThreeQuestions,
     /** The night (ISO date) whose one reshuffle has been used, if any. */
     val reshuffleUsedNight: String? = null,
+    /** The Map: let the user's AI provider refine each title's Light/Heavy place (off by default, needs consent). */
+    val mapAiEnabled: Boolean = false,
 )
 
 object TonightSettingsRepository {
@@ -38,6 +40,7 @@ object TonightSettingsRepository {
                     ?.let { name -> TonightMode.entries.firstOrNull { it.name == name } }
                     ?: TonightMode.ThreeQuestions,
                 reshuffleUsedNight = TonightStorage.getString("reshuffleNight")?.takeIf { it.isNotBlank() },
+                mapAiEnabled = TonightStorage.getString("mapAi") == "true",
             )
         }.getOrDefault(TonightSettings())
     }
@@ -55,6 +58,11 @@ object TonightSettingsRepository {
         val next = ((state.value.bedMinuteOfDay + quarters * 15) % (24 * 60) + 24 * 60) % (24 * 60)
         update { it.copy(bedMinuteOfDay = next) }
         TonightStorage.putString("bed", next.toString())
+    }
+
+    fun setMapAiEnabled(on: Boolean) {
+        update { it.copy(mapAiEnabled = on) }
+        TonightStorage.putString("mapAi", on.toString())
     }
 
     fun setBedtime(minuteOfDay: Int) {
