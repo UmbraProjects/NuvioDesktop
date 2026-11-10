@@ -70,6 +70,11 @@ object TonightPool {
         }
     }
 
+    /** Runs [block] off the screen's lifetime (a cache to drop after the screen moved on). */
+    internal fun background(block: suspend () -> Unit) {
+        scope.launch { runCatching { block() } }
+    }
+
     /** Drops a title the user said they never want to see (it is already in Not interested). */
     fun forget(key: String) {
         _state.value = _state.value.copy(titles = _state.value.titles.filterNot { it.key == key })

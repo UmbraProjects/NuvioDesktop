@@ -310,3 +310,15 @@ Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
 - [ ] The winner shows with a five-second ring and then plays; OK plays at once, Back reopens the final
 - [ ] Clicking a poster with the mouse keeps it in Knockout
 
+### Tonight picker: Channel Flick and trailer tastes (phase 3, Nov 10)
+
+- [ ] The Channel Flick tile opens trailers one after another in a large frame, with sound at the hero trailers' volume; music pauses while they play
+- [ ] Under the frame: where the title comes from (FROM YOUR LIBRARY, TRENDING THIS WEEK, YOU'RE ON S2 E4), its name and "ends 23:06"; the frame and the lines under it never move
+- [ ] When a trailer ends the next channel starts by itself; a title with no trailer says so briefly and is skipped
+- [ ] Right flicks to the next channel; the three UP NEXT pictures in the top corner match what comes next
+- [ ] Left says "won't come up again" and the title is gone from Tonight and from Discover's rows (it is in Not interested)
+- [ ] Up saves the title to your library ("saved for later") and moves on; OK plays the title
+- [ ] Keys still work while a trailer plays (the trailer never takes the remote's focus)
+- [ ] Knockout: Down plays a 20-second taste of the left title, Down again (or the end) the right one, then back to the posters; Left/Right still keep one while tasting; Back stops the tastes
+- [ ] Three Cards: holding OK on a card plays its trailer in place of the cards; a quick OK still plays the title; Back returns to the cards
+

@@ -72,7 +72,7 @@ internal val TextDim = Color(0xFFB9B6AD)
 internal val TextFaint = Color(0xFF8F8C84)
 internal val Side = 56.dp
 
-private enum class TonightView { Launcher, Questions, Cards, CoinToss, Knockout }
+private enum class TonightView { Launcher, Questions, Cards, CoinToss, Knockout, Flick }
 
 /** The wall clock, re-read every 20 s so "ends 23:06" and the bedtime filter stay true. */
 internal data class TonightClock(val minuteOfDay: Int, val isoDate: String, val previousIsoDate: String, val dayName: String, val year: Int) {
@@ -188,6 +188,10 @@ fun TonightHost(
                             TonightSettingsRepository.setLastMode(TonightMode.Knockout)
                             view = TonightView.Knockout
                         }
+                        TonightMode.ChannelFlick -> {
+                            TonightSettingsRepository.setLastMode(TonightMode.ChannelFlick)
+                            view = TonightView.Flick
+                        }
                         else -> Unit
                     }
                 },
@@ -227,6 +231,15 @@ fun TonightHost(
                 loading = poolState.loading && poolState.titles.isEmpty(),
                 onPlay = { onPlay(it.type, it.id) },
                 onDetails = { onOpenDetails(it.type, it.id) },
+                onBack = { view = TonightView.Launcher },
+            )
+            TonightView.Flick -> TonightFlickView(
+                pool = pool,
+                taste = taste,
+                clock = clock,
+                minutesUntilBed = minutesUntilBed,
+                loading = poolState.loading && poolState.titles.isEmpty(),
+                onPlay = { onPlay(it.type, it.id) },
                 onBack = { view = TonightView.Launcher },
             )
             TonightView.Knockout -> TonightKnockoutView(
@@ -277,6 +290,47 @@ internal fun Modifier.tonightKeys(handle: (TonightKey) -> Boolean): Modifier = o
         else -> null
     } ?: return@onPreviewKeyEvent false
     handle(key)
+}
+
+private val OkKeys = setOf(Key.Enter, Key.NumPadEnter, Key.DirectionCenter, Key.Spacebar)
+private const val HOLD_MS = 500L
+
+private class HoldState {
+    var downAt = -1L
+    var fired = false
+}
+
+/**
+ * [tonightKeys], with OK acting on release so a hold can be told from a tap: held for half a
+ * second it calls [onHoldOk] (once) instead of passing OK on.
+ */
+@Composable
+internal fun Modifier.tonightKeysWithHold(onHoldOk: () -> Unit, handle: (TonightKey) -> Boolean): Modifier {
+    val hold = remember { HoldState() }
+    return onPreviewKeyEvent { event ->
+        if (event.key !in OkKeys) return@onPreviewKeyEvent false
+        val now = System.currentTimeMillis()
+        when (event.type) {
+            KeyEventType.KeyDown -> {
+                if (hold.downAt < 0) {
+                    hold.downAt = now
+                    hold.fired = false
+                } else if (!hold.fired && now - hold.downAt >= HOLD_MS) {
+                    hold.fired = true
+                    onHoldOk()
+                }
+                true
+            }
+            KeyEventType.KeyUp -> {
+                val fired = hold.fired || (hold.downAt >= 0 && now - hold.downAt >= HOLD_MS && run { onHoldOk(); true })
+                hold.downAt = -1L
+                hold.fired = false
+                if (!fired) handle(TonightKey.Ok)
+                true
+            }
+            else -> false
+        }
+    }.tonightKeys(handle)
 }
 
 @Composable
@@ -657,6 +711,8 @@ private fun TonightCards(
 ) {
     val accent = MaterialTheme.nuvio.colors.accent
     var selected by remember(hand) { mutableIntStateOf(if (hand.size >= 2) 1 else 0) }
+    // Phase 3: holding OK on a card plays its trailer in place of the hand.
+    var trailerOf by remember(hand) { mutableStateOf<TonightCard?>(null) }
     val focus = rememberScreenFocus(Unit)
 
     Column(
@@ -664,8 +720,19 @@ private fun TonightCards(
             .fillMaxSize()
             .focusRequester(focus)
             .focusable()
-            .tonightKeys { key ->
+            .tonightKeysWithHold(
+                onHoldOk = { if (selected != SEL_RESHUFFLE) trailerOf = hand.getOrNull(selected) },
+            ) { key ->
                 val s = selected
+                val showing = trailerOf
+                if (showing != null) {
+                    when (key) {
+                        TonightKey.Ok -> onPlay(showing)
+                        TonightKey.Back -> trailerOf = null
+                        else -> Unit
+                    }
+                    return@tonightKeysWithHold true
+                }
                 when (key) {
                     TonightKey.Left -> if (s in 1..2) selected = s - 1
                     TonightKey.Right -> if (s in 0..1 && s + 1 < hand.size) selected = s + 1
@@ -700,7 +767,23 @@ private fun TonightCards(
         }
         Spacer(Modifier.height(28.dp))
         Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-            if (hand.isEmpty()) {
+            val showing = trailerOf
+            if (showing != null) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "${showing.slot.label()} · ${showing.title.name}",
+                        color = accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(860.dp).height(22.dp),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    TonightTrailerFrame(
+                        title = showing.title,
+                        modifier = Modifier.width(860.dp).height(484.dp),
+                        onFinished = { trailerOf = null },
+                        onReclaimFocus = { runCatching { focus.requestFocus() } },
+                    )
+                }
+            } else if (hand.isEmpty()) {
                 Text(
                     if (loading) "Still gathering tonight's titles…"
                     else "Nothing fits tonight yet. Add a few films or shows to your library, or move bedtime later.",
@@ -723,7 +806,8 @@ private fun TonightCards(
             }
         }
         Text(
-            "◀ ▶ look at a card · OK plays · Down opens its page · no fourth card, ever",
+            if (trailerOf != null) "OK plays it · Back returns to the cards"
+            else "◀ ▶ look at a card · OK plays · hold OK for the trailer · Down opens its page",
             color = TextFaint, fontSize = 15.sp, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().height(22.dp),
         )

@@ -323,6 +323,8 @@ internal fun TonightKnockoutView(
     var bracket by remember(entrants) { mutableStateOf(TonightBracket(entrants)) }
     val champion = bracket.champion
     var secondsLeft by remember(champion?.key) { mutableIntStateOf(KNOCKOUT_WINNER_SECONDS) }
+    // Phase 3: Down plays a 20 s taste of each side of the match, left then right.
+    var tasting by remember(bracket.winners.size) { mutableStateOf<Int?>(null) }
     val focus = rememberScreenFocus(Unit)
 
     LaunchedEffect(champion?.key) {
@@ -344,8 +346,19 @@ internal fun TonightKnockoutView(
                     TonightKey.Left -> if (champion == null) bracket = bracket.keep(left = true)
                     TonightKey.Right -> if (champion == null) bracket = bracket.keep(left = false)
                     TonightKey.Ok -> champion?.let(onPlay)
-                    TonightKey.Back -> if (bracket.winners.isEmpty()) onBack() else bracket = bracket.undo()
-                    TonightKey.Up, TonightKey.Down -> Unit
+                    TonightKey.Back -> when {
+                        tasting != null -> tasting = null
+                        bracket.winners.isEmpty() -> onBack()
+                        else -> bracket = bracket.undo()
+                    }
+                    TonightKey.Down -> if (champion == null && bracket.currentMatch != null) {
+                        tasting = when (tasting) {
+                            null -> 0
+                            0 -> 1
+                            else -> null
+                        }
+                    }
+                    TonightKey.Up -> Unit
                 }
                 true
             }
@@ -385,6 +398,25 @@ internal fun TonightKnockoutView(
                             }
                         }
                     }
+                    match != null && tasting != null -> {
+                        val side = tasting ?: 0
+                        val tasted = if (side == 0) match.first else match.second
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "TASTE ${side + 1} OF 2 · ${tasted.name}",
+                                color = accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(800.dp).height(22.dp),
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            TonightTrailerFrame(
+                                title = tasted,
+                                modifier = Modifier.width(800.dp).height(450.dp),
+                                limitMs = 20_000L,
+                                onFinished = { tasting = if (side == 0) 1 else null },
+                                onReclaimFocus = { runCatching { focus.requestFocus() } },
+                            )
+                        }
+                    }
                     match != null -> Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             TonightPoster(match.first, 330.dp, 470.dp, selected = false, tag = "◀ KEEP", tagColor = accent, onClick = { bracket = bracket.keep(left = true) })
@@ -401,7 +433,8 @@ internal fun TonightKnockoutView(
         }
         Text(
             if (champion != null) "OK plays now · Back undoes the final"
-            else "◀ ▶ keep one · Back undoes the last pick · the winner plays",
+            else if (tasting != null) "◀ ▶ keep one · ▼ next taste · Back stops the tastes"
+            else "◀ ▶ keep one · ▼ a 20 second taste of each · Back undoes the last pick",
             color = TextFaint, fontSize = 15.sp, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().height(22.dp),
         )

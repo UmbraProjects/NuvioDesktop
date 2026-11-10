@@ -60,7 +60,7 @@ enum class TonightMode(val built: Boolean) {
     Knockout(true),
     TheMap(false),
     EndsBy(false),
-    ChannelFlick(false),
+    ChannelFlick(true),
     CoinToss(true),
     ThePile(false),
 }

@@ -1,6 +1,6 @@
 # Movies & TV "Tonight" picker
 
-Decided with the user on Nov 10, 2026. **Phases 0, 1 and 2 built on Nov 10** (behind Settings > Random Play > Tonight picker > "Open on Tonight", off by default; not yet tried on the TV, checks in `TESTING.md`). Phases 3 to 5 are not built.
+Decided with the user on Nov 10, 2026. **Phases 0 to 3 built on Nov 10** (behind Settings > Random Play > Tonight picker > "Open on Tonight", off by default; not yet tried on the TV, checks in `TESTING.md`). Phases 4 and 5 are not built.
 
 ## The problem
 
@@ -75,7 +75,13 @@ Each phase ships behind Settings > "Tonight picker" (off by default) and adds it
 ## How phase 2 was built (Nov 10)
 
 - **Coin Toss** (`TonightCoinToss.kt`, screen in `TonightModesScreen.kt`): the hat is the twelve strongest unvetoed titles (taste + rating), drawn by weight; each veto halves the chances of titles that share its trait. A veto's trait is whatever stands out most against tonight's pool: length (against the median of the same kind, weighted 1.5x because lightness already leans on length), heavy or light, seen before, unfamiliar trending, or film/show when the pool is mixed; nothing if nothing stands out. Length is matched against the vetoed title itself (as long, or longer). Keys: Left veto, OK play, Up hold/restart, Down page, Back launcher. 10 second countdown.
-- **Knockout** (`TonightKnockout.kt`): `TonightBracket` (entrants + winners in play order; columns keep their width for drawing). Entrants: a shortlist of three times the bracket from the strongest, one per genre first, shuffled by the night. 8, 4 or 2 entrants depending on the pool. The 20 s tastes on Down wait for phase 3. Winner plays after 5 s.
+- **Knockout** (`TonightKnockout.kt`): `TonightBracket` (entrants + winners in play order; columns keep their width for drawing). Entrants: a shortlist of three times the bracket from the strongest, one per genre first, shuffled by the night. 8, 4 or 2 entrants depending on the pool. Winner plays after 5 s.
+
+## How phase 3 was built (Nov 10)
+
+- `TonightTrailerFrame` (`TonightTrailer.kt`) plays a title's trailer in a fixed 16:9 box through `HeroTrailerMetadataService.resolve` and `HeroTrailerPlayerSurface` (sound on, the heroes' shared volume, `keyboardNavigationEnabled = false` so the remote stays with Tonight). The video is a native window, so **no Compose text is drawn over it**: Channel Flick's labels sit under the frame (the mockup overlaid them). On a player error it tries the source's `fallback` chain, then drops the cached answer and reports "no trailer". Optional `limitMs` (20 s tastes) counts from when the video is ready.
+- **Channel Flick** (`TonightFlick.kt`, `TonightFlickScreen.kt`): line-up = unseen first (+0.4), taste, rating, plus a seeded shuffle. Right next, Left = `DiscoverRecommendationsRepository.markNotInterested` + gone for the visit, Up = `LibraryRepository.addToAllLibraries` (not for titles already in the library) and next, OK play. A title with no trailer leaves the line-up for the visit only.
+- **Knockout tastes**: Down plays 20 s of the left title, then the right, then back to the posters. **Three Cards**: OK now acts on release (`tonightKeysWithHold`); held for half a second it plays the selected card's trailer in place of the hand.
 
 ## Still open
 
