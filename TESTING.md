@@ -252,3 +252,10 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Change a setting (e.g. a Music setting), then close Nuvio with the X and reopen it: the change is still there (stores now force their data to disk before the swap)
 - [ ] After a normal day of use, nothing about settings, library, play history or music facts has reset on its own; if something has, say which (a zero-length store now falls back to its `.bak`, and the log says "is empty; recovering")
 - [ ] Phone remote after the connection limit: the phone still pairs, reconnects after the screen was off, and a second phone can connect at the same time (the PC now refuses more than 16 open connections and gives a new one 30 s to pair)
+
+## Artist page and Previously on (Nov 10)
+
+- [ ] Artist page, Essentials: an artist whose YouTube Music list is short (Gang Starr had 5) now shows up to 10 songs; the extra ones come after YouTube Music's own, are real songs you can play, and Play Essentials plays them too
+- [ ] Artist page, Essentials: an artist with a full list of 10 looks and plays exactly as before
+- [ ] Previously on: pick up a half-watched episode of a show (Continue Watching or the phone's Resume) after more than your break (3 days by default): the "Previously on" cards show before it carries on from where you stopped
+- [ ] Previously on: pick up a half-watched episode you left a few hours ago: no cards, it just resumes (with "Only after a break" off, every resume gets the cards)

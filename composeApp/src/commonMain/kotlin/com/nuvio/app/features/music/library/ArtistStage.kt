@@ -198,10 +198,24 @@ internal fun ArtistStage(
             emptyList()
         }
     }
+    // fork:artist-fill - when YouTube Music lists fewer than ten songs, Deezer's most played ones it lacks fill the rest.
+    val deezerTop by produceState<List<DeezerTopSong>>(emptyList(), artist.deezerId, topSongs) {
+        val id = artist.deezerId
+        val have = topSongs
+        value = if (id != null && have != null && needsDeezerFill(have)) {
+            ArtistTopSongs.ensure(id)
+            ArtistTopSongs.state.value[id].orEmpty()
+        } else {
+            emptyList()
+        }
+    }
+    val fills = remember(topSongs, deezerTop, artist.releases) {
+        deezerFills(topSongs.orEmpty(), deezerTop, artist.releases)
+    }
     var albums by remember(artist.id) { mutableStateOf<Map<String, MusicAlbum>>(emptyMap()) }
-    LaunchedEffect(topSongs) {
+    LaunchedEffect(topSongs, fills) {
         val songs = topSongs ?: return@LaunchedEffect
-        for (id in essentialAlbumIds(songs)) {
+        for (id in (essentialAlbumIds(songs) + fills.map { it.browseId }).distinct()) {
             if (id in albums) continue
             val album = try {
                 catalog.album(id)
@@ -213,7 +227,9 @@ internal fun ArtistStage(
             if (album != null) albums = albums + (id to album)
         }
     }
-    val rows = remember(topSongs, albums) { essentialRows(topSongs.orEmpty(), albums) }
+    val rows = remember(topSongs, fills, albums) {
+        essentialRows(topSongs.orEmpty() + filledTopSongs(fills, albums), albums)
+    }
     val mix = remember(rows, artist.id) { essentialsMix(artist.id, artist.name, artist.art.thumb, rows) }
     fun playEssentials(fromVideoId: String? = null) {
         val queue = mix

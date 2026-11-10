@@ -120,3 +120,83 @@ class ArtistFactRowsTest {
         assertEquals(listOf("Years active" to "1987–present", "Genres" to "Hip hop, Jazz rap"), artistFactRows(artist))
     }
 }
+
+/** fork:artist-fill - Deezer fills the Essentials list when YouTube Music's is short. */
+class DeezerFillTest {
+    private val pac = MusicArtistRef("2Pac", "UCpac")
+
+    private fun song(title: String, albumTitle: String, albumId: Long, rank: Long) = DeezerTopSong(title, albumTitle, albumId, rank)
+
+    private fun release(key: String, title: String, deezerId: Long, yt: String?) =
+        LibraryRelease(key = key, title = title, kind = ReleaseKind.Album, ytBrowseId = yt, deezerId = deezerId)
+
+    private fun track(id: String, title: String, available: Boolean = true) = MusicTrack(id, title, listOf(pac), 200, 1, available)
+
+    private fun album(browseId: String, vararg tracks: MusicTrack) = MusicAlbum(
+        browseId = browseId, title = browseId, artists = listOf(pac), year = "1996", kind = "Album",
+        thumbnailUrl = null, audioPlaylistId = null, tracks = tracks.toList(),
+    )
+
+    private val releases = listOf(
+        release("hits", "Greatest Hits", 1L, "MPREb_hits"),
+        release("eyez", "All Eyez On Me", 2L, "MPREb_eyez"),
+        release("ghost", "Not On YouTube Music", 3L, null),
+    )
+
+    private val deezer = listOf(
+        song("Changes", "Greatest Hits", 1L, 900),
+        song("California Love", "All Eyez On Me", 2L, 800),
+        song("California Love (Remix)", "All Eyez On Me", 2L, 700),
+        song("Hit Em Up", "Not On YouTube Music", 3L, 600),
+        song("Dear Mama", "Greatest Hits", 1L, 500),
+    )
+
+    @Test
+    fun onlyAShortListAsksDeezer() {
+        val five = (1..5).map { MusicTopSong("v$it", "Song $it") }
+        val ten = (1..10).map { MusicTopSong("v$it", "Song $it") }
+        assertEquals(true, needsDeezerFill(five))
+        assertEquals(false, needsDeezerFill(ten))
+        // The same song under two ids counts once.
+        assertEquals(true, needsDeezerFill(ten.map { it.copy(title = "Song") }))
+    }
+
+    @Test
+    fun fillsAreTheMostPlayedSongsTheListLacksThatCanBePlayed() {
+        val have = listOf(MusicTopSong("chg", "Changes", "MPREb_hits"))
+        val fills = deezerFills(have, deezer, releases, limit = 10)
+        // Changes is already there, the Remix is the same song as California Love, Hit Em Up has no playable release.
+        assertEquals(listOf("California Love", "Dear Mama"), fills.map { it.song.title })
+        assertEquals(listOf("MPREb_eyez", "MPREb_hits"), fills.map { it.browseId })
+    }
+
+    @Test
+    fun fillsStopWhenTheListIsFull() {
+        val have = listOf(MusicTopSong("a", "A"), MusicTopSong("b", "B"), MusicTopSong("c", "Changes"))
+        assertEquals(1, deezerFills(have, deezer, releases, limit = 4).size)
+        assertEquals(emptyList(), deezerFills(have, deezer, releases, limit = 3))
+    }
+
+    @Test
+    fun aFillBecomesATopSongOnceItsAlbumIsOpenAndHoldsIt() {
+        val fills = deezerFills(emptyList(), deezer, releases, limit = 10)
+        val eyez = album("MPREb_eyez", track("cal", "California Love (Remix)"), track("ambitionz", "Ambitionz Az A Ridah"))
+        val filled = filledTopSongs(fills, mapOf("MPREb_eyez" to eyez))
+        // California Love is matched to the album's own track by title; Changes and Dear Mama sit on an album not open yet.
+        assertEquals(listOf(MusicTopSong("cal", "California Love (Remix)", "MPREb_eyez")), filled)
+
+        val greyed = eyez.copy(tracks = listOf(track("cal", "California Love (Remix)", available = false)))
+        assertEquals(emptyList(), filledTopSongs(fills, mapOf("MPREb_eyez" to greyed)))
+    }
+
+    @Test
+    fun filledSongsFollowYouTubeMusicsOwnInEssentials() {
+        val have = listOf(MusicTopSong("chg", "Changes", "MPREb_hits"))
+        val fills = deezerFills(have, deezer, releases, limit = 10)
+        val eyez = album("MPREb_eyez", track("cal", "California Love (Remix)"))
+        val rows = essentialRows(have + filledTopSongs(fills, mapOf("MPREb_eyez" to eyez)), mapOf("MPREb_eyez" to eyez))
+        assertEquals(listOf("Changes", "California Love (Remix)"), rows.map { it.title })
+        assertEquals(listOf(1, 2), rows.map { it.rank })
+        assertEquals("cal", rows[1].videoId)
+    }
+}

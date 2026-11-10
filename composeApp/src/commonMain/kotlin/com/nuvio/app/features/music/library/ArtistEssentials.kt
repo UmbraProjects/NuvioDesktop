@@ -63,6 +63,54 @@ internal fun essentialRows(top: List<MusicTopSong>, albums: Map<String, MusicAlb
     return rows
 }
 
+/**
+ * Whether YouTube Music's list is short enough that Deezer's should fill it up: fewer than [limit] distinct songs (Gang Starr
+ * comes back with 5). A full list never asks Deezer.
+ */
+internal fun needsDeezerFill(top: List<MusicTopSong>, limit: Int = ARTIST_ESSENTIAL_SONGS): Boolean =
+    top.distinctBy { songKey(it.title) }.size < limit
+
+/** One of Deezer's most played songs that YouTube Music's list lacks, with the YouTube Music album to find it on. */
+internal data class DeezerFill(val song: DeezerTopSong, val browseId: String)
+
+/**
+ * The songs that fill [have] up to [limit]: Deezer's most played first, each only if it is not already in [have] (by title,
+ * brackets left out), once however many editions Deezer lists, and only if one of the artist's [releases] can be played from
+ * YouTube Music, since a song with nowhere to play it from would be a dead row.
+ */
+internal fun deezerFills(
+    have: List<MusicTopSong>,
+    deezer: List<DeezerTopSong>,
+    releases: List<LibraryRelease>,
+    limit: Int = ARTIST_ESSENTIAL_SONGS,
+): List<DeezerFill> {
+    val taken = have.map { songKey(it.title) }.filter { it.isNotEmpty() }.toHashSet()
+    val room = limit - taken.size
+    if (room <= 0) return emptyList()
+    val fills = ArrayList<DeezerFill>()
+    for (song in bestSongs(deezer, limit = deezer.size)) {
+        if (fills.size >= room) break
+        val key = songKey(song.title)
+        if (key.isEmpty() || key in taken) continue
+        val browseId = releaseForSong(song, releases)?.ytBrowseId ?: continue
+        taken += key
+        fills += DeezerFill(song, browseId)
+    }
+    return fills
+}
+
+/**
+ * The [fills] whose album is open in [albums] and holds the song (matched by title, an available track), as top songs for
+ * [essentialRows]. A fill whose album is not open yet, or does not hold the song after all, is left out.
+ */
+internal fun filledTopSongs(fills: List<DeezerFill>, albums: Map<String, MusicAlbum>): List<MusicTopSong> =
+    fills.mapNotNull { fill ->
+        val album = albums[fill.browseId] ?: return@mapNotNull null
+        val key = songKey(fill.song.title)
+        val track = album.tracks.firstOrNull { it.isAvailable && songKey(it.title) == key } ?: return@mapNotNull null
+        MusicTopSong(track.videoId, track.title, album.browseId)
+    }
+
 /** The browse id the Essentials queue carries, so it is never taken for a real album. */
 internal fun essentialsAlbumId(artistId: String): String = "essentials:$artistId"
 
