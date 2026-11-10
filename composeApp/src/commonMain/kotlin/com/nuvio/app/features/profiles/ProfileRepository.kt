@@ -218,6 +218,7 @@ object ProfileRepository {
             hasEverSelectedProfile = selectedProfile != null || _state.value.hasEverSelectedProfile,
         )
         persist()
+        reloadForkProfileSettings() // fork:profile-reload
         // Anime identity was already invalidated by the activeProfileIndex assignment above, which
         // has to happen before these reloads: they run legacy anime-id migrations against it, and a
         // stale value rewrites the incoming profile's native ids to franchise ids and persists them.

@@ -160,6 +160,17 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # fork:huge-methods - which compiled methods are too big for HotSpot to JIT (over 8000 bytes of bytecode; they would run
+      # interpreted all session). Information only: it lists them in the run summary so a change to the JVM flags or a split of
+      # a giant composable can be judged on numbers.
+      - name: Huge methods (summary)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $dir = "composeApp/build/classes/kotlin/desktop/main"
+          if (Test-Path $dir) { python scripts/huge-methods.py $dir 8000 60 | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8 }
+          else { Write-Host "no compiled classes at $dir" }
+
       # Portable app folder: no WiX needed. With the WiX download off, the Compose plugin still asks for a WiX folder
       # (wixToolsetDir) when it sets this task up, so WIX_PATH points it at an empty one it never uses.
       - name: Build portable distributable

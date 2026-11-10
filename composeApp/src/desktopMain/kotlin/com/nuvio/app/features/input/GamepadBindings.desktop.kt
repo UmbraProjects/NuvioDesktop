@@ -9,6 +9,8 @@ actual fun gamepadSupported(): Boolean = DesktopHostOs.current == DesktopHostOs.
 
 actual fun ensureGamepadSettingsLoaded() = GamepadSettingsRepository.ensureLoaded()
 
+actual fun gamepadSettingsProfileChanged() = GamepadSettingsRepository.onProfileChanged()
+
 actual fun gamepadEnabledState(): StateFlow<Boolean> = GamepadSettingsRepository.enabledState
 actual fun setGamepadEnabled(enabled: Boolean) = GamepadSettingsRepository.setEnabled(enabled)
 

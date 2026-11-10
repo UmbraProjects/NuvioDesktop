@@ -13,6 +13,9 @@ expect fun gamepadSupported(): Boolean
 
 expect fun ensureGamepadSettingsLoaded()
 
+/** The pad settings are per profile: reload them for the profile just switched to (see ProfileRepository.selectProfile). */
+expect fun gamepadSettingsProfileChanged()
+
 expect fun gamepadEnabledState(): StateFlow<Boolean>
 expect fun setGamepadEnabled(enabled: Boolean)
 
