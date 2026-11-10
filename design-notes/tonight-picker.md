@@ -43,8 +43,28 @@ The Movies & TV tab opens on a **Tonight launcher**:
 - Two-phone "Split Decision" and a Venn of two people's tastes (two-player only).
 - Still dead ends from earlier: "The Evening" (a one-button planned night), Blind Date with a Film, Quiz Night.
 
+## More decisions (user, Nov 10, planning)
+
+- **Entry**: with the Settings switch on, the app **opens on Tonight instead of Home**; "Just browse everything" goes to the normal Home rows.
+- **Pool**: the user's library and watchlist, Continue watching / Next up, and trending / new releases. **Not** the Home or Discover catalog rows.
+- **Never show / Let it go** share Discover's existing "Not interested" list (`discover/DiscoverNotInterestedStorage.kt`): one list across the app, with undo in Settings.
+- **Three Questions**: the first question is always **"Film or show?"**; the other two are picked from a set and vary night to night.
+- **Three Cards**: **Safe** = like what you finish; **New to you** = unseen but inside your taste; **Wildcard** = outside your usual taste.
+
+## Build plan (phase order approved Nov 10)
+
+Each phase ships behind Settings > "Tonight picker" (off by default) and adds its checks to `TESTING.md` in the same commit.
+
+**Code to build on**: Random Play (`home/RandomPlay*.kt`) already resolves genres, film/show type and episode counts per title through `MetaDetailsRepository`; Discover has a taste profile (`DiscoverTasteProfile.kt`), a watched index (`DiscoverWatchedIndex.kt`) and the AI client; `MetaDetails.runtime` gives length; watched state is in `watched/WatchedRepository.kt`, progress in `watchprogress/`. CI only runs tests in listed packages, so **add `com.nuvio.app.features.tonight.*` to the test filter in `windows-build.yml`** in phase 0.
+
+- **Phase 0: Foundation (no screens).** Package `features/tonight`. The pool from library + watchlist + Continue watching/Next up + trending/new; per-title facts (runtime, genres, rating, film/show, watched, date added). Pure rules for Light ↔ Heavy (genre, runtime, rating) and Comfort ↔ New (watch history), no AI. Bedtime setting, the shared Not interested hook, the Settings switch. Tests.
+- **Phase 1: Launcher + Three Questions → Three Cards.** The launcher opening the app (eight tiles; unbuilt modes say "coming soon"; last-used highlighted). Three Questions ("Film or show?" then two from a rotating set; live "214 → 41" counter; Back skips). Three Cards (Safe / New to you / Wildcard; finishing time on each; one reshuffle a night; OK plays). The bedtime chip, shared by every mode from here on.
+- **Phase 2: Coin Toss + Knockout.** Coin Toss: 10 s countdown, Left vetoes and tosses again, the "what your no's said" lean. Knockout: eight titles, three rounds, Back undoes, winner plays.
+- **Phase 3: Channel Flick + trailer tastes.** Full-screen trailers back to back on the pre-show engine (sharpest-trailer probing); the same player gives Knockout's 20 s tastes and Three Cards' hold-OK trailer.
+- **Phase 4: Ends By + The Pile.** The bedtime timeline as its own mode (episode blocks for shows, past-bedtime striped); the dusty stack of library items never started, with Finally watch it / Let it go.
+- **Phase 5: The Map + AI refinement.** The lens on the field; with a Groq key the AI nudges each title's place once per title, cached forever, run in the background within a daily allowance (new consent target).
+
 ## Still open
 
-- Exactly which questions Three Questions asks, and whether they vary night to night.
-- How the Safe / New to you / Wildcard cards are chosen.
-- Where "Let it go" and "Never show me this" are stored, and whether they can be undone.
+- The set of rotating questions for Three Questions.
+- What exactly counts as "your taste" for New to you vs Wildcard (Discover's taste profile is the first candidate).
