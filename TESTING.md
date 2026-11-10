@@ -246,3 +246,8 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 ## Live TV
 
 - [x] Stalker portals log in, load channels and play (2026-11-08)
+
+## Saving settings (hardening, Nov 10)
+
+- [ ] Change a setting (e.g. a Music setting), then close Nuvio with the X and reopen it: the change is still there (stores now force their data to disk before the swap)
+- [ ] After a normal day of use, nothing about settings, library, play history or music facts has reset on its own; if something has, say which (a zero-length store now falls back to its `.bak`, and the log says "is empty; recovering")

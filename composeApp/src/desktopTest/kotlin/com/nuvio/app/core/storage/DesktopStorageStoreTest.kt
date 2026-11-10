@@ -76,6 +76,39 @@ class DesktopStorageStoreTest {
     }
 
     @Test
+    fun `a zero-length store falls back to the previous version`() {
+        val file = tempStoreFile()
+        val first = DesktopStorage.Store(file, flushDelayMs = 60_000L)
+        first.putString("k", "v1")
+        first.flush()
+        first.putString("k", "v2")
+        first.flush()
+
+        // A write cut short by a power loss: the swap landed, the data did not.
+        Files.write(file, ByteArray(0))
+        val reopened = DesktopStorage.Store(file, flushDelayMs = 60_000L)
+        assertEquals("v1", reopened.getString("k"))
+
+        reopened.putString("other", "x")
+        reopened.flush()
+        assertEquals("v1", readFile(file).getProperty("k"))
+        assertEquals("x", readFile(file).getProperty("other"))
+    }
+
+    @Test
+    fun `a store saved empty is not mistaken for a damaged one`() {
+        val file = tempStoreFile()
+        val first = DesktopStorage.Store(file, flushDelayMs = 60_000L)
+        first.putString("k", "v1")
+        first.flush()
+        first.remove("k")
+        first.flush()
+
+        val reopened = DesktopStorage.Store(file, flushDelayMs = 60_000L)
+        assertNull(reopened.getString("k"))
+    }
+
+    @Test
     fun `deleteAll removes the file and its backup and leaves a usable empty store`() {
         val file = tempStoreFile()
         val store = DesktopStorage.Store(file, flushDelayMs = 60_000L)
