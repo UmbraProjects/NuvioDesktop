@@ -352,7 +352,9 @@ private fun RemoteHeader(state: UiState, status: String, onRetry: () -> Unit, tr
 @Composable
 private fun BrowseBody(padMode: PadMode, viewModel: RemoteViewModel, onSearch: () -> Unit, onMore: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
-        NavPanel(padMode, viewModel, Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp))
+        // The hot button for the TV's Tonight picker (Nov 10): one tap opens it, the mirror takes over from there.
+        WhatToWatchButton(viewModel, Modifier.padding(top = 8.dp))
+        NavPanel(padMode, viewModel, Modifier.weight(1f).fillMaxWidth().padding(top = 10.dp))
         Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 10.dp), horizontalArrangement = Arrangement.SpaceAround) {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back") { viewModel.press(RemoteKey.Back) }
             GlassKey(Icons.Rounded.Home, "Home") { viewModel.press(RemoteKey.Home) }

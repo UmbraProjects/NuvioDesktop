@@ -171,6 +171,7 @@ private fun rememberNavEntrySwitches(): Map<NavBarEntry, NavEntrySwitch> {
 private fun NavBarEntry.navDescription(): String = when (this) {
     NavBarEntry.Home -> "Your home rows. Always shown."
     NavBarEntry.Search -> "Search across your addons. Always shown."
+    NavBarEntry.Tonight -> "What to watch: the Tonight picker, for when nobody can choose. Always shown."
     NavBarEntry.Discover -> "Browse catalogs by genre, year and more."
     NavBarEntry.Library -> "Your saved titles and collections. Always shown."
     NavBarEntry.LiveTv -> "Shown while a Live TV playlist is added (Settings > Live TV)."

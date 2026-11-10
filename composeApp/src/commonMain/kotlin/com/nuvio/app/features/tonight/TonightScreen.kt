@@ -103,7 +103,7 @@ fun TonightHost(
     topPadding: Dp,
     onPlay: (type: String, id: String) -> Unit,
     onOpenDetails: (type: String, id: String) -> Unit,
-    onBrowseAll: () -> Unit,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     remember { TonightSettingsRepository.ensureLoaded() }
@@ -193,7 +193,7 @@ fun TonightHost(
 
     // A pad's B and the phone remote's Back arrive as the app's GoBack, not as a key: while a mode is open, Tonight
     // takes them (the screen showing runs its own Back); on the launcher they go on to the app as before.
-    com.nuvio.app.core.ui.TabBackHandler(enabled = view != TonightView.Launcher) { TonightBackBus.press() }
+    com.nuvio.app.core.ui.TabBackHandler(enabled = true) { TonightBackBus.press() }
 
     // fork:phone-remote tonight - the phone mirrors the launcher, Three Questions and Three Cards; its taps run here.
     val remoteOwner = remember { Any() }
@@ -233,6 +233,7 @@ fun TonightHost(
     }
     val remoteHandler by rememberUpdatedState { action: RemoteTonightAction, number: Int ->
         when (action) {
+            RemoteTonightAction.Open -> Unit // already open
             RemoteTonightAction.OpenQuestions -> startQuestions()
             RemoteTonightAction.OpenCards -> openThreeCards()
             RemoteTonightAction.Left -> question?.let { answer(it, TonightSide.Left) }
@@ -302,7 +303,7 @@ fun TonightHost(
                         else -> Unit
                     }
                 },
-                onBrowseAll = onBrowseAll,
+                onBrowseAll = onClose,
             )
             TonightView.Questions -> TonightQuestions(
                 question = question,
@@ -384,6 +385,9 @@ fun TonightHost(
                 onBack = { view = TonightView.Launcher },
             )
         }
+        // A way out that is always there (user, Nov 10): a fixed X in the top-right corner, inside the side margin
+        // every Tonight screen keeps clear, so it never covers anything.
+        TonightCloseButton(onClose = onClose, modifier = Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 10.dp))
     }
     // A hand dealt before the pool arrived is dealt again once it has.
     LaunchedEffect(poolState.loadedAtEpochMs) {
@@ -531,19 +535,24 @@ private fun TonightLauncher(
             .fillMaxSize()
             .focusRequester(focus)
             .focusable()
-            .tonightKeys(passBack = true) { key ->
+            .tonightKeys { key ->
+                // Back on the launcher closes Tonight (user, Nov 10: there must always be a way out).
+                if (key == TonightKey.Back) {
+                    onBrowseAll()
+                    return@tonightKeys true
+                }
                 val s = selected
                 when {
                     s == SEL_BED -> when (key) {
                         TonightKey.Left -> TonightSettingsRepository.nudgeBedtime(-1)
                         TonightKey.Right -> TonightSettingsRepository.nudgeBedtime(1)
                         TonightKey.Down -> selected = lastTile
-                        else -> return@tonightKeys key != TonightKey.Back
+                        else -> Unit
                     }
                     s == SEL_BROWSE -> when (key) {
                         TonightKey.Up -> selected = lastTile
                         TonightKey.Ok -> activate(s)
-                        else -> return@tonightKeys key != TonightKey.Back
+                        else -> Unit
                     }
                     else -> {
                         val row = s / 4
@@ -554,7 +563,7 @@ private fun TonightLauncher(
                             TonightKey.Up -> if (row == 0) selected = SEL_BED else selected = s - 4
                             TonightKey.Down -> if (row == 1) selected = SEL_BROWSE else selected = s + 4
                             TonightKey.Ok -> activate(s)
-                            TonightKey.Back -> return@tonightKeys false
+                            TonightKey.Back -> Unit
                         }
                         if (selected < 8) lastTile = selected
                         notYet = null
@@ -603,7 +612,7 @@ private fun TonightLauncher(
         }
         // One fixed line under the tiles: the "not yet" note, else the key hint.
         Text(
-            notYet ?: "OK starts a mode · Up sets bedtime",
+            notYet ?: "OK starts a mode · Up sets bedtime · Back or ✕ closes",
             color = if (notYet != null) accent else TextFaint, fontSize = 15.sp,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(top = 20.dp).height(22.dp),
@@ -1061,5 +1070,22 @@ private fun DealtCard(
             overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(22.dp),
         )
+    }
+}
+
+
+@Composable
+private fun TonightCloseButton(onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = androidx.compose.foundation.shape.CircleShape
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .clip(shape)
+            .background(GlassFill)
+            .smoothBorder(1.dp, GlassEdge, shape)
+            .clickable(onClick = onClose),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("✕", color = Color.White, fontSize = 18.sp)
     }
 }

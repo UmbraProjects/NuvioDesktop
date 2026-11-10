@@ -51,6 +51,7 @@ class PhoneRemoteTonightTest {
         assertEquals(RemoteMessage.TonightDo(RemoteTonightAction.Play, 2), PhoneRemoteProtocol.parse("TONIGHT_DO play 2"))
         assertEquals(RemoteMessage.TonightDo(RemoteTonightAction.Left, 0), PhoneRemoteProtocol.parse("TONIGHT_DO left"))
         assertEquals(RemoteMessage.TonightDo(RemoteTonightAction.OpenQuestions, 0), PhoneRemoteProtocol.parse("TONIGHT_DO questions"))
+        assertEquals(RemoteMessage.TonightDo(RemoteTonightAction.Open, 0), PhoneRemoteProtocol.parse("TONIGHT_DO open"))
         assertNull(PhoneRemoteProtocol.parse("TONIGHT_DO nonsense"))
     }
 

@@ -50,6 +50,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.MusicNote // fork:music
 import androidx.compose.material.icons.rounded.SmartDisplay // fork:youtube-mode
 import androidx.compose.material.icons.rounded.SportsEsports
@@ -1862,6 +1863,13 @@ private fun MainAppContent(
                 com.nuvio.app.features.navbar.NavBarEntry.YouTube -> latestRootTabClick.value(AppScreenTab.YouTube)
                 com.nuvio.app.features.navbar.NavBarEntry.Music -> latestRootTabClick.value(AppScreenTab.Music)
                 com.nuvio.app.features.navbar.NavBarEntry.Games -> com.nuvio.app.features.games.GameModeController.setActive(true)
+                // fork:tonight - opens over Home, Library or Discover; from any other tab it goes to Home first.
+                com.nuvio.app.features.navbar.NavBarEntry.Tonight -> {
+                    if (selectedTab != AppScreenTab.Home && selectedTab != AppScreenTab.Library && selectedTab != AppScreenTab.Discover) {
+                        latestRootTabClick.value(AppScreenTab.Home)
+                    }
+                    com.nuvio.app.features.tonight.TonightController.open()
+                }
             }
         }
     }
@@ -6356,13 +6364,11 @@ private fun AppTabHost(
         if (!homeHidden) contentTab = selectedTab
         // fork:tonight - with "Open on Tonight" on, the Home tab shows the Tonight picker until
         // "Just browse everything"; pressing Home again (its scroll-to-top) brings the picker back.
-        val tonightSettings by com.nuvio.app.features.tonight.TonightSettingsRepository.state.collectAsStateWithLifecycle()
-        remember { com.nuvio.app.features.tonight.TonightSettingsRepository.ensureLoaded() }
-        var tonightBrowsing by rememberSaveable { mutableStateOf(false) }
-        LaunchedEffect(homeScrollToTopRequests) {
-            homeScrollToTopRequests.collect { if (contentTab == AppScreenTab.Home) tonightBrowsing = false }
-        }
-        val tonightShowing = tonightSettings.enabled && !tonightBrowsing && !homeHidden && contentTab == AppScreenTab.Home
+        // The "What to watch" button (beside Search) opens it; its X or Back closes it; "Open on Tonight" opens it once
+        // when Nuvio starts. It covers Home, Library or Discover, whichever is showing.
+        LaunchedEffect(Unit) { com.nuvio.app.features.tonight.TonightController.openAtStartIfWanted() }
+        val tonightOpen by com.nuvio.app.features.tonight.TonightController.open.collectAsStateWithLifecycle()
+        val tonightShowing = tonightOpen && !homeHidden && contentTab != AppScreenTab.Search
         // HomeScreen stays composed (hidden) while Settings is open, so switching back shows it at
         // once instead of rebuilding Home; Settings is still built and disposed as before.
         tabStateHolder.SaveableStateProvider("HomeSearchLibrary") {
@@ -6453,7 +6459,7 @@ private fun AppTabHost(
                 topPadding = topChromePadding ?: 0.dp,
                 onPlay = onTonightPlay,
                 onOpenDetails = onTonightDetails,
-                onBrowseAll = { tonightBrowsing = true },
+                onClose = { com.nuvio.app.features.tonight.TonightController.close() },
             )
         }
 
@@ -6764,6 +6770,19 @@ private fun DesktopHoverSidebar(
                                 Icon(
                                     imageVector = Icons.Rounded.MusicNote,
                                     contentDescription = "Music",
+                                    modifier = Modifier.size(DesktopSidebarIconSize),
+                                    tint = color,
+                                )
+                            }
+                            com.nuvio.app.features.navbar.NavBarEntry.Tonight -> DesktopSidebarItem( // fork:tonight
+                                label = "What to watch",
+                                selected = com.nuvio.app.features.tonight.TonightController.open.collectAsStateWithLifecycle().value,
+                                expanded = false,
+                                onClick = { com.nuvio.app.features.navbar.NavBarNavigation.request(entry) },
+                            ) { color ->
+                                Icon(
+                                    imageVector = Icons.Rounded.AutoAwesome,
+                                    contentDescription = "What to watch",
                                     modifier = Modifier.size(DesktopSidebarIconSize),
                                     tint = color,
                                 )
@@ -7406,6 +7425,17 @@ private fun TabletFloatingTopBar(
                                         Icon(
                                             imageVector = Icons.Rounded.MusicNote,
                                             contentDescription = "Music",
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                    com.nuvio.app.features.navbar.NavBarEntry.Tonight -> NavQuadrant( // fork:tonight
+                                        selected = com.nuvio.app.features.tonight.TonightController.open.collectAsStateWithLifecycle().value,
+                                        onClick = { com.nuvio.app.features.navbar.NavBarNavigation.request(entry) },
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            imageVector = Icons.Rounded.AutoAwesome,
+                                            contentDescription = "What to watch",
                                             modifier = iconModifier,
                                             tint = iconTint,
                                         )

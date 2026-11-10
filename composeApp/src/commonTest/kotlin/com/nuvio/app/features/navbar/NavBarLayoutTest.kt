@@ -10,7 +10,7 @@ class NavBarLayoutTest {
     fun theDefaultPutsFilmsFirstAndMusicThenGamesLast() {
         assertEquals(DEFAULT_NAV_BAR_ORDER, parseNavBarOrder(null))
         assertEquals(
-            listOf("home", "search", "discover", "library", "livetv", "youtube", "music", "games"),
+            listOf("home", "search", "tonight", "discover", "library", "livetv", "youtube", "music", "games"),
             parseNavBarOrder("").map { it.key },
         )
     }
@@ -21,7 +21,7 @@ class NavBarLayoutTest {
         // it comes after by default, wherever Music now is.
         val parsed = parseNavBarOrder("music,home,search,discover,library,livetv,youtube,bogus")
         assertEquals(
-            listOf("music", "games", "home", "search", "discover", "library", "livetv", "youtube"),
+            listOf("music", "games", "home", "search", "tonight", "discover", "library", "livetv", "youtube"),
             parsed.map { it.key },
         )
     }

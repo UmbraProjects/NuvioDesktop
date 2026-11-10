@@ -2997,6 +2997,11 @@ private fun DesktopSettingsRootNavigation(
                         contentDescription = "Music",
                         imageVector = Icons.Rounded.MusicNote,
                     )
+                    com.nuvio.app.features.navbar.NavBarEntry.Tonight -> DesktopSettingsNavIcon( // fork:tonight
+                        onClick = request(entry),
+                        contentDescription = "What to watch",
+                        imageVector = Icons.Rounded.AutoAwesome,
+                    )
                     com.nuvio.app.features.navbar.NavBarEntry.Games -> DesktopSettingsNavIcon(
                         onClick = request(entry),
                         contentDescription = "Games",

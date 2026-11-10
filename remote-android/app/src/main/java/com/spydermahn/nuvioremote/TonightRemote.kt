@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.sp
 
 /** The wire names of the PC's RemoteTonightAction. */
 object TonightAction {
+    /** Opens the Tonight picker on the TV from anywhere (the "What to watch?" button). */
+    const val OPEN = "open"
     const val QUESTIONS = "questions"
     const val CARDS = "cards"
     const val LEFT = "left"
@@ -264,5 +266,28 @@ private fun BigChoice(
         }
         Text(label, color = g.text, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(detail, color = g.textSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+
+/** The Remote tab's "What to watch?" button while nothing plays: opens the Tonight picker on the TV. */
+@Composable
+fun WhatToWatchButton(viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
+    val g = LocalGlass.current
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .glass(shape, fill = g.tint, edge = g.tintEdge)
+            .tap { viewModel.tonight(TonightAction.OPEN) }
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("What to watch?", color = g.text, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text("Can't decide? Let the TV help", color = g.textSecondary, fontSize = 12.sp, maxLines = 1)
+        }
+        Text("▶", color = g.accent, fontSize = 18.sp)
     }
 }

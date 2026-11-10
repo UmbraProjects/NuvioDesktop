@@ -250,7 +250,14 @@ internal object PhoneRemote {
         override fun onAlbumTracks(browseId: String, reply: (String) -> Unit) = PhoneRemoteMusic.albumTracks(browseId, reply)
         override fun onPlayTrack(browseId: String, index: Int): String? = PhoneRemoteMusic.playTrack(browseId, index)
         override fun onTonight(action: RemoteTonightAction, number: Int) {
-            mainScope.launch { RemoteTonight.act(action, number) }
+            mainScope.launch {
+                // "What to watch?" on the phone: the same as the button beside Search on the TV.
+                if (action == RemoteTonightAction.Open) {
+                    com.nuvio.app.features.navbar.NavBarNavigation.request(com.nuvio.app.features.navbar.NavBarEntry.Tonight)
+                } else {
+                    RemoteTonight.act(action, number)
+                }
+            }
         }
     }
 

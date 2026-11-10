@@ -48,6 +48,8 @@ data class RemoteTonightScreen(
 
 /** What the phone can ask for. [RemoteTonightAction.wire] names are lower-case and stable. */
 enum class RemoteTonightAction(val wire: String) {
+    /** Opens the Tonight picker from anywhere (the phone's "What to watch?" button); handled by the PC, not the host. */
+    Open("open"),
     OpenQuestions("questions"), OpenCards("cards"),
     Left("left"), Right("right"), Either("either"), Back("back"),
     /** Plays card n (from 1). */

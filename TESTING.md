@@ -317,6 +317,15 @@ Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
 - [ ] Titles marked "Not interested" in Discover never appear
 - [ ] A mouse works too: hovering a tile or card selects it, clicking plays or opens
 
+### Tonight picker: the What to watch button and a way out (Nov 10 evening)
+
+- [ ] A "What to watch" button (sparkle icon) sits beside Search in the top bar and the sidebar; it opens the Tonight launcher over Home, Library or Discover (from Music or Live TV it goes to Home first)
+- [ ] Every Tonight screen has an ✕ in the top-right corner; clicking it closes Tonight and the rows behind come straight back
+- [ ] Back on the launcher closes Tonight (Back inside a mode still steps back first)
+- [ ] With "Open on Tonight" off, Nuvio opens on Home; with it on, Nuvio opens on Tonight once at start, and after closing it stays closed until the button is pressed
+- [ ] The button can be moved in Settings > Appearance > Navigation order ("What to watch")
+- [ ] Phone remote: a "What to watch?" button above the pad on the Remote tab opens Tonight on the TV, and the phone switches to the Tonight mirror
+
 ### Tonight picker: Coin Toss and Knockout (phase 2, Nov 10)
 
 - [ ] The launcher's Knockout and Coin Toss tiles are no longer "coming soon" and open their modes
