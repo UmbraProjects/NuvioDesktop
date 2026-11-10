@@ -49,7 +49,9 @@ object TmdbMetadataService {
     private val json = Json { ignoreUnknownKeys = true }
     private val titleCompareYearRegex = Regex("""\b(19|20)\d{2}\b""")
 
-    private val enrichmentCache = mutableMapOf<String, TmdbEnrichment>()
+    // fork:hardening - these four are written from Dispatchers.Default (several callers at once), so they are concurrent maps;
+    // the season cache below keeps its mutex because its get-then-fetch-then-put must not interleave.
+    private val enrichmentCache = java.util.concurrent.ConcurrentHashMap<String, TmdbEnrichment>()
     /**
      * Episode enrichment keyed **per season**, as `"<tmdbId>:<season>:<language>"`.
      *
@@ -70,9 +72,9 @@ object TmdbMetadataService {
 
     private suspend fun episodeFetchLock(key: String): Mutex =
         episodeCacheMutex.withLock { episodeFetchLocks.getOrPut(key) { Mutex() } }
-    private val moreLikeThisCache = mutableMapOf<String, List<MetaPreview>>()
-    private val collectionCache = mutableMapOf<String, Pair<String?, List<MetaPreview>>>()
-    private val trailerCache = mutableMapOf<String, List<MetaTrailer>>()
+    private val moreLikeThisCache = java.util.concurrent.ConcurrentHashMap<String, List<MetaPreview>>()
+    private val collectionCache = java.util.concurrent.ConcurrentHashMap<String, Pair<String?, List<MetaPreview>>>()
+    private val trailerCache = java.util.concurrent.ConcurrentHashMap<String, List<MetaTrailer>>()
 
     /**
      * One lock per trailer lookup.

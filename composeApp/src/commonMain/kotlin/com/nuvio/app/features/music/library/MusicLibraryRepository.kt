@@ -428,7 +428,8 @@ object MusicLibraryRepository {
         persist()
     }
 
-    private val topJobs = HashSet<String>()
+    // Written from the scope's Default threads as well as read on Main, so a concurrent set.
+    private val topJobs: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * Ranks the artist's top albums from Deezer when that has not been done (artists added before the
@@ -609,7 +610,7 @@ object MusicLibraryRepository {
     }
 
     /** Ids whose look-up ran to the end this session, so promoting a finished preview does not fetch it again. */
-    private val completed = HashSet<String>()
+    private val completed: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * Looks an artist up and writes the result as it grows. A saved artist is written to the library;
