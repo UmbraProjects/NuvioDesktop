@@ -134,35 +134,35 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 ### Phone remote: add-on subtitles
 
 - [x] The Subtitles tile shows the add-on subtitle's name (English (SubSens…) once one is on (2026-11-09)
-- [ ] Hold the Subtitles tile: a sheet lists Off, the file's own subtitles, then each add-on's (under its name), the one in use marked "On"; with none yet it says it is asking and fills in as the add-ons answer
-- [ ] Tapping a row in that sheet switches the TV's subtitles to it (an add-on one loads and shows), the tile follows, and Off turns them off; a quick tap on the tile still cycles to the next
-- [ ] Scrolling the sheet's list does not pick a row by accident
+- [x] Hold the Subtitles tile: a sheet lists Off, the file's own subtitles, then each add-on's (under its name), the one in use marked "On"; with none yet it says it is asking and fills in as the add-ons answer (2026-11-10)
+- [x] Tapping a row in that sheet switches the TV's subtitles to it (an add-on one loads and shows), the tile follows, and Off turns them off; a quick tap on the tile still cycles to the next (2026-11-10)
+- [x] Scrolling the sheet's list does not pick a row by accident (2026-11-10)
 - [ ] Demo TV: hold Subtitles shows a list of six; picking one changes the tile
-- [ ] Hold the Audio tile: a sheet lists the film's audio tracks (the one playing marked "On"); tapping one switches the TV's audio and the tile follows; a quick tap still cycles to the next
-- [ ] The audio list leaves out commentary and audio-description tracks, as the TV's own audio panel does
+- [x] Hold the Audio tile: a sheet lists the film's audio tracks (the one playing marked "On"); tapping one switches the TV's audio and the tile follows; a quick tap still cycles to the next (2026-11-10)
+- [x] The audio list leaves out commentary and audio-description tracks, as the TV's own audio panel does (2026-11-10)
 
 - [ ] A film with no built-in subtitles (the screenshot case): once the add-on subtitles are found, the Subtitles tile reads "Off" instead of "Tap for the next"; tapping it picks the first add-on subtitle and the tile shows its name; further taps go through the rest
 
 ### Phone remote: Sources cards
 
-- [ ] Open a film's or episode's source list on the phone: each source is a card with the add-on's name on top, then badges for resolution (4K, 1080p), HDR or Dolby Vision, codec (HEVC, H.264) and size
-- [ ] The raw release name sits on one muted line under the badges; holding the card shows all of it, holding again hides it
-- [ ] A quick tap on a card still plays that source on the TV (and holding does not play it); greyed cards still do nothing
-- [ ] The filter row under the title (All, Instant, 4K, HDR, Dolby Vision) only offers filters that match something; tapping one narrows the list, tapping it again (or All) shows everything
+- [x] Open a film's or episode's source list on the phone: each source is a card with the add-on's name on top, then badges for resolution (4K, 1080p), HDR or Dolby Vision, codec (HEVC, H.264) and size (2026-11-10)
+- [x] The raw release name sits on one muted line under the badges; holding the card shows all of it, holding again hides it (2026-11-10)
+- [x] A quick tap on a card still plays that source on the TV (and holding does not play it); greyed cards still do nothing (2026-11-10)
+- [x] The filter row under the title (All, Instant, 4K, HDR, Dolby Vision) only offers filters that match something; tapping one narrows the list, tapping it again (or All) shows everything (2026-11-10)
 - [ ] A source whose name says nothing readable shows its name as before, not an empty card
 - [ ] Demo TV: the first source shows 4K, Dolby Vision and HEVC; the second shows 1080p, HDR10 and H.264
 
 ### Phone remote: film extras, music extras and the More sheet
 
-- [ ] Film screen: top panel, Subtitles and Audio tiles, play buttons, volume slider and Skip / Next episode (when shown) fit without scrolling on your phone; a smaller phone may scroll a little
-- [ ] Under the play button a slim volume slider changes the TV's volume, and the number follows
-- [ ] More > Playback has Speed chips on a film (0.75x to 2x); tapping one changes the film's speed on the TV and the chip lights; the TV's own speed panel agrees; Speed is not shown for music
+- [x] Film screen: top panel, Subtitles and Audio tiles, play buttons, volume slider and Skip / Next episode (when shown) fit without scrolling on your phone; a smaller phone may scroll a little (2026-11-10)
+- [x] Under the play button a slim volume slider changes the TV's volume, and the number follows (2026-11-10)
+- [x] More > Playback has Speed chips on a film (0.75x to 2x); tapping one changes the film's speed on the TV and the chip lights; the TV's own speed panel agrees; Speed is not shown for music (2026-11-10)
 - [ ] During a show's intro (or recap, credits) a "Skip intro" (or "Skip credits", "Skip recap") button shows above the card; tapping it jumps the TV past it; it disappears once the part is over
 - [ ] On a show with a next episode, "Next episode" shows and tapping it starts that episode on the TV; on a film it is not there
-- [ ] More > Playback > Sleep: 15 / 30 / 60 min starts a timer and the row says "N min left"; when it ends the TV (or music) pauses; Off cancels it
-- [ ] Music screen: a row of Shuffle, Repeat, Like and Radio under the play button. Shuffle and Repeat (off, all, one) change the TV's queue and light up; Radio starts a radio from the playing song
-- [ ] Like shows only when signed in to YouTube Music on the TV; tapping it fills or empties the heart and the TV's heart agrees
-- [ ] More sheet is in three groups (Playback with volume and sleep, Display with pad and dark mode, Device with Type and Other PC) and scrolls on a small phone
+- [x] More > Playback > Sleep: 15 / 30 / 60 min starts a timer and the row says "N min left"; when it ends the TV (or music) pauses; Off cancels it (2026-11-10)
+- [x] Music screen: a row of Shuffle, Repeat, Like and Radio under the play button. Shuffle and Repeat (off, all, one) change the TV's queue and light up; Radio starts a radio from the playing song (2026-11-10)
+- [x] Like shows only when signed in to YouTube Music on the TV; tapping it fills or empties the heart and the TV's heart agrees (2026-11-10)
+- [x] More sheet is in three groups (Playback with volume and sleep, Display with pad and dark mode, Device with Type and Other PC) and scrolls on a small phone (2026-11-10)
 - [ ] Demo TV: the film shows "Skip intro" for its first minute; speed, sleep, shuffle, repeat and like all answer
 
 ## Music playback
@@ -202,14 +202,14 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [x] Sentence chips, the narrow row, Remix / Live panels (2026-11-08)
 - [x] Top-match morph, the action row and More menus (2026-11-08)
 - [x] More menu on songs and releases (right-click, Menu key, hold OK), with Play next (2026-11-08)
-- [ ] The Ladder is gone from the Music tab: no Ladder pills beside the search kinds, no "Ladder starters" or "Continue your ladder" on the old search's start screen, no "Ladder from here" or "Climb into" buttons in the preview pane
-- [ ] Stage: tapping a genre chip closes the stage, opens the Music tab and searches that genre (the genre card shows)
-- [ ] Type a genre (shoegaze, post punk, trip hop): a genre card leads Top Match, with "IN YOUR LIBRARY" artists and "TOP ARTISTS" under it; OK on the card plays a radio or playlist for it
-- [ ] Spelling and word order are forgiven: "postpunk", "hip hop music", "rock indie", "punks" all show the card
-- [ ] Moods, activities and decades: "chill", "workout music", "90s", "90s rock" show a card (and "90s rock" plays something sensible)
-- [ ] An artist wins a clash: with an artist as the top match (try "Soul" or "Dance" if you own one), the artist stays Top Match and the genre card sits second
+- [x] The Ladder is gone from the Music tab: no Ladder pills beside the search kinds, no "Ladder starters" or "Continue your ladder" on the old search's start screen, no "Ladder from here" or "Climb into" buttons in the preview pane (2026-11-10)
+- [x] Stage: tapping a genre chip closes the stage, opens the Music tab and searches that genre (the genre card shows) (2026-11-10)
+- [x] Type a genre (shoegaze, post punk, trip hop): a genre card leads Top Match, with "IN YOUR LIBRARY" artists and "TOP ARTISTS" under it; OK on the card plays a radio or playlist for it (2026-11-10)
+- [x] Spelling and word order are forgiven: "postpunk", "hip hop music", "rock indie", "punks" all show the card (2026-11-10)
+- [x] Moods, activities and decades: "chill", "workout music", "90s", "90s rock" show a card (and "90s rock" plays something sensible) (2026-11-10)
+- [x] An artist wins a clash: with an artist as the top match (try "Soul" or "Dance" if you own one), the artist stays Top Match and the genre card sits second (2026-11-10)
 - [ ] With the offline MusicBrainz copy installed, a niche tag the hand list lacks (try "vaportrap", "witch house") still gets a card; without the copy it does not
-- [ ] Tapping a TOP ARTISTS row searches that artist
+- [x] Tapping a TOP ARTISTS row searches that artist (2026-11-10)
 
 ## Artist page
 
