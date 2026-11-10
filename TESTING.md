@@ -276,3 +276,24 @@ What has been tried on the TV, and what is left. Nick tests; Claude keeps this f
 - [ ] Search "music addon link", "daily allowance", "export facts", "dim to", "theme song volume": each opens its page at the right section
 - [ ] Search "mpv options", "low vram", "audio passthrough", "close to notification area": each opens its page (desktop only)
 
+## Tonight picker (phases 0 and 1, Nov 10)
+
+Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
+
+- [ ] With the switch on, Nuvio opens on "How shall we choose tonight?" instead of the Home rows; with it off, Home is as before
+- [ ] The launcher's eight tiles keep their size; the six unbuilt ones are dimmed with "COMING SOON", and OK on one says it is coming later
+- [ ] The tile used last time has "LAST TIME" on it and is selected when the launcher opens
+- [ ] "Just browse everything" goes to the normal Home rows; pressing Home again brings the picker back
+- [ ] Up from the tiles reaches the bedtime chip; Left/Right on it move bedtime by 15 minutes, and the Bedtime slider in Settings matches
+- [ ] Three Questions: the first question is always "A film, or a show?"; Left and Right answer at once, Down means "Either is fine", Back goes back a question
+- [ ] The two questions after it differ from one night to the next, and a question is never one where every title would give the same answer
+- [ ] The "214 → 41 titles left" count and the SO FAR chips follow the answers
+- [ ] After the questions, three cards: SAFE (something you're watching or have seen), NEW TO YOU, WILDCARD; never the same title twice
+- [ ] Each card shows the right poster and a sensible line under it (year, length, "ends 23:06" for films; "Next: S2 E4 · 30 min eps · 3 before bed" for shows)
+- [ ] No film that would end well after bedtime is dealt (with bedtime still at least 20 minutes away)
+- [ ] OK on a card plays it (a film from where you left it, a show's next episode); Down opens its page instead
+- [ ] Reshuffle deals three different titles once; after that it says "No reshuffles left tonight" until tomorrow evening
+- [ ] Three Cards straight from the launcher deals from everything that fits before bed
+- [ ] Titles marked "Not interested" in Discover never appear
+- [ ] A mouse works too: hovering a tile or card selects it, clicking plays or opens
+

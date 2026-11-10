@@ -4293,6 +4293,12 @@ private fun MainAppContent(
                                             searchSubmitRequests = searchSubmitRequests,
                                             rootActionsEnabled = tabsRouteActive,
                                             homeScrollToTopRequests = homeScrollToTopRequests,
+                                            onTonightPlay = { type, id -> // fork:tonight
+                                                navController.navigateIfResumed(DetailRoute(type = type, id = id, autoPlay = true))
+                                            },
+                                            onTonightDetails = { type, id -> // fork:tonight
+                                                navController.navigateIfResumed(DetailRoute(type = type, id = id))
+                                            },
                                             searchScrollToTopRequests = searchScrollToTopRequests,
                                             libraryScrollToTopRequests = libraryScrollToTopRequests,
                                             discoverScrollToTopRequests = discoverScrollToTopRequests,
@@ -6327,6 +6333,8 @@ private fun AppTabHost(
     onMusicNavigate: (Any) -> Unit = {}, // fork:music
     onPlayYouTube: (PlayerLaunch) -> Unit = {}, // fork:youtube-mode
     onYouTubeSettingsClick: () -> Unit = {},
+    onTonightPlay: (type: String, id: String) -> Unit = { _, _ -> }, // fork:tonight
+    onTonightDetails: (type: String, id: String) -> Unit = { _, _ -> }, // fork:tonight
 ) {
     val tabStateHolder = rememberSaveableStateHolder()
     // A cloud item can be a folder (a season pack), so a poster click has to ask which file rather
@@ -6346,11 +6354,20 @@ private fun AppTabHost(
             mutableStateOf(selectedTab.takeIf { it != AppScreenTab.Settings && it != AppScreenTab.LiveTv && it != AppScreenTab.Music && it != AppScreenTab.YouTube } ?: AppScreenTab.Home)
         }
         if (!homeHidden) contentTab = selectedTab
+        // fork:tonight - with "Open on Tonight" on, the Home tab shows the Tonight picker until
+        // "Just browse everything"; pressing Home again (its scroll-to-top) brings the picker back.
+        val tonightSettings by com.nuvio.app.features.tonight.TonightSettingsRepository.state.collectAsStateWithLifecycle()
+        remember { com.nuvio.app.features.tonight.TonightSettingsRepository.ensureLoaded() }
+        var tonightBrowsing by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(homeScrollToTopRequests) {
+            homeScrollToTopRequests.collect { if (contentTab == AppScreenTab.Home) tonightBrowsing = false }
+        }
+        val tonightShowing = tonightSettings.enabled && !tonightBrowsing && !homeHidden && contentTab == AppScreenTab.Home
         // HomeScreen stays composed (hidden) while Settings is open, so switching back shows it at
         // once instead of rebuilding Home; Settings is still built and disposed as before.
         tabStateHolder.SaveableStateProvider("HomeSearchLibrary") {
             KeptAliveLayer(
-                visible = !homeHidden,
+                visible = !homeHidden && !tonightShowing, // fork:tonight
                 lifecycleOwner = rememberChildLifecycleOwner(active = !homeHidden),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -6429,6 +6446,15 @@ private fun AppTabHost(
                     )
                 }
             }
+        }
+
+        if (tonightShowing) { // fork:tonight
+            com.nuvio.app.features.tonight.TonightHost(
+                topPadding = topChromePadding ?: 0.dp,
+                onPlay = onTonightPlay,
+                onOpenDetails = onTonightDetails,
+                onBrowseAll = { tonightBrowsing = true },
+            )
         }
 
         if (liveTvSelected) {

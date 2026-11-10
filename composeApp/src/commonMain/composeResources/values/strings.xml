@@ -5119,4 +5119,10 @@
     <string name="settings_backup_import_confirm">Import %1$d settings files from %2$s?</string>
     <string name="settings_backup_import_untouched">Settings the backup does not contain are left as they are.</string>
     <string name="settings_backup_read_failed">Could not read that backup: %1$s</string>
+    <!-- fork:tonight -->
+    <string name="tonight_section">Tonight picker</string>
+    <string name="tonight_enable">Open on Tonight</string>
+    <string name="tonight_enable_description">The app opens on a picker that helps you choose a film or show instead of the Home rows. &quot;Just browse everything&quot; still goes to Home.</string>
+    <string name="tonight_bedtime">Bedtime</string>
+    <string name="tonight_bedtime_description">Films that would end after this are left out; shows offer the episodes that fit.</string>
 </resources>

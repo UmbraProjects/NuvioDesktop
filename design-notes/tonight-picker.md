@@ -1,6 +1,6 @@
 # Movies & TV "Tonight" picker
 
-Decided with the user on Nov 10, 2026. **Mockups only, nothing built yet.**
+Decided with the user on Nov 10, 2026. **Phases 0 and 1 built on Nov 10** (behind Settings > Random Play > Tonight picker > "Open on Tonight", off by default; not yet tried on the TV, checks in `TESTING.md`). Phases 2 to 5 are not built.
 
 ## The problem
 
@@ -63,6 +63,14 @@ Each phase ships behind Settings > "Tonight picker" (off by default) and adds it
 - **Phase 3: Channel Flick + trailer tastes.** Full-screen trailers back to back on the pre-show engine (sharpest-trailer probing); the same player gives Knockout's 20 s tastes and Three Cards' hold-OK trailer.
 - **Phase 4: Ends By + The Pile.** The bedtime timeline as its own mode (episode blocks for shows, past-bedtime striped); the dusty stack of library items never started, with Finally watch it / Let it go.
 - **Phase 5: The Map + AI refinement.** The lens on the field; with a Groq key the AI nudges each title's place once per title, cached forever, run in the background within a daily allowance (new consent target).
+
+## How phases 0 and 1 were built (Nov 10)
+
+- Code: `features/tonight/` (pure rules in `TonightRules.kt`, `TonightQuestions.kt`, `TonightDeal.kt`; the pool in `TonightPool.kt`; settings and the `nuvio_tonight` store in `TonightSettings.kt` + `TonightStorage.desktop.kt`; screens in `TonightScreen.kt`), the settings section `settings/TonightSettingsSection.kt` at the top of the Random Play page, and the overlay in `AppTabHost` (`App.kt`): while on, the Home tab shows `TonightHost` and Home stays composed behind it; "Just browse everything" sets `tonightBrowsing`; Home's scroll-to-top (pressing Home again) clears it.
+- Rotating questions: Laugh or think, Something you know or new, Short and sweet or settle in (film under 100 min, episode up to 35), Recent or older (last three years), Cosy or edge of your seat. Order is shuffled by the night's date; a question is skipped if one answer would keep nothing. Keys: Left/Right answer at once, **Down = "Either is fine"**, Back goes back a question (the plan said Back skips; changed so Back can undo).
+- Cards: Safe is a started or watched title (started ranks highest); New is unseen with taste at or above the median of unseen titles; Wildcard unseen and below it. The pick is random among the top five of each, preferring a genre not already on the table. Taste = genre weights from Continue watching (x2), watched (x1.5) and library (x1). The night runs to 6 am. OK plays via `DetailRoute(autoPlay = true)`, Down opens the page.
+- Bedtime: films must end by bedtime (10 minutes grace; a half-watched film counts what is left); shows need one episode to fit; unknown lengths pass; under 20 minutes to bedtime the filter switches off.
+- Pool enrichment: up to 60 titles missing genres, length or year are filled through `MetaDetailsRepository.fetchLightweightMeta` (four at a time); trending is 20 films and 20 shows from `TmdbBrowse` (Trending, the app's TMDB region). Rebuilt when ten minutes old and once the library has loaded.
 
 ## Still open
 

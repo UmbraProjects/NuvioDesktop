@@ -87,7 +87,7 @@ jobs:
       # GitHub's release servers times out (504) at times.
       # innertubex=true here too, the same as the distributable below: a different value changes the
       # compiled sources, so the two steps would each compile the whole app instead of sharing one compile.
-      - name: Unit tests (music, pre-show, network, phone remote)
+      - name: Unit tests (music, pre-show, network, phone remote, tonight)
         shell: pwsh
         env:
           WIX_PATH: ${{ runner.temp }}\wix-unused
@@ -98,6 +98,7 @@ jobs:
           --tests "com.nuvio.app.features.preroll.*"
           --tests "com.nuvio.app.core.network.*"
           --tests "com.nuvio.app.features.remote.*"
+          --tests "com.nuvio.app.features.tonight.*"
           --tests "*Trivia*"
           "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
