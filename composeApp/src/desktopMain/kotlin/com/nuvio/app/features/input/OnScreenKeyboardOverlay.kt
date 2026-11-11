@@ -67,6 +67,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.nuvio.app.core.ui.NuvioBackdropDirection
 import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.KeyboardSuggestions
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.ui.nuvioBackdropBrush
 import com.nuvio.app.core.ui.NuvioTokens
@@ -382,6 +383,24 @@ private fun OnScreenKeyboardPanel(
                     verticalAlignment = Alignment.CenterVertically,
                     content = header,
                 )
+                // Predictions offered by the screen being typed into (KeyboardSuggestions): Up from the
+                // digits reaches them, and A or a click puts one in the field.
+                val offer by KeyboardSuggestions.offer.collectAsState()
+                val words = offer?.words.orEmpty()
+                if (words.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.widthIn(max = KeyGridMaxWidth).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s4),
+                    ) {
+                        words.forEachIndexed { index, word ->
+                            SuggestionCell(
+                                word = word,
+                                selected = selection.row == OSK_SUGGESTION_ROW && selection.column == index,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
                 Column(
                     // Capped so the keys stay a comfortable size on a large TV instead of stretching
                     // into a strip the user has to sweep across.
@@ -422,6 +441,39 @@ private fun OnScreenKeyboardPanel(
             }
             overlay()
         }
+    }
+}
+
+/** One prediction on the strip above the keys: glass like a key, the line in full where it fits. */
+@Composable
+private fun SuggestionCell(word: String, selected: Boolean, modifier: Modifier = Modifier) {
+    val tokens = MaterialTheme.nuvio
+    val shape = NuvioGlass.Shape
+    Box(
+        modifier = modifier
+            .height(40.dp)
+            .then(
+                if (selected) {
+                    Modifier.background(brush = tokens.colors.accentFill, shape = shape, alpha = SelectedKeyGlassAlpha)
+                } else {
+                    Modifier.ditheredBackground(NuvioGlass.Fill, shape)
+                },
+            )
+            .border(width = 1.dp, brush = NuvioGlass.Edge, shape = shape)
+            // Same rule as the keys: the field being typed into keeps focus.
+            .focusProperties { canFocus = false }
+            .clickable { OnScreenKeyboard.pickSuggestion(word) }
+            .padding(horizontal = NuvioTokens.Space.s8),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = word,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) tokens.colors.onAccent else tokens.colors.textPrimary,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
     }
 }
 

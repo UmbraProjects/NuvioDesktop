@@ -1,5 +1,13 @@
 package com.nuvio.app.features.music.nebula
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.HighQuality
+import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,21 +31,30 @@ import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.addonLinks
 
 /**
- * fork:nebula - the "Lossless" pill on a release tile's cover corner: the music addon has this album. An overlay, so a tile
- * looks the same whether it shows or not (nothing moves or resizes when the answer arrives).
+ * fork:nebula - the lossless mark on a release's cover corner: the music addon has this album. An icon in a dark rounded
+ * square, sized to the cover it sits on (about a fifth of it, kept readable on a small one and modest on a large one), so
+ * it never runs past a small cover. An overlay in the cover's own box, so the tile does not change when the answer arrives.
  */
 @Composable
-internal fun LosslessPill(modifier: Modifier = Modifier) {
-    Text(
-        text = "Lossless",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.nuvio.colors.accent,
-        maxLines = 1,
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color.Black.copy(alpha = 0.65f))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
+internal fun BoxScope.LosslessPill(alignment: Alignment = Alignment.TopStart) {
+    BoxWithConstraints(Modifier.matchParentSize()) {
+        val art = minOf(maxWidth, maxHeight)
+        val badge = (art * 0.18f).coerceIn(14.dp, 30.dp)
+        val inset = (art * 0.05f).coerceIn(3.dp, 8.dp)
+        Box(
+            Modifier.align(alignment).padding(inset).size(badge)
+                .clip(RoundedCornerShape(badge * 0.28f))
+                .background(Color.Black.copy(alpha = 0.65f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Rounded.HighQuality,
+                contentDescription = "Lossless",
+                tint = MaterialTheme.nuvio.colors.accent,
+                modifier = Modifier.size(badge * 0.74f),
+            )
+        }
+    }
 }
 
 /**

@@ -1,6 +1,7 @@
 package com.nuvio.app.features.music.library
 // FORK UI (Spyder): Nick's Shelf redesign, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import com.nuvio.app.features.music.nebula.LosslessPill
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -422,8 +423,6 @@ private fun GenreRow(label: String, count: Int, on: Boolean, onClick: () -> Unit
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(if (on) colors.accent else Color.Transparent))
-        Spacer(Modifier.width(10.dp))
         Text(label, fontSize = 19.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Text(count.toString(), fontSize = 16.sp, color = colors.textMuted, maxLines = 1)
     }
@@ -872,7 +871,7 @@ private fun CoverCell(
                     }
                 }
                 // An overlay, so the cover keeps its size when the addon's answer arrives.
-                if (lossless) com.nuvio.app.features.music.nebula.LosslessPill(Modifier.align(Alignment.TopEnd).padding(8.dp))
+                if (lossless) LosslessPill(Alignment.TopEnd)
             }
             Text(album.release.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
             val sub = listOfNotNull(album.artist.name.takeIf { showArtist }, album.release.year ?: album.release.releaseDate?.take(4)).joinToString(" · ")
@@ -1057,8 +1056,6 @@ private fun ShelfList(
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(if (on) colors.accent else Color.Transparent))
-                Spacer(Modifier.width(10.dp))
                 Text(s.label, fontSize = 19.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 val trailing = when {
                     (s == ShelfSection.Mixes || s == ShelfSection.Liked || s == ShelfSection.ListenAgain) && !signedIn -> "Sign in"

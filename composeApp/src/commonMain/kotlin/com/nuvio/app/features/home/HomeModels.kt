@@ -139,6 +139,23 @@ fun MetaPreview.stableKey(): String = "$type:$id"
  *  single piece of content (e.g. its own curated backdrop image, not a movie/show poster). */
 internal const val COLLECTION_HERO_TYPE = "collection"
 
+/**
+ * [MetaPreview.type] prefix of a music search result drawn in the hero (`music-song`, `music-album`, `music-artist`,
+ * `music-video`). Like a Collection it is not a catalog title: the hero asks no film service about it.
+ */
+internal const val MUSIC_HERO_TYPE_PREFIX = "music-"
+
+/** A hero item that is not a catalog title (a Collection, a music result): no cast, badges, ratings or trailer lookups. */
+internal fun MetaPreview.isOffCatalogHeroItem(): Boolean =
+    type == COLLECTION_HERO_TYPE || type.startsWith(MUSIC_HERO_TYPE_PREFIX)
+
+/** The people panel's heading for a music result ("Starring" is the film word); null keeps the default. */
+internal fun MetaPreview.heroPeopleLabel(): String? = when {
+    type == MUSIC_HERO_TYPE_PREFIX + "artist" -> "Fans also like"
+    type.startsWith(MUSIC_HERO_TYPE_PREFIX) -> "Artists"
+    else -> null
+}
+
 enum class PosterShape {
     Poster,
     Square,

@@ -21,8 +21,6 @@
     <string name="settings_music_album_lenses_description">Tries the redesigned album page: the cover and artist in the header, and tabs that change what the two side panels show (Song by song first; more to come). Needs a wide window. Off keeps the current page.</string>
     <string name="settings_music_artist_stage">New artist page</string>
     <string name="settings_music_artist_stage_description">Tries the redesigned artist page: a photo hero with Play Essentials, then three panels below it (about the artist or the song you are on, the Essentials and Discography tabs, and your library). Needs a wide window. Off keeps the current page.</string>
-    <string name="settings_music_home">New music home</string>
-    <string name="settings_music_home_description">Tries the quick-play first screen for Music: type an artist, album, song or remix with the on-screen letter strip (the likely next letters light up and move beside the one you pressed), a keyboard or your voice, and YouTube Music and YouTube are searched together. Your library stays underneath. Off keeps the current Music tab.</string>
     <string name="settings_music_skip_non_music">Skip non-music parts</string>
     <string name="settings_music_skip_non_music_description">Skips the spoken intros, skits and outros in music videos, as marked by SponsorBlock users. Videos are looked up by a short hash prefix, so SponsorBlock never learns what you play.</string>
     <string name="settings_music_pause_for_trailers">Pause for trailers</string>
@@ -84,4 +82,17 @@
     <string name="settings_music_share_dialog_title">Import music facts</string>
     <string name="settings_music_share_dialog_apply">Add them</string>
     <string name="settings_music_share_dialog_cancel">Cancel</string>
+    <string name="settings_music_album_notes">Album notes and facts</string>
+    <string name="settings_music_album_notes_description">Sleeve notes beside the lyrics, song stories, trivia, Start here and the In brief card, written by AI or taken from Wikipedia. Off, none of them is looked up or shown and the Stage shows the visualiser.</string>
+    <string name="settings_music_section_views">Library views</string>
+    <string name="settings_music_view_shelf">Shelf</string>
+    <string name="settings_music_view_shelf_description">One row per artist, with all their albums on a rail of covers.</string>
+    <string name="settings_music_view_crates">Crates</string>
+    <string name="settings_music_view_crates_description">Artists, their albums and the album in focus, side by side in three panels whose pages turn.</string>
+    <string name="settings_music_view_constellation">Constellation</string>
+    <string name="settings_music_view_constellation_description">Your artists as a map of stars, each near the artists it sounds like.</string>
+    <string name="settings_music_view_eras">Eras</string>
+    <string name="settings_music_view_eras_description">Your albums laid out by the year they came out.</string>
+    <string name="settings_music_view_playlists">Playlists</string>
+    <string name="settings_music_view_playlists_description">Your playlists.</string>
 </resources>

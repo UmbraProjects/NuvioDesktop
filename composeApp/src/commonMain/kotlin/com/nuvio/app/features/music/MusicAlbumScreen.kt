@@ -310,14 +310,17 @@ private fun AlbumContent(
     val artistName = artistInfo?.name
     val startAlbums = remember(essentialAlbums) { essentialAlbums.map { a -> a.release.title + a.release.year?.let { y -> " ($y)" }.orEmpty() } }
     val startReady = startAlbums.size >= 2 && (deezerId == null || topSongs.isNotEmpty())
-    var startHere by remember(artistName) { mutableStateOf(artistName?.let { StartHere.peek(it) }) }
-    LaunchedEffect(artistName, startReady) {
-        if (artistName != null && startReady && startHere == null) {
+    // Settings > Music > Album notes and facts: off, none of the written notes (Start here, In brief, song notes and
+    // stories) is looked up or shown.
+    val notesOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.albumNotes
+    var startHere by remember(artistName, notesOn) { mutableStateOf(artistName?.takeIf { notesOn }?.let { StartHere.peek(it) }) }
+    LaunchedEffect(artistName, startReady, notesOn) {
+        if (notesOn && artistName != null && startReady && startHere == null) {
             startHere = StartHere.forArtist(artistName, startAlbums, essentialSongList.map { it.title }.take(5))
         }
     }
     // The album's notes under the case: the cache's (free), and the live ones while this album plays, as on the Stage.
-    val bookletRequest = remember(album.browseId, artistInfo) { bookletRequestFor(album, artistInfo) }
+    val bookletRequest = remember(album.browseId, artistInfo, notesOn) { if (notesOn) bookletRequestFor(album, artistInfo) else null }
     // Bumped after a pin is saved or cleared, so what is kept (and the pins laid over it) is read again.
     var pinTick by remember { mutableStateOf(0) }
     // The pin key of the album's introduction, edited from the In brief card.
@@ -564,12 +567,12 @@ private fun AlbumContent(
     // The story: what is kept shows at once; a new one is asked only once the cursor has rested on the song (arrowing
     // down the list never starts a request per row), one at a time.
     val storyKey = lensTrack?.title
-    var lensStory by remember(lensArtist, storyKey) {
-        mutableStateOf(if (lensArtist != null && storyKey != null) SongStories.peek(lensArtist, storyKey) else null)
+    var lensStory by remember(lensArtist, storyKey, notesOn) {
+        mutableStateOf(if (notesOn && lensArtist != null && storyKey != null) SongStories.peek(lensArtist, storyKey) else null)
     }
     var lensStoryLoading by remember(lensArtist, storyKey) { mutableStateOf(false) }
-    LaunchedEffect(lensesOn, lens, lensArtist, storyKey) {
-        if (!lensesOn || lens != AlbumLens.SongBySong || lensArtist == null || storyKey == null) return@LaunchedEffect
+    LaunchedEffect(lensesOn, lens, lensArtist, storyKey, notesOn) {
+        if (!notesOn || !lensesOn || lens != AlbumLens.SongBySong || lensArtist == null || storyKey == null) return@LaunchedEffect
         // A kept Wikipedia-only story stays on screen while the AI is asked to write it up (when a key is set); a kept AI
         // story, or one with no key to improve it, needs nothing.
         val aiReady = com.nuvio.app.features.discover.DiscoverAiSettingsRepository.snapshot().isConfigured

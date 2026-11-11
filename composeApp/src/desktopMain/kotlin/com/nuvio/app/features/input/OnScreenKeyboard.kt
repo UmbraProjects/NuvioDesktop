@@ -1,6 +1,7 @@
 package com.nuvio.app.features.input
 
 import com.nuvio.app.core.storage.DesktopStorage
+import com.nuvio.app.core.ui.KeyboardSuggestions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,8 +22,11 @@ internal sealed interface OskKey {
 
 internal enum class OskAction { Space, Backspace, Caps, Done }
 
-/** Row and column of the highlighted key. */
+/** Row and column of the highlighted key. Row [OSK_SUGGESTION_ROW] is the predictions strip above the keys. */
 internal data class OskSelection(val row: Int, val column: Int)
+
+/** The row index of the predictions strip ([KeyboardSuggestions]), above the digits. */
+internal const val OSK_SUGGESTION_ROW = -1
 
 internal enum class OskDirection { Up, Down, Left, Right }
 
@@ -236,7 +240,7 @@ internal object OnScreenKeyboard {
             GamepadButton.DpadDown -> moveSelection(OskDirection.Down)
             GamepadButton.DpadLeft -> moveSelection(OskDirection.Left)
             GamepadButton.DpadRight -> moveSelection(OskDirection.Right)
-            GamepadButton.A -> press(OskLayout.keyAt(_selection.value))
+            GamepadButton.A -> pressSelected()
             GamepadButton.B -> backspace()
             GamepadButton.X -> perform(OskAction.Space)
             GamepadButton.Y -> perform(OskAction.Caps)
@@ -253,7 +257,50 @@ internal object OnScreenKeyboard {
     }
 
     fun moveSelection(direction: OskDirection) {
-        _selection.value = OskLayout.move(_selection.value, direction)
+        val words = KeyboardSuggestions.offer.value?.words.orEmpty()
+        val from = _selection.value
+        val digits = OskLayout.rows.first().size
+        _selection.value = when {
+            // The strip went away while it was highlighted: back to the first key.
+            from.row == OSK_SUGGESTION_ROW && words.isEmpty() -> OskSelection(0, 0)
+            from.row == OSK_SUGGESTION_ROW -> when (direction) {
+                OskDirection.Left -> from.copy(column = (from.column - 1).coerceAtLeast(0))
+                OskDirection.Right -> from.copy(column = (from.column + 1).coerceAtMost(words.lastIndex))
+                OskDirection.Down -> OskSelection(0, scaled(from.column, words.size, digits))
+                OskDirection.Up -> from
+            }
+            from.row == 0 && direction == OskDirection.Up && words.isNotEmpty() ->
+                OskSelection(OSK_SUGGESTION_ROW, scaled(from.column, digits, words.size))
+            else -> OskLayout.move(from, direction)
+        }
+    }
+
+    private fun scaled(column: Int, fromWidth: Int, toWidth: Int): Int {
+        if (fromWidth <= 1 || toWidth <= 1) return 0
+        return (column.toFloat() / (fromWidth - 1) * (toWidth - 1)).roundToInt().coerceIn(0, toWidth - 1)
+    }
+
+    /** Presses whatever is highlighted: a key, or a prediction on the strip. */
+    private fun pressSelected() {
+        val selected = _selection.value
+        if (selected.row == OSK_SUGGESTION_ROW) {
+            KeyboardSuggestions.offer.value?.words?.getOrNull(selected.column)?.let(::pickSuggestion)
+        } else {
+            press(OskLayout.keyAt(selected))
+        }
+    }
+
+    /**
+     * Puts a prediction in the field (the screen that offered it sets its own text), then moves the caret to the end so
+     * the next key types after it rather than where the caret was. The caret key waits a moment for the field to take
+     * its new text; sent at once it could land before the text changed.
+     */
+    fun pickSuggestion(word: String) {
+        KeyboardSuggestions.pick(word)
+        _selection.value = OskSelection(1, 0)
+        javax.swing.Timer(CARET_AFTER_PICK_MS) { GamepadKeyInjector.sendKeyCode(KeyEvent.VK_END) }
+            .apply { isRepeats = false }
+            .start()
     }
 
     /** Presses a key, from the pad or from a mouse click on the panel. */
@@ -278,3 +325,5 @@ internal object OnScreenKeyboard {
         GamepadKeyInjector.sendKeyCode(KeyEvent.VK_BACK_SPACE)
     }
 }
+
+private const val CARET_AFTER_PICK_MS = 80

@@ -180,13 +180,28 @@ fun IptvScreen(
     }
 
     var section by rememberSaveable(playlist.id) { mutableStateOf(IptvSection.ALL) }
-    var filter by rememberSaveable(playlist.id) { mutableStateOf("") }
+    // fork:navbar-search - shared with the app bar's Search, which on this tab filters the channels.
+    var filter by IptvTopBarSearch::text
+    LaunchedEffect(playlist.id) { if (IptvTopBarSearch.playlistId != playlist.id) IptvTopBarSearch.text = "" ; IptvTopBarSearch.playlistId = playlist.id }
     var searchOpen by rememberSaveable(playlist.id) { mutableStateOf(false) }
     var region by rememberSaveable(playlist.id) { mutableStateOf<String?>(null) }
     var regionsOpen by rememberSaveable(playlist.id) { mutableStateOf(false) }
     var guideView by rememberSaveable { mutableStateOf(false) }
 
     val content = state.content
+    // fork:navbar-search - the channels whose names hold what is typed (those that start with it first), offered by the
+    // on-screen keyboard above its keys.
+    val channelWords = remember(filter, content) {
+        val typed = filter.trim()
+        if (typed.isEmpty()) emptyList()
+        else content?.channels.orEmpty().asSequence().map { it.name.trim() }
+            .filter { it.contains(typed, ignoreCase = true) && !it.equals(typed, ignoreCase = true) }
+            .distinctBy { it.lowercase() }
+            .sortedBy { !it.startsWith(typed, ignoreCase = true) }
+            .take(com.nuvio.app.core.ui.MAX_KEYBOARD_SUGGESTIONS)
+            .toList()
+    }
+    com.nuvio.app.core.ui.PublishKeyboardSuggestions(channelWords) { picked -> filter = picked }
     val categoryRegions = remember(content) { content?.let(IptvRegions::categoryRegions).orEmpty() }
     val regions = remember(categoryRegions) { IptvRegions.regions(categoryRegions) }
     if (region != null && region !in regions) region = null
@@ -1107,3 +1122,9 @@ internal fun Modifier.iptvGlass(
         shape,
     )
     .border(1.dp, NuvioGlass.Edge, shape)
+
+/** fork:navbar-search - the Live TV channel filter, typed in the tab's own box or the app bar's Search on this tab. */
+object IptvTopBarSearch {
+    var text by mutableStateOf("")
+    internal var playlistId: String? = null
+}

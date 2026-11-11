@@ -151,7 +151,8 @@ internal fun LoudLyrics(
         val widthPx = with(density) { (maxWidth * 0.9f - 48.dp).toPx() }
         // fork:stage - room kept for the next line under the words and the sync strip at the foot, so neither is overprinted.
         val nextText = next?.text?.takeIf { it.isNotBlank() }
-        val heightPx = with(density) { loudStackHeightDp(maxHeight.value, nextText != null).dp.toPx() }
+        // Less the padding round the words (the click area and focus ring), which the stack's own height does not include.
+        val heightPx = with(density) { (loudStackHeightDp(maxHeight.value, nextText != null) - LOUD_STACK_PADDING_DP).coerceAtLeast(60f).dp.toPx() }
         val stageScale = (maxWidth.value / 1000f).coerceIn(0.4f, 1f)
         // The stack and the next line are one centred group, lifted by half the strip band so the group sits above it.
         Column(
@@ -170,18 +171,35 @@ internal fun LoudLyrics(
                 val chunks = remember(words) { loudChunks(words.map { it.text.length }) }
 
                 // Each chunk is set as wide as the stage allows, then the whole stack is shrunk to fit the height.
-                val sizesPx = remember(chunks, texts, face, widthPx, heightPx, stageScale) {
+                val sizesPx = remember(chunks, texts, face, widthPx, heightPx, stageScale, entrance) {
                     val reference = TextStyle(fontFamily = faces[face], fontSize = with(density) { 100f.toSp() })
-                    val raw = chunks.map { chunk ->
-                        val measured = measurer.measure(AnnotatedString(chunk.joinToString(" ") { texts[it] }), reference, maxLines = 1, softWrap = false)
+                    // Each row's width at the 100 px reference size.
+                    val widths = chunks.map { chunk ->
+                        measurer.measure(AnnotatedString(chunk.joinToString(" ") { texts[it] }), reference, maxLines = 1, softWrap = false)
                             .size.width * loudFaceWidthFactor(face) * 1.14f
+                    }
+                    val raw = widths.map { measured ->
                         min(130f * density.density * stageScale * 1.25f, 100f * widthPx / measured.coerceAtLeast(1f))
                     }
                     // fork:stage - a stack that would have to shrink below the readable minimum loses its last rows instead.
-                    val keep = fitRowCount(raw, heightPx, minPx = LOUD_MIN_SP * density.density * stageScale)
+                    // The rows are reckoned at the height the fonts really draw (taller than the tight line height they are
+                    // set at), so the stack is not cut at the top or the foot.
+                    val keep = fitRowCount(raw.map { it * LOUD_DRAWN_HEIGHT / 0.98f }, heightPx, minPx = LOUD_MIN_SP * density.density * stageScale)
                     val kept = raw.take(keep)
-                    val fit = min(1f, heightPx / kept.sumOf { (it * 0.98f).toDouble() }.toFloat().coerceAtLeast(1f))
-                    kept.map { it * fit }
+                    val fit = min(1f, heightPx / kept.sumOf { (it * LOUD_DRAWN_HEIGHT).toDouble() }.toFloat().coerceAtLeast(1f))
+                    var sizes = kept.map { it * fit }
+                    // The diagonal entrance slides each row off the middle by a third of its height: the row and its
+                    // slide must both fit the width, or the outer rows run off the pane.
+                    if (entrance == LoudEntrance.Diagonal && sizes.size > 1) {
+                        val middle = (sizes.size - 1) / 2f
+                        val worst = sizes.indices.maxOf { i ->
+                            val rowWidth = widths[i] * sizes[i] / 100f
+                            val slide = kotlin.math.abs((i - middle) * sizes[i] * 0.35f)
+                            (rowWidth + slide * 2f) / widthPx
+                        }
+                        if (worst > 1f) sizes = sizes.map { it / worst }
+                    }
+                    sizes
                 }
                 val shownChunks = chunks.take(sizesPx.size)
                 val cut = shownChunks.size < chunks.size
@@ -288,3 +306,9 @@ private fun LoudWord(
 
 /** Smallest a row of Loud lyrics is set (at full stage scale) before the last rows are dropped for an ellipsis. */
 private const val LOUD_MIN_SP = 30f
+
+/** The padding round the Loud stack (14 dp above and below the words), kept out of the height the rows are fitted to. */
+private const val LOUD_STACK_PADDING_DP = 28f
+
+/** A Loud row's drawn height as a share of its font size: the faces' caps and tails reach past the tight line height. */
+private const val LOUD_DRAWN_HEIGHT = 1.12f

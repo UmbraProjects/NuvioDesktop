@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.features.music.nebula.LosslessPill
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.features.music.MusicAlbum
 import com.nuvio.app.features.music.nebula.AddonAlbumRef
@@ -393,7 +394,14 @@ fun MusicArtistScreen(
     }
 
     val playTarget = latest?.takeIf { it.isPlayable }
-    val shuffleTarget = artist.releases.filter { (it.isPlayable || addon.albumIdOf(it.key) != null) && !it.isDemo() }.randomOrNull()
+    // Shuffle all mixes songs from several of these (shuffleAllReleases), not one random release.
+    val shufflePool = artist.releases.filter { (it.isPlayable || addon.albumIdOf(it.key) != null) && !it.isDemo() }
+    val onShuffleAll: () -> Unit = {
+        playNotice = null
+        scope.launch {
+            if (!shuffleAllReleases(artist.name, artist.art.thumb, shufflePool, ::albumOf)) playNotice = "Nothing here is on YouTube Music yet."
+        }
+    }
 
     val onOpenRelease: (LibraryRelease) -> Unit = { release ->
         val id = release.ytBrowseId
@@ -438,11 +446,11 @@ fun MusicArtistScreen(
             filter = filter,
             playableOnly = playableOnly,
             demosOpen = demosOpen || filter == ReleaseFilter.Demos,
-            canShuffle = shuffleTarget != null,
+            canShuffle = shufflePool.isNotEmpty(),
             topLabel = topLabel,
             onBack = onBack,
             onPlayLatest = { startPlayback(playTarget, shuffled = false) },
-            onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
+            onShuffle = onShuffleAll,
             onPlayTop = onPlayTopAlbums,
             onLinks = { showLinks = true },
             onRefresh = { MusicLibraryRepository.refresh(artist.id) },
@@ -466,7 +474,7 @@ fun MusicArtistScreen(
         discography = discography,
         latest = latest,
         playTarget = playTarget,
-        canShuffle = shuffleTarget != null,
+        canShuffle = shufflePool.isNotEmpty(),
         notice = playNotice,
         saved = saved,
         refreshing = working?.status,
@@ -476,7 +484,7 @@ fun MusicArtistScreen(
         demosOpen = demosOpen || filter == ReleaseFilter.Demos,
         onBack = onBack,
         onPlay = { startPlayback(playTarget, shuffled = false) },
-        onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
+        onShuffle = onShuffleAll,
         onPlayTop = onPlayTopAlbums,
         topLabel = topLabel,
         onAbout = { showAbout = true },
@@ -651,7 +659,7 @@ internal fun ReleaseCard(
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             ReleaseCover(release, Modifier.fillMaxSize())
             // fork:nebula - an overlay, so the card does not change size when the addon's answer arrives.
-            if (addon) com.nuvio.app.features.music.nebula.LosslessPill(Modifier.align(Alignment.TopStart).padding(6.dp))
+            if (addon) LosslessPill()
             if (group.extraVersions > 0) {
                 Text(
                     "${group.versions.size} versions",

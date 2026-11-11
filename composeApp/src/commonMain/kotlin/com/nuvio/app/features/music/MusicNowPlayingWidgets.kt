@@ -313,25 +313,17 @@ private val CONTROLS_SIDE_TEXT = Color.White.copy(alpha = 0.7f)
 
 /**
  * The lyric view's own player, which stays on screen (the bar, dock and card step aside while the view is open). One
- * compact row: where the song is in the album or playlist on the left, previous / play / next and Add to playlist in
- * the middle, the time on the right; under it one row with the seek bar in two thirds and the volume in the last
- * (not on a row of its own above). The middle is placed in a Box on its own, so it never moves as the texts either
- * side change width.
+ * compact row: the volume on the left, previous / play / next and Add to playlist in the middle, the time on the right;
+ * under it the seek bar, with where the song is in the queue in front of it when there is a queue (the bar runs the whole
+ * width without one). The middle is placed in a Box on its own, so it never moves as the sides change width.
  */
 @Composable
 internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, modifier: Modifier = Modifier, barModifier: Modifier = Modifier) {
     val total = state.album?.tracks?.size ?: 0
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(Modifier.fillMaxWidth().height(44.dp)) {
-            if (total > 1 && state.trackIndex >= 0) {
-                Text(
-                    "Track ${state.trackIndex + 1} of $total",
-                    color = CONTROLS_SIDE_TEXT,
-                    fontSize = 15.sp,
-                    maxLines = 1,
-                    modifier = Modifier.align(Alignment.CenterStart),
-                )
-            }
+            // The volume on the left of the buttons, the time on the right.
+            MusicVolumeControl(state, player, sliderWidth = 84.dp, modifier = Modifier.align(Alignment.CenterStart), tint = Color.White, glass = true)
             Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
                 ControlIcon(Icons.Rounded.SkipPrevious, "Previous") { player.previous() }
                 ControlIcon(
@@ -361,16 +353,19 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
+            // Where the song is in the queue, in front of the seek bar; without a queue the bar runs the whole width.
+            if (total > 1 && state.trackIndex >= 0) {
+                Text("Track ${state.trackIndex + 1} of $total", color = CONTROLS_SIDE_TEXT, fontSize = 15.sp, maxLines = 1)
+            }
             MusicSeekControl(
                 state,
                 player,
                 nudgeMs = 5_000L,
-                modifier = Modifier.weight(2f),
+                modifier = Modifier.weight(1f),
                 barModifier = barModifier,
                 tint = Color.White,
                 glass = true,
             )
-            MusicVolumeControl(state, player, sliderWidth = null, modifier = Modifier.weight(1f), tint = Color.White, glass = true)
         }
     }
 }

@@ -185,7 +185,7 @@ internal object FactsFiller {
         var failStreak = 0
         while (true) {
             currentCoroutineContext().ensureActive()
-            if (!_status.value.enabled) { delay(5_000); continue }
+            if (!_status.value.enabled || !notesOn()) { delay(5_000); continue }
             try {
                 failStreak = pass(failStreak)
             } catch (e: CancellationException) {
@@ -206,7 +206,7 @@ internal object FactsFiller {
     private suspend fun creditsSweep() {
         while (true) {
             currentCoroutineContext().ensureActive()
-            if (!_status.value.enabled) { delay(5_000); continue }
+            if (!_status.value.enabled || !notesOn()) { delay(5_000); continue }
             var failed = false
             try {
                 val order = fillOrder(candidates().map { it.first }, playsNow())
@@ -275,7 +275,7 @@ internal object FactsFiller {
         val catalog = defaultMusicCatalog()
         for (c in order) {
             currentCoroutineContext().ensureActive()
-            if (!_status.value.enabled) return failStreak
+            if (!_status.value.enabled || !notesOn()) return failStreak
             if (FillStorage.get("done1|${c.albumId}") == model) continue
             waitForQuiet()
             val ai = DiscoverAiSettingsRepository.snapshot()
@@ -293,7 +293,7 @@ internal object FactsFiller {
             plan.missed.forEach { retry[it.title] = it }
             for (step in plan.steps) {
                 currentCoroutineContext().ensureActive()
-                if (!_status.value.enabled) return failStreak
+                if (!_status.value.enabled || !notesOn()) return failStreak
                 var budget = decodeBudget(FillStorage.get("budget")).at(now())
                 val cap = _status.value.cap
                 budget.resumesAtMs(cap, now())?.let { until ->
@@ -310,7 +310,7 @@ internal object FactsFiller {
                     setActivity("The AI provider's limit is reached; carries on in ${(left + 59) / 60} min")
                     delay(minOf(left, 60) * 1_000L)
                     currentCoroutineContext().ensureActive()
-                    if (!_status.value.enabled) return failStreak
+                    if (!_status.value.enabled || !notesOn()) return failStreak
                 }
                 // fork:ai-minute - keep the key under its minute limit: wait until this step's usual cost fits in the last minute's
                 // spending (every request on the key counts, the person's own too).
@@ -320,7 +320,7 @@ internal object FactsFiller {
                     setActivity("Keeping under the AI key's minute limit; next lookup in ${(wait + 999) / 1_000} s")
                     delay(wait)
                     currentCoroutineContext().ensureActive()
-                    if (!_status.value.enabled) return failStreak
+                    if (!_status.value.enabled || !notesOn()) return failStreak
                     waitForQuiet()
                 }
                 setActivity("Filling ${step.title}")
@@ -387,3 +387,6 @@ internal object FactsFiller {
 
 /** Where the retry list is kept in the filler's store. */
 private const val RETRY_KEY = "retry1"
+
+/** Settings > Music > Album notes and facts: off, the filler does nothing (nothing it writes would be shown). */
+private fun notesOn(): Boolean = com.nuvio.app.features.music.library.MusicLibraryRepository.state.value.settings.albumNotes

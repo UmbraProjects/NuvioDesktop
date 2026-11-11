@@ -77,8 +77,21 @@ data class MusicLibrarySettings(
     val albumLenses: Boolean = false,
     /** fork:artist-stage - the redesigned artist page (photo hero, then three panels with lens tabs). Off until chosen. */
     val artistStage: Boolean = false,
-    /** fork:music-home - the quick-play first screen (search line, letter strip, three result panels). Off until chosen. */
-    val musicHome: Boolean = false,
+    /** The Library views switched off (by [LibraryView] name). Empty shows them all. */
+    val hiddenLibraryViews: Set<String> = emptySet(),
+    /**
+     * Album notes and facts: the sleeve notes on the Stage, song stories, trivia, "Start here", the In brief card and the
+     * background facts filler. Off by default: with it off none of them is looked up or shown.
+     */
+    val albumNotes: Boolean = false,
+    /** The Stage's side box (the liner notes or the visualiser). Off removes the right-hand column (and the artist cut-out): the video and lyrics widen into it. */
+    val stageBoxShown: Boolean = true,
+    /** The artist page's Singles tab: leave out singles whose song is also on one of the artist's albums or EPs. */
+    val singlesHideAlbumSongs: Boolean = false,
+    /** The Singles tab: the singles under a heading per year, newest first, with a strip of years to jump with. */
+    val singlesByYear: Boolean = false,
+    /** The Singles tab: a compact list (small cover, title, year) instead of the cover grid. */
+    val singlesAsList: Boolean = false,
     /** Skips the parts of a song's video that SponsorBlock users marked as not music (spoken intros, skits, outros). */
     val skipNonMusic: Boolean = false,
     /** Music pauses while a trailer or theme song plays with sound, and carries on when it ends. */

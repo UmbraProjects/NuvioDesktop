@@ -642,13 +642,21 @@ internal fun FilterPanel(
     onFilter: (ReleaseFilter) -> Unit,
     /** True once the music addon is known to have some releases: the note then says dimmed ones are on neither. */
     addonInPlay: Boolean = false,
+    /** The new artist page's form: the pills centred on the page's own ground, no box behind them and no note. */
+    bare: Boolean = false,
+    /** The kind pills offered; null offers every one. */
+    kinds: Set<ReleaseFilter>? = null,
 ) {
     val colors = MaterialTheme.nuvio.colors
     Column(
-        Modifier.clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.35f)).padding(12.dp),
+        if (bare) Modifier.fillMaxWidth() else Modifier.clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.35f)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalAlignment = if (bare) Alignment.CenterHorizontally else Alignment.Start,
     ) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, if (bare) Alignment.CenterHorizontally else Alignment.Start),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             SegmentedPair(
                 left = "Playable ${discography.playableCount}",
                 right = "All ${discography.totalCount}",
@@ -657,16 +665,19 @@ internal fun FilterPanel(
             )
             ReleaseFilter.entries.forEach { f ->
                 if (f == ReleaseFilter.All) return@forEach
+                if (kinds != null && f !in kinds) return@forEach
                 val n = discography.filterCounts[f] ?: return@forEach
                 if (n == discography.totalCount && f != filter) return@forEach
                 ActionPill("${f.label} $n", selected = f == filter) { onFilter(if (f == filter) ReleaseFilter.All else f) }
             }
         }
-        Text(
-            if (addonInPlay) "Dimmed releases aren't on YouTube Music or your music addon." else "Dimmed releases aren't on YouTube Music.",
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textMuted,
-        )
+        if (!bare) {
+            Text(
+                if (addonInPlay) "Dimmed releases aren't on YouTube Music or your music addon." else "Dimmed releases aren't on YouTube Music.",
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textMuted,
+            )
+        }
     }
 }
 

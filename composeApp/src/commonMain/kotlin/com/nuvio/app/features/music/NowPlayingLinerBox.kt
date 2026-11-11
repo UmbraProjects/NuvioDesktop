@@ -184,24 +184,6 @@ private fun VisualiserDeck(
     val position = rememberSmoothPositionMs(positionMs, playing)
     val sections = remember(lyricLines, durationMs) { songSections(lyricLines.orEmpty(), durationMs) }
     val map = live?.map
-    // The subtitle changes at most once a second, so only that recomposes.
-    val second by remember { derivedStateOf { position.value / 1_000L } }
-    val subtitle = remember(style, second, sections, map, live?.lufs) {
-        val now = second * 1_000L
-        when (style) {
-            VisualiserStyle.SongMap -> {
-                val part = sectionAt(sections, now)?.kind?.label
-                val next = nextChorusStartMs(sections, now)?.let { "Chorus in ${clockLabel(it - now)}" }
-                listOfNotNull(part, next).joinToString(" · ").ifEmpty { "The shape of this song" }
-            }
-            VisualiserStyle.Halo -> "Reacting to the bass"
-            VisualiserStyle.TwinVu -> "Left and right level"
-            // fork:visualiser - OK (or a click on the grid) moves beat one along, for a song the network reads a beat out.
-            VisualiserStyle.BeatGrid -> map?.beat?.let { if (it.barShift == 0) "Kick, snare, hats and melody · OK moves beat one" else "Beat one moved by hand · OK moves it again" }
-                ?: if (map?.complete == true) "No steady beat" else if (map != null && map.frames > 0) "Listening for the beat" else "Finding the beat"
-        }
-    }
-
     fun moveBeatOne(): Boolean {
         if (style != VisualiserStyle.BeatGrid || map?.beat == null) return false
         val id = live?.loadId ?: return false
@@ -233,25 +215,8 @@ private fun VisualiserDeck(
                 }
                 .focusable(),
         ) {
-            PageLabel("VISUALISER", accent)
-            Text(
-                style.title,
-                color = Color.White,
-                fontFamily = FontFamily.Serif,
-                fontSize = 26.sp,
-                lineHeight = 29.sp,
-                maxLines = 1,
-                modifier = Modifier.padding(top = 6.dp),
-            )
-            Text(
-                subtitle,
-                color = Color.White.copy(alpha = 0.65f),
-                fontSize = 14.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            Box(Modifier.weight(1f).fillMaxWidth().padding(top = 14.dp).onTap { moveBeatOne() }) {
+            // No heading: the view speaks for itself (the Song Map's own bar names the parts).
+            Box(Modifier.weight(1f).fillMaxWidth().onTap { moveBeatOne() }) {
                 if (reduced) {
                     VisualiserView(style, live, position, durationMs, sections, coverUrl, accent, reduced, Modifier.fillMaxSize())
                 } else {
@@ -270,19 +235,23 @@ private fun VisualiserDeck(
             }
             NavPill("›", index < styles.lastIndex) { turn(1) }
         }
-        LinerHintRow("Left and Right change the view", switch)
-        Text(
-            when {
-                live?.unavailable == true && map == null -> "This track can't be analysed on this computer"
-                map == null -> "Analysing this track…"
-                live?.analysing == true -> "Analysing this track · ready to ${clockLabel(map.analysedMs)}"
-                else -> "Measured on this track"
-            },
-            color = Color.White.copy(alpha = 0.35f),
-            fontSize = 11.sp,
-            modifier = Modifier.padding(top = 2.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        LinerHintRow("", switch)
+        // Only while there is something to say: once the track is measured the line goes.
+        val status = when {
+            live?.unavailable == true && map == null -> "This track can't be analysed on this computer"
+            map == null -> "Analysing this track…"
+            live?.analysing == true -> "Analysing this track · ready to ${clockLabel(map.analysedMs)}"
+            else -> null
+        }
+        if (status != null) {
+            Text(
+                status,
+                color = Color.White.copy(alpha = 0.35f),
+                fontSize = 11.sp,
+                modifier = Modifier.padding(top = 2.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

@@ -458,8 +458,8 @@ internal fun qualityTag(state: MusicPlayerState): String? =
     state.track?.videoId?.let(com.nuvio.app.features.music.nebula.NebulaMusicSource::qualityOf)
         ?.takeUnless { state.mode == MusicPlayMode.Video && !state.lyricVideo }
 
-/** [withQuality] false leaves the quality tag out, for a player that shows it as a pill of its own. */
-internal fun subtitle(state: MusicPlayerState, withQuality: Boolean = true): String {
+/** The artist, album and what it plays from. [withQuality] adds the addon's quality tag ("FLAC"); no player shows it now. */
+internal fun subtitle(state: MusicPlayerState, withQuality: Boolean = false): String {
     val artist = (state.track?.artists?.takeIf { it.isNotEmpty() } ?: state.album?.artists.orEmpty())
         .joinToString(", ") { it.name }
     val quality = if (withQuality) qualityTag(state) else null

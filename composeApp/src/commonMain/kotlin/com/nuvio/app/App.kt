@@ -1436,12 +1436,6 @@ private fun MainAppContent(
         val hapticFeedback = LocalHapticFeedback.current
         val coroutineScope = rememberCoroutineScope()
         var selectedTab by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
-        // fork:music-navbar - where the Music and YouTube bars' swap button returns to: the last tab that
-        // shows the main bar, so going from one of them to the other and back still lands on the tabs.
-        var lastTabBeforeMusic by rememberSaveable { mutableStateOf(AppScreenTab.Home) }
-        LaunchedEffect(selectedTab) {
-            if (selectedTab != AppScreenTab.Music && selectedTab != AppScreenTab.YouTube) lastTabBeforeMusic = selectedTab
-        }
         var rootTabBackStack by remember { mutableStateOf<List<AppScreenTab>>(emptyList()) }
         var searchFocusRequestCount by remember { mutableStateOf(0) }
         var navigateToContentCount by remember { mutableStateOf(0) }
@@ -1649,6 +1643,8 @@ private fun MainAppContent(
                         }
                         // fork:music - a page open inside the tab (the Music ladder) closes before the tab is left.
                         com.nuvio.app.core.ui.TabBackInterceptor.handle() -> Unit
+                        // fork:navbar-search - a search left showing on its tab clears before the tab is left.
+                        clearOpenTabSearch(selectedTab) -> Unit
                         rootTabBackStack.isNotEmpty() -> {
                             val target = rootTabBackStack.last()
                             rootTabBackStack = rootTabBackStack.dropLast(1)
@@ -1758,6 +1754,12 @@ private fun MainAppContent(
         if (tab == AppScreenTab.Discover && !discoverTabVisible) return
         if (tab == AppScreenTab.LiveTv && !liveTvTabVisible) return
         if (tab == AppScreenTab.YouTube && !youTubeTabVisible) return // fork:youtube-mode
+        // fork:navbar-search - on Music, YouTube and Live TV, Search searches that tab: the bar's box opens over it.
+        if (tab == AppScreenTab.Search && barSearchScopeFor(selectedTab) != BarSearchScope.Media) {
+            searchOverlayActive = true
+            searchFocusRequestCount++
+            return
+        }
         if (tab != AppScreenTab.Search) {
             searchOverlayActive = false
         }
@@ -1780,9 +1782,9 @@ private fun MainAppContent(
             }
             AppScreenTab.Library -> libraryScrollToTopRequests.tryEmit(Unit)
             AppScreenTab.Discover -> discoverScrollToTopRequests.tryEmit(Unit)
-            AppScreenTab.LiveTv -> Unit
-            AppScreenTab.Music -> Unit // fork:music
-            AppScreenTab.YouTube -> Unit // fork:youtube-mode
+            AppScreenTab.LiveTv -> com.nuvio.app.features.iptv.IptvTopBarSearch.text = "" // fork:navbar-search
+            AppScreenTab.Music -> com.nuvio.app.features.music.MusicTabState.query = "" // fork:navbar-search - back to the Library
+            AppScreenTab.YouTube -> com.nuvio.app.features.youtube.YouTubeTopBarSearch.clear() // fork:navbar-search
             AppScreenTab.Settings -> settingsRootActionRequests.tryEmit(Unit)
         }
     }
@@ -1936,11 +1938,13 @@ private fun MainAppContent(
                 is com.nuvio.app.features.voice.VoiceAction.FocusSearch -> when (action.scope) {
                     com.nuvio.app.features.voice.VoiceSearchScope.YouTube -> {
                         openTab(AppScreenTab.YouTube)
-                        com.nuvio.app.features.youtube.YouTubeTopBarSearch.requestFocus()
+                        searchOverlayActive = true
+                        searchFocusRequestCount++
                     }
                     com.nuvio.app.features.voice.VoiceSearchScope.Music -> {
                         openTab(AppScreenTab.Music)
-                        com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
+                        searchOverlayActive = true
+                        searchFocusRequestCount++
                     }
                     else -> {
                         showTabs()
@@ -2012,18 +2016,12 @@ private fun MainAppContent(
     LaunchedEffect(navController) {
         AppShortcutBridge.events.collect { action ->
             if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) return@collect
-            // fork:music - on the Music tab the search key goes to the Music search box, not the video search.
-            if (action == AppShortcutAction.OpenSearch && selectedTab == AppScreenTab.Music &&
+            // fork:navbar-search - on Music, YouTube and Live TV the search key opens the bar's box, which searches the tab.
+            if (action == AppShortcutAction.OpenSearch && barSearchScopeFor(selectedTab) != BarSearchScope.Media &&
                 navController.currentDestination?.hasRoute<TabsRoute>() == true
             ) {
-                com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
-                return@collect
-            }
-            // fork:youtube-mode - and on the YouTube tab, to its search box.
-            if (action == AppShortcutAction.OpenSearch && selectedTab == AppScreenTab.YouTube &&
-                navController.currentDestination?.hasRoute<TabsRoute>() == true
-            ) {
-                com.nuvio.app.features.youtube.YouTubeTopBarSearch.requestFocus()
+                searchOverlayActive = true
+                searchFocusRequestCount++
                 return@collect
             }
             when (action) {
@@ -3453,6 +3451,7 @@ private fun MainAppContent(
                                     searchOverlayActive = false
                                     navigateToContentCount++
                                 }
+                                clearOpenTabSearch(selectedTab) -> Unit // fork:navbar-search
                                 rootTabBackStack.isNotEmpty() -> {
                                     val target = rootTabBackStack.last()
                                     rootTabBackStack = rootTabBackStack.dropLast(1)
@@ -4536,8 +4535,6 @@ private fun MainAppContent(
                                         TabletFloatingTopBar(
                                             selectedTab = selectedTab,
                                             onTabSelected = ::handleRootTabClick,
-                                            onLeaveMusic = { handleRootTabClick(lastTabBeforeMusic) }, // fork:music-navbar
-                                            onLeaveYouTube = { handleRootTabClick(lastTabBeforeMusic) }, // fork:youtube-mode
                                             onProfileSelected = onProfileSelected,
                                             onAddProfileRequested = onSwitchProfile,
                                             // TV mode docks the source picker into the home hero, right where
@@ -4560,11 +4557,50 @@ private fun MainAppContent(
                                                 ),
                                             searchOverlayActive = searchOverlayActive,
                                             onSearchOverlayOpen = { openSearchOverlay() },
-                                            onSearchOverlayDismiss = { dismissSearchOverlay() },
-                                            searchQuery = searchQuery,
-                                            onSearchQueryChange = { searchQuery = it },
+                                            // fork:navbar-search - on Music, YouTube and Live TV the box searches the tab:
+                                            // the text is that tab's own query, Enter runs it there and closes the box (the
+                                            // results stay), Escape or the X clears it and goes back to the tab's page.
+                                            searchScope = barSearchScopeFor(selectedTab),
+                                            onSearchOverlayDismiss = {
+                                                when (barSearchScopeFor(selectedTab)) {
+                                                    BarSearchScope.Media -> dismissSearchOverlay()
+                                                    BarSearchScope.Music -> { com.nuvio.app.features.music.MusicTabState.query = ""; searchOverlayActive = false; navigateToContentCount++ }
+                                                    BarSearchScope.YouTube -> { com.nuvio.app.features.youtube.YouTubeTopBarSearch.clear(); searchOverlayActive = false; navigateToContentCount++ }
+                                                    BarSearchScope.LiveTv -> { com.nuvio.app.features.iptv.IptvTopBarSearch.text = ""; searchOverlayActive = false; navigateToContentCount++ }
+                                                }
+                                            },
+                                            searchQuery = when (barSearchScopeFor(selectedTab)) {
+                                                BarSearchScope.Media -> searchQuery
+                                                BarSearchScope.Music -> com.nuvio.app.features.music.MusicTabState.query
+                                                BarSearchScope.YouTube -> com.nuvio.app.features.youtube.YouTubeTopBarSearch.text
+                                                BarSearchScope.LiveTv -> com.nuvio.app.features.iptv.IptvTopBarSearch.text
+                                            },
+                                            onSearchQueryChange = { text ->
+                                                when (barSearchScopeFor(selectedTab)) {
+                                                    BarSearchScope.Media -> searchQuery = text
+                                                    BarSearchScope.Music -> com.nuvio.app.features.music.MusicTabState.query = text
+                                                    BarSearchScope.YouTube -> com.nuvio.app.features.youtube.YouTubeTopBarSearch.text = text
+                                                    BarSearchScope.LiveTv -> com.nuvio.app.features.iptv.IptvTopBarSearch.text = text
+                                                }
+                                            },
                                             searchFocusRequestCount = searchFocusRequestCount,
-                                            onSearchSubmit = { q -> submitSearch(q) },
+                                            onSearchSubmit = { q ->
+                                                when (barSearchScopeFor(selectedTab)) {
+                                                    BarSearchScope.Media -> submitSearch(q)
+                                                    BarSearchScope.Music -> {
+                                                        if (q.isNotBlank()) com.nuvio.app.features.music.library.MusicSearchHistory.record(q.trim())
+                                                        com.nuvio.app.features.music.MusicTabState.focusResultsWhenReady = true
+                                                        searchOverlayActive = false
+                                                    }
+                                                    BarSearchScope.YouTube -> {
+                                                        com.nuvio.app.features.youtube.YouTubeTopBarSearch.text = q
+                                                        com.nuvio.app.features.youtube.YouTubeTopBarSearch.submit()
+                                                        searchOverlayActive = false
+                                                        navigateToContentCount++
+                                                    }
+                                                    BarSearchScope.LiveTv -> { searchOverlayActive = false; navigateToContentCount++ }
+                                                }
+                                            },
                                             onNavigateToContent = { navigateToContentCount++ },
                                         )
                                     }
@@ -6986,6 +7022,32 @@ private data class SearchPickerEntry(val query: String) {
     val label: String = query
 }
 
+/**
+ * fork:navbar-search - what the top bar's Search searches. The bar keeps its tabs on every tab; only Search adapts:
+ * on Music, YouTube and Live TV it searches that tab (music, videos, channels), everywhere else the films and shows.
+ */
+internal enum class BarSearchScope { Media, Music, YouTube, LiveTv }
+
+/**
+ * Back on a tab whose search is still showing (the box closed with Enter, the results kept): clears it, back to the
+ * tab's own page (the Music Library, every Live TV channel). True when there was one. YouTube's search is a page in
+ * its own history, which its Back already leaves.
+ */
+private fun clearOpenTabSearch(tab: AppScreenTab): Boolean = when (tab) {
+    AppScreenTab.Music -> com.nuvio.app.features.music.MusicTabState.query.isNotBlank()
+        .also { if (it) com.nuvio.app.features.music.MusicTabState.query = "" }
+    AppScreenTab.LiveTv -> com.nuvio.app.features.iptv.IptvTopBarSearch.text.isNotEmpty()
+        .also { if (it) com.nuvio.app.features.iptv.IptvTopBarSearch.text = "" }
+    else -> false
+}
+
+internal fun barSearchScopeFor(tab: AppScreenTab): BarSearchScope = when (tab) {
+    AppScreenTab.Music -> BarSearchScope.Music
+    AppScreenTab.YouTube -> BarSearchScope.YouTube
+    AppScreenTab.LiveTv -> BarSearchScope.LiveTv
+    else -> BarSearchScope.Media
+}
+
 @Composable
 private fun TabletFloatingTopBar(
     selectedTab: AppScreenTab,
@@ -7003,21 +7065,14 @@ private fun TabletFloatingTopBar(
     searchFocusRequestCount: Int = 0,
     onSearchSubmit: (String) -> Unit = {},
     onNavigateToContent: () -> Unit = {},
-    onLeaveMusic: () -> Unit = {}, // fork:music-navbar
-    onLeaveYouTube: () -> Unit = {}, // fork:youtube-mode
+    /** fork:navbar-search - what the box searches: the media search, or the open tab's own. */
+    searchScope: BarSearchScope = BarSearchScope.Media,
 ) {
     val tokens = MaterialTheme.nuvio
     val focusManager = LocalFocusManager.current
     val statusBarPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     var activationZoneHovered by remember { mutableStateOf(false) }
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
-    // fork:music-navbar - on the Music tab the bar holds the Music search instead of the tabs.
-    // fork:music-home - the new music home has its own search line, so with it on the bar stays the normal tab bar.
-    val musicHomeOn = com.nuvio.app.features.music.library.MusicLibraryRepository.state
-        .collectAsStateWithLifecycle().value.settings.musicHome
-    val musicBarActive = selectedTab == AppScreenTab.Music && !isSearchActive && !musicHomeOn
-    // fork:youtube-mode - and on the YouTube tab, the YouTube search.
-    val youTubeBarActive = selectedTab == AppScreenTab.YouTube && !isSearchActive
     val discoverTabVisible by remember {
         ThemeSettingsRepository.desktopDiscoverTabVisible
     }.collectAsStateWithLifecycle()
@@ -7037,7 +7092,7 @@ private fun TabletFloatingTopBar(
         // it and the menu is left floating over nothing.
         targetValue = when {
             hidden -> 0f
-            dimUntilHovered && !isSearchActive && !musicBarActive && !youTubeBarActive && !activationZoneHovered && !libraryMenuVisible -> 0f // fork:music-navbar
+            dimUntilHovered && !isSearchActive && !activationZoneHovered && !libraryMenuVisible -> 0f
             else -> 1f
         },
         animationSpec = tween(durationMillis = 200),
@@ -7063,22 +7118,22 @@ private fun TabletFloatingTopBar(
     val searchHistory by com.nuvio.app.features.search.SearchHistoryRepository.uiState.collectAsState()
     val discoverUiState by SearchRepository.discoverUiState.collectAsStateWithLifecycle()
     var pickerSelectedIndex by remember { mutableStateOf(-1) }
-    val visibleHistory = searchHistory.take(5)
+    // fork:navbar-search - the recent searches of whatever the box searches.
+    val musicHistory by com.nuvio.app.features.music.library.MusicSearchHistory.recent.collectAsState()
+    val youTubeHistory by com.nuvio.app.features.youtube.YouTubeSearchHistory.recent.collectAsState()
+    val visibleHistory = when (searchScope) {
+        BarSearchScope.Media -> searchHistory
+        BarSearchScope.Music -> musicHistory
+        BarSearchScope.YouTube -> youTubeHistory
+        BarSearchScope.LiveTv -> emptyList()
+    }.take(5)
     // Render and activate one immutable snapshot. A separate count plus live-list indexing allowed
     // refreshes to invalidate an index while LazyColumn was measuring.
     val pickerEntries = remember(visibleHistory) {
         visibleHistory.map(::SearchPickerEntry)
     }
     val pickerItemCount = pickerEntries.size
-    // fork:music-navbar - the Music box on the bar offers its recent searches through the same attached panel. The
-    // last ones shown are kept so the panel fades out on them rather than switching to the video history.
-    // fork:youtube-mode - and the YouTube box its own, through the same panel.
-    val musicSuggestions = com.nuvio.app.features.music.MusicTopBarSearch.suggestions.takeIf { musicBarActive }
-        ?: com.nuvio.app.features.youtube.YouTubeTopBarSearch.suggestions.takeIf { youTubeBarActive }
-    var lastMusicSuggestions by remember { mutableStateOf<com.nuvio.app.features.music.MusicBarSuggestions?>(null) }
-    SideEffect { if (musicSuggestions != null) lastMusicSuggestions = musicSuggestions }
-    val panelMusic = musicSuggestions ?: lastMusicSuggestions.takeIf { !isSearchActive }
-    val pickerVisible = (isSearchActive && searchBarHasFocus && visibleHistory.isNotEmpty()) || musicSuggestions != null
+    val pickerVisible = isSearchActive && searchBarHasFocus && visibleHistory.isNotEmpty()
     var historyShapeVisible by remember { mutableStateOf(false) }
     val attachedPanelVisible = historyShapeVisible || libraryMenuVisible
 
@@ -7278,7 +7333,12 @@ private fun TabletFloatingTopBar(
                             decorationBox = { inner ->
                                 if (searchFieldState.text.isEmpty()) {
                                     Text(
-                                        text = stringResource(Res.string.compose_search_placeholder),
+                                        text = when (searchScope) {
+                                            BarSearchScope.Media -> stringResource(Res.string.compose_search_placeholder)
+                                            BarSearchScope.Music -> "Search music"
+                                            BarSearchScope.YouTube -> "Search YouTube"
+                                            BarSearchScope.LiveTv -> "Search channels"
+                                        },
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = inactiveIconTint,
                                     )
@@ -7287,6 +7347,17 @@ private fun TabletFloatingTopBar(
                             },
                         )
                     }
+                        // fork:navbar-search - predictions for the on-screen keyboard: films and shows from TMDB (with the recent
+                        // searches first), YouTube's own autocomplete. Music and Live TV offer theirs from their tabs.
+                        when (searchScope) {
+                            BarSearchScope.Media -> com.nuvio.app.core.ui.PublishKeyboardSuggestions(
+                                com.nuvio.app.features.search.rememberMediaPredictions(searchQuery, searchHistory),
+                            ) { picked -> onSearchQueryChange(picked) }
+                            BarSearchScope.YouTube -> com.nuvio.app.core.ui.PublishKeyboardSuggestions(
+                                com.nuvio.app.features.search.rememberYouTubePredictions(searchQuery, youTubeHistory),
+                            ) { picked -> onSearchQueryChange(picked) }
+                            else -> Unit
+                        }
                         // Voice search: Windows voice typing types what is said into the field.
                         com.nuvio.app.core.ui.VoiceSearchCommands(
                             owner = "app-search",
@@ -7299,7 +7370,11 @@ private fun TabletFloatingTopBar(
                         )
                         com.nuvio.app.core.ui.VoiceSearchButton(
                             owner = "app-search",
-                            voiceScope = com.nuvio.app.features.voice.VoiceSearchScope.All,
+                            voiceScope = when (searchScope) {
+                                BarSearchScope.Music -> com.nuvio.app.features.voice.VoiceSearchScope.Music
+                                BarSearchScope.YouTube -> com.nuvio.app.features.voice.VoiceSearchScope.YouTube
+                                else -> com.nuvio.app.features.voice.VoiceSearchScope.All
+                            },
                             focusField = { try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {} },
                             tint = inactiveIconTint,
                             size = NuvioTokens.Space.s32,
@@ -7307,7 +7382,7 @@ private fun TabletFloatingTopBar(
                         )
                         // Mirrors the Tab key inside the field: toggles the discover-catalog
                         // picker so discovery mode is reachable by mouse as well.
-                        if (discoverTabVisible) {
+                        if (discoverTabVisible && searchScope == BarSearchScope.Media) {
                             IconButton(
                                 onClick = {
                                     onTabSelected(AppScreenTab.Discover)
@@ -7336,10 +7411,6 @@ private fun TabletFloatingTopBar(
                             )
                         }
                     }
-                } else if (musicBarActive) { // fork:music-navbar
-                    com.nuvio.app.features.music.MusicTopBarContent(onLeave = onLeaveMusic, modifier = Modifier.fillMaxSize())
-                } else if (youTubeBarActive) { // fork:youtube-mode
-                    com.nuvio.app.features.youtube.YouTubeTopBarContent(onLeave = onLeaveYouTube, modifier = Modifier.fillMaxSize())
                 } else {
                     Row(
                         modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp),
@@ -7508,9 +7579,8 @@ private fun TabletFloatingTopBar(
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, dividerColor),
                     modifier = Modifier.width(topBarWidth).offset(y = (-0.5).dp),
                 ) {
-                    val shownEntries = panelMusic?.let { music -> remember(music.items) { music.items.map(::SearchPickerEntry) } }
-                        ?: pickerEntries
-                    val shownSelectedIndex = panelMusic?.picked ?: pickerSelectedIndex
+                    val shownEntries = pickerEntries
+                    val shownSelectedIndex = pickerSelectedIndex
                     Column(modifier = Modifier.fillMaxWidth()) {
                         LazyColumn(
                             state = pickerListState,
@@ -7532,7 +7602,7 @@ private fun TabletFloatingTopBar(
                                         .fillMaxWidth()
                                         .background(if (isSelected) Color.White.copy(alpha = 0.1f) else Color.Transparent)
                                         .clickable {
-                                            if (panelMusic != null) panelMusic.onPick(entry.query) else activatePickerItem(entry)
+                                            activatePickerItem(entry)
                                         }
                                         .padding(horizontal = 16.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -7571,12 +7641,12 @@ private fun TabletFloatingTopBar(
                                 color = Color.White.copy(alpha = 0.55f),
                                 modifier = Modifier
                                     .clickable {
-                                        if (panelMusic != null) {
-                                            panelMusic.onClear()
-                                        } else {
-                                            com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
-                                            pickerSelectedIndex = -1
+                                        when (searchScope) {
+                                            BarSearchScope.Music -> com.nuvio.app.features.music.library.MusicSearchHistory.clear()
+                                            BarSearchScope.YouTube -> com.nuvio.app.features.youtube.YouTubeSearchHistory.clear()
+                                            else -> com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
                                         }
+                                        pickerSelectedIndex = -1
                                     }
                                     .padding(horizontal = 8.dp, vertical = 8.dp),
                             )

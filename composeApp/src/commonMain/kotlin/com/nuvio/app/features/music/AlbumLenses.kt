@@ -265,24 +265,26 @@ internal class LensFact(val label: String, val value: String, val bar: Float? = 
 
 /** Four facts in two rows of two equal tiles, 76 dp high. */
 @Composable
-internal fun LensFactGrid(tiles: List<LensFact>) {
+internal fun LensFactGrid(tiles: List<LensFact>, centred: Boolean = false) {
     Column(Modifier.fillMaxWidth().padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         tiles.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { LensFactTile(it) } }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { LensFactTile(it, centred) } }
         }
     }
 }
 
+/** [centred] puts the label and value in the middle of the tile (the artist page's right panel). */
 @Composable
-private fun RowScope.LensFactTile(fact: LensFact) {
+private fun RowScope.LensFactTile(fact: LensFact, centred: Boolean = false) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(12.dp)
     Column(
         Modifier.weight(1f).height(76.dp).clip(shape).background(Color.White.copy(alpha = 0.04f))
             .border(1.dp, Color.White.copy(alpha = 0.07f), shape).padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalAlignment = if (centred) Alignment.CenterHorizontally else Alignment.Start,
     ) {
         Text(fact.label, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.CenterStart) {
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = if (centred) Alignment.Center else Alignment.CenterStart) {
             val bar = fact.bar
             if (bar != null) {
                 Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.12f))) {

@@ -374,17 +374,6 @@ private fun rememberCoverTint(url: String?): Color? {
     return tint
 }
 
-/** A dot that pulses on the beat while the song has a Beat Grid (shown nowhere else; a song without one has no dot). */
-@Composable
-private fun BeatDot(state: MusicPlayerState, color: Color) {
-    val live by TrackMapLive.state.collectAsState()
-    val grid = live?.takeIf { it.loadId == state.loadId }?.map?.beat ?: return
-    val position by rememberSmoothPositionMs(state.positionMs, state.isPlaying)
-    val phase = grid.stepAt(position.toDouble()).mod(4L).toInt()
-    val strength = if (!state.isPlaying) 0.25f else when (phase) { 0 -> 1f; 1 -> 0.55f; 2 -> 0.3f; else -> 0.2f }
-    Box(Modifier.size(8.dp).clip(CircleShape).background(color.copy(alpha = strength)))
-}
-
 /** The radio's "keep going?" question, inside the open panel instead of a pop-up over the app. */
 @Composable
 private fun DockKeepGoing() {
@@ -458,12 +447,11 @@ private fun DockNowPlaying(
     entry: FocusRequester,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    // The played part of the bar and the beat dot take the cover's colour.
+    // The played part of the bar takes the cover's colour.
     val tint = rememberCoverTint(state.coverUrl)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Cover(state.coverUrl, size = 56)
         Column(Modifier.weight(1f)) {
-            // The quality is a pill beside the title, so the artist and album line has the room.
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     state.track?.title.orEmpty().ifBlank { "Now playing" },
@@ -475,8 +463,6 @@ private fun DockNowPlaying(
                     modifier = Modifier.weight(1f, fill = false),
                 )
                 if (isRadioQueue(state.album?.browseId)) DockPill("Radio", colors.accent)
-                qualityTag(state)?.let { tag -> DockPill(tag, colors.accent) }
-                BeatDot(state, tint ?: colors.accent)
             }
             Text(
                 subtitle(state, withQuality = false),

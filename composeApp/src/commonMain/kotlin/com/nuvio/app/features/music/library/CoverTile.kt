@@ -70,7 +70,8 @@ internal fun CoverTile(
     val size = TILE_SIZE
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
-    val peek by animateDpAsState(if (hovered) size * 0.16f else 0.dp, tween(220))
+    // The record no longer slides out on hover: moving covers made the rows harder to walk with the keys.
+    val peek = 0.dp
     val release = tile.release
     val pinnable = release.kind == ReleaseKind.Album || release.kind == ReleaseKind.EP
 
@@ -78,15 +79,6 @@ internal fun CoverTile(
         Modifier.width(size + peek).graphicsLayer { alpha = if (dimmed) 0.4f else 1f }.hoverable(source),
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(Modifier.width(size + peek).height(size)) {
-            if (hovered || peek > 0.dp) {
-                val diameter = size * 0.92f
-                VinylDisc(
-                    release = release,
-                    diameter = diameter,
-                    spinning = hovered && !reducedMotion,
-                    modifier = Modifier.align(Alignment.CenterStart).offset(x = size + peek - diameter),
-                )
-            }
             ReleaseCover(release, Modifier.size(size).musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable(onClick = onClick))
             tile.rank?.let { rank ->
                 Box(

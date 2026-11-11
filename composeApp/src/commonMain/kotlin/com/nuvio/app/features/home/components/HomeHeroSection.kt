@@ -151,6 +151,8 @@ import com.nuvio.app.features.qualicache.QualityInlineBadges
 import com.nuvio.app.features.qualicache.rememberQualityBadgesEnabled
 import com.nuvio.app.features.qualicache.rememberQualityHighlights
 import com.nuvio.app.features.home.MetaPreview
+import com.nuvio.app.features.home.heroPeopleLabel
+import com.nuvio.app.features.home.isOffCatalogHeroItem
 import com.nuvio.app.features.playlist.isPlaylistPreview
 import com.nuvio.app.features.home.randomPlayCategoryOrNull
 import com.nuvio.app.features.home.HeroCastMember
@@ -525,7 +527,7 @@ fun HomeHeroSection(
                 // Every lookup below goes through the item's metadata identity rather than its own
                 // id: a cloud-library row is listed under a provider download key that resolves to
                 // nothing anywhere, so without this it has no cast, no ratings and no badges.
-                if (!castCache.containsKey(key) && target.type != "collection") {
+                if (!castCache.containsKey(key) && !target.isOffCatalogHeroItem()) {
                     launch {
                         prefetchSlots.withPermit {
                             castCache[key] = HeroCastMetadataService.fetch(
@@ -535,7 +537,7 @@ fun HomeHeroSection(
                         }
                     }
                 }
-                if (!discoveryCache.containsKey(discoveryKey) && target.type != "collection") {
+                if (!discoveryCache.containsKey(discoveryKey) && !target.isOffCatalogHeroItem()) {
                     launch {
                         val queuedAtMs = WatchProgressClock.nowEpochMs()
                         prefetchSlots.withPermit {
@@ -552,7 +554,7 @@ fun HomeHeroSection(
                         }
                     }
                 }
-                if (!productionCache.containsKey(key) && target.type != "collection") {
+                if (!productionCache.containsKey(key) && !target.isOffCatalogHeroItem()) {
                     launch {
                         prefetchSlots.withPermit {
                             productionCache[key] = fetchHeroProductionCredits(
@@ -562,7 +564,7 @@ fun HomeHeroSection(
                         }
                     }
                 }
-                if (!interestsCache.containsKey(key) && target.type != "collection") {
+                if (!interestsCache.containsKey(key) && !target.isOffCatalogHeroItem()) {
                     val imdbId = target.metadataId.takeIf { it.startsWith("tt", ignoreCase = true) }
                     if (imdbId == null) {
                         interestsCache[key] = emptyList()
@@ -575,7 +577,7 @@ fun HomeHeroSection(
                     }
                 }
                 if (ratingsCache.containsKey(key)) continue
-                if (target.type == "collection") {
+                if (target.isOffCatalogHeroItem()) {
                     ratingsCache[key] = emptyList()
                     continue
                 }
@@ -1331,7 +1333,7 @@ private fun DesktopHomeHeroFrame(
     // per poster passed over — dozens of extractions a minute, which is both wasted work and the
     // surest way to get this client's media URLs refused.
     LaunchedEffect(heroTrailerFocusKey, tvHeroActive, heroTrailerHomeActive) {
-        if (!tvHeroActive || !heroTrailerHomeActive || currentItem.type == "collection") {
+        if (!tvHeroActive || !heroTrailerHomeActive || currentItem.isOffCatalogHeroItem()) {
             return@LaunchedEffect
         }
         delay(HERO_TRAILER_PREFETCH_DWELL_MS)
@@ -1364,7 +1366,7 @@ private fun DesktopHomeHeroFrame(
         heroTrailerFocusNonce,
         heroTrailerHomeActive,
     ) {
-        if (!heroTrailerAutoplayEnabled || !heroTrailerHomeActive || currentItem.type == "collection") {
+        if (!heroTrailerAutoplayEnabled || !heroTrailerHomeActive || currentItem.isOffCatalogHeroItem()) {
             return@LaunchedEffect
         }
         // Don't count dwell time during the app's startup grace window, while continue-watching
@@ -1391,7 +1393,7 @@ private fun DesktopHomeHeroFrame(
                 "homeActive=$heroTrailerHomeActive key=$heroTrailerFocusKey"
         }
         if (request == null || !tvHeroActive || !heroTrailerHomeActive ||
-            currentItem.type == "collection"
+            currentItem.isOffCatalogHeroItem()
         ) {
             return@LaunchedEffect
         }
@@ -1840,6 +1842,7 @@ private fun DesktopHomeHeroFrame(
                             HeroPeopleBlock(
                                 cast = cast,
                                 production = production,
+                                starringLabel = item.heroPeopleLabel(),
                                 activeTab = peoplePanelTab,
                                 onTabChange = { peoplePanelTab = it },
                                 onCastClick = onCastClick,
@@ -2435,7 +2438,33 @@ private fun DesktopHeroContentBlock(
                     .height(desktopHeroLogoSlotHeight(layout))
             }
 
-            if (logoUrl != null) {
+            if (logoUrl != null && item.type.startsWith(com.nuvio.app.features.home.MUSIC_HERO_TYPE_PREFIX)) {
+                // fork:music-search - a music result's "logo" is its artwork (a cover is no title on its own): the picture
+                // in the logo slot with the name under it, within the slot's height so nothing below moves.
+                androidx.compose.foundation.layout.Column(
+                    modifier = logoSlotModifier,
+                    verticalArrangement = Arrangement.spacedBy(10.dp, if (immersiveBudget != null) Alignment.Bottom else Alignment.CenterVertically),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    AsyncImage(
+                        model = logoUrl,
+                        contentDescription = item.name,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .aspectRatio(if (item.posterShape == com.nuvio.app.features.home.PosterShape.Landscape) 16f / 9f else 1f)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            } else if (logoUrl != null) {
                 // Adaptive and Basic centre the logo in the space above the cast row, so a wide,
                 // short logo no longer sits on the cast with the space above it empty, and a tall
                 // one grows evenly both ways. TV Mode keeps it on the cast row: its slot is a
@@ -2790,6 +2819,8 @@ private data class HeroProductionCredit(
 private fun HeroPeopleBlock(
     cast: List<HeroCastMember>,
     production: List<HeroProductionCredit>,
+    /** Replaces "Starring" (a music result's artists). */
+    starringLabel: String? = null,
     activeTab: HeroPeoplePanelTab,
     onTabChange: (HeroPeoplePanelTab) -> Unit,
     onCastClick: ((HeroCastMember) -> Unit)?,
@@ -2807,6 +2838,7 @@ private fun HeroPeopleBlock(
         HeroPeopleTabs(
             activeTab = effectiveTab,
             showProduction = production.isNotEmpty(),
+            starringLabel = starringLabel,
             onTabChange = onTabChange,
         )
         Spacer(modifier = Modifier.height(18.dp))
@@ -2821,6 +2853,7 @@ private fun HeroPeopleBlock(
 private fun HeroPeopleTabs(
     activeTab: HeroPeoplePanelTab,
     showProduction: Boolean,
+    starringLabel: String? = null,
     onTabChange: (HeroPeoplePanelTab) -> Unit,
 ) {
     Row(
@@ -2828,7 +2861,7 @@ private fun HeroPeopleTabs(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         HeroPeopleTabLabel(
-            text = stringResource(Res.string.meta_starring),
+            text = starringLabel ?: stringResource(Res.string.meta_starring),
             selected = activeTab == HeroPeoplePanelTab.Starring,
             onClick = { onTabChange(HeroPeoplePanelTab.Starring) },
         )
@@ -3340,7 +3373,7 @@ internal fun desktopHeroLogoSlotHeight(layout: HomeHeroLayout): Dp {
 
 private fun compactHeroMetaParts(item: MetaPreview): List<String> =
     buildList {
-        if (item.type != "collection" && !item.isPlaylistPreview() && item.randomPlayCategoryOrNull() == null) {
+        if (!item.isOffCatalogHeroItem() && !item.isPlaylistPreview() && item.randomPlayCategoryOrNull() == null) {
             // metadataType, not type: a cloud-library row's own type is the addon's `library`, which
             // would otherwise read as the literal word "Library" where the genres belong.
             add(item.metadataType.replaceFirstChar(Char::uppercase))
@@ -3414,7 +3447,7 @@ private fun desktopHeroGenreParts(
             }
         }
     }
-    if (values.isEmpty() && (item.type == "collection" || item.isPlaylistPreview() || item.randomPlayCategoryOrNull() != null)) return emptyList()
+    if (values.isEmpty() && (item.isOffCatalogHeroItem() || item.isPlaylistPreview() || item.randomPlayCategoryOrNull() != null)) return emptyList()
     // metadataType, not type: see [compactHeroMetaParts].
     return values.ifEmpty { listOf(HeroGenrePart(item.metadataType.replaceFirstChar(Char::uppercase))) }
 }
