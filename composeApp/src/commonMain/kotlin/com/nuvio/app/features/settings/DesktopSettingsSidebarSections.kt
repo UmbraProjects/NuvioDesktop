@@ -145,6 +145,7 @@ internal fun desktopSettingsSidebarSubItems(
             section(SettingsPage.Discover, Res.string.settings_discover_ai_section),
         )
         SettingsPage.RandomPlay -> listOf(
+            section(SettingsPage.RandomPlay, Res.string.tonight_section), // fork:tonight
             section(SettingsPage.RandomPlay, Res.string.random_play_section_catalog),
             section(SettingsPage.RandomPlay, Res.string.random_play_section_types),
             section(SettingsPage.RandomPlay, Res.string.random_play_section_filters),

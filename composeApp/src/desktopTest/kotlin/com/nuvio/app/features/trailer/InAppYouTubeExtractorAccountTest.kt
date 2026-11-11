@@ -1,6 +1,9 @@
 package com.nuvio.app.features.trailer
 
 import kotlinx.coroutines.runBlocking
+import kotlin.test.AfterTest
+import kotlin.test.BeforeTest
+import com.nuvio.app.features.music.MusicRateLimit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -15,6 +18,13 @@ import kotlin.test.assertTrue
  * needs them.
  */
 class InAppYouTubeExtractorAccountTest {
+    // MusicRateLimit is process-wide: a refusal recorded by any test would pause the extractor for the ones after it.
+    @BeforeTest
+    @AfterTest
+    fun liftTheRateLimitPause() {
+        MusicRateLimit.resetForTests()
+    }
+
     private class GatedYouTube {
         val playerHeaders = mutableListOf<Map<String, String>>()
 

@@ -33,4 +33,8 @@ internal expect object MusicLibraryStorage {
     /** fork:music-playlists - the profile's music playlists, one JSON payload per profile. */
     fun loadPlaylists(profileId: Int): String?
     fun savePlaylists(profileId: Int, payload: String)
+
+    /** fork:shelf - what was played (the play log), one JSON payload per profile. */
+    fun loadPlayLog(profileId: Int): String?
+    fun savePlayLog(profileId: Int, payload: String)
 }

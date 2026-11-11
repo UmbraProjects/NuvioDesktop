@@ -344,4 +344,49 @@ class MusicPlayerTest {
         assertEquals("3:07", formatMusicTime(187_000))
         assertEquals("1:02:09", formatMusicTime(3_729_000))
     }
+
+    // fork:music - the open dock's queue controls.
+    @Test
+    fun removeUpNextTakesOneTrackOutOfTheRest() {
+        val p = player(Fake())
+        p.play(album(4), trackIndex = 0)
+        p.removeUpNext(album(4).tracks[1])
+        assertEquals(listOf("id3", "id4"), p.upNext(10).map { it.videoId })
+        assertTrue(p.state.value.hasNext)
+    }
+
+    @Test
+    fun playTrackNextMovesATrackToTheFront() {
+        val p = player(Fake())
+        p.play(album(4), trackIndex = 0)
+        p.playTrackNext(album(4).tracks[3])
+        assertEquals(listOf("id4", "id2", "id3"), p.upNext(10).map { it.videoId })
+    }
+
+    @Test
+    fun clearUpNextEmptiesTheQueueAndKeepsTheSong() {
+        val p = player(Fake())
+        p.play(album(4), trackIndex = 0)
+        p.clearUpNext()
+        assertTrue(p.upNext(10).isEmpty())
+        assertFalse(p.state.value.hasNext)
+        assertEquals("id1", p.state.value.track?.videoId)
+    }
+
+    @Test
+    fun repeatOneReplaysTheSongAndRepeatAllRestartsTheQueue() {
+        val p = player(Fake())
+        p.play(album(2), trackIndex = 0)
+        p.playing(positionMs = 199_000L)
+        p.setRepeat(MusicRepeat.One)
+        val load = p.state.value.loadId
+        p.onSurfaceEnded()
+        assertEquals("id1", p.state.value.track?.videoId)
+        assertNotEquals(load, p.state.value.loadId)
+        p.setRepeat(MusicRepeat.All)
+        p.next()
+        assertEquals("id2", p.state.value.track?.videoId)
+        p.onSurfaceEnded()
+        assertEquals("id1", p.state.value.track?.videoId)
+    }
 }

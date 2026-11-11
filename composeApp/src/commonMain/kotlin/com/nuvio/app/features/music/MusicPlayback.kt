@@ -94,7 +94,11 @@ object MusicPlayback {
             },
             initialVolume = com.nuvio.app.features.music.library.MusicLibraryStorage.loadPlayerVolume() ?: DEFAULT_MUSIC_VOLUME,
             saveVolume = com.nuvio.app.features.music.library.MusicLibraryStorage::savePlayerVolume,
-        )
+            // fork:nebula - fetch on Play: an album that started from YouTube Music and that the addon has is asked for quietly.
+            onAlbumStarted = { album -> com.nuvio.app.features.music.nebula.NebulaFetchOnPlay.start(album, player) },
+            // fork:loudness - the next track is measured while this one plays, so it starts at its level.
+            prepareAhead = ::measureLoudnessAhead,
+        ).also { com.nuvio.app.features.music.library.MusicPlayLog.watch(it) } // fork:shelf - the play log
     }
 }
 

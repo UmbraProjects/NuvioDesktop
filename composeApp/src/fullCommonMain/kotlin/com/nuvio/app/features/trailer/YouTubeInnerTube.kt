@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -98,6 +99,10 @@ internal suspend fun InAppYouTubeExtractor.searchVideos(query: String): List<You
                 }
             }
         }.onFailure {
+            // fork:music-home - a search the caller gave up on (typing moved on) is not a failure: when the caller's job is
+            // cancelled, pass that on, so nothing upstream takes "no answer" for "nothing found" and keeps it. A timeout
+            // still answers null as before.
+            ensureActive()
             innerTubeLog.w { "YouTube search failed for \"$query\": ${it.message}" }
         }.getOrDefault(emptyList())
     }
@@ -136,9 +141,87 @@ internal suspend fun InAppYouTubeExtractor.musicRequest(endpoint: String, params
                 response.body
             }
         }.onFailure {
+            // fork:music-home - cancelled by the caller (typing moved on): not a failure, and must not be cached as
+            // "nothing found" by MusicMetadataClient, which kept such misses for three minutes. A timeout still answers null.
+            ensureActive()
             innerTubeLog.w { "YouTube Music $endpoint failed: ${it.message}" }
         }.getOrNull()
     }
+
+/**
+ * fork:music-account - [musicRequest] as the signed-in YouTube account (the YouTube tab's sign-in: its cookies and a
+ * `SAPISIDHASH` header), for what is personal: YouTube Music's home mixes, the account's playlists and Liked Music, a
+ * private playlist. Null when nobody is signed in or the request fails. The session's rotating cookies are kept from each
+ * answer; an answer made as if signed out renews the session once and asks again; a refused session is flagged for the
+ * Settings page.
+ */
+internal suspend fun InAppYouTubeExtractor.musicRequestSigned(endpoint: String, params: Map<String, Any?>): String? =
+    withContext(Dispatchers.Default) {
+        runCatching {
+            val auth = com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
+            if (!auth.isSignedIn) return@runCatching null
+            if (com.nuvio.app.features.music.MusicRateLimit.isBlocked()) {
+                return@runCatching null.also { innerTubeLog.d { "YouTube Music $endpoint (signed) skipped: paused after a refusal" } }
+            }
+            withTimeout(INNERTUBE_TIMEOUT_MS) {
+                suspend fun ask(): TrailerRequestResponse {
+                    val visitor = MusicVisitorId.current() ?: innerTubeSession().visitorData
+                    val headers = YouTubeMusicWebClient.headers(MUSIC_CLIENT_ID, MUSIC_CLIENT_VERSION, visitor) +
+                        auth.authHeaders(MUSIC_ORIGIN)
+                    return TrailerExtractionPlatform.performRequest(
+                        url = YouTubeMusicWebClient.url(endpoint),
+                        method = "POST",
+                        headers = headers,
+                        body = innerTubePayload(
+                            params,
+                            clientName = "WEB_REMIX",
+                            clientVersion = MUSIC_CLIENT_VERSION,
+                            visitorData = visitor,
+                            webContext = true,
+                        ).toString(),
+                        timeoutMillis = TRAILER_REQUEST_TIMEOUT_MS,
+                    ).also { auth.absorbSetCookies(it.setCookies) }
+                }
+                var response = ask()
+                if (response.ok && answeredSignedOut(response.body) && auth.renewNow()) {
+                    innerTubeLog.i { "YouTube Music $endpoint answered as signed out; renewed the session and asking again" }
+                    response = ask()
+                }
+                when {
+                    !response.ok && YouTubeMusicWebClient.isRefusal(response.status, response.body) -> {
+                        com.nuvio.app.features.music.MusicRateLimit.noteRefusal(response.status, response.body)
+                        innerTubeLog.w { "YouTube Music $endpoint (signed) refused (${response.status})" }
+                        null
+                    }
+                    response.status == 401 || response.status == 403 -> {
+                        auth.onSessionRejected()
+                        innerTubeLog.w { "YouTube Music $endpoint (signed): the session was refused (${response.status})" }
+                        null
+                    }
+                    !response.ok -> {
+                        innerTubeLog.w { "YouTube Music $endpoint (signed) failed (${response.status}): ${response.body.take(160)}" }
+                        null
+                    }
+                    answeredSignedOut(response.body) -> {
+                        innerTubeLog.w { "YouTube Music $endpoint (signed) still answered as signed out" }
+                        null
+                    }
+                    else -> {
+                        auth.onSessionAccepted()
+                        response.body
+                    }
+                }
+            }
+        }.onFailure {
+            ensureActive()
+            innerTubeLog.w { "YouTube Music $endpoint (signed) failed: ${it.message}" }
+        }.getOrNull()
+    }
+
+private const val MUSIC_ORIGIN = "https://music.youtube.com"
+
+/** True when YouTube Music answered as a signed-out visitor (its tracking block says `logged_in` 0). */
+private fun answeredSignedOut(body: String): Boolean = body.contains("\"logged_in\",\"value\":\"0\"")
 
 private suspend fun postMusic(endpoint: String, params: Map<String, Any?>, visitorData: String?): TrailerRequestResponse =
     TrailerExtractionPlatform.performRequest(

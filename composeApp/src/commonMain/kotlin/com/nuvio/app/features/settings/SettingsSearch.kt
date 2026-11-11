@@ -2718,8 +2718,12 @@ private fun settingsSearchEntries(
         listOf(
             PlaybackSearchRow("music-show-tab", resolve(Res.string.settings_music_show_tab), resolve(Res.string.settings_music_show_tab_description), resolve(Res.string.settings_music_section_general)),
             PlaybackSearchRow("music-reduced-motion", resolve(Res.string.settings_music_reduced_motion), resolve(Res.string.settings_music_reduced_motion_description), resolve(Res.string.settings_music_section_general)),
+            PlaybackSearchRow("music-album-lenses", resolve(Res.string.settings_music_album_lenses), resolve(Res.string.settings_music_album_lenses_description), resolve(Res.string.settings_music_section_general)),
+            PlaybackSearchRow("music-artist-stage", resolve(Res.string.settings_music_artist_stage), resolve(Res.string.settings_music_artist_stage_description), resolve(Res.string.settings_music_section_general)),
+            PlaybackSearchRow("music-home", resolve(Res.string.settings_music_home), resolve(Res.string.settings_music_home_description), resolve(Res.string.settings_music_section_general)),
             PlaybackSearchRow("music-fanart-key", resolve(Res.string.settings_music_fanart_key), resolve(Res.string.settings_music_fanart_key_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-lastfm-key", resolve(Res.string.settings_music_lastfm_key), resolve(Res.string.settings_music_lastfm_key_description), resolve(Res.string.settings_music_section_sources)),
+            PlaybackSearchRow("music-gemini-key", resolve(Res.string.settings_music_gemini_key), resolve(Res.string.settings_music_gemini_key_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-audiodb-key", resolve(Res.string.settings_music_audiodb_key), resolve(Res.string.settings_music_audiodb_key_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-where-next", resolve(Res.string.settings_music_where_next), resolve(Res.string.settings_music_where_next_description), resolve(Res.string.settings_music_section_sources)),
             PlaybackSearchRow("music-mb-offline", resolve(Res.string.settings_music_mb_offline), resolve(Res.string.settings_music_mb_offline_absent), resolve(Res.string.settings_music_section_sources)),
@@ -2799,6 +2803,25 @@ private fun settingsSearchEntries(
                 icon = Icons.Rounded.Lightbulb,
             )
         }
+    }
+
+    // fork:search-rows
+    for (row in forkSearchRowsForPlatform()) {
+        val label = if (row.page == SettingsPage.ContinueWatching && isDesktop) {
+            homeLayoutPage
+        } else {
+            resolve(row.pageLabel)
+        }
+        addRow(
+            page = row.page,
+            key = row.key,
+            title = resolve(row.title),
+            description = row.description?.let { resolve(it) }.orEmpty(),
+            pageLabel = label,
+            section = resolve(row.section),
+            category = if (row.noCategory) "" else generalCategory,
+            icon = forkSearchIcon,
+        )
     }
 
     // Every page exposed by Settings must remain discoverable. Keep the assertion beside the

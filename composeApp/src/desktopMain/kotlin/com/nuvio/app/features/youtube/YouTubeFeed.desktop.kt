@@ -198,8 +198,13 @@ private const val EXPIRED_MESSAGE =
     "YouTube no longer accepts the saved sign-in (it answered as signed out). Sign in again under Settings > YouTube account."
 
 private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>, pageId: String?): YouTubeBrowseResult {
-    val cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: return YouTubeBrowseResult.SignedOut
+    var cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: return YouTubeBrowseResult.SignedOut
     var shell = SignedInShell.get(cookie)
+    if (shell?.loggedIn == false && YouTubeMusicAuth.renewNow()) {
+        // A session gone stale while the app was closed: renewed through the sign-in's browser profile, read again.
+        cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: cookie
+        shell = SignedInShell.get(cookie, fresh = true)
+    }
     if (shell?.loggedIn == false) {
         // The page itself says the cookies are no longer a session: no feed request can help.
         YouTubeMusicAuth.onSessionRejected()
@@ -213,16 +218,18 @@ private suspend fun signedWebRequest(endpoint: String, params: Map<String, Any?>
         shell = SignedInShell.get(cookie, fresh = true)
         if (shell?.loggedIn != false) response = send(endpoint, params, pageId, shell)
     }
+    var status = response.status
+    var body = response.body
     // Answered as signed out: the session may only be stale (the app was closed for a while), so
-    // renew it once and ask again before calling the sign-in expired.
-    if (response.ok && youTubeAnsweredSignedOut(response.body) && YouTubeMusicAuth.renewNow()) {
-        SignedInShell.forget()
-        val renewedCookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: cookie
-        response = send(endpoint, params, pageId, SignedInShell.get(renewedCookie))
-        if (response.ok && !youTubeAnsweredSignedOut(response.body)) log.i { "$endpoint: signed in again after renewing the session" }
+    // renew it once through the sign-in's browser profile and ask again before calling it expired.
+    if (status in 200..299 && youTubeAnsweredSignedOut(body) && YouTubeMusicAuth.renewNow()) {
+        cookie = YouTubeMusicAuth.authHeaders(YOUTUBE_ORIGIN)["cookie"] ?: cookie
+        shell = SignedInShell.get(cookie, fresh = true)
+        val retried = send(endpoint, params, pageId, shell)
+        status = retried.status
+        body = retried.body
+        if (status in 200..299 && !youTubeAnsweredSignedOut(body)) log.i { "$endpoint: signed in again after renewing the session" }
     }
-    val status = response.status
-    val body = response.body
     return when {
         YouTubeWebClient.isRefusal(status, body) -> {
             SignedInShell.forget()
@@ -433,7 +440,7 @@ internal actual suspend fun youTubeStatsPing(url: String, pageId: String?): Int 
             },
             body = null,
             timeoutMillis = 15_000L,
-        ).status
+        ).also { YouTubeMusicAuth.applySetCookies(it.setCookies) }.status
     }.getOrDefault(0)
 }
 
@@ -461,6 +468,7 @@ private fun youTubeTabCaller(ahead: Boolean) = YouTubeCaller(
     urgent = !ahead,
     preferHdr = true,
     skipManifestLadder = true,
+    parallelClients = true,
     maxShortSide = YouTubeFeedRepository.maxQuality.value,
     allAudioTracks = YouTubeFeedRepository.allLanguages.value,
 )

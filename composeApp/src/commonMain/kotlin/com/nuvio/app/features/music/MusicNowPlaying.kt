@@ -1,6 +1,6 @@
 package com.nuvio.app.features.music
+// FORK UI (Spyder): Nick's Now Playing stage, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
-import com.nuvio.app.features.music.booklet.isBookletAlbum
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.layout.wrapContentWidth
 import com.nuvio.app.features.music.library.musicGlass
@@ -299,8 +299,10 @@ private fun MusicNowPlayingScreen(
     val lyricStyle = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricStyle
     val lyricsOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricsOn
     // fork:booklet - the album's sleeve notes for the third panel of a wide Stage.
-    val bookletOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.booklet
-    val bookletUi = rememberBookletUi(album, bookletOn, libraryArtist)
+    val bookletUi = rememberBookletUi(album, libraryArtist)
+    // fork:visualiser - the playing track's map, from the player surface's background analysis (null for another load).
+    val trackMap = com.nuvio.app.features.music.visualiser.TrackMapLive.state.collectAsStateWithLifecycle().value
+        ?.takeIf { it.loadId == state.loadId }
     LaunchedEffect(inputTick, track?.videoId) {
         widgetsVisible = true
         delay(WIDGET_IDLE_MS)
@@ -333,9 +335,9 @@ private fun MusicNowPlayingScreen(
             val wide = maxWidth >= 860.dp
             val cutout = identity?.cutoutUrl.takeIf { wide }
             // fork:stage - three panels (player, lyrics, booklet over the artist) when there is room; each keeps to its own.
-            // Without the liner notes there is no third panel: an empty column held the video and lyrics off centre.
-            val showBooklet = album != null && bookletUi !is BookletUi.None
-            val threePanels = wide && showBooklet && stageUsesThreePanels(maxWidth.value)
+            // The layout depends on the window only, never on whether the liner notes have anything to show: nothing on this page
+            // may move or resize when the notes are missing (user rule, Nov 3 2026). A missing booklet leaves its slot empty.
+            val threePanels = wide && stageUsesThreePanels(maxWidth.value)
             // The video, lyrics and sync controls sit in the middle of the space right of the player column, except when the
             // full-height cut-out stands beside the lyrics and they keep to the left of it.
             val centredMiddle = threePanels || realVideo || cutout == null
@@ -386,7 +388,8 @@ private fun MusicNowPlayingScreen(
                         )
                         Spacer(Modifier.height(20.dp))
                         Text(
-                            track?.title.orEmpty(),
+                            // Just the song: the guests ("(feat. …)") are in the queue row, which shows the whole title.
+                            stageSongTitle(track?.title.orEmpty()),
                             color = Color.White,
                             fontFamily = FontFamily.Serif,
                             fontSize = 44.sp,
@@ -424,14 +427,16 @@ private fun MusicNowPlayingScreen(
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 chips.forEachIndexed { i, chip ->
                                     val isMood = i == 0 && libraryArtist?.mood != null
-                                    // A genre starts a ladder into it (in the Music tab); the mood is only a label.
+                                    // A genre searches for it in the Music tab; the mood is only a label.
                                     val genre = if (isMood) null else com.nuvio.app.features.music.library.canonicalGenre(chip)
                                     StageChip(
                                         chip,
                                         accented = isMood,
                                         onClick = genre?.let { g ->
                                             {
-                                                MusicPlayback.pendingLadder.value = com.nuvio.app.features.music.library.LadderRequest.Genre(g)
+                                                // A genre chip searches that genre (the Ladder is hidden): the music home shows its genre card.
+                                                MusicTabState.query = g
+                                                MusicTabState.section = MusicSection.Search
                                                 onClose()
                                                 onOpenMusicTab()
                                             }
@@ -491,27 +496,27 @@ private fun MusicNowPlayingScreen(
                             Modifier.width(STAGE_COLUMN_WIDTH).fillMaxHeight().onGloballyPositioned { rightTopPx = it.positionInRoot().y },
                             verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
-                            if (showBooklet && album != null && glassTop != null && glassHeight != null) {
-                                NowPlayingBooklet(
-                                    ui = bookletUi,
-                                    album = album,
-                                    playingVideoId = track?.videoId,
-                                    reduced = reduced,
-                                    onJumpToTrack = { index -> player.jumpTo(index) },
-                                    onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
-                                    modifier = Modifier.padding(top = glassTop).height(glassHeight).fillMaxWidth(),
-                                )
-                            } else if (showBooklet && album != null) {
-                                NowPlayingBooklet(
-                                    ui = bookletUi,
-                                    album = album,
-                                    playingVideoId = track?.videoId,
-                                    reduced = reduced,
-                                    onJumpToTrack = { index -> player.jumpTo(index) },
-                                    onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
-                                    modifier = Modifier.weight(if (cutout != null) 0.62f else 1f).fillMaxWidth(),
-                                )
+                            // fork:visualiser - the glass is always there at the same size: the notes, or the visualiser without them.
+                            val boxModifier = if (glassTop != null && glassHeight != null) {
+                                Modifier.padding(top = glassTop).height(glassHeight).fillMaxWidth()
+                            } else {
+                                Modifier.weight(if (cutout != null) 0.62f else 1f).fillMaxWidth()
                             }
+                            NowPlayingLinerBox(
+                                bookletUi = bookletUi,
+                                album = album,
+                                playingVideoId = track?.videoId,
+                                reduced = reduced,
+                                live = trackMap,
+                                positionMs = state.positionMs,
+                                playing = state.isPlaying,
+                                durationMs = state.durationMs,
+                                lyricLines = ((shownLyrics as? LyricsUi.Ready)?.lyrics as? Lyrics.Synced)?.lines,
+                                coverUrl = state.coverUrl,
+                                onJumpToTrack = { index -> player.jumpTo(index) },
+                                onOpenAlbum = { id -> onClose(); onOpenAlbum(id) },
+                                modifier = boxModifier,
+                            )
                             if (cutout != null) {
                                 StageCutout(cutout, Modifier.weight(1f).fillMaxWidth())
                             }
@@ -579,11 +584,6 @@ private fun MusicNowPlayingScreen(
                 MusicLibraryRepository.updateSettings(settings.copy(fadeQueue = !settings.fadeQueue))
             },
             onFullscreen = { MusicPlayback.setVideoView(MusicVideoView.Fullscreen) },
-            booklet = bookletOn.takeIf { album != null && isBookletAlbum(album.browseId) },
-            onToggleBooklet = {
-                val settings = MusicLibraryRepository.state.value.settings
-                MusicLibraryRepository.updateSettings(settings.copy(booklet = !settings.booklet))
-            },
             modifier = Modifier.align(Alignment.TopStart),
         )
         state.notice?.let { note ->
@@ -615,9 +615,6 @@ private fun StageTopBar(
     onCycleLyricStyle: () -> Unit = {},
     lyricsOn: Boolean = true,
     onToggleLyrics: () -> Unit = {},
-    /** fork:booklet - null hides the chip (no booklet panel at this width or in this view). */
-    booklet: Boolean? = null,
-    onToggleBooklet: () -> Unit = {},
 ) {
     Row(
         modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -651,12 +648,10 @@ private fun StageTopBar(
             lyricsOn = lyricsOn,
             lyricStyle = lyricStyle,
             fadeQueue = fadeQueue,
-            booklet = booklet,
             reduced = reduced,
             onToggleLyrics = onToggleLyrics,
             onCycleLyricStyle = onCycleLyricStyle,
             onToggleFadeQueue = onToggleFadeQueue,
-            onToggleBooklet = onToggleBooklet,
             onToggleMotion = onToggleMotion,
         )
     }
@@ -1009,13 +1004,15 @@ private fun Message(text: String) {
 
 @Composable
 private fun PlainLyrics(lines: List<String>) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 48.dp)) {
+    // Unsynced lyrics have no line to follow, so they read as a block centred in the pane (on the Stage and under a video alike).
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         itemsIndexed(lines) { _, line ->
             Text(
                 text = line,
                 color = Color.White.copy(alpha = 0.88f),
                 fontSize = 22.sp,
                 lineHeight = 30.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
             )
         }
@@ -1100,17 +1097,22 @@ private fun SyncedLyrics(
                             if (keep >= allWords.size) allWords
                             else allWords.take(keep).let { kept -> kept.dropLast(1) + kept.last().copy(text = withEllipsis(kept.last().text)) }
                         }
-                        ActiveLine(
-                            words = words,
-                            progress = { lineProgress(lines, index, smooth.value) },
-                            accent = accent,
-                            isChorus = index in chorus,
-                            emphasis = false,
-                            effects = !reduced,
-                            entrance = lineEntranceFor(index),
-                            fontSize = sizeSp.sp,
-                            centred = true,
-                        )
+                        // The words are laid out in the width the size was fitted to, not the whole pane: across the whole
+                        // pane a long line's rows ran edge to edge, and the sung line's tenth of growth pushed its outer
+                        // words past the clip (both ends of a two-row line were cut off).
+                        Box(Modifier.width(with(density) { widthPx.toDp() }), contentAlignment = Alignment.Center) {
+                            ActiveLine(
+                                words = words,
+                                progress = { lineProgress(lines, index, smooth.value) },
+                                accent = accent,
+                                isChorus = index in chorus,
+                                emphasis = false,
+                                effects = !reduced,
+                                entrance = lineEntranceFor(index),
+                                fontSize = sizeSp.sp,
+                                centred = true,
+                            )
+                        }
                     } else {
                         Text(
                             text = shownText,
@@ -1270,3 +1272,16 @@ private fun SyncIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, labe
 /** The Stage's left column, and the album case in it (the disc peeks out to the right of the case). */
 private val STAGE_COLUMN_WIDTH = 390.dp
 private val STAGE_CASE_SIZE = 280.dp
+
+/** A bracketed guest credit: "(feat. X)", "[ft. X]", "(featuring X)", "(with X)". Version notes like "(Remix)" stay. */
+private val STAGE_CREDIT_BRACKET = Regex("""\s*[(\[]\s*(feat\.?|ft\.?|featuring|with)\s[^)\]]*[)\]]""", RegexOption.IGNORE_CASE)
+
+/** A credit after the title with no brackets: "Song feat. X", "Song ft. X". Not a bare "with", which real titles use. */
+private val STAGE_CREDIT_TRAILING = Regex("""\s+(feat\.?|ft\.?|featuring)\s+.*$""", RegexOption.IGNORE_CASE)
+
+/**
+ * The title as the stage shows it under the album art: the song alone, without its guest credits, so a long
+ * "(feat. A, B & C)" does not take three lines of the big serif title. Falls back to the full title if nothing is left.
+ */
+internal fun stageSongTitle(title: String): String =
+    title.replace(STAGE_CREDIT_BRACKET, "").replace(STAGE_CREDIT_TRAILING, "").trim().ifEmpty { title }

@@ -140,3 +140,41 @@ class PreviouslyOnTest {
         assertTrue(a.fingerprint(source) != b.fingerprint(source))
     }
 }
+
+/** fork:previously-on-resume - a resumed episode counts its break from when it was last watched. */
+class PreviouslyOnResumeTest {
+    private val day = 24 * 3_600_000L
+    private val now = 100 * day
+    private val threeDays = 3 * day
+
+    @Test
+    fun `starting an episode counts from when the recapped one was watched`() {
+        assertEquals(10L, previouslyOnBreakFrom(resume = false, resumedAtMs = 99L, recappedWatchedAtMs = 10L))
+    }
+
+    @Test
+    fun `resuming counts from when this episode was last watched`() {
+        assertEquals(99L, previouslyOnBreakFrom(resume = true, resumedAtMs = 99L, recappedWatchedAtMs = 10L))
+    }
+
+    @Test
+    fun `a resume after a few hours gets no recap, after a week it does`() {
+        // The episode before was seen a month ago, but this one was paused this morning: no recap.
+        val recapped = now - 30 * day
+        val pausedThisMorning = now - 4 * 3_600_000L
+        assertFalse(
+            previouslyOnGapPassed(previouslyOnBreakFrom(true, pausedThisMorning, recapped), now, breakOnly = true, gapMs = threeDays),
+        )
+        // Left a week ago: the recap shows, even though the episode before was watched the same day.
+        val pausedLastWeek = now - 7 * day
+        assertTrue(
+            previouslyOnGapPassed(previouslyOnBreakFrom(true, pausedLastWeek, recapped), now, breakOnly = true, gapMs = threeDays),
+        )
+    }
+
+    @Test
+    fun `an unknown resume time counts as passed and the break rule off always shows`() {
+        assertTrue(previouslyOnGapPassed(previouslyOnBreakFrom(true, null, 5L), now, breakOnly = true, gapMs = threeDays))
+        assertTrue(previouslyOnGapPassed(previouslyOnBreakFrom(true, now - 1L, 5L), now, breakOnly = false, gapMs = threeDays))
+    }
+}

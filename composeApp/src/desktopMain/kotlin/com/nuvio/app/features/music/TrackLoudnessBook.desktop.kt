@@ -27,3 +27,5 @@ internal object TrackLoudnessBook {
         }
     }
 }
+
+internal actual fun hasKeptLoudness(loudnessKey: String): Boolean = TrackLoudnessBook.get(loudnessKey) != null

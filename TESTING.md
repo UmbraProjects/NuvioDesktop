@@ -1,0 +1,376 @@
+# Testing checklist
+
+What has been tried on the TV, and what is left. Nick tests; Claude keeps this file.
+
+**Rules (for every Claude session on this branch, see CLAUDE.md):**
+
+- A feature's checks go in here in the same commit as the feature, under its area, as `- [ ]` lines. Each check is one
+  thing to try on the TV, written so it can be answered Works / Broken / Not tried.
+- The CHANGELOG entry may still say "Not yet tried", but the checks must be here.
+- Results come from Nick, usually as clickable Works / Broken / Not tried questions. Record them as:
+  - `- [x] check (2026-11-08)` when it works
+  - `- [ ] **BROKEN** check (2026-11-08): what Nick said` when it does not
+  - `- [~] check (2026-11-08): works, but what Nick said needs doing` for "works, with a follow-up"
+- At the start of a session, offer the open checks (unticked, oldest first) as clickable questions.
+- A fix for a broken or follow-up line adds a fresh `- [ ]` re-check under it rather than ticking it.
+
+## Phone remote
+
+- [x] Pairing with the code; D-pad, OK, Back, play/pause and typing into search drive the TV (2026-11-08)
+- [x] Now playing on the phone (cover, seek bar), with lock-screen and notification controls (2026-11-08)
+- [x] Send to Nuvio: a YouTube or YouTube Music link from the phone's share menu plays on the TV (2026-11-08)
+- [x] Movies & TV tab: library posters show; tapping one opens its details on the TV (2026-11-08)
+- [x] Watch tab sometimes lists the Torbox cloud files as "Your library" (no section chips, about 250 titles), and tapping one fails on the TV; other times the real library (My Shows, My Movies..., about 760) (2026-11-09) - fixed (2026-11-09)
+  - [x] Re-check after the fix: the Watch tab always ends up with the real library and its section chips (it keeps asking for up to half a minute after Nuvio starts, and again when the tab is reopened); Torbox files are no longer in it (2026-11-09)
+- [x] Music tab: albums and artists show; Play / Shuffle / Add to queue and an artist's Shuffle all / Radio play on the TV (2026-11-08)
+- Remote tab bottom row of five keys: dropped, the glass redesign replaced that layout (2026-11-08)
+- [x] The big key is the only play/pause: it shows Pause while playing and Play while paused, and matches the TV (2026-11-08)
+- [x] Long titles and artists show in full on the film card and the music screen (they scroll slowly) (2026-11-08)
+- [x] The seek bar is thin with a round marker; tapping or dragging it seeks the TV once, on release (2026-11-08)
+- [x] Glass redesign: the app wears the TV's theme (change it in Nuvio's Settings and the phone follows within a second), and opens in that colour next time (2026-11-08)
+- [x] Remote while browsing: touchpad, swipe moves one tile per short swipe and keeps going on a long one, tap is OK; Back, Home, Search (opens the TV's search and the phone keyboard), More (2026-11-08)
+- [x] Moving around Nuvio's Settings from the phone, fixed (2026-11-09); was broken (2026-11-08): neither the touchpad nor the D-pad moves there, and a controller does not either, so Settings ignores the arrow and OK presses the pad layer sends
+  - [ ] **BROKEN** Re-check after the first fix (2026-11-08): still broken
+  - [ ] **BROKEN** Re-check after the second fix (2026-11-09): nothing highlighted and Down seemed to do nothing, with all three inputs. Focus was moving (OK after two Downs opened Screensaver); Settings simply draws no focus ring
+  - [ ] **BROKEN** Re-check after the third fix (2026-11-09): no ring
+  - [x] Re-check after the fourth fix: a ring in the theme's focus colour sits on the open category when Settings opens, and moves with the phone's touchpad and D-pad, a controller's D-pad and the keyboard's arrows over categories, rows, switches and buttons; OK opens or toggles what has the ring; the ring hides when the mouse moves (2026-11-09)
+- [x] Touchpad / D-pad switch (the tag in the panel's corner, or More) is remembered after closing the app (2026-11-08)
+- [x] Remote during a film: Now playing card, Subtitles and Audio tiles show the current track and tap to the next, back 10s / play-pause / ahead 10s, Back / Sources / More (2026-11-08)
+- [x] Remote during music: cover, title, artist, seek, previous / play-pause / next; the Touchpad tag switches to the pad and back (2026-11-08)
+- [x] More sheet: Mute, Vol −, Vol +, Type, D-pad/Touchpad, Other PC (2026-11-08)
+- [x] Watch and Music tabs in the glass style: header label, glass search, pill chips, section labels with counts, glass album sheet (2026-11-08)
+
+### Phone remote: Dark mode and the demo TV (phase 2)
+
+- [x] Dark mode: the Dark key (film or music screen, or More) turns the phone black and dims it (Medium, 15%, to start), hides the status and navigation bars, and the screen stays on (2026-11-09)
+- [x] Dark mode hints (tap, swipe, hold) show for a few seconds and fade; Back brings them back instead of leaving (2026-11-09)
+- [x] Dark mode brightness: Low / Medium / High under the hints (Back shows them again) changes the phone's brightness at once, is kept for next time, and tapping one does not also pause the film (2026-11-09)
+- [x] Dark mode, a film: tap is play/pause, swipe left/right is 10 s back/ahead per step with a tick each, swipe up/down is volume; each shows faintly in the middle (2026-11-09): tap works, but no swipe does anything, in any direction - fixed (2026-11-09)
+  - [x] Re-check after the fix: swipes left/right (10 s, or songs for music) and up/down (volume) work, each with a tick; hold for a second leaves (2026-11-09)
+- [x] Dark mode, music: swipe left/right is the previous/next song (one per swipe) (2026-11-09)
+- [x] Dark mode: holding a finger anywhere for a second draws a faint ring and leaves; brightness and the bars come back (2026-11-09)
+- [x] Demo TV: Try the demo TV (on the PC list) asks for the code 123456, then connects as "Demo TV" and stays in the paired list (2026-11-09)
+- [x] Demo TV: the "Demo TV received" strip shows each key, swipe and typed text (2026-11-09, from Nick's screenshots)
+- [x] Demo TV: More > Demo TV plays a film or an album, stops it, and changes the theme (the app follows) (2026-11-09)
+- [x] Film screen with the demo strip (2026-11-09, from Nick's screenshots): the D-pad / touchpad panel is squeezed down to its title bar, with no pad left to use - fixed (2026-11-09)
+  - [~] Re-check after the fix (2026-11-09, from Nick's screenshots): the keys stay whole at the bottom, but the pad was still pushed off the screen
+  - [x] Re-check after the second fix: the film screen has no pad on it any more; the Touchpad tag in its header (as on the music screen) swaps to the full-size pad and Now playing swaps back; Sources brings the pad up by itself (2026-11-09)
+- [x] Music screen (2026-11-09, from Nick's screenshot): the Back / Search / Dark / More keys are cut in half by the tab bar - fixed (2026-11-09)
+  - [x] Re-check after the fix: the cover shrinks to fit, and the keys show whole above the tab bar (2026-11-09, from Nick's screenshot)
+- [x] Demo TV: Watch and Music tabs show the pretend library (with photos when online); opening a title plays it after 2 s; an album plays, shuffles, next and previous work (2026-11-09, from Nick's screenshots)
+- [x] Demo TV: the lock-screen controls show the pretend film or song and work (2026-11-09)
+
+### Phone remote: Continue watching (phase 3)
+
+- [x] The Watch tab opens with a Continue watching row (landscape pictures, a progress line, the episode and time left), the same titles as Nuvio's Continue Watching (2026-11-09)
+- [x] The "Opening … on the TV" note shows at the top of the remote, clear of the keys (it covered them at the bottom) (2026-11-09)
+- [x] Tapping one opens a sheet: poster, title, episode, how far in, and the source it last played from (2026-11-09)
+- [x] Resume on the TV plays it straight away from the same source, from where it stopped (with a film already playing, that one closes first) (2026-11-09)
+- [x] Resume on a title whose last link no longer plays opens its source list on the TV instead (2026-11-09)
+- [x] Details on the TV opens the title's page on the TV (2026-11-09)
+- [x] Demo TV: Resume plays a pretend title from its saved place (2026-11-09, from Nick's screenshots)
+
+### Phone remote: QR pairing (phase 4)
+
+- [x] Nuvio's Settings › Keyboard shortcuts › Phone remote shows a QR code ("Or scan to pair") under the pairing code, while Phone remote is on (2026-11-09)
+- [x] In the app, "Scan the TV's code" on the PC list opens Google's scanner (no camera permission asked); scanning the TV's code pairs and connects with no typing (2026-11-09)
+- [x] The phone's own camera app, pointed at the code, offers to open Nuvio Remote, which then pairs (2026-11-09)
+- [x] "Scan the TV's code instead" on the code screen works the same (2026-11-09)
+- [x] New code on the PC changes the QR code too; an old QR then says the code isn't right (2026-11-09)
+- [x] Demo TV: scanning the demo QR picture (sent in the chat) pairs with Demo TV (2026-11-09)
+
+### Phone remote: pick the source on the phone (phase 5)
+
+- [x] When a film or episode's source list opens on the TV, the remote shows the same list in the same order: name, addon, size, an Instant tag for cached ones, and the file details (2026-11-09)
+- [x] It fills in as the TV finds sources ("Finding sources… N so far" with a thin bar), then shows the total (2026-11-09)
+- [x] Tapping a source plays that one on the TV; greyed-out rows (the ones the TV greys) do nothing (2026-11-09)
+- [x] The Instant tag at the top shows only the cached sources (2026-11-09)
+- [x] The header tag (or the Pad key) swaps to the touchpad and back, for anything else on the TV's list (2026-11-09)
+- [x] Sources during a film (the player's sources panel) shows its list on the phone too (2026-11-09)
+- [x] Back closes the list on the TV and the phone goes back to the remote (2026-11-09)
+- [x] Demo TV: opening a title shows four pretend sources (the last greyed); picking one plays it (2026-11-09)
+
+### Phone remote: search everything and voice search (phase 6)
+
+- [x] Watch tab: typing a search (and pausing) adds "From your addons" under your library's matches: what Nuvio's Search tab finds, with posters, filling in while it searches (2026-11-09)
+- [x] Tapping a result opens its page on the TV, and the phone says its name (2026-11-09)
+- [x] The mic in the Watch and Music search boxes (while empty) opens the phone's voice typing; what you say becomes the search (2026-11-09)
+- [x] Remote tab: Search, then the mic beside the text box, types what you say into the TV's search box (2026-11-09)
+- [x] A search on the phone while the TV is on its own Search tab does not upset it (2026-11-09)
+- [x] Demo TV: searching "signal" shows The Long Signal and two pretend catalog results (2026-11-09)
+
+### Phone remote: wake the PC (phase 7)
+
+- [ ] Once connected with this Nuvio, the remote remembers the PC's network card (no setting needed on the phone)
+- [ ] With the PC asleep, the remote shows "Asleep or off?" with a Wake tag; Wake sends the wake-up, shows "Waking it up", and connects once the PC is up
+- [ ] On the PC: Wake on Magic Packet on for the network card (Device Manager) and Wake-on-LAN in the BIOS, as Settings › Phone remote now says
+- [ ] If it does not wake within about 90 s, the remote says so
+- [ ] Demo TV: More › Demo TV › Sleep drops the phone; Wake brings it back after a few seconds
+
+### Phone remote: music queue and lyrics (phase 8)
+
+- [x] Music screen keys are Back, Queue, Lyrics, Dark, More (Search is on the pad view now) (2026-11-09)
+- [x] Queue opens a sheet of the TV's queue (cover, title, artist, length), the playing song highlighted and scrolled to (2026-11-09)
+- [x] Music tab (2026-11-09): tapping an album only plays the whole album; there is no way to play one of its songs - fixed (2026-11-09)
+  - [x] Re-check after the fix: the album sheet lists the album's songs under Play / Shuffle / Add to queue; tapping one plays the album from that song on the TV (2026-11-09)
+- [x] Tapping a song in the queue plays it on the TV; Play next and Remove (on songs still to come) change the queue, and the sheet shows the change (2026-11-09)
+- [x] Lyrics (or a tap on the cover) shows the song's lyrics in the cover's place; timed ones follow the song with the sung line bright and kept in view (2026-11-09)
+- [x] Lyrics follow to the next song by themselves; a song with none says so (2026-11-09)
+- [x] Lyrics on the phone look like the stage's Loud style: each line big in its own face and colour, words outlined and landing as sung (on the beat for word-timed songs); the next line small underneath (2026-11-09): works, but the words were too big: the next line went off the box and the words ran under the List tag - fits and shows whole lines after the third fix (2026-11-09)
+  - [~] Re-check after the fix (2026-11-09): fits now, but long lines were cut short with … instead of shown whole
+  - [~] Re-check after the second fix (2026-11-09): whole lines now, but the last row of a two- or three-row line was cut off at the bottom ("ALL FOR NOTHING", "DID YOU REALLY WANT ?")
+  - [x] Re-check after the third fix: every row of a long line is fully visible, none cut at the bottom, and the next line still shows under it (2026-11-09)
+- [x] The List / Loud tag in the lyrics' corner switches to the scrolling list and back (2026-11-09)
+- [x] Demo TV: an album's queue and pretend timed lyrics (2026-11-09)
+
+### Phone remote: a show's episodes on the phone
+
+- [x] Watch tab: tapping a show (not a film) opens its sheet on the phone with season tags and the episodes (picture, number, title, how far watched), instead of only opening it on the TV (2026-11-09)
+- [x] It opens on the first season with an episode not yet watched through (2026-11-09)
+- [x] Tapping an episode plays it on the TV as its details page would: its source list comes up on the remote to pick from (2026-11-09)
+- [x] Details on the TV in the sheet still opens the show's page on the TV; a film still opens straight on the TV (2026-11-09)
+- [x] Demo TV: Harbour Lights shows two seasons of six episodes, the first three watched (2026-11-09)
+
+### Phone remote: add-on subtitles
+
+- [x] The Subtitles tile shows the add-on subtitle's name (English (SubSens…) once one is on (2026-11-09)
+- [x] Hold the Subtitles tile: a sheet lists Off, the file's own subtitles, then each add-on's (under its name), the one in use marked "On"; with none yet it says it is asking and fills in as the add-ons answer (2026-11-10)
+- [x] Tapping a row in that sheet switches the TV's subtitles to it (an add-on one loads and shows), the tile follows, and Off turns them off; a quick tap on the tile still cycles to the next (2026-11-10)
+- [x] Scrolling the sheet's list does not pick a row by accident (2026-11-10)
+- [ ] Demo TV: hold Subtitles shows a list of six; picking one changes the tile
+- [x] Hold the Audio tile: a sheet lists the film's audio tracks (the one playing marked "On"); tapping one switches the TV's audio and the tile follows; a quick tap still cycles to the next (2026-11-10)
+- [x] The audio list leaves out commentary and audio-description tracks, as the TV's own audio panel does (2026-11-10)
+
+- [ ] A film with no built-in subtitles (the screenshot case): once the add-on subtitles are found, the Subtitles tile reads "Off" instead of "Tap for the next"; tapping it picks the first add-on subtitle and the tile shows its name; further taps go through the rest
+
+### Phone remote: Sources cards
+
+- [x] Open a film's or episode's source list on the phone: each source is a card with the add-on's name on top, then badges for resolution (4K, 1080p), HDR or Dolby Vision, codec (HEVC, H.264) and size (2026-11-10)
+- [x] The raw release name sits on one muted line under the badges; holding the card shows all of it, holding again hides it (2026-11-10)
+- [x] A quick tap on a card still plays that source on the TV (and holding does not play it); greyed cards still do nothing (2026-11-10)
+- [x] The filter row under the title (All, Instant, 4K, HDR, Dolby Vision) only offers filters that match something; tapping one narrows the list, tapping it again (or All) shows everything (2026-11-10)
+- [ ] A source whose name says nothing readable shows its name as before, not an empty card
+- [ ] Demo TV: the first source shows 4K, Dolby Vision and HEVC; the second shows 1080p, HDR10 and H.264
+
+### Phone remote: film extras, music extras and the More sheet
+
+- [x] Film screen: top panel, Subtitles and Audio tiles, play buttons, volume slider and Skip / Next episode (when shown) fit without scrolling on your phone; a smaller phone may scroll a little (2026-11-10)
+- [x] Under the play button a slim volume slider changes the TV's volume, and the number follows (2026-11-10)
+- [x] More > Playback has Speed chips on a film (0.75x to 2x); tapping one changes the film's speed on the TV and the chip lights; the TV's own speed panel agrees; Speed is not shown for music (2026-11-10)
+- [ ] During a show's intro (or recap, credits) a "Skip intro" (or "Skip credits", "Skip recap") button shows above the card; tapping it jumps the TV past it; it disappears once the part is over
+- [ ] On a show with a next episode, "Next episode" shows and tapping it starts that episode on the TV; on a film it is not there
+- [x] More > Playback > Sleep: 15 / 30 / 60 min starts a timer and the row says "N min left"; when it ends the TV (or music) pauses; Off cancels it (2026-11-10)
+- [x] Music screen: a row of Shuffle, Repeat, Like and Radio under the play button. Shuffle and Repeat (off, all, one) change the TV's queue and light up; Radio starts a radio from the playing song (2026-11-10)
+- [x] Like shows only when signed in to YouTube Music on the TV; tapping it fills or empties the heart and the TV's heart agrees (2026-11-10)
+- [x] More sheet is in three groups (Playback with volume and sleep, Display with pad and dark mode, Device with Type and Other PC) and scrolls on a small phone (2026-11-10)
+- [ ] Demo TV: the film shows "Skip intro" for its first minute; speed, sleep, shuffle, repeat and like all answer
+
+### Phone remote: Tonight on the phone (Nov 10)
+
+Needs this Nuvio and the new NuvioRemote app together.
+
+- [ ] With the Tonight picker on the TV, the phone's Remote tab says "Choosing tonight" and shows Three Questions and Three Cards as two big buttons (the one used last marked LAST TIME)
+- [ ] Tapping Three Questions starts it on the TV; the phone shows the same question, "Question 2 of 3", "214 → 41 left" and two big answers
+- [ ] Tapping an answer answers it on the TV; "Either is fine" and "Back a question" do what Down and Back do on the TV; the buttons never move between questions
+- [ ] After the questions, the three cards show on the phone with their posters, SAFE / NEW TO YOU / WILDCARD, the reason and "ends 23:06"; tapping a card plays it on the TV, Details opens its page
+- [ ] Reshuffle on the phone deals three new cards once, then says "No reshuffles left"
+- [ ] Opening Knockout, Coin Toss or another mode on the TV makes the phone say it is on the TV, with Back to the start; the header tag swaps to the pad and back
+- [ ] Choosing something with the TV remote while the phone is open keeps the phone in step
+- [ ] Once a title starts playing, the phone switches to the film screen as usual
+
+## Music playback
+
+- [x] Gapless: songs in an album run straight into each other (2026-11-08)
+- [x] Volume is right from the first second, no jump a few seconds in (2026-11-08)
+- [x] Constant volume for music: no gain riding during a song (2026-11-08)
+- [ ] Constant volume for trailers: check they get the same treatment as music (Nick, 2026-11-08)
+- [x] Lossless: an album playing from YouTube Music switches to the addon's lossless copy; tiles show the Lossless badge (2026-11-08)
+- [x] Calm lyrics stay in order without jumbling (2026-11-08)
+- [x] After the upstream merge (mpv 0.42, FFmpeg 9.0.2): gapless, steady volume and the Beat Grid all still work (2026-11-09)
+
+## Mini player
+
+- [x] Open dock: cover-tinted seek bar, beat dot, Radio tag, "Keep going?" inside the card (2026-11-08)
+- [x] Heart likes the song on YouTube Music, and un-likes on a second click (2026-11-08)
+- [x] Quality pill, Previous, times at both ends of the bar, Up next with Play next / Remove, Shuffle, Repeat, Clear (2026-11-08)
+
+## Radio
+
+- [x] "Keep going?" near a radio's end, and Keep going adds more songs (2026-11-08)
+- [~] Stations and mixes play from search; Start radio on songs and artists (2026-11-08): works, but genre keyword
+  detection needs to be better. Plan: remove the Ladder and move genre into search. Built (2026-11-09), see Music home
+  and search below.
+
+## Shelf
+
+- [x] Three-panel browser fits one screen; Artists A to Z and All albums work with the remote and the mouse (2026-11-08)
+- [x] Smart shelves (New from your artists, Recently played, Most played, Gathering dust) fill from the play log (2026-11-08)
+- [x] Liked Music, Unplayed and Listen again shelves fill and play (2026-11-08)
+- [x] Liked Music shows your liked songs as their own rows after the card (2026-11-08)
+- [x] Play history: Import from YouTube Music and Clear (2026-11-08)
+- [x] YouTube Music as you: your own mixes, playlists and Liked Music (2026-11-08)
+
+## Music home and search
+
+- [x] Sentence chips, the narrow row, Remix / Live panels (2026-11-08)
+- [x] Top-match morph, the action row and More menus (2026-11-08)
+- [x] More menu on songs and releases (right-click, Menu key, hold OK), with Play next (2026-11-08)
+- [x] The Ladder is gone from the Music tab: no Ladder pills beside the search kinds, no "Ladder starters" or "Continue your ladder" on the old search's start screen, no "Ladder from here" or "Climb into" buttons in the preview pane (2026-11-10)
+- [x] Stage: tapping a genre chip closes the stage, opens the Music tab and searches that genre (the genre card shows) (2026-11-10)
+- [x] Type a genre (shoegaze, post punk, trip hop): a genre card leads Top Match, with "IN YOUR LIBRARY" artists and "TOP ARTISTS" under it; OK on the card plays a radio or playlist for it (2026-11-10)
+- [x] Spelling and word order are forgiven: "postpunk", "hip hop music", "rock indie", "punks" all show the card (2026-11-10)
+- [x] Moods, activities and decades: "chill", "workout music", "90s", "90s rock" show a card (and "90s rock" plays something sensible) (2026-11-10)
+- [x] An artist wins a clash: with an artist as the top match (try "Soul" or "Dance" if you own one), the artist stays Top Match and the genre card sits second (2026-11-10)
+- [ ] With the offline MusicBrainz copy installed, a niche tag the hand list lacks (try "vaportrap", "witch house") still gets a card; without the copy it does not
+- [x] Tapping a TOP ARTISTS row searches that artist (2026-11-10)
+
+## Artist page
+
+- [x] Photo hero, three panels, Essentials and Discography, six buttons on one row (2026-11-08)
+
+## Album page
+
+- [x] Lineage fills from open data (Wikidata, YouTube Music) instead of waiting on the AI (2026-11-08)
+- [~] The Story shows text even when the AI key is out for the day (2026-11-08): works, but it only says "From
+  Wikipedia", so it is not clear whether the Gemini / Google Search backup ever answered. Needs a way to tell which
+  source wrote the story.
+- [x] Album intro uses YouTube Music's own Wikipedia blurb (2026-11-08)
+- [x] Who made it: credits for most albums, without waiting on the AI (2026-11-08)
+- [x] Sonic Map and Your History tabs (2026-11-08)
+- [x] Cut to fit (2026-11-08)
+- [x] Albums with two editions (Ren, Vincent's Tale) stay on one (2026-11-08)
+- [ ] **BROKEN** Song by song > Other versions finds the clean or explicit edition (2026-11-08): not all of the time,
+  needs work
+- [x] Edit pills: small card, intro, trivia and the song story edit on the album page and the Stage, and stick (2026-11-08)
+
+## Music facts
+
+- [ ] **BROKEN** The facts filler fills in the background within the AI key's limits (2026-11-08): on Groq's free tier
+  it hits the limits within seconds
+- [x] Share music facts as JSON; Fill album facts in the background (Settings > Music) (2026-11-08)
+
+## Now Playing stage
+
+- [x] Beat Grid drum rows read on the beat; Song Map has the right tempo and bar lines and fills the width (2026-11-08)
+- [~] Beat Grid: beat one in the right place, e.g. Billie Jean (2026-11-08): much better, still needs work
+- [x] Visualiser in the Liner Notes box (2026-11-08)
+- Bigger album case on wide windows: dropped, the new screen replaced it (2026-11-08)
+
+## Live TV
+
+- [x] Stalker portals log in, load channels and play (2026-11-08)
+
+## Saving settings (hardening, Nov 10)
+
+- [ ] Change a setting (e.g. a Music setting), then close Nuvio with the X and reopen it: the change is still there (stores now force their data to disk before the swap)
+- [ ] After a normal day of use, nothing about settings, library, play history or music facts has reset on its own; if something has, say which (a zero-length store now falls back to its `.bak`, and the log says "is empty; recovering")
+- [ ] Phone remote after the connection limit: the phone still pairs, reconnects after the screen was off, and a second phone can connect at the same time (the PC now refuses more than 16 open connections and gives a new one 30 s to pair)
+
+## Artist page and Previously on (Nov 10)
+
+- [ ] Artist page, Essentials: an artist whose YouTube Music list is short (Gang Starr had 5) now shows up to 10 songs; the extra ones come after YouTube Music's own, are real songs you can play, and Play Essentials plays them too
+- [ ] Artist page, Essentials: an artist with a full list of 10 looks and plays exactly as before
+- [ ] Previously on: pick up a half-watched episode of a show (Continue Watching or the phone's Resume) after more than your break (3 days by default): the "Previously on" cards show before it carries on from where you stopped
+- [ ] Previously on: pick up a half-watched episode you left a few hours ago: no cards, it just resumes (with "Only after a break" off, every resume gets the cards)
+- [~] Artist page, Story tab (third tab beside Essentials and Discography): a timeline of a few points (DEBUT, FIRST ALBUM, BEST KNOWN, COMEBACK, LATEST), each with the year, a line saying why, and the record from then; OK on a row opens that record; More menu works on a row (2026-11-10): works, but the years did not make sense (Jamiroquai: rows evenly spaced, "back after 7 years" from an album not on the line, 16 albums in the heading vs 17 on the right, a 2025 single with no cover as LATEST)
+  - [ ] Re-check (Jamiroquai): a year line above the rows runs 1992 to 2017 to scale, a tick for each of the 8 studio albums, a dot per point, the decades marked, and the 2010 to 2017 gap dashed with "7-year break" over it
+  - [ ] Re-check: the heading reads "8 studio albums · ... · 1992–2025" and the right panel's tile says "Studio albums 8" (reissues, deluxe editions, best-ofs and live albums no longer count)
+  - [ ] Re-check: COMEBACK reads "Back 7 years after Rock Dust Light Star (2010)"
+  - [ ] Re-check: LATEST is never a release with no cover that plays nowhere (Jamiroquai's 2025 single is gone; Automaton is the last point)
+- [ ] Artist page, Story tab: nothing moves or resizes between artists (every row the same height, the record slot the same width, long titles cut); an artist with almost no dated releases says so instead of showing an empty panel
+
+## Profiles and the phone app (Nov 10)
+
+- [ ] Set something different in two profiles (Settings, Gamepad dead zone; Games, backdrop style; Playback, anime filler badges), then switch profile from the profile picker: each profile shows its own values straight away, without restarting Nuvio
+- [ ] Phone remote: pairing still works after the update (scan the QR or enter the address and PIN), and it reconnects the next day without asking again
+- [ ] Home, the movie/show page and the album page (JIT flag for the biggest screens): after about a minute of use, scrolling Home and opening a title or an album feels the same or smoother than before; say if Home hitches in its first minute, or Task Manager shows Nuvio's CPU staying high after it has settled
+
+## Settings search
+
+- [ ] Search "subtitle size", "outline", "blur" and "vertical offset": each result opens Player settings at the Subtitle rendering section
+- [ ] Search "failover", "player ui scale", "controls layout", "seek bar handle": each lands on its section of Player or Streams settings
+- [ ] Search "tvdb", "hero artwork", "proxy address", "links to prepare", "minimum score": each opens the right page at the right section
+- [ ] Search "music addon link", "daily allowance", "export facts", "dim to", "theme song volume": each opens its page at the right section
+- [ ] Search "mpv options", "low vram", "audio passthrough", "close to notification area": each opens its page (desktop only)
+
+## Tonight picker (phases 0 and 1, Nov 10)
+
+Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
+
+- [ ] **BROKEN** Back from Three Cards (2026-11-10): Esc on the keyboard did nothing (the Android remote's Back works); fixed the same evening (Back now acts on the key coming up)
+  - [ ] Re-check: the remote's Back (and a pad's B, the phone remote's Back, the mouse's back button) leaves every Tonight mode: cards and questions step back, the modes return to the launcher; on the launcher Back does what it did before
+- [ ] Typing "Tonight" or "bedtime" in the Settings search finds the Tonight picker rows and opens Random Play at that section (also listed first in the Random Play page's sidebar)
+- [ ] With the switch on, Nuvio opens on "How shall we choose tonight?" instead of the Home rows; with it off, Home is as before
+- [ ] The launcher's eight tiles keep their size; the six unbuilt ones are dimmed with "COMING SOON", and OK on one says it is coming later
+- [ ] The tile used last time has "LAST TIME" on it and is selected when the launcher opens
+- [ ] "Just browse everything" goes to the normal Home rows; pressing Home again brings the picker back
+- [ ] Up from the tiles reaches the bedtime chip; Left/Right on it move bedtime by 15 minutes, and the Bedtime slider in Settings matches
+- [ ] Three Questions: the first question is always "A film, or a show?"; Left and Right answer at once, Down means "Either is fine", Back goes back a question
+- [ ] The two questions after it differ from one night to the next, and a question is never one where every title would give the same answer
+- [ ] The "214 → 41 titles left" count and the SO FAR chips follow the answers
+- [ ] After the questions, three cards: SAFE (something you're watching or have seen), NEW TO YOU, WILDCARD; never the same title twice
+- [ ] Each card shows the right poster and a sensible line under it (year, length, "ends 23:06" for films; "Next: S2 E4 · 30 min eps · 3 before bed" for shows)
+- [ ] No film that would end well after bedtime is dealt (with bedtime still at least 20 minutes away)
+- [ ] OK on a card plays it (a film from where you left it, a show's next episode); Down opens its page instead
+- [ ] Reshuffle deals three different titles once; after that it says "No reshuffles left tonight" until tomorrow evening
+- [ ] Three Cards straight from the launcher deals from everything that fits before bed
+- [ ] Titles marked "Not interested" in Discover never appear
+- [ ] A mouse works too: hovering a tile or card selects it, clicking plays or opens
+
+### Tonight picker: the What to watch button and a way out (Nov 10 evening)
+
+- [ ] A "What to watch" button (sparkle icon) sits beside Search in the top bar and the sidebar; it opens the Tonight launcher over Home, Library or Discover (from Music or Live TV it goes to Home first)
+- [ ] Every Tonight screen has an ✕ in the top-right corner; clicking it closes Tonight and the rows behind come straight back
+- [ ] Back on the launcher closes Tonight (Back inside a mode still steps back first)
+- [ ] With "Open on Tonight" off, Nuvio opens on Home; with it on, Nuvio opens on Tonight once at start, and after closing it stays closed until the button is pressed
+- [ ] The button can be moved in Settings > Appearance > Navigation order ("What to watch")
+- [ ] Phone remote: a "What to watch?" button above the pad on the Remote tab opens Tonight on the TV, and the phone switches to the Tonight mirror
+
+### Tonight picker: Coin Toss and Knockout (phase 2, Nov 10)
+
+- [ ] The launcher's Knockout and Coin Toss tiles are no longer "coming soon" and open their modes
+- [ ] Coin Toss: one title with its poster, name and "ends 23:06" line, and a ring counting down from 10; doing nothing plays it
+- [ ] Left tosses again with a new title and a fresh countdown; a vetoed title never comes back that evening
+- [ ] The "What your no's said" panel lists the last three vetoes with a reason ("too long", "too heavy"...) and a lean ("leaning shorter and lighter"), and the next tosses follow it
+- [ ] Up holds the countdown (the ring greys and shows II) and Up again restarts it; OK plays at once; Down opens the title's page
+- [ ] Knockout: eight titles (fewer only if fewer fit before bed) in a bracket on the left; two at a time in the middle, with the pair highlighted in the bracket
+- [ ] Left or Right keeps one; losers are struck through; three rounds, the last called "THE FINAL"
+- [ ] Back undoes the last pick (Back with nothing picked goes to the launcher)
+- [ ] The winner shows with a five-second ring and then plays; OK plays at once, Back reopens the final
+- [ ] Clicking a poster with the mouse keeps it in Knockout
+
+### Tonight picker: Channel Flick and trailer tastes (phase 3, Nov 10)
+
+- [ ] The Channel Flick tile opens trailers one after another in a large frame, with sound at the hero trailers' volume; music pauses while they play
+- [ ] Under the frame: where the title comes from (FROM YOUR LIBRARY, TRENDING THIS WEEK, YOU'RE ON S2 E4), its name and "ends 23:06"; the frame and the lines under it never move
+- [ ] When a trailer ends the next channel starts by itself; a title with no trailer says so briefly and is skipped
+- [ ] Right flicks to the next channel; the three UP NEXT pictures in the top corner match what comes next
+- [ ] Left says "won't come up again" and the title is gone from Tonight and from Discover's rows (it is in Not interested)
+- [ ] Up saves the title to your library ("saved for later") and moves on; OK plays the title
+- [ ] Keys still work while a trailer plays (the trailer never takes the remote's focus)
+- [ ] Knockout: Down plays a 20-second taste of the left title, Down again (or the end) the right one, then back to the posters; Left/Right still keep one while tasting; Back stops the tastes
+- [ ] Three Cards: holding OK on a card plays its trailer in place of the cards; a quick OK still plays the title; Back returns to the cards
+
+### Tonight picker: Ends By and The Pile (phase 4, Nov 10)
+
+- [ ] Ends By opens on "It's 21:10. Bed at 23:30." with hour marks, a white NOW line and a BED line
+- [ ] Films are bars from now ending in "ends 22:52"; shows are a block per episode that fits ("3 eps · 22:40") with one faded block past bed
+- [ ] Rows that fit come first (the one that fills the evening best on top); ones that run past bedtime are faded at the bottom
+- [ ] Up/Down move through the rows (six at a time; the list moves, rows never resize); Left/Right move bedtime and the bars and order update; OK plays the row
+- [ ] The Pile lists library titles you have never started, newest on top, each spine with "added 3 days ago" ... "added 8 months ago"; older spines are dustier and fainter
+- [ ] The chosen spine slides out and the panel shows how long it has waited, its poster, length and genres
+- [ ] OK plays it; Left once asks "again to let it go", Left again removes it from the pile and from Discover's suggestions (Not interested)
+- [ ] With nothing on the pile it says so instead of showing an empty panel
+
+### Tonight picker: The Map and the AI (phase 5, Nov 10)
+
+- [ ] The Map tile opens a field with no rows: LIGHT left, HEAVY right, SOMETHING NEW top, COMFORT bottom, and a ring (the lens)
+- [ ] The lens starts over the kind of thing you keep; the arrows move it; titles near it grow and show their posters, the rest stay small and dim
+- [ ] The side panel shows the title nearest the lens (picture, name, "ends 23:06", "Light, and new to you", up to two nearby titles) and its lines never move
+- [ ] Light things (comedies, family) sit left and heavy ones (war, drama) right; things you're watching sit low, trending ones you've never seen high
+- [ ] OK plays the title under the lens; clicking a small tile moves the lens to it, clicking the one under the lens plays it
+- [ ] The bedtime chip at the top says "Ends before 23:30" and nothing on the field runs past it
+- [ ] Settings > Random Play > Tonight picker > "Let the AI refine The Map": turning it on asks for AI consent if not given yet
+- [ ] With it on and The Map open, the panel's footer counts titles "placed with the AI's reading of their tone" and some tiles shift sideways; a dark comedy moves right of a family comedy
+- [ ] With it off, nothing is sent to the AI (no "Tonight map" lines in the log)
+

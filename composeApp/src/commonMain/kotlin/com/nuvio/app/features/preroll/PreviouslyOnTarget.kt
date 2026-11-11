@@ -61,6 +61,14 @@ internal fun previouslyOnTargetFor(episodes: List<PreviouslyOnEpisode>, season: 
 internal fun previouslyOnGapPassed(watchedAtMs: Long?, nowMs: Long, breakOnly: Boolean, gapMs: Long): Boolean =
     !breakOnly || watchedAtMs == null || nowMs - watchedAtMs >= gapMs
 
+/**
+ * The moment the break rule counts from. Starting an episode: when the recapped episode was watched. Resuming a half-watched
+ * one: when this episode was last watched, since a recap is wanted when you come back to it after time away, however long ago
+ * the episode before it was seen. Null (unknown) counts as passed, see [previouslyOnGapPassed].
+ */
+internal fun previouslyOnBreakFrom(resume: Boolean, resumedAtMs: Long?, recappedWatchedAtMs: Long?): Long? =
+    if (resume) resumedAtMs else recappedWatchedAtMs
+
 /** The heading of the first card. */
 internal fun PreviouslyOnTarget.lastTimeHeading(): String = when {
     previousSeason -> "LAST SEASON"

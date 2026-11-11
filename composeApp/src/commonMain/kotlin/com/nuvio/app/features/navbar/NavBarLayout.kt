@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.asStateFlow
 enum class NavBarEntry(val key: String, val label: String) {
     Home("home", "Home"),
     Search("search", "Search"),
+    /** fork:tonight - not a tab: opens the Tonight picker over the content tabs. */
+    Tonight("tonight", "What to watch"),
     Discover("discover", "Discover"),
     Library("library", "Library"),
     LiveTv("livetv", "Live TV"),
@@ -37,6 +39,7 @@ enum class NavBarEntry(val key: String, val label: String) {
 internal val DEFAULT_NAV_BAR_ORDER = listOf(
     NavBarEntry.Home,
     NavBarEntry.Search,
+    NavBarEntry.Tonight,
     NavBarEntry.Discover,
     NavBarEntry.Library,
     NavBarEntry.LiveTv,
@@ -134,7 +137,7 @@ fun rememberNavBarEntries(): List<NavBarEntry> {
             NavBarEntry.YouTube -> youTube
             NavBarEntry.Music -> music
             NavBarEntry.Games -> games
-            NavBarEntry.Home, NavBarEntry.Search, NavBarEntry.Library -> true
+            NavBarEntry.Home, NavBarEntry.Search, NavBarEntry.Library, NavBarEntry.Tonight -> true
         }
     }
 }

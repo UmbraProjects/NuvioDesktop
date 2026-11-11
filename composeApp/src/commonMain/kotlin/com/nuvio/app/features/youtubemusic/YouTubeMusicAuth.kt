@@ -262,6 +262,13 @@ internal object YouTubeMusicAuth {
         log.i { "Signed out of YouTube Music" }
     }
 
+    /**
+     * fork:youtube-cookie-upkeep — name kept for the callers that apply a response's `Set-Cookie` values
+     * (the YouTube tab, the stats ping, InnerTubeX's account check). It is [absorbSetCookies]: one merge
+     * rule and one saving rule for every request.
+     */
+    fun applySetCookies(setCookies: List<String>) = absorbSetCookies(setCookies)
+
     /** A request that carried the saved session was refused (401/403). The session is kept. */
     fun onSessionRejected() {
         _state.update { if (it.signedIn) it.copy(sessionRejected = true) else it }

@@ -70,6 +70,7 @@ internal object MusicBrainzClient {
     private const val THROTTLE_RETRIES = 3
     private const val THROTTLE_BACKOFF_MS = 2_000L
     private const val MAX_PAGES = 6
+    private const val CREDIT_EDITIONS = 5
     private const val TAG_SEARCH_LIMIT = 100
     private const val ARTIST_SEARCH_LIMIT = 5
 
@@ -196,6 +197,40 @@ internal object MusicBrainzClient {
         return paced("$BASE/artist?query=$query&limit=$ARTIST_SEARCH_LIMIT&fmt=json")?.let(::parseMbTagSearch)
     }
 
+    /**
+     * The best of the album's editions (best search match first, at most [CREDIT_EDITIONS]), read by [parse]. MusicBrainz often
+     * has credits on some editions only, and a sparse one (a mastering credit and nothing else) must not stop the search, so
+     * it goes on until an edition is [rich] (has per-song credits), then keeps the biggest answer seen. [empty] when the album
+     * is not in MusicBrainz or no edition has credits; null when MusicBrainz could not be reached.
+     * Note: relationships on the recordings of a release lookup need `recording-level-rels` (plain `recording-rels` returns none).
+     */
+    private suspend fun <T> bestEditionCredits(
+        artist: String, album: String, empty: T, parse: (String) -> T, size: (T) -> Int, rich: (T) -> Boolean,
+    ): T? {
+        fun quote(v: String) = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+        val query = "release:${quote(album)} AND artist:${quote(artist)}".encodeURLParameter()
+        val search = paced("$BASE/release?query=$query&limit=8&fmt=json") ?: return null
+        var best = empty
+        for (id in parseMbReleaseSearchIds(search).take(CREDIT_EDITIONS)) {
+            val body = paced("$BASE/release/$id?inc=recordings+recording-level-rels+work-rels+work-level-rels+artist-rels&fmt=json") ?: return null
+            val found = parse(body)
+            if (rich(found)) return found
+            if (size(found) > size(best)) best = found
+        }
+        return best
+    }
+
+    /** fork:essentials - the writers and producers of each song on [album] by [artist] (see [parseMbTrackCredits]); empty when not found. */
+    suspend fun trackCredits(artist: String, album: String): Map<Int, String> =
+        bestEditionCredits(artist, album, emptyMap(), ::parseMbTrackCredits, { it.size }, { it.isNotEmpty() }) ?: emptyMap()
+
+    /**
+     * fork:credits - everyone credited on [album] by [artist] (see [parseMbPeople]), from the best edition (see [bestEditionCredits]).
+     * An empty list when MusicBrainz has no such release or credits; null when it could not be reached (so the caller asks again later).
+     */
+    suspend fun peopleCredits(artist: String, album: String): List<Credit>? =
+        bestEditionCredits(artist, album, emptyList(), ::parseMbPeople, { it.size }, { list -> list.any { it.track > 0 } })
+
     suspend fun artist(mbid: String): MbArtist? =
         offline { it.artist(mbid) }?.let(::parseMbArtist)
             ?: paced("$BASE/artist/$mbid?inc=url-rels+tags+genres+ratings&fmt=json")?.let(::parseMbArtist)
@@ -274,6 +309,10 @@ internal object DeezerClient {
     /** The artist's most played tracks (up to 100), each with the album it is on. Null when Deezer could not be reached; empty when it has none. */
     suspend fun topTracks(artistId: Long): List<DeezerTopTrack>? =
         pacedFetch("$BASE/artist/$artistId/top?limit=100")?.let(::parseDeezerTopTracks)
+
+    /** fork:essentials - the same list with each song's title, for the album page's Essentials and popularity bars. */
+    suspend fun topSongs(artistId: Long): List<DeezerTopSong>? =
+        pacedFetch("$BASE/artist/$artistId/top?limit=100")?.let(::parseDeezerTopSongs)
 }
 
 /**
@@ -320,13 +359,26 @@ internal object WikipediaClient {
         summary(artist.trim().replace(' ', '_').encodeURLParameter())
             ?.takeIf { it.length > 60 && !it.contains("may refer to", ignoreCase = true) }
 
+    /** fork:story - the English Wikipedia article for the song [song] by [artist] (sections kept, "== Heading =="), or null when none fits. */
+    suspend fun songText(song: String, artist: String): String? {
+        val query = "${song.replace(Regex("""\s*[(\[].*?[)\]]"""), "")} $artist song".encodeURLParameter()
+        val title = fetch(
+            "https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=$query&gsrlimit=8" +
+                "&prop=extracts&exintro=1&explaintext=1&exlimit=max&format=json&formatversion=2",
+        )?.let { pickWikipediaSongTitle(it, song, artist) } ?: return null
+        return fetch(
+            "https://en.wikipedia.org/w/api.php?action=query&titles=${title.encodeURLParameter()}" +
+                "&prop=extracts&explaintext=1&exchars=12000&format=json&formatversion=2",
+        )?.let(::parseWikipediaPageExtract)
+    }
+
     /**
      * fork:booklet - the English Wikipedia text for [album] by [artist] (the lead and the sections after it), or null when no
      * page fits. Two requests: a search for the page (intros only, because MediaWiki returns more than one extract only for
      * intros), then the chosen page's own text.
      */
     suspend fun albumText(album: String, artist: String): String? {
-        val query = "$album $artist album".encodeURLParameter()
+        val query = "${albumSearchTitle(album)} $artist album".encodeURLParameter()
         val pick = fetch(
             "https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=$query&gsrlimit=8" +
                 "&prop=extracts&exintro=1&explaintext=1&exlimit=max&format=json&formatversion=2",

@@ -730,6 +730,12 @@ internal object DesktopStorage {
             // determined", which is exactly the locked-by-a-scanner case where treating the store
             // as new would let the next write wipe it.
             val source = when {
+                // fork:hardening - Properties.store always writes a header, so a zero-length file is
+                // damage (a write cut short), never a store that was saved empty. It would load as an
+                // empty store and the next write would bury the good .bak, so use the .bak instead.
+                !Files.notExists(file) && isEmptyFile(file) && hasContent(backupFile) -> backupFile.also {
+                    log.w { "store ${file.fileName} is empty; recovering from ${backupFile.fileName}" }
+                }
                 !Files.notExists(file) -> file
                 // A crash between writes can only leave .tmp, but a .bak with no main file means
                 // the main file was lost some other way; the previous version beats an empty store.
@@ -762,6 +768,12 @@ internal object DesktopStorage {
             }
             properties.putAll(recovered)
         }
+
+        private fun isEmptyFile(path: Path): Boolean =
+            runCatching { Files.size(path) == 0L }.getOrDefault(false)
+
+        private fun hasContent(path: Path): Boolean =
+            runCatching { Files.size(path) > 0L }.getOrDefault(false)
 
         private fun loadWithRetry(source: Path): Result<Properties> {
             var result = loadOnce(source)
@@ -814,8 +826,19 @@ internal object DesktopStorage {
             // real file stays intact and complete.
             val tmp = tempFile
             try {
-                Files.newOutputStream(tmp).use { output ->
+                // fork:hardening - force the bytes to disk before the swap. Without it a power cut (an
+                // HTPC is often switched off at the wall) can land the rename but not the data, leaving
+                // a zero-length file that reads back as a valid, empty store.
+                java.nio.channels.FileChannel.open(
+                    tmp,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.WRITE,
+                    java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
+                ).use { channel ->
+                    val output = java.nio.channels.Channels.newOutputStream(channel)
                     snapshot.store(output, "Nuvio desktop preferences")
+                    output.flush()
+                    channel.force(true)
                 }
                 // Keep the outgoing version as .bak: a hard link costs no copy, and the swap below
                 // replaces only the directory entry, so the link keeps the previous contents.

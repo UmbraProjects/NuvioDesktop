@@ -13,7 +13,19 @@ internal sealed interface MusicTrackTap {
 
 /** True when [album] is the album the player has loaded right now. */
 internal fun MusicPlayerState.holds(album: MusicAlbum): Boolean =
-    isActive && this.album?.browseId == album.browseId
+    // fork:lenses - the same record with fewer songs (a Cut to fit queue) is not the album: its indices are the cut's.
+    isActive && this.album?.browseId == album.browseId && this.album?.tracks?.size == album.tracks.size
+
+/**
+ * fork:lenses - where the playing song is in [album]'s own list, or -1: its queue index when the whole album is loaded,
+ * else (a cut of it is playing) the place of the same song. Never -1 just because the queue is a cut.
+ */
+internal fun MusicPlayerState.playingIndexIn(album: MusicAlbum): Int {
+    if (!isActive || this.album?.browseId != album.browseId) return -1
+    if (holds(album)) return trackIndex
+    val playing = track ?: return -1
+    return album.tracks.indexOfFirst { it.videoId == playing.videoId }
+}
 
 internal fun musicTrackTap(
     state: MusicPlayerState,

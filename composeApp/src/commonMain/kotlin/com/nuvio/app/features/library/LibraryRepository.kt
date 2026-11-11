@@ -827,6 +827,13 @@ object LibraryRepository {
                 TrackingProviderRegistry.libraryProvider(providerId) != null
         }
 
+    /**
+     * fork:phone-remote - the library source the Library tab means to show (the one picked in Settings, once its
+     * provider is signed in). While [uiState]'s sourceMode differs, what is published is the stand-in from before that
+     * provider loaded, so the phone asks again rather than taking it as the library.
+     */
+    fun intendedSourceMode(): LibrarySourceMode = effectiveLibrarySourceMode()
+
     private fun activeLibraryProvider(): TrackingLibraryProvider? =
         effectiveLibrarySourceMode().trackingProvider?.let(TrackingProviderRegistry::libraryProvider)
 

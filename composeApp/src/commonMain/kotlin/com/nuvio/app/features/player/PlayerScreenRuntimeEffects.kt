@@ -507,6 +507,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     BindPlayerMetadataAndSkipEffects()
     BindPartyEffects()
     BindDiscordRichPresenceEffect()
+    BindPhoneRemoteNowPlayingEffect() // fork:phone-remote
     BindLightsEffect()
     BindYouTubeWatchTimeEffect() // fork:youtube-mode
     BindYouTubeRelatedEffect() // fork:youtube-mode
@@ -533,8 +534,10 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         // Speculative stream searching must not compete with the playback it exists to make feel
         // instant, so it stays parked for as long as the player owns the screen.
         StreamPrefetchService.setPlaybackActive(true)
+        com.nuvio.app.features.music.booklet.FilmPlaying.active.value = true // fork:facts-filler - the filler waits while the player is up
         onDispose {
             StreamPrefetchService.setPlaybackActive(false)
+            com.nuvio.app.features.music.booklet.FilmPlaying.active.value = false // fork:facts-filler
             PluginRepository.setPlaybackStartupHold(false)
             P2pStreamingEngine.stopStream()
             PlayerStreamsRepository.clearAll()
@@ -834,6 +837,184 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
             DiscordRichPresenceController.setPlaybackActivity(null)
         }
     }
+}
+
+/**
+ * fork:phone-remote — tells the phone remote what this player is showing, and lets it seek, pause and set the volume
+ * directly (the phone's seek bar, the lock screen's buttons and its volume keys work even when Nuvio is not the
+ * focused window, which the keystroke path needs).
+ */
+@Composable
+private fun PlayerScreenRuntime.BindPhoneRemoteNowPlayingEffect() {
+    val runtime = this
+    DisposableEffect(Unit) {
+        val controls = object : com.nuvio.app.features.remote.RemoteFilmControls {
+            override fun seekTo(positionMs: Long) {
+                runtime.playerController?.seekTo(positionMs.coerceAtLeast(0L))
+            }
+            override fun seekBy(offsetMs: Long) {
+                runtime.playerController?.seekBy(offsetMs)
+            }
+            override fun play() {
+                runtime.playerController?.play()
+            }
+            override fun pause() {
+                runtime.playerController?.pause()
+            }
+            override fun setVolume(percent: Int) {
+                val controller = runtime.playerController ?: return
+                controller.setVolume((percent / 100f).coerceIn(0f, controller.maxVolumeFraction))
+            }
+            override fun subtitleChoices() = runtime.phoneRemoteSubtitleList()
+            override fun pickSubtitle(number: Int): Boolean {
+                val index = number - 1
+                val builtIn = runtime.visibleSubtitleTracks
+                val addons = runtime.visibleAddonSubtitles
+                if (index < 0 || index > builtIn.size + addons.size) return false
+                runtime.scope.launch {
+                    when {
+                        index == 0 -> runtime.selectBuiltInSubtitle(-1)
+                        index <= builtIn.size -> runtime.selectBuiltInSubtitle(builtIn[index - 1].index)
+                        else -> runtime.selectAddonSubtitle(addons[index - 1 - builtIn.size])
+                    }
+                }
+                return true
+            }
+            override fun audioChoices() = runtime.phoneRemoteAudioList()
+            override fun pickAudio(number: Int): Boolean {
+                val track = runtime.visibleAudioTracks.getOrNull(number - 1) ?: return false
+                runtime.scope.launch { runtime.selectAudioTrackFromList(track.index) }
+                return true
+            }
+            override fun fetchSubtitles() {
+                runtime.scope.launch { runtime.fetchAddonSubtitlesForActiveItem() }
+            }
+            override fun setSpeedPercent(percent: Int) {
+                runtime.applyUserPlaybackSpeed((percent / 100f).coerceIn(0.5f, 4f))
+            }
+            override fun skipSegment(): Boolean {
+                val interval = runtime.activeSkipInterval ?: return false
+                runtime.acceptSkipInterval(interval)
+                return true
+            }
+            override fun nextEpisode(): Boolean {
+                if (runtime.nextEpisodeInfo?.hasAired != true) return false
+                runtime.playNextEpisode()
+                return true
+            }
+        }
+        com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(null, controls)
+        onDispose { com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(null, null) }
+    }
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { phoneRemoteNowPlaying() }.collect { state ->
+            com.nuvio.app.features.remote.RemotePlayerHub.filmControls?.let { controls ->
+                com.nuvio.app.features.remote.RemotePlayerHub.publishFilm(state, controls)
+            }
+        }
+    }
+}
+
+private fun PlayerScreenRuntime.phoneRemoteNowPlaying(): com.nuvio.app.features.remote.RemoteNowPlaying? {
+    val snapshot = playbackSnapshot
+    if (snapshot.isEnded || isProviderDiagnosticVideoPlayback) return null
+    val youTube = if (isYouTubeVideoPlayback) youTubeDetails else null
+    val shownTitle = youTube?.title?.takeIf { it.isNotBlank() }
+        ?: discordPresenceTitle()
+        ?: title.takeIf { it.isNotBlank() }
+        ?: return null
+    val episodeLine = listOfNotNull(
+        discordPresenceEpisodeLabel(),
+        activeEpisodeTitle?.trim()?.takeIf { it.isNotBlank() },
+    ).joinToString(" · ").takeIf { it.isNotBlank() }
+    val level = playerController?.getVolume()
+    val max = ((playerController?.maxVolumeFraction ?: 1f) * 100f).toInt().coerceAtLeast(100)
+    return com.nuvio.app.features.remote.RemoteNowPlaying(
+        kind = "film",
+        title = shownTitle,
+        subtitle = youTube?.channelName ?: episodeLine,
+        imageUrl = listOf(poster, adHocArtworkImageUrl, background).firstOrNull { !it.isNullOrBlank() },
+        isPlaying = snapshot.isPlaying && !snapshot.isLoading,
+        positionMs = if (isIptvPlayback) 0L else snapshot.positionMs.coerceAtLeast(0L),
+        durationMs = if (isIptvPlayback) 0L else snapshot.durationMs.coerceAtLeast(0L),
+        volume = level?.let { if (it.isMuted) 0 else (it.fraction * 100f).toInt().coerceIn(0, max) },
+        volumeMax = max,
+        canSkip = false,
+        subtitleTrack = phoneRemoteSubtitleName(),
+        audioTrack = audioTracks.firstOrNull { it.index == selectedAudioIndex }?.label?.takeIf { it.isNotBlank() },
+        speedPercent = (snapshot.playbackSpeed * 100f).toInt().coerceIn(50, 400),
+        skipLabel = activeSkipInterval?.takeUnless { skipIntervalDismissed }?.let { phoneRemoteSkipLabel(it.type) },
+        canNextEpisode = isSeries && nextEpisodeInfo?.hasAired == true,
+    )
+}
+
+/** What the phone's skip button says for a skippable part of this type (the TV's own prompt uses string resources). */
+internal fun phoneRemoteSkipLabel(type: String?): String = when (type?.lowercase()) {
+    "intro", "op", "mixed-op" -> "Skip intro"
+    "outro", "ed", "mixed-ed", "credits" -> "Skip credits"
+    "recap" -> "Skip recap"
+    "sponsor", "selfpromo", "interaction", "filler", "music_offtopic" -> "Skip this part"
+    else -> "Skip"
+}
+
+/** The phone's audio list: the tracks the player's panel offers (commentary and audio description left out), in its order. */
+private fun PlayerScreenRuntime.phoneRemoteAudioList(): com.nuvio.app.features.remote.RemoteSubtitleList {
+    val tracks = visibleAudioTracks
+    val on = tracks.firstOrNull { it.index == selectedAudioIndex || it.isSelected }
+    return com.nuvio.app.features.remote.RemoteSubtitleList(
+        loading = false,
+        choices = tracks.map { track ->
+            com.nuvio.app.features.remote.RemoteSubtitleChoice(
+                label = track.label.ifBlank { track.language ?: "Track ${track.index + 1}" },
+                detail = track.language?.takeIf { it.isNotBlank() && !track.label.contains(it, ignoreCase = true) },
+                group = "",
+                selected = on?.index == track.index,
+            )
+        },
+    )
+}
+
+/**
+ * What the phone's subtitle list shows: Off, then the file's own tracks, then the add-ons' subtitles, the same lists
+ * (and order) the player's panel offers, so a number the phone sends means the same row here.
+ */
+private fun PlayerScreenRuntime.phoneRemoteSubtitleList(): com.nuvio.app.features.remote.RemoteSubtitleList {
+    val builtIn = visibleSubtitleTracks
+    val addons = visibleAddonSubtitles
+    val addonOn = if (useCustomSubtitles) selectedAddonSubtitle else null
+    val builtInOn = if (addonOn == null) builtIn.firstOrNull { it.index == selectedSubtitleIndex || it.isSelected } else null
+    val choices = buildList {
+        add(com.nuvio.app.features.remote.RemoteSubtitleChoice("Off", null, "Off", selected = addonOn == null && builtInOn == null))
+        builtIn.forEach { track ->
+            add(
+                com.nuvio.app.features.remote.RemoteSubtitleChoice(
+                    label = track.label.ifBlank { track.language ?: "Track ${track.index + 1}" },
+                    detail = listOfNotNull(track.language?.takeIf { it.isNotBlank() }, "forced".takeIf { track.isForced }).joinToString(" · ").ifBlank { null },
+                    group = "Built-in",
+                    selected = builtInOn?.index == track.index,
+                ),
+            )
+        }
+        addons.forEach { sub ->
+            add(
+                com.nuvio.app.features.remote.RemoteSubtitleChoice(
+                    label = sub.display.ifBlank { sub.language },
+                    detail = sub.language.takeIf { it.isNotBlank() && it != sub.display },
+                    group = sub.addonName?.takeIf { it.isNotBlank() } ?: "Add-on",
+                    selected = addonOn != null && (sub.id == addonOn.id && sub.url == addonOn.url),
+                ),
+            )
+        }
+    }
+    return com.nuvio.app.features.remote.RemoteSubtitleList(loading = isLoadingAddonSubtitles, choices = choices)
+}
+
+/** What the phone's Subtitles tile shows: an addon subtitle by its name, a built-in one by its label, else Off. */
+private fun PlayerScreenRuntime.phoneRemoteSubtitleName(): String? {
+    selectedAddonSubtitle?.let { addon -> return addon.display.ifBlank { addon.language } }
+    // Add-on subtitles count too: a file with no built-in tracks still has something to cycle to once they are found.
+    if (subtitleTracks.isEmpty()) return if (visibleAddonSubtitles.isNotEmpty()) "Off" else null
+    return subtitleTracks.firstOrNull { it.index == selectedSubtitleIndex }?.label?.takeIf { it.isNotBlank() } ?: "Off"
 }
 
 /**

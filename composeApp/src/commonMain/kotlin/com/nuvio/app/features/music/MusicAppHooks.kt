@@ -132,6 +132,13 @@ fun BoxScope.MusicRootHosts(
     onOpenMusicTab: () -> Unit = {},
 ) {
     MusicAudioKeepAlive(hidden)
+    // fork:facts-filler - the background filler for the album page's facts lives as long as the app (off until switched on).
+    androidx.compose.runtime.LaunchedEffect(Unit) { com.nuvio.app.features.music.booklet.FactsFiller.run() }
+    // fork:history - counts each song's plays and skips for the album page's Your history lens, for the life of the app.
+    androidx.compose.runtime.LaunchedEffect(Unit) { com.nuvio.app.features.music.library.SongHistory.run() }
+    // fork:music-radio - asks "Keep this radio going?" near the end of a radio's tracks.
+    androidx.compose.runtime.LaunchedEffect(Unit) { RadioKeepGoing.watch(MusicPlayback.player) }
+    RadioKeepGoingDialog()
     MusicNowPlayingHost(
         hidden = hidden,
         onOpenArtist = onOpenArtist,

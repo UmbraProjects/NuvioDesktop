@@ -129,7 +129,7 @@ class NativeImageReflectionCheckTest {
 
         sourceRoots.filter { it.isDirectory }.forEach { sourceRoot ->
             sourceRoot.walkTopDown().filter { it.isFile && it.extension == "kt" }.forEach { file ->
-                val source = file.readText()
+                val source = file.readText().replace("\r\n", "\n") // a CRLF checkout (Windows CI) would skew the per-line offsets below
                 val relative = file.relativeTo(sourceRoot).invariantSeparatorsPath.substringAfter("com/nuvio/app/")
                 val variables = forNameVariable.findAll(source).associate { it.groupValues[1] to it.groupValues[2] }
                 val lines = source.lines()

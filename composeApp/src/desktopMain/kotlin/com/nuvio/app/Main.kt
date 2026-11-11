@@ -50,6 +50,7 @@ import com.nuvio.app.core.ui.loadDesktopTrayIconImage
 import com.nuvio.app.core.ui.loadDesktopWindowIconImages
 import com.nuvio.app.features.input.GamepadInput
 import com.nuvio.app.features.input.GamepadSettingsRepository
+import com.nuvio.app.features.remote.PhoneRemote
 import com.nuvio.app.features.p2p.P2pStreamingEngine
 import com.nuvio.app.features.player.DesktopRendererApi
 import com.nuvio.app.features.player.PlatformPlayerSurface
@@ -633,10 +634,11 @@ fun main(args: Array<String>) {
             state = windowState,
             icon = painterResource(NuvioDesktopIconPath),
             // An arrow no control took, often because the control holding focus left the screen: on a music page,
-            // focus goes back onto the page (see MusicKeyboard). Window-level so it also runs with nothing focused.
+            // focus goes back onto the page (see MusicKeyboard); likewise in Settings (SettingsKeyboard). Window-level so it also runs with nothing focused.
             onKeyEvent = { event ->
                 com.nuvio.app.core.ui.arrowFocusDirection(event) != null &&
-                    com.nuvio.app.features.music.MusicKeyboard.onUnhandledArrow()
+                    (com.nuvio.app.features.music.MusicKeyboard.onUnhandledArrow() ||
+                        com.nuvio.app.features.settings.SettingsKeyboard.onUnhandledArrow())
             },
         ) {
             remember {
@@ -887,6 +889,9 @@ fun main(args: Array<String>) {
                 // the window: the poll thread parks immediately unless the user enabled it.
                 GamepadSettingsRepository.ensureLoaded()
                 GamepadInput.start()
+                // fork:phone-remote - the phone sends the same keystrokes a pad does, so it shares
+                // the pad's lifetime. Off the UI thread: listing network adapters can be slow on Windows.
+                kotlin.concurrent.thread(isDaemon = true, name = "phone-remote-start") { PhoneRemote.start() }
                 // Same reasoning: idle is idle wherever the user is in the app, and the shade has
                 // to cover the native player as much as the browsing screens.
                 val uninstallScreensaver = com.nuvio.app.features.screensaver.DesktopScreensaver.install(
@@ -907,6 +912,7 @@ fun main(args: Array<String>) {
                 onDispose {
                     uninstallScreensaver()
                     GamepadInput.stop()
+                    PhoneRemote.stop()
                     DesktopNavigationGestureBridge.setHorizontalScrollModifierActive(false)
                     uninstallFullscreenWatchdog()
                     uninstallDisplayMetricsTracking()

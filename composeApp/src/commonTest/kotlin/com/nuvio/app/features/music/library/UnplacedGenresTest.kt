@@ -149,7 +149,6 @@ class UnplacedGenresTest {
         val graph = buildConstellationGraph(chosen)
         assertTrue(graph.untagged.isEmpty())
         assertTrue("n1" in graph.stars.map { it.id })
-        assertTrue(constellationKey(library) != constellationKey(chosen), "the map rebuilds when a genre is chosen")
     }
 
     @Test

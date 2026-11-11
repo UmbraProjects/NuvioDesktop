@@ -101,6 +101,36 @@ class ArtistAddonTest {
     }
 
     @Test
+    fun theWideListAsksAboutYouTubeAlbumsToo_gapsFirstThenEachNewestFirst() {
+        val releases = listOf(
+            release("old", "Old Album", year = "2001"),
+            release("ytNew", "YT New", year = "2024", yt = "MPREb_2"),
+            release("ytOld", "YT Old", year = "1999", yt = "MPREb_3"),
+            release("ep", "An EP", kind = ReleaseKind.EP, year = "2010", yt = "MPREb_4"),
+            release("single", "A Single", kind = ReleaseKind.Single, year = "2024", yt = "MPREb_5"),
+            release("demo", "Rough Demo", year = "2000", yt = "MPREb_6"),
+        )
+        // Not on YouTube Music first (they decide what is playable), then the YouTube-listed albums and EPs; no singles or demos.
+        assertEquals(listOf("old", "ytNew", "ep", "ytOld"), releasesToAskAddonWide(releases).map { it.key })
+    }
+
+    @Test
+    fun theWideListAsksOncePerFoldedCard() {
+        val asked = releasesToAskAddonWide(
+            listOf(release("a", "Same Album", yt = "MPREb_1", tracks = 7), release("b", "Same Album", yt = "MPREb_2", tracks = 11)),
+        )
+        assertEquals(1, asked.size)
+    }
+
+    @Test
+    fun aYouTubeCardGetsTheLosslessPillButIsStillNotCountedAsOnTheAddon() {
+        val yt = groups().single { it.primary.key == "yt" }
+        assertTrue(yt.hasLossless(setOf("yt")))
+        assertFalse(yt.hasLossless(setOf("gap")))
+        assertFalse(yt.onAddon(setOf("yt")))
+    }
+
+    @Test
     fun doesNotAskAboutACardThatHasAYouTubeVersion() {
         val asked = releasesToAskAddon(
             listOf(release("a", "Same Album", tracks = 7), release("b", "Same Album", yt = "MPREb_9", tracks = 11)),

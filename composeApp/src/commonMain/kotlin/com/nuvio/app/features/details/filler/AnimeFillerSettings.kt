@@ -32,6 +32,12 @@ object AnimeFillerSettings {
         )
     }
 
+    /** The settings are per profile: read the ones of the profile just switched to. */
+    fun onProfileChanged() {
+        loaded = false
+        ensureLoaded()
+    }
+
     /** Whether anything wants the filler lookup at all. */
     fun lookupWanted(): Boolean {
         ensureLoaded()

@@ -40,8 +40,10 @@ data class MusicLibrarySettings(
     val barStyleChosen: Boolean = false,
     /** The lyric view's queue (and its Where next) fades out after a few idle seconds; off keeps it on screen. */
     val fadeQueue: Boolean = true,
-    /** fork:booklet - the album's sleeve notes in a glass panel beside the lyrics on a wide Stage. */
-    val booklet: Boolean = true,
+    /** fork:visualiser - the right-hand box shows the liner notes or the visualiser (the visualiser whenever there are no notes). */
+    val stageBoxView: com.nuvio.app.features.music.visualiser.StageBoxView = com.nuvio.app.features.music.visualiser.StageBoxView.Notes,
+    /** fork:visualiser - the visualiser style last chosen with Left and Right. */
+    val visualiserStyle: com.nuvio.app.features.music.visualiser.VisualiserStyle = com.nuvio.app.features.music.visualiser.VisualiserStyle.SongMap,
     /** fork:stage - the lyrics on the Now Playing stage; off leaves the middle of the Stage to the artist's art. */
     val lyricsOn: Boolean = true,
     /** How the lyric view sets its lyrics: the scrolling list, one calm marker-pen line, or loud stacked chunks. */
@@ -52,6 +54,8 @@ data class MusicLibrarySettings(
     val tabEnabled: Boolean = true,
     /** A free Last.fm API key. Set, Last.fm supplies artist tags and ladder candidates, ahead of MusicBrainz. */
     val lastFmApiKey: String = "",
+    /** fork:story - a free Gemini API key (aistudio.google.com). Set, Gemini writes a song's story from a Google search when the main AI key cannot. */
+    val geminiApiKey: String = "",
     /** The person's own music addon link (Nebula / Eclipse Music). Named "secret" so credential-free backups drop it, as they do the API keys. Empty hides the album source toggle. */
     val nebulaSecretLink: String = "",
     /** The second and third music addon links, asked after the first (see [addonLinks]). Named "secret" for the same reason. */
@@ -69,6 +73,12 @@ data class MusicLibrarySettings(
     val lrcMuxLyrics: Boolean = false,
     /** Word-by-word lyrics from LyricsPlus, a third-party service that relays Apple Music's lyrics. Off until chosen. */
     val lyricsPlusLyrics: Boolean = false,
+    /** fork:lenses - the redesigned album page (header cover, lens tabs, mirrored side panels). Off until chosen. */
+    val albumLenses: Boolean = false,
+    /** fork:artist-stage - the redesigned artist page (photo hero, then three panels with lens tabs). Off until chosen. */
+    val artistStage: Boolean = false,
+    /** fork:music-home - the quick-play first screen (search line, letter strip, three result panels). Off until chosen. */
+    val musicHome: Boolean = false,
     /** Skips the parts of a song's video that SponsorBlock users marked as not music (spoken intros, skits, outros). */
     val skipNonMusic: Boolean = false,
     /** Music pauses while a trailer or theme song plays with sound, and carries on when it ends. */
@@ -238,20 +248,34 @@ object MusicLibraryRepository {
      * disk; previewed ones stay in memory. With [trackCount] the relinked releases record how many tracks
      * that edition has, so opening it later finds the count already right and does not look again.
      */
-    fun relinkRelease(from: String, to: String, trackCount: Int? = null) {
+    fun relinkRelease(from: String, to: String, trackCount: Int? = null, fromTrackCount: Int? = null) {
         if (from == to) return
         ensureLoaded()
-        fun LibraryArtist.relinked() = copy(
-            releases = releases.map {
-                if (it.ytBrowseId == from) it.copy(ytBrowseId = to, trackCount = trackCount?.takeIf { n -> n > 0 } ?: it.trackCount) else it
-            },
-        )
+        fun LibraryArtist.relinked() = copy(releases = relinkedReleases(releases, from, to, trackCount, fromTrackCount))
         var savedChanged = false
         _state.update { s ->
             savedChanged = s.artists.any { a -> a.releases.any { it.ytBrowseId == from } }
             s.copy(
                 artists = s.artists.map { a -> if (a.releases.any { it.ytBrowseId == from }) a.relinked() else a },
                 preview = s.preview.mapValues { (_, a) -> if (a.releases.any { it.ytBrowseId == from }) a.relinked() else a },
+            )
+        }
+        if (savedChanged) persist()
+    }
+
+    /**
+     * fork:album-editions - links the edition [editionId] ([trackCount] tracks) to the sibling of the release linked to
+     * [linkedId] that has no YouTube Music link, the same title and that many tracks, so the version picker opens both.
+     */
+    fun linkSibling(linkedId: String, editionId: String, trackCount: Int) {
+        ensureLoaded()
+        fun LibraryArtist.linked() = copy(releases = siblingLinked(releases, linkedId, editionId, trackCount))
+        var savedChanged = false
+        _state.update { s ->
+            savedChanged = s.artists.any { a -> a.releases.any { it.ytBrowseId == linkedId } }
+            s.copy(
+                artists = s.artists.map { a -> if (a.releases.any { it.ytBrowseId == linkedId }) a.linked() else a },
+                preview = s.preview.mapValues { (_, a) -> if (a.releases.any { it.ytBrowseId == linkedId }) a.linked() else a },
             )
         }
         if (savedChanged) persist()
@@ -404,7 +428,8 @@ object MusicLibraryRepository {
         persist()
     }
 
-    private val topJobs = HashSet<String>()
+    // Written from the scope's Default threads as well as read on Main, so a concurrent set.
+    private val topJobs: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * Ranks the artist's top albums from Deezer when that has not been done (artists added before the
@@ -585,7 +610,7 @@ object MusicLibraryRepository {
     }
 
     /** Ids whose look-up ran to the end this session, so promoting a finished preview does not fetch it again. */
-    private val completed = HashSet<String>()
+    private val completed: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * Looks an artist up and writes the result as it grows. A saved artist is written to the library;

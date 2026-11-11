@@ -49,6 +49,18 @@ class MusicTrackTapTest {
     }
 
     @Test
+    fun aCutOfTheAlbumIsNotTheAlbumButItsSongIsFound() {
+        val a = album(available = listOf(true, true, true, true))
+        val cut = a.copy(tracks = listOf(a.tracks[1], a.tracks[3]))
+        val state = MusicPlayerState(album = cut, track = cut.tracks[1], trackIndex = 1)
+        assertFalse(state.holds(a))
+        assertEquals(MusicTrackTap.StartAlbum(2, MusicPlayMode.Audio), musicTrackTap(state, a, 2, MusicPlayMode.Audio))
+        assertEquals(3, state.playingIndexIn(a))
+        assertEquals(2, playing(a).copy(trackIndex = 2, track = a.tracks[2]).playingIndexIn(a))
+        assertEquals(-1, playing(album("MPREb_other")).playingIndexIn(a))
+    }
+
+    @Test
     fun shuffleStartSkipsGreyedOutTracks() {
         val a = album(available = listOf(false, true, false, true))
         repeat(50) { seed ->

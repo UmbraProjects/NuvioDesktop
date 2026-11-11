@@ -467,3 +467,45 @@ internal fun assembleArtist(
 }
 
 // endregion
+
+/**
+ * fork:album-editions - [releases] with the release linked to the YouTube Music album [from] moved to the edition [to]
+ * ([trackCount] tracks). The album it leaves ([fromTrackCount] tracks) is not lost: a sibling of the same title that has no
+ * YouTube Music link and that many tracks takes it, so both editions open from the version picker (Ren's "Vincent's Tale":
+ * 11 tracks and 7, both on YouTube Music). Unchanged when another release already links [to].
+ */
+internal fun relinkedReleases(
+    releases: List<LibraryRelease>,
+    from: String,
+    to: String,
+    trackCount: Int?,
+    fromTrackCount: Int? = null,
+): List<LibraryRelease> {
+    if (from == to || releases.none { it.ytBrowseId == from } || releases.any { it.ytBrowseId == to }) return releases
+    val moved = releases.first { it.ytBrowseId == from }
+    val key = baseTitleKey(moved.title)
+    val heir = fromTrackCount?.takeIf { it > 0 }?.let { n ->
+        releases.firstOrNull { it.key != moved.key && it.ytBrowseId == null && it.trackCount == n && baseTitleKey(it.title) == key }
+    }
+    return releases.map {
+        when {
+            it.ytBrowseId == from -> it.copy(ytBrowseId = to, trackCount = trackCount?.takeIf { n -> n > 0 } ?: it.trackCount)
+            heir != null && it.key == heir.key -> it.copy(ytBrowseId = from)
+            else -> it
+        }
+    }
+}
+
+/**
+ * fork:album-editions - [releases] with the edition [editionId] ([trackCount] tracks) linked to the sibling of the release
+ * linked to [linkedId]: same title, no YouTube Music link, that many tracks. Unchanged when there is none or a release
+ * already links [editionId].
+ */
+internal fun siblingLinked(releases: List<LibraryRelease>, linkedId: String, editionId: String, trackCount: Int): List<LibraryRelease> {
+    val linked = releases.firstOrNull { it.ytBrowseId == linkedId } ?: return releases
+    if (trackCount <= 0 || releases.any { it.ytBrowseId == editionId }) return releases
+    val key = baseTitleKey(linked.title)
+    val sibling = releases.firstOrNull { it.key != linked.key && it.ytBrowseId == null && it.trackCount == trackCount && baseTitleKey(it.title) == key }
+        ?: return releases
+    return releases.map { if (it.key == sibling.key) it.copy(ytBrowseId = editionId) else it }
+}

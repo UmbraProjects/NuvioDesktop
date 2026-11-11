@@ -1,5 +1,11 @@
 package com.nuvio.app.features.music
+// FORK UI (Spyder): Nick's Now Playing stage, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -51,6 +57,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,6 +74,9 @@ import com.nuvio.app.features.music.booklet.BookletTrack
 import com.nuvio.app.features.music.booklet.DeckPosition
 import com.nuvio.app.features.music.booklet.FactKind
 import com.nuvio.app.features.music.booklet.LinerPage
+import com.nuvio.app.features.music.booklet.SongStories
+import com.nuvio.app.features.music.booklet.stageEditGroups
+import com.nuvio.app.features.music.booklet.SongStory
 import com.nuvio.app.features.music.booklet.bookletTrackNumber
 import com.nuvio.app.features.music.booklet.coverStats
 import com.nuvio.app.features.music.booklet.cursorStep
@@ -120,18 +130,22 @@ internal fun bookletArtistFrom(artist: LibraryArtist?): BookletArtist? {
 internal fun bookletRequestFor(album: MusicAlbum, artist: LibraryArtist? = null): BookletRequest? {
     if (!isBookletAlbum(album.browseId)) return null
     val name = album.artists.firstOrNull()?.name?.takeIf { it.isNotBlank() } ?: return null
-    return BookletRequest(name, album.title, album.year, album.tracks.map { BookletTrack(it.title, it.durationSeconds) }, bookletArtistFrom(artist))
+    return BookletRequest(name, album.title, album.year, album.tracks.map { BookletTrack(it.title, it.durationSeconds) }, bookletArtistFrom(artist), album.wikipediaBlurb)
 }
 
 /** The booklet for the album playing: from the cache at once, else looked up (once per album) in the background. */
 @Composable
-internal fun rememberBookletUi(album: MusicAlbum?, enabled: Boolean, artist: LibraryArtist? = null): BookletUi {
-    val request = remember(album?.browseId, album?.tracks?.size, enabled, artist?.id, artist?.releases?.size, artist?.beginYear, artist?.channelMismatch) {
-        if (enabled && album != null) bookletRequestFor(album, artist) else null
+internal fun rememberBookletUi(album: MusicAlbum?, artist: LibraryArtist? = null): BookletUi {
+    val request = remember(album?.browseId, album?.tracks?.size, artist?.id, artist?.releases?.size, artist?.beginYear, artist?.channelMismatch) {
+        if (album != null) bookletRequestFor(album, artist) else null
     }
     // A key added or removed in Settings changes who writes the notes, so it starts a new lookup.
     val aiReady = DiscoverAiSettingsRepository.uiState.collectAsState().value.isConfigured
-    val ui by produceState<BookletUi>(BookletUi.Loading, request, aiReady) {
+    // A pin saved or cleared (an edit, an import) changes what is laid over the notes, so they are read again.
+    val pinVersion = com.nuvio.app.features.music.booklet.Pins.version.collectAsState().value
+    // What is kept shows at once (no frame of "loading" between a pin being saved and the notes being read again).
+    val kept = remember(request, aiReady, pinVersion) { request?.let { r -> AlbumBookletRepository.peek(r)?.let { BookletUi.Ready(it, r) } } }
+    val ui by produceState<BookletUi>(kept ?: BookletUi.Loading, request, aiReady, pinVersion) {
         if (request == null) {
             value = BookletUi.None
             return@produceState
@@ -141,29 +155,6 @@ internal fun rememberBookletUi(album: MusicAlbum?, enabled: Boolean, artist: Lib
         value = if (found != null) BookletUi.Ready(found, request) else BookletUi.None
     }
     return if (request == null) BookletUi.None else ui
-}
-
-@Composable
-internal fun NowPlayingBooklet(
-    ui: BookletUi,
-    album: MusicAlbum,
-    playingVideoId: String?,
-    reduced: Boolean,
-    onJumpToTrack: (Int) -> Unit,
-    onOpenAlbum: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (ui is BookletUi.None) return
-    val shape = RoundedCornerShape(18.dp)
-    Column(modifier.musicGlass(shape).padding(horizontal = 22.dp, vertical = 18.dp)) {
-        when (ui) {
-            BookletUi.None -> Unit
-            BookletUi.Loading -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Text("Reading the sleeve notes…", color = Color.White.copy(alpha = 0.6f), fontSize = 15.sp)
-            }
-            is BookletUi.Ready -> BookletDeck(ui.booklet, ui.request, album, playingVideoId, reduced, onJumpToTrack, onOpenAlbum, Modifier.weight(1f).fillMaxWidth())
-        }
-    }
 }
 
 private fun cursorCount(page: LinerPage): Int = when (page) {
@@ -178,7 +169,7 @@ private fun Modifier.onTap(action: () -> Unit): Modifier = pointerInput(action) 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BookletDeck(
+internal fun BookletDeck(
     booklet: AlbumBooklet,
     request: BookletRequest,
     album: MusicAlbum,
@@ -187,22 +178,43 @@ private fun BookletDeck(
     onJumpToTrack: (Int) -> Unit,
     onOpenAlbum: (String) -> Unit,
     modifier: Modifier,
+    /** fork:visualiser - the Notes / Visualiser switch, at the end of the hint line. */
+    switch: @Composable () -> Unit = {},
 ) {
     val accent = MaterialTheme.nuvio.colors.accent
     val playing = bookletTrackNumber(album.tracks.map { it.videoId }, playingVideoId)
-    val pages = remember(booklet, request, playing) { linerPages(booklet, request, playing) }
-    var position by remember(booklet) { mutableStateOf(DeckPosition(0, 0)) }
-    var revealed by remember(booklet) { mutableStateOf(emptySet<Int>()) }
-    var lastPlaying by remember(booklet) { mutableStateOf(playing) }
+    // fork:story - the song's own story (its Wikipedia article, written up by the AI), from the cache at once, else fetched.
+    val songTitle = playing?.let { request.tracks.getOrNull(it - 1)?.title }
+    // A pin saved from the Edit dialog changes the story laid over the article, so it is read again (the old story stays up meanwhile).
+    val pinVersion = com.nuvio.app.features.music.booklet.Pins.version.collectAsState().value
+    val keptStory = remember(request.artist, songTitle, pinVersion) { songTitle?.let { SongStories.peek(request.artist, it) } }
+    val story by produceState<SongStory?>(keptStory, request.artist, songTitle, pinVersion) {
+        if (songTitle == null) {
+            value = null
+            return@produceState
+        }
+        value = SongStories.peek(request.artist, songTitle)
+        if (value == null) value = SongStories.load(request.artist, songTitle, backup = true)
+    }
+    val pages = remember(booklet, request, playing, story) { linerPages(booklet, request, playing, story) }
+    var position by remember(request) { mutableStateOf(DeckPosition(0, 0)) }
+    var revealed by remember(request) { mutableStateOf(emptySet<Int>()) }
+    var lastPlaying by remember(request) { mutableStateOf(playing) }
     var forward by remember { mutableStateOf(true) }
     val page = position.page.coerceIn(0, pages.lastIndex)
 
     // A new song turns the deck to its own note, when the booklet has one.
+    // The story can arrive after the song starts, so a turn that found no Track page yet waits for it.
+    var turnPending by remember(request) { mutableStateOf(false) }
     LaunchedEffect(playing, pages.size) {
         if (playing != lastPlaying) {
             lastPlaying = playing
+            turnPending = true
+        }
+        if (turnPending) {
             val at = pages.indexOfLast { it is LinerPage.Track }
             if (at >= 0) {
+                turnPending = false
                 forward = at >= page
                 position = DeckPosition(at, 0)
             }
@@ -235,6 +247,22 @@ private fun BookletDeck(
             is LinerPage.Timeline -> current.timeline.entries.getOrNull(position.cursor)?.browseId?.let(onOpenAlbum)
             else -> Unit
         }
+    }
+
+    // The Edit dialog is a window over the stage: the deck underneath does not change while it is open.
+    var editing by remember { mutableStateOf(false) }
+    val editGroups = remember(pages[page], booklet, request) { stageEditGroups(pages[page], booklet, request) }
+    if (editing && editGroups.isNotEmpty()) {
+        StageEditDialog(
+            title = when (pages[page]) {
+                LinerPage.Cover -> "Edit the introduction"
+                is LinerPage.Facts -> "Edit these cards"
+                is LinerPage.Track -> "Edit what is said about this song"
+                else -> "Edit"
+            },
+            groups = editGroups,
+            onDismiss = { editing = false },
+        )
     }
 
     Column(modifier) {
@@ -270,10 +298,16 @@ private fun BookletDeck(
             label = "linerPage",
         ) { index ->
             val shown = pages.getOrElse(index) { LinerPage.Cover }
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            // fork:stage - each page is shrunk as a whole until it fits the box, so nothing scrolls. A facts page is sized as if every
+            // answer were showing, so revealing one never makes the page jump to a smaller size.
+            FitToHeight(Modifier.fillMaxSize()) { measuring ->
                 when (shown) {
                     LinerPage.Cover -> CoverPage(album, request, booklet.intro, accent)
-                    is LinerPage.Facts -> FactsPage(shown, revealed, accent) { index -> revealed = revealed + index }
+                    is LinerPage.Facts -> FactsPage(
+                        shown,
+                        if (measuring) revealed + shown.facts.indices.map { shown.startIndex + it } else revealed,
+                        accent,
+                    ) { index -> revealed = revealed + index }
                     is LinerPage.Guests -> GuestsPage(shown, position.cursor, album.tracks.size, accent) { at ->
                         position = position.copy(cursor = at)
                         shown.guests.getOrNull(at)?.let { guestTrack(it, album.tracks.size) }?.let { onJumpToTrack(it - 1) }
@@ -295,18 +329,15 @@ private fun BookletDeck(
             }
             NavPill("›", page < pages.lastIndex) { turn(1) }
         }
-        Text(
+        LinerHintRow(
             when (pages[page]) {
                 is LinerPage.Facts -> "Left and Right turn the page · Select reveals"
-                is LinerPage.Guests -> "Up and Down choose · Select plays · Left and Right turn"
-                is LinerPage.Timeline -> "Up and Down choose · Select opens · Left and Right turn"
+                is LinerPage.Guests -> "Up and Down choose · Select plays"
+                is LinerPage.Timeline -> "Up and Down choose · Select opens"
                 else -> "Left and Right turn the page"
             },
-            color = Color.White.copy(alpha = 0.45f),
-            fontSize = 12.sp,
-            modifier = Modifier.padding(top = 6.dp).fillMaxWidth(),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            switch,
+            edit = { PinPill("Edit", accent, { editing = true }, enabled = editGroups.isNotEmpty()) },
         )
         Text(
             when (booklet.source) {
@@ -320,22 +351,39 @@ private fun BookletDeck(
     }
 }
 
+/** The hint under the page dots, with [switch] at its end. Shared by the notes and the visualiser so the two footers match. */
 @Composable
-private fun NavPill(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = if (enabled) 0.12f else 0.05f))
-            .onTap { if (enabled) onClick() }
-            .padding(horizontal = 14.dp, vertical = 3.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = Color.White.copy(alpha = if (enabled) 0.9f else 0.3f), fontSize = 18.sp)
+internal fun LinerHintRow(hint: String, switch: @Composable () -> Unit, edit: (@Composable () -> Unit)? = null) {
+    Row(Modifier.padding(top = 6.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            hint,
+            color = Color.White.copy(alpha = 0.45f),
+            fontSize = 12.sp,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (edit != null) Box(Modifier.padding(start = 8.dp)) { edit() }
+        switch()
     }
 }
 
 @Composable
-private fun PageLabel(text: String, accent: Color, modifier: Modifier = Modifier) {
+internal fun NavPill(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = if (enabled) 0.12f else 0.08f))
+            .onTap { if (enabled) onClick() }
+            .padding(horizontal = 14.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = Color.White.copy(alpha = if (enabled) 0.9f else 0.5f), fontSize = 18.sp)
+    }
+}
+
+@Composable
+internal fun PageLabel(text: String, accent: Color, modifier: Modifier = Modifier) {
     Text(text, color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, modifier = modifier, maxLines = 1)
 }
 
@@ -363,6 +411,51 @@ private fun CoverPage(album: MusicAlbum, request: BookletRequest, intro: String,
                     if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
+        }
+    }
+}
+
+/** The smallest a notes page is drawn at (of its own size). A page still too tall at this scrolls instead. */
+private const val FIT_MIN_SCALE = 0.62f
+
+/**
+ * fork:stage - [content] laid out as a column and zoomed out (text, spacing and all, evenly) just enough to fit the height it is
+ * given, so a page never needs scrolling. [content] is told when it is only being measured, so it can size itself for its
+ * largest state. The zoom is found by halving the gap between a scale that fits and one that does not; a page that does not
+ * fit even at [FIT_MIN_SCALE] is drawn at that and scrolls.
+ */
+@Composable
+internal fun FitToHeight(modifier: Modifier = Modifier, content: @Composable (measuring: Boolean) -> Unit) {
+    val base = LocalDensity.current
+    SubcomposeLayout(modifier) { constraints ->
+        val maxHeight = constraints.maxHeight
+        val loose = constraints.copy(minWidth = 0, minHeight = 0, maxHeight = Constraints.Infinity)
+        fun heightAt(scale: Float): Int =
+            subcompose("measure:$scale") {
+                CompositionLocalProvider(LocalDensity provides Density(base.density * scale, base.fontScale)) {
+                    Column { content(true) }
+                }
+            }.maxOfOrNull { it.measure(loose).height } ?: 0
+        val scale = when {
+            !constraints.hasBoundedHeight || heightAt(1f) <= maxHeight -> 1f
+            heightAt(FIT_MIN_SCALE) > maxHeight -> FIT_MIN_SCALE
+            else -> {
+                var fits = FIT_MIN_SCALE
+                var tooBig = 1f
+                repeat(5) {
+                    val mid = (fits + tooBig) / 2f
+                    if (heightAt(mid) <= maxHeight) fits = mid else tooBig = mid
+                }
+                fits
+            }
+        }
+        val placeables = subcompose("shown") {
+            CompositionLocalProvider(LocalDensity provides Density(base.density * scale, base.fontScale)) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { content(false) }
+            }
+        }.map { it.measure(constraints) }
+        layout(constraints.maxWidth, if (constraints.hasBoundedHeight) maxHeight else placeables.maxOfOrNull { it.height } ?: 0) {
+            placeables.forEach { it.place(0, 0) }
         }
     }
 }
@@ -463,5 +556,35 @@ private fun TrackPage(page: LinerPage.Track, accent: Color) {
     if (page.title.isNotBlank()) {
         Text(page.title, color = Color.White, fontFamily = FontFamily.Serif, fontSize = 26.sp, lineHeight = 29.sp, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
     }
-    Text(page.note, color = Color.White.copy(alpha = 0.88f), fontSize = 16.sp, lineHeight = 24.sp, modifier = Modifier.padding(top = 12.dp))
+    val story = page.story
+    if (story == null) {
+        Text(page.note, color = Color.White.copy(alpha = 0.88f), fontSize = 16.sp, lineHeight = 24.sp, modifier = Modifier.padding(top = 12.dp))
+        return
+    }
+    // The song's story: how it was made, what it means, what came after, and the words of the people who were there.
+    // The page itself scrolls (the deck's Column above), so this one must not: a scroll inside a scroll is measured without a height and crashes.
+    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        story.made?.let { StorySection("HOW IT WAS MADE", it, accent) }
+        story.meaning?.let { StorySection("WHAT IT MEANS", it, accent) }
+        story.after?.let { StorySection("SAMPLED, COVERED, REMEMBERED", it, accent) }
+        story.quotes.forEach { quote ->
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("\u201C${quote.text}\u201D", color = Color.White.copy(alpha = 0.92f), fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic, fontSize = 15.sp, lineHeight = 21.sp)
+                if (quote.who.isNotBlank()) Text("\u2014 ${quote.who}", color = Color.White.copy(alpha = 0.55f), fontSize = 12.sp)
+            }
+        }
+        Text(
+            if (story.ai) "From Wikipedia, written up by AI \u00B7 may contain mistakes" else "From Wikipedia, CC BY-SA 4.0",
+            color = Color.White.copy(alpha = 0.35f),
+            fontSize = 11.sp,
+        )
+    }
+}
+
+@Composable
+private fun StorySection(label: String, text: String, accent: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(label, color = accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp)
+        Text(text, color = Color.White.copy(alpha = 0.88f), fontSize = 14.sp, lineHeight = 20.sp)
+    }
 }

@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.sp
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.nuvio
 
-// Shared by the Shelf and Eras views: the shelf's former private cover tile.
+// The shelf's cover tile.
 internal val TILE_SIZE = 112.dp
 internal val GOLD = Color(0xFFE8B84A)
 internal val ON_GOLD = Color(0xFF1A1307)
@@ -63,7 +63,7 @@ internal fun CoverTile(
     reducedMotion: Boolean,
     onClick: () -> Unit,
     onTogglePin: () -> Unit,
-    /** Drawn faded: a release that cannot be played here (the Eras view shows these; the shelf never does). */
+    /** Drawn faded: a release that cannot be played here (the shelf never shows these). */
     dimmed: Boolean = false,
 ) {
     val colors = MaterialTheme.nuvio.colors

@@ -39,6 +39,49 @@ interface MusicCatalog {
      * `VL` is allowed), every page of it up to a few thousand tracks. Null when it could not be read.
      */
     suspend fun playlist(playlistId: String): MusicPlaylistPage? = null
+
+    /**
+     * fork:music-radio - a radio or mix as YouTube Music makes it while it plays (its watch-next "up next" queue): the list
+     * [playlistId] (a station's `RD...`, an artist's `RDEM...`, a song's `RDAMVM<videoId>`), optionally started from
+     * [videoId], read page by page up to [maxTracks]. Null when it could not be read.
+     */
+    suspend fun radio(playlistId: String, videoId: String? = null, maxTracks: Int = 100): MusicPlaylistPage? = null
+
+    /**
+     * fork:music-account - YouTube Music's home for the signed-in account: its shelves that hold playlists and mixes ("Mixed
+     * for you" with Discover Mix, My Supermix and the rest; featured playlists). Null when nobody is signed in or it could
+     * not be read.
+     */
+    suspend fun accountHome(): List<MusicHomeShelf>? = null
+
+    /** fork:music-account - the signed-in account's playlists (its library's Playlists, Liked Music among them). Null when nobody is signed in or it could not be read. */
+    suspend fun accountPlaylists(): List<MusicPlaylistSummary>? = null
+
+    /** fork:music-account - the signed-in account's YouTube Music History, newest first (up to three pages). Null when nobody is signed in or it could not be read. */
+    suspend fun accountHistory(): List<MusicHistoryItem>? = null
+
+    /** fork:music-account - likes ([liked] true) or un-likes the song for the signed-in account (it joins or leaves Liked Music). False when nobody is signed in or YouTube Music refused. */
+    suspend fun setSongLiked(videoId: String, liked: Boolean): Boolean = false
+
+    /**
+     * fork:music-home - one search for the first screen: YouTube Music's unfiltered answer read whole (its Top result,
+     * songs, albums, artists, music videos). When that answer holds no songs or no albums (YouTube Music sometimes
+     * sends only artists and videos), the filtered song and album searches fill them in, in parallel. Empty on failure;
+     * the default is empty for test fakes.
+     */
+    suspend fun searchEverything(query: String): MusicSearchEverything = MusicSearchEverything.EMPTY
+
+    /**
+     * fork:music-home - YouTube Music's completions for what has been typed so far ("yela" gives "yelawolf",
+     * "yelawolf best friend"...), lower case, in its order. Empty on failure; the default is empty for test fakes.
+     */
+    suspend fun searchSuggestions(typed: String): List<String> = emptyList()
+
+    /**
+     * fork:music-home - the length in seconds of one song or video, for a search row YouTube Music listed with a play or
+     * view count instead of its length. Null when unknown; the default is null for test fakes.
+     */
+    suspend fun lengthOf(videoId: String): Int? = null
 }
 
 /** The catalog the app uses: [MusicMetadataClient] on desktop. */

@@ -32,24 +32,58 @@ internal object AlbumBookletRepository {
     private fun now(): Long = Clock.System.now().toEpochMilliseconds()
 
     private fun aiCacheKey(request: BookletRequest, model: String) = bookletKey(request, "ai:$model")
-    private fun wikiCacheKey(request: BookletRequest) = bookletKey(request, "wiki")
+    // "wiki2": the edition-word fix (Nov 3, 2026) asks again for albums the older matcher had marked as having no page.
+    private fun wikiCacheKey(request: BookletRequest) = bookletKey(request, "wiki2")
 
-    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletStorage.get(key))
+    private fun read(key: String): BookletEntry? = decodeBookletEntry(BookletCache.get(key))
 
     private fun write(key: String, booklet: AlbumBooklet?) {
-        BookletStorage.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
-        val keys = BookletStorage.keys()
+        BookletCache.put(key, encodeBookletEntry(BookletEntry(now(), booklet)))
+        // Only the capped store is trimmed (Wikipedia text, "no page" and failures); the AI's facts live in their own store.
+        val keys = BookletCache.cappedKeys()
         if (keys.size > BOOKLET_CACHE_MAX + BOOKLET_CACHE_SLACK) {
-            val ages = keys.associateWith { read(it)?.atEpochMs ?: 0L }
-            bookletKeysToEvict(ages, BOOKLET_CACHE_MAX).forEach { BookletStorage.put(it, null) }
+            val ages = keys.associateWith { decodeBookletEntry(BookletCache.cappedGet(it))?.atEpochMs ?: 0L }
+            bookletKeysToEvict(ages, BOOKLET_CACHE_MAX).forEach { BookletCache.drop(it) }
         }
     }
 
     /** The AI settings when notes may be written by the AI (a key, a model and the person's consent), else null. */
     private fun aiSettingsOrNull() = DiscoverAiSettingsRepository.snapshot().takeIf { it.isConfigured }
 
-    /** What the cache already holds for [request], never making a request: the AI notes if kept, else the Wikipedia ones. */
-    fun peek(request: BookletRequest): AlbumBooklet? {
+    /**
+     * What the cache already holds for [request], never making a request: the AI notes if kept, else the Wikipedia ones,
+     * with the person's pins laid over them.
+     */
+    fun peek(request: BookletRequest): AlbumBooklet? = peekKept(request).withBlurb(request).withPins(Pins.forAlbum(request))
+
+    /** The booklet for [request] (see [bookletForKept]) with the person's pins laid over it; pinned text stands even with no page. */
+    suspend fun bookletFor(request: BookletRequest): AlbumBooklet? =
+        FactsPriority.foreground { bookletForKept(request) }.withBlurb(request).withPins(Pins.forAlbum(request))
+
+    /**
+     * Whether the AI's notes for [request] are kept ([FactState.Have]), failed a moment ago ([FactState.Missed]) or have not
+     * been asked for ([FactState.Missing]); the background filler goes by this. Never makes a request. With no AI key set,
+     * nothing can be filled, so everything reads as Missed (not worth asking).
+     */
+    fun factState(request: BookletRequest): FactState {
+        val settings = aiSettingsOrNull() ?: return FactState.Missed
+        val entry = read(aiCacheKey(request, settings.effectiveModel))?.takeIf { it.isFresh(now(), BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) }
+        return when {
+            entry == null -> FactState.Missing
+            entry.booklet != null -> FactState.Have
+            else -> FactState.Missed
+        }
+    }
+
+    /** Forgets a failed ask for [request]'s AI notes so the next lookup asks again; a kept answer is left alone. */
+    fun forgetMiss(request: BookletRequest) {
+        val settings = aiSettingsOrNull() ?: return
+        val key = aiCacheKey(request, settings.effectiveModel)
+        if (read(key)?.booklet == null) BookletCache.put(key, null)
+    }
+
+    /** What the cache holds, without pins: the cache's own answer, which the lookup rules below go by. */
+    private fun peekKept(request: BookletRequest): AlbumBooklet? {
         val at = now()
         aiSettingsOrNull()?.let { settings ->
             read(aiCacheKey(request, settings.effectiveModel))
@@ -59,7 +93,7 @@ internal object AlbumBookletRepository {
     }
 
     /** The booklet for [request], null when Wikipedia has no page for the album. Waits for a lookup already under way. */
-    suspend fun bookletFor(request: BookletRequest): AlbumBooklet? {
+    private suspend fun bookletForKept(request: BookletRequest): AlbumBooklet? {
         val at = now()
         val settings = aiSettingsOrNull()
         val aiEntry = settings
@@ -92,12 +126,14 @@ internal object AlbumBookletRepository {
 
         // A recent "no page" is believed, for the AI path too: with no text there is nothing to write from.
         val cachedWiki = read(wikiKey)?.takeIf { it.isFresh(at, BOOKLET_WIKI_TTL_MS, BOOKLET_WIKI_MISS_TTL_MS) }
-        if (cachedWiki != null && cachedWiki.booklet == null) return null
+        // (YouTube Music's own blurb, when it has one, is text enough to write from, so a "no page" answer does not stop it.)
+        val blurb = request.blurb?.takeIf { it.isNotBlank() }
+        if (cachedWiki != null && cachedWiki.booklet == null && blurb == null) return null
         // A recent AI failure is not retried at once: the Wikipedia notes stand in.
         val aiRecentlyFailed = aiKey != null &&
             read(aiKey)?.let { it.booklet == null && it.isFresh(at, BOOKLET_AI_TTL_MS, BOOKLET_AI_MISS_TTL_MS) } == true
 
-        val text = WikipediaClient.albumText(request.album, request.artist)
+        val text = WikipediaClient.albumText(request.album, request.artist) ?: blurb
         if (text == null) {
             if (cachedWiki?.booklet == null) write(wikiKey, null)
             log.i { "no Wikipedia page for ${request.artist} - ${request.album}" }
@@ -129,9 +165,9 @@ internal object AlbumBookletRepository {
         }
         // The trivia is its own request, written to be new to the reader (the intro is told to it as already shown). A
         // failure or an album the model does not know leaves the three plain cards, so the deck is never empty.
-        val cards = DiscoverAiClient.complete(settings, DiscoverAiPromptText(FACTS_SYSTEM_PROMPT, factsPrompt(request, parsed.intro, text)))
+        val cards = DiscoverAiClient.complete(settings, DiscoverAiPromptText(FACTS_SYSTEM_PROMPT, factsPrompt(request, request.blurb?.let { cutAtSentence(it, 700) } ?: parsed.intro, text)))
             .getOrNull()?.let(::parseAiFacts).orEmpty()
-        val facts = dropRepeats(cards, parsed.intro).ifEmpty { wiki.facts }
+        val facts = dropRepeats(cards, request.blurb?.let { cutAtSentence(it, 700) } ?: parsed.intro).ifEmpty { wiki.facts }
         val ai = parsed.copy(facts = facts)
         write(aiKey, ai)
         log.i { "notes for ${request.album}: ${ai.credits.size} credits, ${ai.facts.size} cards, ${ai.trackNotes.size} track notes" }

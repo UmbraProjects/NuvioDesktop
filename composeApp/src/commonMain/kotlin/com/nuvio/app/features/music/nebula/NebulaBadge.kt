@@ -9,11 +9,36 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.MusicAlbumSummary
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.addonLinks
+
+/**
+ * fork:nebula - the "Lossless" pill on a release tile's cover corner: the music addon has this album. An overlay, so a tile
+ * looks the same whether it shows or not (nothing moves or resizes when the answer arrives).
+ */
+@Composable
+internal fun LosslessPill(modifier: Modifier = Modifier) {
+    Text(
+        text = "Lossless",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.nuvio.colors.accent,
+        maxLines = 1,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.Black.copy(alpha = 0.65f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
 
 /**
  * A small "On your addon" note for an album in a list. Nothing at all without an addon link. The check

@@ -165,6 +165,36 @@ internal object NativePlayerBridge {
         outputPath: String,
     ): Int
 
+    /**
+     * fork:gapless - queues [url] to play straight after the current file in the same mpv (any earlier queued file is
+     * dropped; an empty url only drops it). [options] are "name=value" per-file options. Windows bridge only.
+     */
+    external fun queueNext(handle: Long, url: String, headerLines: Array<String>, options: Array<String>)
+
+    /** fork:gapless - the stream [decodeAudioSpot] reads after the player moved on to a queued file; null goes back. */
+    external fun setSpotSource(handle: Long, url: String?, headerLines: Array<String>)
+
+    /** fork:gapless - the playlist entry playing (0 the file opened, 1 a queued one once it starts), or -1. */
+    external fun playlistPos(handle: Long): Long
+
+    /**
+     * fork:loudness - [decodeAudioSpot] for a stream no player has open yet ([url], sent with [headerLines] as "Name: value"),
+     * so the next track can be measured before it starts. Needs no player handle. Windows bridge only: elsewhere it throws
+     * UnsatisfiedLinkError.
+     */
+    external fun decodeAudioUrl(
+        url: String,
+        headerLines: Array<String>,
+        startSeconds: Double,
+        durationSeconds: Double,
+        sampleRate: Int,
+        channelCount: Int,
+        outputPath: String,
+    ): Int
+
+    /** fork:visualiser - makes [decodeAudioSpot] read the local file at [path] instead of the stream; null goes back to the stream. Windows bridge only. */
+    external fun setAudioSpotFile(handle: Long, path: String?)
+
     /** The playing source's size over its duration; negative when unknown. */
     external fun speechSourceBytesPerSecond(handle: Long): Double
 

@@ -2555,31 +2555,8 @@ private fun PlayerScreenRuntime.RenderPlayerModals(displayedPositionMs: Long) {
         selectedAddonSubtitle = selectedAddonSubtitle,
         subtitleAutoSyncState = subtitleAutoSyncState,
         onSubtitleTabSelected = { activeSubtitleTab = it },
-        onBuiltInSubtitleTrackSelected = { index ->
-            val wasCustom = useCustomSubtitles
-            selectedSubtitleIndex = index
-            selectedAddonSubtitleId = null
-            useCustomSubtitles = false
-            markSubtitleChosenByViewer()
-            persistInternalSubtitlePreference(subtitleTracks.firstOrNull { it.index == index })
-            if (wasCustom) {
-                playerController?.clearExternalSubtitleAndSelect(index)
-            } else {
-                playerController?.selectSubtitleTrack(index)
-            }
-            secondarySubtitleSelectionApplied = false
-            applySecondarySubtitleSelectionIfNeeded()
-        },
-        onAddonSubtitleSelected = { addon ->
-            selectedAddonSubtitleId = addon.id.ifBlank { addon.url }
-            selectedSubtitleIndex = -1
-            useCustomSubtitles = true
-            markSubtitleChosenByViewer()
-            persistAddonSubtitlePreference(addon)
-            loadAddonSubtitle(addon)
-            secondarySubtitleSelectionApplied = false
-            applySecondarySubtitleSelectionIfNeeded()
-        },
+        onBuiltInSubtitleTrackSelected = { index -> selectBuiltInSubtitle(index) },
+        onAddonSubtitleSelected = { addon -> selectAddonSubtitle(addon) },
         onAddonSubtitleDownload = ::downloadAddonSubtitle,
         downloadingAddonSubtitleId = downloadingAddonSubtitleId,
         downloadSubtitleLabel = downloadSubtitleLabel,

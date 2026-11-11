@@ -1,7 +1,8 @@
 package com.nuvio.app.features.music.library
 
 /**
- * Library views, phase C0: the Constellation's similarity graph, as pure data (no Compose, so it is unit-tested).
+ * The library's artist similarity graph, as pure data (no Compose, so it is unit-tested). It was drawn as the Constellation
+ * view, which is retired (Nov 7, 2026); the artist page's "Similar in your library" ([similarInLibrary]) still uses it.
  *
  * Each saved artist is a star. Stars are compared by the ladder's own maths: the artist's [TagProfile]
  * ([tagProfile], genres, tags, mood and style) and [cosine]. Unlike the ladder, no target genre is taken out,

@@ -95,6 +95,7 @@ internal object YouTubeMusicBrowserLogin {
         val profileDir = keptProfileDir()
         if (!Files.isDirectory(profileDir)) return@withLock null
         val browser = findBrowser() ?: return@withLock null
+        releaseProfile(profileDir)
         val before = previousCookie?.let { cookieValue(it, "__Secure-1PSIDTS") }
         var reader: Process? = null
         var cdp: CdpConnection? = null
@@ -132,6 +133,9 @@ internal object YouTubeMusicBrowserLogin {
             runCatching { cdp?.call("Browser.close") }
             cdp?.close()
             reader?.let { stop(it) }
+            // A browser the launch handed over to is not a child of [reader]: one left running would take the next
+            // sign-in window (see releaseProfile).
+            releaseProfile(profileDir)
         }
     }
 
@@ -143,6 +147,8 @@ internal object YouTubeMusicBrowserLogin {
         )
         // A fresh profile each sign-in, so the window starts signed out and the user picks the account.
         val profileDir = keptProfileDir()
+        // A browser still on the profile would be handed the sign-in window and show nothing (see releaseProfile).
+        releaseProfile(profileDir)
         deleteRecursivelyQuietly(profileDir)
         Files.createDirectories(profileDir)
         var window: Process? = null
@@ -185,6 +191,12 @@ internal object YouTubeMusicBrowserLogin {
         }
     }
 
+    /** After the launched process exits, how long the browser it handed over to gets to take the profile. */
+    private const val HANDOFF_GRACE_MS = 2_000L
+
+    /** How long a browser asked (or made) to close gets to let go of the profile. */
+    private const val RELEASE_WAIT_MS = 5_000L
+
     private const val RENEW_URL = "https://www.youtube.com/"
     private const val RENEW_WAIT_MS = 15_000L
 
@@ -220,6 +232,9 @@ internal object YouTubeMusicBrowserLogin {
             runCatching { cdp?.call("Browser.close") }
             cdp?.close()
             reader?.let { stop(it) }
+            // A browser the launch handed over to is not a child of [reader]: one left running would take the next
+            // sign-in window (see releaseProfile).
+            releaseProfile(profileDir)
         }
     }
 
@@ -257,20 +272,93 @@ internal object YouTubeMusicBrowserLogin {
     }
 
     private fun stop(process: Process) {
-        if (!process.waitFor(3, TimeUnit.SECONDS)) {
-            process.descendants().forEach { it.destroyForcibly() }
-            process.destroyForcibly()
-        }
+        // Taken first: once the launched process has exited its children can no longer be found from it, and on
+        // Windows Edge's first process often exits while the browser it started runs on.
+        val tree = process.descendants().toList()
+        if (!process.waitFor(3, TimeUnit.SECONDS)) process.destroyForcibly()
+        tree.filter { it.isAlive }.forEach { it.destroyForcibly() }
     }
 
+    /**
+     * Closes any browser still running on [profileDir] before a new one is started on it. Chromium hands a second
+     * launch on a profile to the browser already open there, so a hidden renewal or cookie-reading browser left
+     * behind (a crash, or one whose processes outlived [stop]) made the sign-in window never appear: the click
+     * started nothing visible and the settings page waited on "Sign in in the browser window" (Nov 8). First asked
+     * to close through its DevTools port (only the hidden ones have one), then its processes are ended: only those
+     * whose command line names this profile.
+     */
+    private suspend fun releaseProfile(profileDir: Path) {
+        if (!Files.isDirectory(profileDir) || !profileInUse(profileDir)) return
+        log.w { "The YouTube browser profile is still open in another browser; closing it" }
+        runCatching {
+            val lines = Files.readAllLines(profileDir.resolve("DevToolsActivePort"))
+            val port = lines.getOrNull(0)?.trim()?.toIntOrNull()
+            val path = lines.getOrNull(1)?.trim()?.takeIf { it.startsWith("/") }
+            if (port != null && path != null) {
+                val cdp = CdpConnection.open("ws://127.0.0.1:$port$path")
+                try {
+                    runCatching { cdp.call("Browser.close") }
+                } finally {
+                    cdp.close()
+                }
+            }
+        }
+        if (awaitProfileReleased(profileDir)) return
+        runCatching { endProfileProcesses(profileDir) }.onFailure { log.w { "Could not end the browser on the profile: ${it.message}" } }
+        if (!awaitProfileReleased(profileDir)) log.w { "The YouTube browser profile is still in use after closing its browser" }
+    }
+
+    private suspend fun awaitProfileReleased(profileDir: Path): Boolean {
+        val deadline = System.currentTimeMillis() + RELEASE_WAIT_MS
+        while (System.currentTimeMillis() < deadline) {
+            if (!profileInUse(profileDir)) return true
+            delay(250)
+        }
+        return !profileInUse(profileDir)
+    }
+
+    /** Ends every process whose command line names [profileDir] (the browser and its helpers, all launched with it). */
+    private fun endProfileProcesses(profileDir: Path) {
+        val dir = profileDir.toAbsolutePath().toString()
+        val os = System.getProperty("os.name").orEmpty().lowercase()
+        val command = if ("win" in os) {
+            // Single quotes only: the script goes through Windows' command-line quoting as one argument.
+            val quoted = dir.replace("'", "''")
+            listOf(
+                "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+                "Get-CimInstance Win32_Process | Where-Object { \$_.ProcessId -ne \$PID -and \$_.CommandLine -and \$_.CommandLine.Contains('$quoted') } | " +
+                    "ForEach-Object { Stop-Process -Id \$_.ProcessId -Force -ErrorAction SilentlyContinue }",
+            )
+        } else {
+            listOf("pkill", "-f", "--", "--user-data-dir=$dir")
+        }
+        val process = ProcessBuilder(command).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
+        if (!process.waitFor(15, TimeUnit.SECONDS)) process.destroyForcibly()
+    }
+
+    /**
+     * The DevTools address the browser on [profileDir] writes once it is up. The launched [process] need not be the
+     * browser: on some PCs msedge.exe hands the launch to another process and exits at once with code 0 (a pending
+     * Edge update relaunching itself does this), and the browser it started writes the port a moment later. So the
+     * wait goes on while the launched process is alive or, after it has exited, while the profile is held by the
+     * browser it handed over to; it gives up when neither is the case for a couple of seconds.
+     */
     private fun awaitDevToolsEndpoint(profileDir: Path, process: Process): String? {
         val file = profileDir.resolve("DevToolsActivePort")
         val deadline = System.currentTimeMillis() + DEVTOOLS_PORT_TIMEOUT_MS
-        while (System.currentTimeMillis() < deadline && process.isAlive) {
+        var idleSince: Long? = null
+        while (System.currentTimeMillis() < deadline) {
             val lines = runCatching { Files.readAllLines(file) }.getOrNull().orEmpty()
             val port = lines.getOrNull(0)?.trim()?.toIntOrNull()
             val path = lines.getOrNull(1)?.trim()?.takeIf { it.startsWith("/") }
             if (port != null && path != null) return "ws://127.0.0.1:$port$path"
+            val running = process.isAlive || profileInUse(profileDir)
+            if (running) {
+                idleSince = null
+            } else {
+                val since = idleSince ?: System.currentTimeMillis().also { idleSince = it }
+                if (System.currentTimeMillis() - since > HANDOFF_GRACE_MS) return null
+            }
             Thread.sleep(200)
         }
         return null

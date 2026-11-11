@@ -33,6 +33,8 @@ internal data class AlbumBooklet(
     val facts: List<BookletFact> = emptyList(),
     /** People who appear on the album, with the track they are on when the text says. */
     val guests: List<BookletGuest> = emptyList(),
+    /** What the person pinned over the written text ("intro", "tnote:3", "fact:2"); set when pins are laid over, never cached. */
+    val pinned: Set<String> = emptySet(),
 )
 
 internal enum class FactKind { Album, Artist }
@@ -65,6 +67,8 @@ internal data class BookletRequest(
     val year: String?,
     val tracks: List<BookletTrack>,
     val artistInfo: BookletArtist? = null,
+    /** The album page's own "From Wikipedia" blurb from YouTube Music, when it has one; shown as the intro. Not part of any cache key. */
+    val blurb: String? = null,
 )
 
 private const val MAX_INTRO_CHARS = 700
@@ -96,6 +100,16 @@ internal fun bookletNorm(text: String): String =
 /** The key one album's booklet is cached under for [mode] ("ai" with the model, or "wiki"). */
 internal fun bookletKey(request: BookletRequest, mode: String): String =
     "v4|$mode|${bookletNorm(request.artist)}|${bookletNorm(request.album)}"
+
+/**
+ * The booklet with YouTube Music's own Wikipedia blurb as its intro (cut at a sentence), when [request] has one: it is the right
+ * album by construction, free, and worked out by Wikipedia's own editors. With no booklet at all (no Wikipedia page found
+ * by search) the blurb alone makes a booklet. Pins are laid over this afterwards, so a hand edit still wins.
+ */
+internal fun AlbumBooklet?.withBlurb(request: BookletRequest): AlbumBooklet? {
+    val intro = request.blurb?.takeIf { it.isNotBlank() }?.let { cutAtSentence(it, MAX_INTRO_CHARS) } ?: return this
+    return this?.copy(intro = intro) ?: AlbumBooklet(intro, emptyList(), emptyMap(), BookletSource.Wikipedia)
+}
 
 /** [text] cut to at most [max] characters: at the last sentence end that fits, else at a word with an ellipsis. */
 internal fun cutAtSentence(text: String, max: Int): String {
@@ -229,11 +243,12 @@ internal sealed interface LinerPage {
     data class Facts(val number: Int, val total: Int, val startIndex: Int, val facts: List<BookletFact>) : LinerPage
     data class Guests(val guests: List<BookletGuest>) : LinerPage
     data class Timeline(val timeline: BookletTimeline) : LinerPage
-    data class Track(val number: Int, val title: String, val note: String) : LinerPage
+    /** [note] is the one line the booklet has; [story] (fork) the song's own story, which comes later than the booklet. */
+    data class Track(val number: Int, val title: String, val note: String, val story: SongStory? = null) : LinerPage
 }
 
 /** The deck for [booklet], in order; a page with nothing to show is left out. [playing] is the track number playing, if any. */
-internal fun linerPages(booklet: AlbumBooklet, request: BookletRequest, playing: Int?): List<LinerPage> {
+internal fun linerPages(booklet: AlbumBooklet, request: BookletRequest, playing: Int?, story: SongStory? = null): List<LinerPage> {
     val pages = ArrayList<LinerPage>()
     pages += LinerPage.Cover
     val groups = booklet.facts.chunked(FACTS_PER_PAGE)
@@ -241,8 +256,8 @@ internal fun linerPages(booklet: AlbumBooklet, request: BookletRequest, playing:
     if (booklet.guests.isNotEmpty()) pages += LinerPage.Guests(booklet.guests)
     timelineFor(request.artistInfo, request.album, request.year)?.let { pages += LinerPage.Timeline(it) }
     val note = playing?.let { booklet.trackNotes[it] }
-    if (playing != null && note != null) {
-        pages += LinerPage.Track(playing, request.tracks.getOrNull(playing - 1)?.title.orEmpty(), note)
+    if (playing != null && (note != null || story != null)) {
+        pages += LinerPage.Track(playing, request.tracks.getOrNull(playing - 1)?.title.orEmpty(), note.orEmpty(), story)
     }
     return pages
 }
@@ -396,23 +411,31 @@ internal fun decodeBookletEntry(raw: String?): BookletEntry? {
 private const val HOUR_MS = 60L * 60L * 1_000L
 private const val DAY_MS = 24L * HOUR_MS
 
-/** How long an AI booklet is trusted, a Wikipedia one, and a "nothing" from each (an AI failure is retried sooner). */
-internal const val BOOKLET_AI_TTL_MS = 180 * DAY_MS
+/**
+ * How long an AI booklet is trusted: for ever (the person does not want AI facts to expire, and each one cost a request), a
+ * Wikipedia one, and a "nothing" from each (an AI failure is retried after two hours).
+ */
+internal const val BOOKLET_AI_TTL_MS = Long.MAX_VALUE
 internal const val BOOKLET_WIKI_TTL_MS = 30 * DAY_MS
 internal const val BOOKLET_AI_MISS_TTL_MS = 2 * HOUR_MS
 internal const val BOOKLET_WIKI_MISS_TTL_MS = 3 * DAY_MS
 
-/** Entries kept; past it the oldest go. A booklet is a few KB. */
-internal const val BOOKLET_CACHE_MAX = 400
+/** Entries kept; past it the oldest go, and the AI's own facts last of all. A booklet is a few KB. */
+internal const val BOOKLET_CACHE_MAX = 1_500
 internal const val BOOKLET_CACHE_SLACK = 20
 
 internal fun BookletEntry.isFresh(nowMs: Long, hitTtlMs: Long, missTtlMs: Long): Boolean =
     nowMs - atEpochMs < (if (booklet != null) hitTtlMs else missTtlMs)
 
-/** The keys to drop so no more than [capacity] remain: the oldest first. [ages] maps each key to when it was cached. */
-internal fun bookletKeysToEvict(ages: Map<String, Long>, capacity: Int): List<String> {
+/**
+ * The keys to drop so no more than [capacity] remain: those not in [kept] first, the oldest first, and only then the oldest
+ * of [kept]. [ages] maps each key to when it was cached; [kept] are the entries that cost a request to make (the AI's facts).
+ */
+internal fun bookletKeysToEvict(ages: Map<String, Long>, capacity: Int, kept: Set<String> = emptySet()): List<String> {
     if (ages.size <= capacity) return emptyList()
-    return ages.entries.sortedBy { it.value }.take(ages.size - capacity).map { it.key }
+    return ages.entries
+        .sortedWith(compareBy<Map.Entry<String, Long>>({ it.key in kept }, { it.value }))
+        .take(ages.size - capacity).map { it.key }
 }
 
 // endregion

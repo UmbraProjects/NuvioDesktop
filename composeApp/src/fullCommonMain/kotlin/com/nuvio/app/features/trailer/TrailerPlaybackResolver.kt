@@ -25,6 +25,8 @@ actual object TrailerPlaybackResolver {
             .any { it == com.nuvio.app.features.music.ProbeVerdict.Refused }
     }
 
+    actual suspend fun loudnessDbOf(videoId: String): Double? = extractor.loudnessDbOf(videoId)
+
     /** Forgets the cached YouTube session so the next lookup starts a fresh one. Not part of the shared `expect` surface. */
     internal suspend fun forgetSession() = extractor.forgetSession()
 
@@ -43,4 +45,8 @@ actual object TrailerPlaybackResolver {
     /** YouTube Music's InnerTube, for the music feature. Not part of the shared `expect` surface. */
     internal suspend fun musicRequest(endpoint: String, params: Map<String, Any?>): String? =
         extractor.musicRequest(endpoint, params)
+
+    /** fork:music-account - [musicRequest] as the signed-in YouTube account; null when nobody is signed in. */
+    internal suspend fun musicRequestSigned(endpoint: String, params: Map<String, Any?>): String? =
+        extractor.musicRequestSigned(endpoint, params)
 }

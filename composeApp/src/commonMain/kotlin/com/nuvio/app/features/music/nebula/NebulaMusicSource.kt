@@ -7,6 +7,7 @@ import com.nuvio.app.features.music.MusicAlbum
 import com.nuvio.app.features.music.MusicPlayMode
 import com.nuvio.app.features.music.MusicResolution
 import com.nuvio.app.features.music.MusicTrack
+import com.nuvio.app.features.music.hasKeptLoudness
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.addonLinks
 import com.nuvio.app.features.music.library.MusicLibraryStorage
@@ -34,6 +35,9 @@ internal sealed interface NebulaAlbumLookup {
  * What several addons' answers for one album come to, asked in order: the first that has the album wins; "not found" only
  * when every addon said so; and when none has it but one could not be asked, that failure (so it is retried, not remembered).
  */
+/** How long the start of an addon track waits for YouTube's loudness figure before going with the usual guess. */
+private const val YOUTUBE_LOUDNESS_TIMEOUT_MS = 2_500L
+
 internal fun firstAddonAnswer(answers: List<NebulaAlbumLookup>): NebulaAlbumLookup =
     answers.firstOrNull { it is NebulaAlbumLookup.Found }
         ?: answers.firstOrNull { it is NebulaAlbumLookup.Failed }
@@ -41,12 +45,25 @@ internal fun firstAddonAnswer(answers: List<NebulaAlbumLookup>): NebulaAlbumLook
 
 private val log = Logger.withTag("NebulaMusic")
 
+/** How much of a raw addon answer goes in the log. */
+private const val RAW_LOG_CHARS = 1200
+
 private const val MAX_CANDIDATES = 3
+
+/** The least time between two availability searches (0.8 s still drew 429s with 42 to 874 s bans; the addon's limit is not published). */
+private const val SEARCH_SPACING_MS = 2_000L
+
+/** The longest a check waits in line for a pause the addon asked for; a longer ban fails the check at once. */
+private const val MAX_SEARCH_QUEUE_WAIT_MS = 60_000L
 private const val LINK_RETRY_DELAY_MS = 700L
 
 /** How long a track the addon is still preparing is waited for in all, counted from the first ask, and how often it is asked again. */
 private const val STREAM_PATIENCE_MS = 90_000L
 private const val STREAM_POLL_MS = 3_000L
+
+/** fork:nebula - fetch on Play waits much longer than a track tapped by hand (nobody is waiting on it): how long, and how often it asks. */
+private const val FETCH_AHEAD_PATIENCE_MS = 10 * 60_000L
+private const val FETCH_AHEAD_POLL_MS = 5_000L
 
 /**
  * The most a stream request may take. The addon asks TorBox for the file, which can sit for a minute on an
@@ -372,7 +389,8 @@ internal object NebulaMusicSource {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                log.w(e) { "Music addon availability check failed" }
+                // A refusal by the addon is a line, not a stack trace (the log had hundreds of them).
+                if (e is AddonError) log.w { "Music addon availability check failed: ${e.reason}" } else log.w(e) { "Music addon availability check failed" }
                 // A broken addon would otherwise be asked about every row on screen: stop for a minute after three in a row.
                 if (++availFailures >= 3) {
                     availPausedUntil = LibraryClock.nowEpochMs() + 60_000L
@@ -381,6 +399,47 @@ internal object NebulaMusicSource {
                 previous?.takeIf { it.albumId != null }
             }
         }
+    }
+
+    private val paceLock = Mutex()
+    /** When each addon (by base address) may be searched next: the limit is the addon's own, so each is paced and banned on its own. */
+    private val nextSearchAt = HashMap<String, Long>()
+
+    /** Waits for this request's turn: availability searches to one addon start at least [SEARCH_SPACING_MS] apart, whichever release they are for. */
+    private suspend fun waitForSearchTurn(base: String) {
+        val wait = paceLock.withLock {
+            val now = LibraryClock.nowEpochMs()
+            val at = maxOf(now, nextSearchAt[base] ?: 0L)
+            // A long ban (the addon asked for minutes): do not sit in line for it, fail now so the check is asked again next visit.
+            if (at - now > MAX_SEARCH_QUEUE_WAIT_MS) throw AddonError("The music addon is limiting searches (about ${(at - now) / 1000} s left). Try again later.")
+            nextSearchAt[base] = at + SEARCH_SPACING_MS
+            at - now
+        }
+        if (wait > 0) delay(wait)
+    }
+
+    /**
+     * fork:nebula - one /search for the availability check, paced, and asked once more after the wait when the addon says
+     * "too many search requests" (its reply names the seconds to wait). The log showed 85 of a 4-minute visit's checks
+     * refused that way when 30 albums were asked about in a burst. Everyone else waits too while it waits.
+     */
+    private suspend fun pacedSearch(base: String, text: String): String {
+        waitForSearchTurn(base)
+        var reply = get(base, "/search?q=${urlEncodeQuery(text)}")
+        if (reply.status == 429) {
+            // The whole wait the addon names, not a shorter one: the log showed it answering 42, 59 and then 874 seconds to
+            // searches that came back after only 16, so asking early made the ban longer.
+            val seconds = Regex("""in (\d+) second""").find(reply.body)?.groupValues?.get(1)?.toLongOrNull() ?: 10L
+            val pause = (seconds.coerceIn(1L, 3_600L) + 2L) * 1000L
+            paceLock.withLock { nextSearchAt[base] = maxOf(nextSearchAt[base] ?: 0L, LibraryClock.nowEpochMs() + pause) }
+            log.i { "Music addon ${nebulaAddonKey(base)} asked for a $seconds s pause between searches" }
+            // A short pause is waited out and the search asked once more; a long one fails this check (asked again next visit)
+            // and, through the turn, every check queued behind it.
+            if (pause > MAX_SEARCH_QUEUE_WAIT_MS) return reply.requireOk()
+            waitForSearchTurn(base)
+            reply = get(base, "/search?q=${urlEncodeQuery(text)}")
+        }
+        return reply.requireOk()
     }
 
     /**
@@ -393,8 +452,10 @@ internal object NebulaMusicSource {
         for (addon in addons) {
             try {
                 for (text in nebulaSearchQueries(query.title, query.artist)) {
-                    val body = get(addon.base, "/search?q=${urlEncodeQuery(text)}").requireOk()
+                    val body = pacedSearch(addon.base, text)
                     val match = strictNebulaMatch(parseNebulaSearchAlbums(body), query.title, query.artist, query.year, query.trackCount ?: 0)
+                    // fork:nebula - raw answer kept in the log, to learn how the addon marks an album ready on TorBox vs fetchable.
+                    log.i { "Lossless check \"${query.title}\" by ${query.artist} [$text]: matched=${match?.title} raw=${body.take(RAW_LOG_CHARS)}" }
                     if (match != null) return addon to match
                 }
             } catch (e: CancellationException) {
@@ -423,6 +484,30 @@ internal object NebulaMusicSource {
             }
         },
     )
+
+    /**
+     * fork:loudness - the addon says nothing about how loud a file is, so a track never played here started from a guess and was
+     * eased to its measured level some seconds in (an audible dip on a loud master). YouTube publishes a loudness figure for
+     * the same song: looked up here as the stream is fetched (for the next track, while the one before plays), it is noted for
+     * [streamUrl] so the gain is right from the first second. Skipped when the track has already been measured, when the
+     * addon track stands in for no YouTube Music song, and after [YOUTUBE_LOUDNESS_TIMEOUT_MS] (the guess then stands).
+     */
+    private suspend fun noteYouTubeLoudness(addonVideoId: String, streamUrl: String) {
+        if (hasKeptLoudness("addon:$addonVideoId")) return
+        val youTubeId = youTubeTracks[addonVideoId]?.first?.videoId?.takeIf { it.length == 11 } ?: return
+        val known = youTubeLoudness
+        val loudnessDb = if (youTubeId in known) known[youTubeId] else {
+            kotlinx.coroutines.withTimeoutOrNull(YOUTUBE_LOUDNESS_TIMEOUT_MS) {
+                com.nuvio.app.features.trailer.TrailerPlaybackResolver.loudnessDbOf(youTubeId)
+            }.also { found -> youTubeLoudness = youTubeLoudness + (youTubeId to found) }
+        } ?: return
+        com.nuvio.app.features.preroll.StreamLoudnessBook.record(listOf(streamUrl), loudnessDb)
+        log.i { "loudness for addon track $addonVideoId taken from YouTube ($youTubeId): ${loudnessDb} dB over its reference" }
+    }
+
+    /** YouTube's loudness figure by YouTube id, null for one that had none; for this session. */
+    @Volatile
+    private var youTubeLoudness: Map<String, Double?> = emptyMap()
 
     /** The YouTube Music track (and its album) each addon track stands in for, by the addon track's id. */
     private val youTubeTracks = HashMap<String, Pair<MusicTrack, MusicAlbum>>()
@@ -493,6 +578,7 @@ internal object NebulaMusicSource {
             }
             streamStatus = null
             nebulaQualityLabel(stream.format, stream.quality)?.let { qualities[track.videoId] = it }
+            noteYouTubeLoudness(track.videoId, stream.url)
             MusicResolution.Playable(
                 track = track,
                 mode = mode,
@@ -540,6 +626,44 @@ internal object NebulaMusicSource {
         } catch (e: Exception) {
             log.w(e) { "Addon look-up for \"${track.title}\" failed; playing YouTube Music" }
             null
+        }
+    }
+
+    /**
+     * fork:nebula - fetch on Play. [album] is playing from YouTube Music; when the addon has it, one track of it is asked
+     * for (the first matched one after [afterIndex]), which makes the addon fetch the album when it is not ready. Asked
+     * again every [FETCH_AHEAD_POLL_MS] while the addon says it is still preparing, for up to [FETCH_AHEAD_PATIENCE_MS].
+     * Returns the album with its tracks pointed at the addon once that track answers (so the rest can swap to it), else
+     * null (not on the addon, nothing matched, the addon refused or never finished). It never touches the stream status
+     * the album page shows, and plays nothing itself. Every stream answer lands in the log (links masked).
+     */
+    suspend fun fetchAhead(album: MusicAlbum, afterIndex: Int): MusicAlbum? {
+        if (addons().isEmpty()) return null
+        if (parseAddonAlbumId(album.browseId) != null || album.kind == "Playlist" || album.kind == "Mix") return null
+        if (album.tracks.any { owns(it) }) return null
+        val match = (find(album) as? NebulaAlbumLookup.Found)?.match ?: return null
+        val prepared = prepare(album, match)
+        val pick = prepared.tracks.withIndex()
+            .filter { (i, t) -> i > afterIndex && owns(t) && t.isAvailable }
+            .firstOrNull()?.value
+            ?: prepared.tracks.firstOrNull { owns(it) && it.isAvailable }
+            ?: return null
+        val ref = nebulaTrackRef(pick.videoId) ?: return null
+        val addon = addonFor(ref.addonKey) ?: return null
+        val startedAt = LibraryClock.nowEpochMs()
+        log.i { "Fetch on Play: asking the addon for \"${pick.title}\" of \"${album.title}\" (${match.trackIds.count { it != null }} tracks matched)" }
+        while (true) {
+            val reply = fetchStream(addon.base, ref.id)
+            if (reply is StreamReply.Ok) {
+                log.i { "Fetch on Play: \"${pick.title}\" answered after ${(LibraryClock.nowEpochMs() - startedAt) / 1000} s, \"${album.title}\" is ready" }
+                return prepared
+            }
+            val waitable = (reply as? StreamReply.Refused)?.waitable == true
+            if (!waitable || LibraryClock.nowEpochMs() - startedAt >= FETCH_AHEAD_PATIENCE_MS) {
+                log.w { "Fetch on Play gave up on \"${album.title}\": ${(reply as? StreamReply.Refused)?.reason}" }
+                return null
+            }
+            delay(FETCH_AHEAD_POLL_MS)
         }
     }
 
@@ -616,6 +740,8 @@ internal object NebulaMusicSource {
     private suspend fun fetchStream(base: String, id: String): StreamReply = try {
         val reply = get(base, "/stream/${urlEncodeQuery(id)}", callTimeoutMs = STREAM_TIMEOUT_MS, connectTimeoutMs = STREAM_CONNECT_TIMEOUT_MS)
         val stream = if (reply.status in 200..299) parseNebulaStream(reply.body) else null
+        // fork:nebula - the answer's shape (links masked), to learn what a ready vs a fetching track looks like.
+        log.i { "Music addon stream HTTP ${reply.status} for $id: ${reply.body.take(RAW_LOG_CHARS).replace(Regex("""https?://[^"\s\\]+"""), "<url>")}" }
         when {
             stream != null -> StreamReply.Ok(stream)
             reply.status in 200..299 -> {

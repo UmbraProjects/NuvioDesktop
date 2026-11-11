@@ -2,6 +2,8 @@ package com.nuvio.app.features.discover
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpRequestRaw
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -38,6 +40,38 @@ object DiscoverAiClient {
      */
     private val inFlight = Mutex()
 
+    private val tokenCount = MutableStateFlow(0L)
+
+    /**
+     * fork:facts-filler - tokens the provider has reported for answered requests since the app started (OpenAI-compatible
+     * replies only, which is what Groq speaks). The filler reads it before and after a step to learn what the step cost,
+     * because a free key is limited by tokens (a day's and a minute's), not by how many requests it makes.
+     */
+    val tokensUsed: Long get() = tokenCount.value
+
+    /**
+     * fork:ai-minute - the tokens each answered request cost in the last minute or so, per account and model (the key's limits
+     * are counted against that), oldest first. Every feature's requests are here, the person's own included, so the background
+     * filler can keep the whole key under its minute limit rather than only its own share.
+     */
+    private val recentSpends = MutableStateFlow<Map<String, List<AiTokenSpend>>>(emptyMap())
+
+    /** fork:ai-minute - what [settings]'s account and model spent in the last [AI_SPEND_WINDOW_MS], oldest first. */
+    fun recentTokenSpends(settings: DiscoverAiSettings): List<AiTokenSpend> {
+        val cutoff = System.currentTimeMillis() - AI_SPEND_WINDOW_MS
+        return recentSpends.value[gateKeyOf(settings)].orEmpty().filter { it.atMs > cutoff }
+    }
+
+    private fun recordSpend(settings: DiscoverAiSettings, tokens: Long) {
+        val now = System.currentTimeMillis()
+        val key = gateKeyOf(settings)
+        recentSpends.update { all ->
+            all + (key to (all[key].orEmpty().filter { it.atMs > now - AI_SPEND_WINDOW_MS } + AiTokenSpend(now, tokens)))
+        }
+    }
+
+    private fun gateKeyOf(settings: DiscoverAiSettings): String = "${settings.effectiveBaseUrl}|${settings.effectiveModel}"
+
     /**
      * The ceiling on one request.
      *
@@ -67,9 +101,29 @@ object DiscoverAiClient {
 
     private const val ANTHROPIC_VERSION = "2023-06-01"
 
+    /**
+     * fork:story - true when [settings] can search the web inside the request: Groq's gpt-oss models have a server-side
+     * `browser_search` tool (powered by Exa), which the answer then draws on. Nothing else here does.
+     */
+    fun canSearchWeb(settings: DiscoverAiSettings): Boolean =
+        settings.provider == DiscoverAiProvider.Groq && settings.effectiveModel.startsWith("openai/gpt-oss")
+
+    /** When each account's model may be asked again after a 429 (see the gate in [complete]); touched only under [inFlight]. */
+    private val rateLimitedUntilMs = MutableStateFlow<Map<String, Long>>(emptyMap())
+
+    /** Seconds until [settings]'s model may be asked again after a 429 (0 when it may be asked now); the background filler waits on this. */
+    fun rateLimitedForSeconds(settings: DiscoverAiSettings): Int {
+        val until = rateLimitedUntilMs.value["${settings.effectiveBaseUrl}|${settings.effectiveModel}"] ?: return 0
+        return ((until - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
+    }
+    private const val DEFAULT_RATE_LIMIT_WAIT_SECONDS = 60
+    private const val MAX_RATE_LIMIT_WAIT_SECONDS = 3_600
+
     suspend fun complete(
         settings: DiscoverAiSettings,
         prompt: DiscoverAiPromptText,
+        /** fork:story - let the model search the web first (see [canSearchWeb]); ignored where it cannot. The reply then holds the pages' snippets before the answer. */
+        webSearch: Boolean = false,
     ): Result<String> {
         // `isConfigured`, not `isReady`: this checks that a request *can* be made, and leaves
         // "should this feature make one" to the caller. Recaps and Discover rows share the
@@ -77,17 +131,30 @@ object DiscoverAiClient {
         if (!settings.isConfigured) {
             return Result.failure(DiscoverAiException(DiscoverAiError.NotConfigured))
         }
-        // Logged on both sides of the wait. A request that never comes back used to leave no trace
-        // at all, which made "it just spun forever" indistinguishable from "nothing was ever sent".
-        log.i { "request -> ${settings.effectiveModel} at ${settings.effectiveBaseUrl}" }
         val startedAt = System.currentTimeMillis()
         return inFlight.withLock {
+            // fork:ai-gate - after a 429 the provider has said when to come back (Groq's daily allowance: minutes to hours), and
+            // every feature used to ask anyway, one request per song, each answered with another 429. Until that time, answer
+            // the same way without a request. The key is the account's model, which is what the limits are counted against.
+            val gateKey = gateKeyOf(settings)
+            rateLimitedUntilMs.value[gateKey]?.let { until ->
+                val left = ((until - System.currentTimeMillis() + 999) / 1000).toInt()
+                if (left > 0) {
+                    return@withLock Result.failure(
+                        DiscoverAiException(DiscoverAiError.RateLimited(left, "Rate limited a moment ago; not asking again for ${left}s.")),
+                    )
+                }
+                rateLimitedUntilMs.update { it - gateKey }
+            }
+            // Logged on both sides of the wait. A request that never comes back used to leave no trace
+            // at all, which made "it just spun forever" indistinguishable from "nothing was ever sent".
+            log.i { "request -> ${settings.effectiveModel} at ${settings.effectiveBaseUrl}" }
             val outcome = withTimeoutOrNull(TIMEOUT_MS) {
                 runCatching {
                     when (settings.provider) {
                         DiscoverAiProvider.Anthropic -> callAnthropic(settings, prompt)
                         DiscoverAiProvider.OpenAiCompat,
-                        DiscoverAiProvider.Groq -> callOpenAiCompat(settings, prompt)
+                        DiscoverAiProvider.Groq -> callOpenAiCompat(settings, prompt, webSearch && canSearchWeb(settings))
                     }
                 }
             }
@@ -98,6 +165,14 @@ object DiscoverAiClient {
 
             outcome
                 .onSuccess { log.i { "reply in ${System.currentTimeMillis() - startedAt}ms, ${it.length} chars" } }
+                .onFailure { error ->
+                    val limited = (error as? DiscoverAiException)?.error as? DiscoverAiError.RateLimited
+                    if (limited != null) {
+                        val wait = (limited.retryAfterSeconds ?: DEFAULT_RATE_LIMIT_WAIT_SECONDS).coerceIn(1, MAX_RATE_LIMIT_WAIT_SECONDS)
+                        rateLimitedUntilMs.update { it + (gateKey to System.currentTimeMillis() + wait * 1000L) }
+                        log.w { "rate limited; no requests to ${settings.effectiveModel} for ${wait}s" }
+                    }
+                }
                 // Anything that is not already typed is a transport failure — a socket timeout, a
                 // DNS or TLS error. Left raw it reached the error mapper as "not a
                 // DiscoverAiException" and was reported to the user as *not configured*, sending
@@ -181,9 +256,16 @@ object DiscoverAiClient {
     private suspend fun callOpenAiCompat(
         settings: DiscoverAiSettings,
         prompt: DiscoverAiPromptText,
+        webSearch: Boolean = false,
     ): String {
         val body = buildJsonObject {
             put("model", settings.effectiveModel)
+            if (webSearch) {
+                // Groq runs the search itself. Low effort: higher levels make long browsing sessions and burn tokens.
+                put("tools", buildJsonArray { add(buildJsonObject { put("type", "browser_search") }) })
+                put("tool_choice", "required")
+                put("reasoning_effort", "low")
+            }
             // `max_tokens` rather than `max_completion_tokens`: this field is what every
             // OpenAI-compatible server implements. OpenAI's own newest reasoning models want the
             // other name — if someone points this at one, that is the setting to revisit.
@@ -230,11 +312,17 @@ object DiscoverAiClient {
             throw DiscoverAiException(
                 when (code) {
                     401, 403 -> DiscoverAiError.Unauthorized(message)
-                    429 -> DiscoverAiError.RateLimited(retryAfterSeconds = null, detail = message)
+                    429 -> DiscoverAiError.RateLimited(retryAfterSeconds = retryAfterInMessage(message), detail = message)
                     else -> DiscoverAiError.Http(code ?: response.status, message)
                 },
             )
         }
+
+        ((parsed["usage"] as? JsonObject)?.get("total_tokens") as? JsonPrimitive)?.contentOrNull?.toLongOrNull()
+            ?.takeIf { it > 0 }?.let { used ->
+                tokenCount.update { it + used }
+                recordSpend(settings, used)
+            }
 
         val message = (parsed["choices"] as? JsonArray)
             ?.firstNotNullOfOrNull { choice -> (choice as? JsonObject)?.get("message") as? JsonObject }
@@ -288,7 +376,7 @@ object DiscoverAiClient {
                 // or stop using a rate-capped model. Telling someone to check their key — which is
                 // what a generic HTTP error reads as — sends them to the one thing that is fine.
                 429 -> DiscoverAiError.RateLimited(
-                    retryAfterSeconds = response.retryAfterSeconds(),
+                    retryAfterSeconds = response.retryAfterSeconds() ?: retryAfterInMessage(detail),
                     detail = detail,
                 )
 
@@ -378,3 +466,23 @@ sealed interface DiscoverAiError {
 }
 
 class DiscoverAiException(val error: DiscoverAiError) : Exception(error.toString())
+
+/** fork:ai-minute - one answered request's cost: when it came back and the tokens the provider reported for it. */
+data class AiTokenSpend(val atMs: Long, val tokens: Long)
+
+/** How far back [DiscoverAiClient.recentTokenSpends] looks: the provider's minute. */
+const val AI_SPEND_WINDOW_MS = 60_000L
+
+/**
+ * fork:ai-minute - the wait a rate-limit message names when no header gave one. Groq says it in words: "Please try again in
+ * 7.26s", "in 1m30.5s", "in 2h4m", "in 860ms". Rounded up to whole seconds; null when the message names no wait.
+ */
+internal fun retryAfterInMessage(message: String): Int? {
+    val match = Regex("""try again in\s+((?:\d+(?:\.\d+)?(?:ms|h|m|s))+)""", RegexOption.IGNORE_CASE).find(message) ?: return null
+    var seconds = 0.0
+    Regex("""(\d+(?:\.\d+)?)(ms|h|m|s)""", RegexOption.IGNORE_CASE).findAll(match.groupValues[1]).forEach { part ->
+        val n = part.groupValues[1].toDouble()
+        seconds += when (part.groupValues[2].lowercase()) { "h" -> n * 3600; "m" -> n * 60; "ms" -> n / 1000; else -> n }
+    }
+    return kotlin.math.ceil(seconds).toInt().takeIf { it > 0 }
+}

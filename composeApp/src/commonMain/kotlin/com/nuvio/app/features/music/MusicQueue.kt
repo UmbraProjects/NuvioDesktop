@@ -18,16 +18,23 @@ sealed interface MusicModeSwitch {
  * the same order.
  */
 class MusicQueue(
-    val album: MusicAlbum,
+    album: MusicAlbum,
     mode: MusicPlayMode,
     shuffled: Boolean = false,
     private val seed: Long = 0L,
     startIndex: Int = 0,
 ) {
+    /** The album being played. Its tracks can be swapped for the music addon's copies while it plays ([swapUpcoming]). */
+    var album: MusicAlbum = album
+        private set
+
     var mode: MusicPlayMode = mode
         private set
     var shuffled: Boolean = shuffled
         private set
+
+    /** Album track indices still in this queue: all of them until [dropUpNext] hands the rest on. */
+    private var inQueue: List<Int> = album.tracks.indices.toList()
 
     /** Album track indices in playing order. */
     private var order: List<Int> = buildOrder(startIndex.coerceIn(0, (album.tracks.size - 1).coerceAtLeast(0)))
@@ -47,10 +54,42 @@ class MusicQueue(
     val upNext: List<MusicTrack> get() = order.drop(position + 1).mapNotNull { album.tracks.getOrNull(it) }
 
     private fun buildOrder(first: Int): List<Int> {
-        val all = album.tracks.indices.toList()
+        val all = inQueue
         if (!shuffled) return all
         // The track being played stays first so turning shuffle on never changes the song.
         return listOf(first) + all.filter { it != first }.shuffled(Random(seed))
+    }
+
+    /**
+     * fork:music-menu - Play next: ends this queue after the track playing and returns the tracks that were still to come,
+     * in playing order, so the player can put something in front of them. Turning shuffle on or off later never brings
+     * them back here.
+     */
+    fun dropUpNext(): List<MusicTrack> {
+        val dropped = upNext
+        order = order.take(position + 1)
+        inQueue = order.sorted()
+        return dropped
+    }
+
+    /**
+     * fork:nebula - fetch on Play: swaps the tracks still to come for [replacement]'s (the same album, matched by track index,
+     * with its tracks pointed at the music addon). The track playing, and any track [replacement] has no available counterpart
+     * for, stay as they are, so the order and the album's other tracks never change. Returns how many were swapped.
+     */
+    fun swapUpcoming(replacement: MusicAlbum): Int {
+        val tracks = album.tracks.toMutableList()
+        var swapped = 0
+        for (place in position + 1 until order.size) {
+            val index = order[place]
+            val old = tracks.getOrNull(index) ?: continue
+            val new = replacement.tracks.getOrNull(index) ?: continue
+            if (!new.isAvailable || new.videoId == old.videoId) continue
+            tracks[index] = new
+            swapped++
+        }
+        if (swapped > 0) album = album.copy(tracks = tracks)
+        return swapped
     }
 
     fun setShuffled(on: Boolean) {

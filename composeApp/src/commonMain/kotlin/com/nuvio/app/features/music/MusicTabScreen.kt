@@ -17,7 +17,6 @@ import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.nuvio.app.features.music.library.LibraryView
-import com.nuvio.app.features.music.library.constellationGaps
 import com.nuvio.app.features.music.library.musicGlass
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -54,6 +53,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.library.LadderAlbumRef // fork:music
+import com.nuvio.app.features.music.library.LADDER_VISIBLE // fork:music
 import com.nuvio.app.features.music.library.LadderRequest // fork:music
 import com.nuvio.app.features.music.library.MusicLadderScreen // fork:music
 import com.nuvio.app.features.music.library.MusicLibraryRepository
@@ -130,14 +130,14 @@ import kotlinx.coroutines.delay
 /** fork:music-youtube - [YouTube] searches plain YouTube for the query as typed, for songs YouTube Music has no album for. */
 private enum class MusicSearchKind { Albums, Artists, YouTube }
 
-private enum class MusicSection { Search, Library }
+internal enum class MusicSection { Search, Library }
 
 /**
  * fork:music-navbar - the Music tab's search box. One object rather than the tab's own state, because
  * on the floating top bar the box lives in the bar itself (see [MusicTopBarContent]) and the tab only
  * shows what it finds; without the floating bar the tab draws the box as before.
  */
-private object MusicTabState {
+internal object MusicTabState {
     var query by mutableStateOf("")
 
     // Opens on the shelf when the person has saved artists, and on Search when there is nothing to show
@@ -234,9 +234,15 @@ fun MusicTopBarContent(onLeave: () -> Unit, modifier: Modifier = Modifier) {
                     .onKeyEvent { arrowFocusDirection(it) == FocusDirection.Down && MusicTabState.focusPills() },
             )
         }
-        MusicFieldDivider()
-        Spacer(Modifier.width(6.dp))
-        MusicSearchBox(chromeless = true, modifier = Modifier.weight(1f))
+        // fork:music-home - the new first screen draws its own search line, so the bar keeps only its way back.
+        val musicHome = MusicLibraryRepository.state.collectAsState().value.settings.musicHome
+        if (musicHome) {
+            Spacer(Modifier.weight(1f))
+        } else {
+            MusicFieldDivider()
+            Spacer(Modifier.width(6.dp))
+            MusicSearchBox(chromeless = true, modifier = Modifier.weight(1f))
+        }
     }
 }
 
@@ -399,9 +405,10 @@ fun MusicTabScreen(
     val pendingLadder by MusicPlayback.pendingLadder.collectAsStateWithLifecycle()
     LaunchedEffect(pendingLadder) {
         val wanted = pendingLadder ?: return@LaunchedEffect
+        MusicPlayback.pendingLadder.value = null
+        if (!LADDER_VISIBLE) return@LaunchedEffect // hidden: nothing sets it any more, but never open one
         MusicTabState.query = ""
         ladder = wanted
-        MusicPlayback.pendingLadder.value = null
     }
     // A search typed into the top bar while a ladder is open is meant to be seen.
     LaunchedEffect(query) {
@@ -410,6 +417,8 @@ fun MusicTabScreen(
 
     // Restarts on every keystroke or kind change, so the delay is the typing pause.
     LaunchedEffect(query, kind, attempt) {
+        // fork:music-home - the new first screen runs its own searches.
+        if (MusicLibraryRepository.state.value.settings.musicHome) return@LaunchedEffect
         val q = query.trim()
         if (q.length < MIN_QUERY_LENGTH) {
             results = MusicSearchResults.Idle
@@ -458,6 +467,20 @@ fun MusicTabScreen(
         return
     }
 
+    // fork:music-home - the quick-play first screen, when chosen in Music settings. Ladders still open over it (above).
+    if (MusicLibraryRepository.state.collectAsState().value.settings.musicHome) {
+        com.nuvio.app.features.music.home.MusicHomeScreen(
+            onAlbumClick = onAlbumClick,
+            onArtistClick = onArtistClick,
+            onPlaylistClick = onPlaylistClick,
+            onOpenLadder = { ladder = it },
+            modifier = modifier,
+            topChromePadding = if (MusicTabState.barHosted) (topChromePadding - BAR_HOSTED_TRIM).coerceAtLeast(0.dp) else topChromePadding,
+            catalog = catalog,
+        )
+        return
+    }
+
     val tokens = MaterialTheme.nuvio
     Column(
         modifier = modifier
@@ -496,23 +519,6 @@ fun MusicTabScreen(
                         }
                     }
                 }
-                // fork:music - the Constellation's thin spots: genres you tag but barely own, each a ladder into it.
-                if (libraryView == LibraryView.Constellation) {
-                    val gaps = remember(libraryState.artists) { constellationGaps(libraryState.artists) }
-                    if (gaps.isNotEmpty()) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("Thin spots", style = MaterialTheme.typography.labelLarge, color = tokens.colors.textMuted)
-                            gaps.forEach { gap ->
-                                MusicGlassPill(gap.genre.replaceFirstChar { it.uppercase() }, selected = false, accent = true) {
-                                    ladder = LadderRequest.Genre(gap.genre)
-                                }
-                            }
-                        }
-                    }
-                }
             }
             if (section == MusicSection.Search) {
                 Row(
@@ -529,7 +535,7 @@ fun MusicTabScreen(
                         kind = MusicSearchKind.YouTube
                     }
                     // fork:music - the first result's ladders, as short pills beside the kind
-                    val offers = when (val shown = results) {
+                    val offers = if (!LADDER_VISIBLE) emptyList() else when (val shown = results) {
                         is MusicSearchResults.Albums -> {
                             val first = shown.items.firstOrNull()
                             val ref = first?.let { f -> f.artists.firstOrNull()?.name?.let { LadderAlbumRef(f.title, it, f.year) } }
@@ -569,9 +575,9 @@ fun MusicTabScreen(
             val libraryArtists = MusicLibraryRepository.state.collectAsState().value.artists
             // Recent searches live in the search box's own panel now, not as chips on this page.
             val recent = emptyList<String>()
-            val starters = remember(libraryArtists) { ladderStarters(libraryArtists) }
+            val starters = remember(libraryArtists) { if (LADDER_VISIBLE) ladderStarters(libraryArtists) else emptyList() }
             val tiles = remember(libraryArtists) { genreTiles(libraryArtists) }
-            val continues = remember(libraryArtists) { continueCards(LadderProgressStore.resumable()) }
+            val continues = remember(libraryArtists) { if (LADDER_VISIBLE) continueCards(LadderProgressStore.resumable()) else emptyList() }
             val startArtwork = remember(libraryArtists) { startArt(libraryArtists) }
             if (!startIsEmpty(recent, starters, continues, tiles)) {
                 SearchStartView(
@@ -622,15 +628,12 @@ private val BAR_HOSTED_TRIM = 36.dp
 /** The Library's views, as the icons under the bar. */
 private val LIBRARY_VIEW_ICONS = listOf(
     Triple(LibraryView.Shelf, Icons.Rounded.ViewModule, "Shelf"),
-    Triple(LibraryView.Constellation, Icons.Rounded.Hub, "Constellation"),
-    Triple(LibraryView.Eras, Icons.Rounded.Timeline, "Eras"),
     Triple(LibraryView.Playlists, Icons.Rounded.QueueMusic, "Playlists"),
 )
 
 /** The search header is a centred column this wide at most; the grid below gets the room. */
 private val MUSIC_HEADER_MAX_WIDTH = 720.dp
 
-/** With the Constellation's filter beside the search, the bar gets this much room for the two halves. */
 /** The search box: the Library's view pills (about 260 dp) and a fifth of that again on each side. */
 private val MUSIC_SEARCH_WIDTH = 380.dp
 

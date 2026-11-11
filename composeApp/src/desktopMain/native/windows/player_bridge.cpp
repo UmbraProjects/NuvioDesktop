@@ -1227,6 +1227,85 @@ mpv_handle *createMpvHandle(MpvApi &api) {
     return api.create();
 }
 
+// fork:loudness - decodes [startSeconds, startSeconds + durationSeconds) of the audio at url (a stream or a local file)
+// with a throwaway headless mpv, to raw little-endian float32 PCM at sampleRate Hz with 1 or 2 interleaved channels in
+// outputPath. headerLines ("Name: value") go with an http request; aid picks the audio track when not empty. Blocks for
+// at most 90 s (or until stop is set); 0 when the window was written to its end. Used by a playing player for its own
+// stream, and on its own for a track that has not started yet (the next one in the queue), so it can be measured first.
+int decodeAudioUrlToFile(const std::string &url, const std::vector<std::string> &headerLines, const std::string &aid,
+                         double startSeconds, double durationSeconds, const std::string &outputPath,
+                         int sampleRate, int channelCount, const std::atomic<bool> *stop) {
+    if (url.empty() || (stop && stop->load())) return -1;
+    MpvApi &api = mpvApi();
+    mpv_handle *probe = createMpvHandle(api);
+    if (!probe) return -1;
+    const std::string start = std::to_string(std::max(0.0, startSeconds));
+    const std::string end = std::to_string(std::max(0.0, startSeconds) + std::max(1.0, durationSeconds));
+    for (const auto &[name, value] : std::initializer_list<std::pair<const char *, const char *>>{
+             {"config", "no"}, {"terminal", "no"}, {"load-scripts", "no"}, {"ytdl", "no"},
+             {"input-default-bindings", "no"}, {"vid", "no"}, {"sid", "no"}, {"audio-display", "no"},
+             {"audio-spdif", ""}, {"af", ""}, {"ao", "pcm"}, {"ao-pcm-waveheader", "no"},
+             {"audio-format", "float"},
+             // The spot only; nothing read ahead past its end.
+             {"cache", "no"}, {"demuxer-readahead-secs", "1"}, {"demuxer-max-bytes", "8MiB"},
+             {"hr-seek", "yes"}, {"keep-open", "no"}}) {
+        api.setOptionString(probe, name, value);
+    }
+    api.setOptionString(probe, "ao-pcm-file", outputPath.c_str());
+    {
+        const std::string rateText = std::to_string(sampleRate > 0 ? sampleRate : 16000);
+        api.setOptionString(probe, "audio-samplerate", rateText.c_str());
+        api.setOptionString(probe, "audio-channels", channelCount >= 2 ? "stereo" : "mono");
+    }
+    api.setOptionString(probe, "start", start.c_str());
+    api.setOptionString(probe, "end", end.c_str());
+    if (!aid.empty()) api.setOptionString(probe, "aid", aid.c_str());
+    if (!headerLines.empty()) {
+        std::string headers;
+        for (size_t index = 0; index < headerLines.size(); ++index) {
+            if (index > 0) headers.push_back(',');
+            for (char character : headerLines[index]) {
+                if (character == '\\' || character == ',') headers.push_back('\\');
+                headers.push_back(character);
+            }
+        }
+        api.setOptionString(probe, "http-header-fields", headers.c_str());
+    }
+    int result = -1;
+    if (api.initialize(probe) >= 0) {
+        const char *load[] = {"loadfile", url.c_str(), nullptr};
+        if (api.command(probe, load) >= 0) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+            std::string why = "no answer in 90 s";
+            while (std::chrono::steady_clock::now() < deadline) {
+                if (stop && stop->load()) { why = "player closing"; break; }
+                mpv_event *event = api.waitEvent(probe, 0.25);
+                if (!event) continue;
+                if (event->event_id == MPV_EVENT_SHUTDOWN) { why = "mpv shut down"; break; }
+                if (event->event_id == MPV_EVENT_END_FILE) {
+                    const auto *endFile = static_cast<mpv_event_end_file *>(event->data);
+                    result = endFile && endFile->reason == MPV_END_FILE_REASON_EOF ? 0 : -2;
+                    if (result != 0) {
+                        why = "end of file reason " + std::to_string(endFile ? endFile->reason : -1) + ", mpv error " +
+                              (endFile ? api.errorText(endFile->error) : std::string("none"));
+                    }
+                    break;
+                }
+            }
+            // fork:visualiser - why a window gave nothing; the Kotlin side only sees a null.
+            if (result != 0) {
+                nuvioBridgeLog("audio spot " + std::to_string((int)startSeconds) + "s+" + std::to_string((int)durationSeconds) +
+                               "s failed: " + why);
+            }
+        } else {
+            nuvioBridgeLog("audio spot " + std::to_string((int)startSeconds) + "s: loadfile refused");
+        }
+    } else {
+        nuvioBridgeLog("audio spot " + std::to_string((int)startSeconds) + "s: mpv would not start");
+    }
+    api.terminateDestroy(probe);
+    return result;
+}
 
 class WindowsMpvWebPlayer;
 LRESULT CALLBACK messageWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -4449,6 +4528,8 @@ private:
     std::atomic<std::chrono::steady_clock::time_point> eofSuppressedUntil{std::chrono::steady_clock::time_point{}};
 
     std::string externalAudioUrl;
+    // fork:visualiser - a local copy of the playing audio the throwaway decodes read instead of the network (set by the app; empty = use the stream).
+    std::string spotFilePath;
     struct ExtraAudioTrack {
         std::string lang;
         std::string title;
@@ -7006,70 +7087,96 @@ public:
     // The same throwaway decode with a chosen output format: raw little-endian float32 PCM at sampleRate Hz with 1
     // (mono) or 2 (stereo) interleaved channels. The loudness measurement uses 24 kHz stereo: a mono mix cannot tell
     // a wide mix from a narrow one, which is 1 to 4 LU of error.
+    void setSpotFile(const std::string &path) { spotFilePath = path; }
+
+    // fork:gapless - the stream the decode above reads once the player has moved on to a queued track: the URL it was
+    // opened with is the first track's. Empty goes back to that.
+    std::mutex spotSourceMutex;
+    std::string spotSourceUrl;
+    std::vector<std::string> spotSourceHeaders;
+
+    void setSpotSource(const std::string &url, const std::vector<std::string> &headerLines) {
+        std::lock_guard<std::mutex> lock(spotSourceMutex);
+        spotSourceUrl = url;
+        spotSourceHeaders = headerLines;
+    }
+
+    // fork:gapless - queues the next track behind the one playing, in this same mpv, so it starts the moment this one
+    // ends: no new player, no new connection at the boundary (prefetch-playlist opens it near the end of this one).
+    // Anything queued before is dropped first; an empty url only drops it. options are "name=value" per-file options
+    // (the track's own af with its gain); headerLines go with its requests.
+    void queueNext(const std::string &url, const std::vector<std::string> &headerLines, const std::vector<std::string> &options) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv) return;
+        MpvApi &api = mpvApi();
+        const char *clear[] = {"playlist-clear", nullptr};
+        api.command(mpv, clear);
+        if (url.empty()) {
+            nuvioBridgeLog("gapless: queue cleared");
+            return;
+        }
+        api.setPropertyString(mpv, "prefetch-playlist", "yes");
+        api.setPropertyString(mpv, "gapless-audio", "weak");
+        std::string perFile;
+        auto add = [&perFile](const std::string &name, const std::string &value) {
+            if (name.empty()) return;
+            if (!perFile.empty()) perFile.push_back(',');
+            // Length-quoted (%n%), so commas and brackets inside the value stay in it.
+            perFile += name + "=%" + std::to_string(value.size()) + "%" + value;
+        };
+        if (!headerLines.empty()) {
+            std::string headers;
+            for (size_t index = 0; index < headerLines.size(); ++index) {
+                if (index > 0) headers.push_back(',');
+                for (char character : headerLines[index]) {
+                    if (character == '\\' || character == ',') headers.push_back('\\');
+                    headers.push_back(character);
+                }
+            }
+            add("http-header-fields", headers);
+        }
+        for (const auto &option : options) {
+            const size_t equals = option.find('=');
+            if (equals == std::string::npos) continue;
+            add(option.substr(0, equals), option.substr(equals + 1));
+        }
+        // mpv 0.38+ takes an index before the options; older builds take the options third.
+        const char *withIndex[] = {"loadfile", url.c_str(), "append", "-1", perFile.c_str(), nullptr};
+        int result = api.command(mpv, withIndex);
+        if (result < 0) {
+            const char *withoutIndex[] = {"loadfile", url.c_str(), "append", perFile.c_str(), nullptr};
+            result = api.command(mpv, withoutIndex);
+        }
+        nuvioBridgeLog(result >= 0 ? std::string("gapless: next track queued")
+                                   : std::string("gapless: queueing refused: ") + api.errorText(result));
+    }
+
     int decodeAudioSpot(double startSeconds, double durationSeconds, const std::string &outputPath,
                         int sampleRate, int channelCount) {
         // A separate audio stream (YouTube video plus its own audio) is the audio being heard, and it
         // is a complete file on its own, so that is what gets decoded; the video URL has no sound.
         const bool separateAudio = !externalAudioUrl.empty();
-        const std::string spotUrl = separateAudio ? externalAudioUrl : currentThumbnailSourceUrl();
-        const std::vector<std::string> spotHeaderLines = currentThumbnailHeaderLines();
+        const std::string localCopy = spotFilePath;
+        std::string movedOnUrl;
+        std::vector<std::string> movedOnHeaders;
+        {
+            std::lock_guard<std::mutex> lock(spotSourceMutex);
+            movedOnUrl = spotSourceUrl;
+            movedOnHeaders = spotSourceHeaders;
+        }
+        if (localCopy.empty() && !movedOnUrl.empty()) {
+            // fork:gapless - a queued track now playing: its own stream, its own headers.
+            if (shuttingDown.load()) return -1;
+            return decodeAudioUrlToFile(movedOnUrl, movedOnHeaders, std::string(), startSeconds, durationSeconds, outputPath,
+                                        sampleRate, channelCount, &shuttingDown);
+        }
+        const std::string spotUrl = !localCopy.empty() ? localCopy : (separateAudio ? externalAudioUrl : currentThumbnailSourceUrl());
         if (shuttingDown.load() || spotUrl.empty()) return -1;
-        MpvApi &api = mpvApi();
-        mpv_handle *probe = createMpvHandle(api);
-        if (!probe) return -1;
         const std::string aid = mirroredString("aid", "");
         const bool numericAid = !separateAudio && !aid.empty() && std::all_of(aid.begin(), aid.end(), ::isdigit);
-        const std::string start = std::to_string(std::max(0.0, startSeconds));
-        const std::string end = std::to_string(std::max(0.0, startSeconds) + std::max(1.0, durationSeconds));
-        for (const auto &[name, value] : std::initializer_list<std::pair<const char *, const char *>>{
-                 {"config", "no"}, {"terminal", "no"}, {"load-scripts", "no"}, {"ytdl", "no"},
-                 {"input-default-bindings", "no"}, {"vid", "no"}, {"sid", "no"}, {"audio-display", "no"},
-                 {"audio-spdif", ""}, {"af", ""}, {"ao", "pcm"}, {"ao-pcm-waveheader", "no"},
-                 {"audio-samplerate", "16000"}, {"audio-channels", "mono"}, {"audio-format", "float"},
-                 // The spot only; nothing read ahead past its end.
-                 {"cache", "no"}, {"demuxer-readahead-secs", "1"}, {"demuxer-max-bytes", "8MiB"},
-                 {"hr-seek", "yes"}, {"keep-open", "no"}}) {
-            api.setOptionString(probe, name, value);
-        }
-        api.setOptionString(probe, "ao-pcm-file", outputPath.c_str());
-        {
-            const std::string rateText = std::to_string(sampleRate > 0 ? sampleRate : 16000);
-            api.setOptionString(probe, "audio-samplerate", rateText.c_str());
-            api.setOptionString(probe, "audio-channels", channelCount >= 2 ? "stereo" : "mono");
-        }
-        api.setOptionString(probe, "start", start.c_str());
-        api.setOptionString(probe, "end", end.c_str());
-        if (numericAid) api.setOptionString(probe, "aid", aid.c_str());
-        if (!spotHeaderLines.empty()) {
-            std::string headers;
-            for (size_t index = 0; index < spotHeaderLines.size(); ++index) {
-                if (index > 0) headers.push_back(',');
-                for (char character : spotHeaderLines[index]) {
-                    if (character == '\\' || character == ',') headers.push_back('\\');
-                    headers.push_back(character);
-                }
-            }
-            api.setOptionString(probe, "http-header-fields", headers.c_str());
-        }
-        int result = -1;
-        if (api.initialize(probe) >= 0) {
-            const char *load[] = {"loadfile", spotUrl.c_str(), nullptr};
-            if (api.command(probe, load) >= 0) {
-                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
-                while (std::chrono::steady_clock::now() < deadline && !shuttingDown.load()) {
-                    mpv_event *event = api.waitEvent(probe, 0.25);
-                    if (!event) continue;
-                    if (event->event_id == MPV_EVENT_SHUTDOWN) break;
-                    if (event->event_id == MPV_EVENT_END_FILE) {
-                        const auto *endFile = static_cast<mpv_event_end_file *>(event->data);
-                        result = endFile && endFile->reason == MPV_END_FILE_REASON_EOF ? 0 : -2;
-                        break;
-                    }
-                }
-            }
-        }
-        api.terminateDestroy(probe);
-        return result;
+        return decodeAudioUrlToFile(spotUrl, localCopy.empty() ? currentThumbnailHeaderLines() : std::vector<std::string>(),
+                                    numericAid ? aid : std::string(), startSeconds, durationSeconds, outputPath,
+                                    sampleRate, channelCount, &shuttingDown);
     }
 
     void observeMirroredProperties(MpvApi &api) {
@@ -7082,6 +7189,8 @@ public:
             api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_FLAG);
         }
         api.observeProperty(mpv, propertyMirrorReplyId, "track-list/count", MPV_FORMAT_INT64);
+        // fork:gapless - which playlist entry is playing, so the music player sees a queued track start.
+        api.observeProperty(mpv, propertyMirrorReplyId, "playlist-pos", MPV_FORMAT_INT64);
         for (const char *name : {"aid", "sid", "current-tracks/sub/id"}) {
             api.observeProperty(mpv, propertyMirrorReplyId, name, MPV_FORMAT_STRING);
         }
@@ -8447,6 +8556,83 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeAudioSpot(
     auto player = playerFromHandle(handle);
     if (!player) return -1;
     return player->decodeAudioSpot(startSeconds, durationSeconds, jstringToUtf8(env, outputPath), sampleRate, channelCount);
+}
+
+// fork:gapless - see queueNext / setSpotSource above.
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_queueNext(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring url,
+    jobjectArray headerLines,
+    jobjectArray options
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->postMpvCall([p = player.get(), urlText = jstringToUtf8(env, url), headers = jstringArrayToVector(env, headerLines),
+                         opts = jstringArrayToVector(env, options)]() {
+        p->queueNext(urlText, headers, opts);
+    });
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setSpotSource(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring url,
+    jobjectArray headerLines
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->setSpotSource(url ? jstringToUtf8(env, url) : std::string(), jstringArrayToVector(env, headerLines));
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_playlistPos(
+    JNIEnv *,
+    jobject,
+    jlong handle
+) {
+    auto player = playerFromHandle(handle);
+    return player ? (jlong)player->mirroredDouble("playlist-pos", -1.0) : -1;
+}
+
+// fork:loudness - the decode above for a stream no player has open yet (the next track in the queue), so it can be
+// measured before it starts. Needs no player: only libmpv.
+extern "C" JNIEXPORT jint JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_decodeAudioUrl(
+    JNIEnv *env,
+    jobject,
+    jstring url,
+    jobjectArray headerLines,
+    jdouble startSeconds,
+    jdouble durationSeconds,
+    jint sampleRate,
+    jint channelCount,
+    jstring outputPath
+) {
+    try {
+        return decodeAudioUrlToFile(jstringToUtf8(env, url), jstringArrayToVector(env, headerLines), std::string(),
+                                    startSeconds, durationSeconds, jstringToUtf8(env, outputPath),
+                                    sampleRate, channelCount, nullptr);
+    } catch (const std::exception &error) {
+        nuvioBridgeLog(std::string("audio url decode failed: ") + error.what());
+        return -1;
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setAudioSpotFile(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jstring path
+) {
+    auto player = playerFromHandle(handle);
+    if (!player) return;
+    player->setSpotFile(path ? jstringToUtf8(env, path) : std::string());
 }
 
 extern "C" JNIEXPORT void JNICALL

@@ -1,6 +1,7 @@
 package com.nuvio.app.features.music
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.features.preroll.streamUrls
 import com.nuvio.app.features.trailer.TrailerPlaybackResolver
 import com.nuvio.app.features.trailer.TrailerPlaybackSource
 import com.nuvio.app.features.trailer.sourceOrNull
@@ -92,7 +93,8 @@ object MusicResolver {
      * that video, the art track is the one to play in audio mode. Any failure keeps the listed id.
      */
     private suspend fun albumAudioId(track: MusicTrack): String =
-        try {
+        // fork:music-home - a picked video heard as audio keeps its own soundtrack (a live cut, a remix), not the album's.
+        if (track.isVideo) track.videoId else try {
             MusicMetadataClient.counterpartOf(track.videoId)
                 ?.takeIf { it.videoType == MusicVideoType.ArtTrack && it.videoId != track.videoId && it.videoId.length == 11 }
                 ?.videoId
@@ -110,6 +112,14 @@ object MusicResolver {
             ?: if (audioId != track.videoId) open(track.videoId, needsVideo = false) else null
 
     private suspend fun video(track: MusicTrack, album: MusicAlbum): MusicResolution {
+        // fork:music-home - a video the person picked plays as itself: not a linked video or a search hit for its title.
+        // When it will not open, the usual hunt below still finds the song's official video or its lyric picture.
+        if (track.isVideo) {
+            open(track.videoId, needsVideo = true)?.let {
+                return MusicResolution.Playable(track, MusicPlayMode.Video, track.videoId, it, viaCounterpart = false)
+            }
+            log.w { "picked video ${track.videoId} (\"${track.title}\") would not open; looking for its official video" }
+        }
         withTimeoutOrNull(VIDEO_LOOKUP_TIMEOUT_MS) { findVideo(track, album) }?.let { return it }
         log.i { "no official video for \"${track.title}\"; playing it as a lyric video" }
         val audioId = albumAudioId(track)
@@ -196,7 +206,28 @@ object MusicResolver {
 
     private suspend fun open(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? =
         // fork:loudness - kept under the video's id, which outlives the stream's URL.
-        openStream(videoId, needsVideo)?.copy(loudnessKey = "yt:$videoId")
+        openStream(videoId, needsVideo)?.copy(loudnessKey = "yt:$videoId")?.also { noteLoudness(videoId, it) }
+
+    /**
+     * fork:loudness - a stream that came without YouTube's loudness figure (some clients leave it out) and that has not been
+     * measured here gets the figure from one more player request, so the track starts at its level instead of a guess.
+     */
+    private suspend fun noteLoudness(videoId: String, source: TrailerPlaybackSource) {
+        if (hasKeptLoudness("yt:$videoId")) return
+        val urls = source.streamUrls()
+        if (com.nuvio.app.features.preroll.StreamLoudnessBook.lufsFor(*urls.toTypedArray()) != null) return
+        val loudnessDb = try {
+            withTimeoutOrNull(LOUDNESS_LOOKUP_TIMEOUT_MS) { TrailerPlaybackResolver.loudnessDbOf(videoId) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            null
+        }
+        com.nuvio.app.features.preroll.StreamLoudnessBook.record(urls, loudnessDb)
+        log.i { "$videoId: loudness ${loudnessDb?.let { "$it dB over YouTube's reference, from a second request" } ?: "not given by YouTube either; it will be measured first"}" }
+    }
+
+    private const val LOUDNESS_LOOKUP_TIMEOUT_MS = 2_500L
 
     private suspend fun openStream(videoId: String, needsVideo: Boolean): TrailerPlaybackSource? {
         // fork:potoken-first — the resolver that carries PO tokens goes first for audio, as in BitChord.

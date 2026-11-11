@@ -10,7 +10,7 @@ import com.nuvio.app.features.music.library.LibraryArtist
 import com.nuvio.app.features.music.library.LibraryRelease
 import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.addonLinks
-import com.nuvio.app.features.music.library.releasesToAskAddon
+import com.nuvio.app.features.music.library.releasesToAskAddonWide
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
@@ -74,7 +74,8 @@ internal fun rememberAddonReleases(artist: LibraryArtist): AddonReleases {
     remember { MusicLibraryRepository.ensureLoaded() }
     val links = MusicLibraryRepository.state.collectAsState().value.settings.addonLinks()
     val holder = remember(artist.id, links) { AddonReleases() }
-    val toAsk = remember(artist.releases) { releasesToAskAddon(artist.releases) }
+    // fork:nebula - every album and EP tile, not only those YouTube Music lacks, so Lossless can be badged from outside the album.
+    val toAsk = remember(artist.releases) { releasesToAskAddonWide(artist.releases) }
     // Keyed by the release keys, not the releases: their art and palettes fill in while the page loads, and that must not restart the asking.
     val askKeys = remember(toAsk) { toAsk.map { it.key } }
     LaunchedEffect(holder, askKeys) {

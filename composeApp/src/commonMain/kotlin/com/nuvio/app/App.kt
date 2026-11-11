@@ -50,6 +50,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.MusicNote // fork:music
 import androidx.compose.material.icons.rounded.SmartDisplay // fork:youtube-mode
 import androidx.compose.material.icons.rounded.SportsEsports
@@ -1862,6 +1863,13 @@ private fun MainAppContent(
                 com.nuvio.app.features.navbar.NavBarEntry.YouTube -> latestRootTabClick.value(AppScreenTab.YouTube)
                 com.nuvio.app.features.navbar.NavBarEntry.Music -> latestRootTabClick.value(AppScreenTab.Music)
                 com.nuvio.app.features.navbar.NavBarEntry.Games -> com.nuvio.app.features.games.GameModeController.setActive(true)
+                // fork:tonight - opens over Home, Library or Discover; from any other tab it goes to Home first.
+                com.nuvio.app.features.navbar.NavBarEntry.Tonight -> {
+                    if (selectedTab != AppScreenTab.Home && selectedTab != AppScreenTab.Library && selectedTab != AppScreenTab.Discover) {
+                        latestRootTabClick.value(AppScreenTab.Home)
+                    }
+                    com.nuvio.app.features.tonight.TonightController.open()
+                }
             }
         }
     }
@@ -2395,6 +2403,23 @@ private fun MainAppContent(
             }
         }
 
+        // fork:phone-remote - a YouTube video sent from the phone's share menu opens in the player, replacing one already open.
+        LaunchedEffect(navController) {
+            com.nuvio.app.features.remote.RemotePlayerHub.youTubeOpens.collectLatest { request ->
+                val launch = com.nuvio.app.features.youtube.youTubeRemoteLaunch(request) ?: return@collectLatest
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    PlayerHandoff.holdShield()
+                    com.nuvio.app.features.youtube.YouTubeWatchLayout.stopBrowsing()
+                    ResumePromptRepository.markPlayerExitedNormally()
+                    navController.popBackStack()
+                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                        PlayerHandoff.activeRoutes.first { it == 0 }
+                    }
+                }
+                navController.navigateToPlayer(launch)
+            }
+        }
+
         // Direct media open: local file drag/drop or an HTTP(S) stream pasted with Ctrl+V.
         if (isDesktop) {
             LaunchedEffect(navController) {
@@ -2817,6 +2842,26 @@ private fun MainAppContent(
                 )
             }
 
+        // fork:phone-remote episodes - an episode picked in the phone's season list plays as the details page's episode
+        // does (its sources, then the player). A player already open is closed first.
+        LaunchedEffect(navController) {
+            com.nuvio.app.features.remote.RemotePlayerHub.episodePlays.collectLatest { play ->
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    PlayerHandoff.holdShield()
+                    ResumePromptRepository.markPlayerExitedNormally()
+                    navController.popBackStack()
+                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                        PlayerHandoff.activeRoutes.first { it == 0 }
+                    }
+                }
+                onPlay(
+                    play.type, play.videoId, play.parentMetaId, play.parentMetaType, play.title, play.logo, play.poster,
+                    play.background, play.seasonNumber, play.episodeNumber, play.episodeTitle, play.episodeThumbnail,
+                    play.pauseDescription, play.resumePositionMs,
+                )
+            }
+        }
+
         val onPlayAlternate: (String, String, String, String, String, String?, String?, String?, Int?, Int?, String?, String?, String?, Long?) -> Unit =
             { type, videoId, parentMetaId, parentMetaType, title, logo, poster, background, seasonNumber, episodeNumber, episodeTitle, episodeThumbnail, pauseDescription, resumePositionMs ->
                 launchPlaybackWithDownloadPreference(
@@ -3229,6 +3274,22 @@ private fun MainAppContent(
 
         val onContinueWatchingStartFromBeginning: (ContinueWatchingItem) -> Unit = { item ->
             openContinueWatching(item, false, true)
+        }
+
+        // fork:phone-remote continue watching - Resume on the TV from the phone: the same source again, from where it
+        // stopped, as the card's last-link shortcut plays it. A player already open is closed first.
+        LaunchedEffect(navController) {
+            com.nuvio.app.features.remote.RemotePlayerHub.resumes.collectLatest { item ->
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    PlayerHandoff.holdShield()
+                    ResumePromptRepository.markPlayerExitedNormally()
+                    navController.popBackStack()
+                    withTimeoutOrNull(PLAYLIST_HANDOFF_DISPOSE_TIMEOUT_MS) {
+                        PlayerHandoff.activeRoutes.first { it == 0 }
+                    }
+                }
+                openContinueWatching(item, useAlternateBehavior = false, startFromBeginning = false, forceReuseLastLink = true)
+            }
         }
 
         val onContinueWatchingLongPress: (ContinueWatchingItem) -> Unit = { item ->
@@ -4240,6 +4301,12 @@ private fun MainAppContent(
                                             searchSubmitRequests = searchSubmitRequests,
                                             rootActionsEnabled = tabsRouteActive,
                                             homeScrollToTopRequests = homeScrollToTopRequests,
+                                            onTonightPlay = { type, id -> // fork:tonight
+                                                navController.navigateIfResumed(DetailRoute(type = type, id = id, autoPlay = true))
+                                            },
+                                            onTonightDetails = { type, id -> // fork:tonight
+                                                navController.navigateIfResumed(DetailRoute(type = type, id = id))
+                                            },
                                             searchScrollToTopRequests = searchScrollToTopRequests,
                                             libraryScrollToTopRequests = libraryScrollToTopRequests,
                                             discoverScrollToTopRequests = discoverScrollToTopRequests,
@@ -6274,6 +6341,8 @@ private fun AppTabHost(
     onMusicNavigate: (Any) -> Unit = {}, // fork:music
     onPlayYouTube: (PlayerLaunch) -> Unit = {}, // fork:youtube-mode
     onYouTubeSettingsClick: () -> Unit = {},
+    onTonightPlay: (type: String, id: String) -> Unit = { _, _ -> }, // fork:tonight
+    onTonightDetails: (type: String, id: String) -> Unit = { _, _ -> }, // fork:tonight
 ) {
     val tabStateHolder = rememberSaveableStateHolder()
     // A cloud item can be a folder (a season pack), so a poster click has to ask which file rather
@@ -6293,11 +6362,18 @@ private fun AppTabHost(
             mutableStateOf(selectedTab.takeIf { it != AppScreenTab.Settings && it != AppScreenTab.LiveTv && it != AppScreenTab.Music && it != AppScreenTab.YouTube } ?: AppScreenTab.Home)
         }
         if (!homeHidden) contentTab = selectedTab
+        // fork:tonight - with "Open on Tonight" on, the Home tab shows the Tonight picker until
+        // "Just browse everything"; pressing Home again (its scroll-to-top) brings the picker back.
+        // The "What to watch" button (beside Search) opens it; its X or Back closes it; "Open on Tonight" opens it once
+        // when Nuvio starts. It covers Home, Library or Discover, whichever is showing.
+        LaunchedEffect(Unit) { com.nuvio.app.features.tonight.TonightController.openAtStartIfWanted() }
+        val tonightOpen by com.nuvio.app.features.tonight.TonightController.open.collectAsStateWithLifecycle()
+        val tonightShowing = tonightOpen && !homeHidden && contentTab != AppScreenTab.Search
         // HomeScreen stays composed (hidden) while Settings is open, so switching back shows it at
         // once instead of rebuilding Home; Settings is still built and disposed as before.
         tabStateHolder.SaveableStateProvider("HomeSearchLibrary") {
             KeptAliveLayer(
-                visible = !homeHidden,
+                visible = !homeHidden && !tonightShowing, // fork:tonight
                 lifecycleOwner = rememberChildLifecycleOwner(active = !homeHidden),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -6376,6 +6452,15 @@ private fun AppTabHost(
                     )
                 }
             }
+        }
+
+        if (tonightShowing) { // fork:tonight
+            com.nuvio.app.features.tonight.TonightHost(
+                topPadding = topChromePadding ?: 0.dp,
+                onPlay = onTonightPlay,
+                onOpenDetails = onTonightDetails,
+                onClose = { com.nuvio.app.features.tonight.TonightController.close() },
+            )
         }
 
         if (liveTvSelected) {
@@ -6689,6 +6774,19 @@ private fun DesktopHoverSidebar(
                                     tint = color,
                                 )
                             }
+                            com.nuvio.app.features.navbar.NavBarEntry.Tonight -> DesktopSidebarItem( // fork:tonight
+                                label = "What to watch",
+                                selected = com.nuvio.app.features.tonight.TonightController.open.collectAsStateWithLifecycle().value,
+                                expanded = false,
+                                onClick = { com.nuvio.app.features.navbar.NavBarNavigation.request(entry) },
+                            ) { color ->
+                                Icon(
+                                    imageVector = Icons.Rounded.AutoAwesome,
+                                    contentDescription = "What to watch",
+                                    modifier = Modifier.size(DesktopSidebarIconSize),
+                                    tint = color,
+                                )
+                            }
                             // Not a tab: game mode opens over the app (GameModeController).
                             com.nuvio.app.features.navbar.NavBarEntry.Games -> DesktopSidebarItem(
                                 label = "Games",
@@ -6914,7 +7012,10 @@ private fun TabletFloatingTopBar(
     var activationZoneHovered by remember { mutableStateOf(false) }
     val isSearchActive = searchOverlayActive || selectedTab == AppScreenTab.Search
     // fork:music-navbar - on the Music tab the bar holds the Music search instead of the tabs.
-    val musicBarActive = selectedTab == AppScreenTab.Music && !isSearchActive
+    // fork:music-home - the new music home has its own search line, so with it on the bar stays the normal tab bar.
+    val musicHomeOn = com.nuvio.app.features.music.library.MusicLibraryRepository.state
+        .collectAsStateWithLifecycle().value.settings.musicHome
+    val musicBarActive = selectedTab == AppScreenTab.Music && !isSearchActive && !musicHomeOn
     // fork:youtube-mode - and on the YouTube tab, the YouTube search.
     val youTubeBarActive = selectedTab == AppScreenTab.YouTube && !isSearchActive
     val discoverTabVisible by remember {
@@ -7324,6 +7425,17 @@ private fun TabletFloatingTopBar(
                                         Icon(
                                             imageVector = Icons.Rounded.MusicNote,
                                             contentDescription = "Music",
+                                            modifier = iconModifier,
+                                            tint = iconTint,
+                                        )
+                                    }
+                                    com.nuvio.app.features.navbar.NavBarEntry.Tonight -> NavQuadrant( // fork:tonight
+                                        selected = com.nuvio.app.features.tonight.TonightController.open.collectAsStateWithLifecycle().value,
+                                        onClick = { com.nuvio.app.features.navbar.NavBarNavigation.request(entry) },
+                                    ) { iconModifier, iconTint ->
+                                        Icon(
+                                            imageVector = Icons.Rounded.AutoAwesome,
+                                            contentDescription = "What to watch",
                                             modifier = iconModifier,
                                             tint = iconTint,
                                         )

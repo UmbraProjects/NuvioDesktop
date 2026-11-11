@@ -26,6 +26,11 @@ internal object MusicRateLimit {
 
     /** Seconds until requests resume, or 0. */
     fun secondsLeft(now: Long = epochMs()): Int = ((blockedUntilMs - now + 999) / 1000).toInt().coerceAtLeast(0)
+
+    /** Lifts the pause. For tests only: this is process-wide state, so a test that records a refusal would block every later one. */
+    internal fun resetForTests() {
+        blockedUntilMs = 0L
+    }
 }
 
 /**
@@ -36,12 +41,14 @@ internal object MusicRateLimit {
  */
 /** [preferHdr]: choose a video's HDR encode when it has one (the YouTube tab; trailers and music do not ask). */
 /** [skipManifestLadder]: the adaptive pair is what plays, so the HLS ladder is not fetched just to measure it (the YouTube tab). */
+/** [parallelClients]: ask the player clients (and read the HLS ladders) at once; only the YouTube tab does. Everything else asks one after another so a refusal can stop the rest. */
 /** [maxShortSide]: the sharpest encode whose short side is at most this (the YouTube tab's max quality); null picks as trailers do. */
 internal class YouTubeCaller(
     val label: String,
     val urgent: Boolean = false,
     val preferHdr: Boolean = false,
     val skipManifestLadder: Boolean = false,
+    val parallelClients: Boolean = false,
     val maxShortSide: Int? = null,
     /** fork:youtube-languages - also the video's other language tracks (dubs) beside the original. */
     val allAudioTracks: Boolean = false,

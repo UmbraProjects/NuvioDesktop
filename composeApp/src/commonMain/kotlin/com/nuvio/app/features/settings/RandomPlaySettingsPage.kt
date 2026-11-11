@@ -13,6 +13,7 @@ internal fun LazyListScope.randomPlaySettingsContent(
     isTablet: Boolean,
     settings: HomeCatalogSettingsUiState,
 ) {
+    tonightSettingsContent(isTablet) // fork:tonight
     item {
         SettingsSection(
             title = stringResource(Res.string.random_play_section_catalog),

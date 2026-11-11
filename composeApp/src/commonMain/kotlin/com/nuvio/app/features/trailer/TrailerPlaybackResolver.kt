@@ -13,4 +13,11 @@ expect object TrailerPlaybackResolver {
      * error page where media should be). Anything inconclusive (offline, timeout, a manifest) answers false.
      */
     suspend fun streamRefused(source: TrailerPlaybackSource): Boolean
+
+    /**
+     * fork:loudness - YouTube's `loudnessDb` for [videoId] (how far above its -14 LUFS reference the song is) from one player
+     * request, or null when it sent none or could not be asked. For the same song played from elsewhere (the music addon),
+     * so its gain can be right from the first second.
+     */
+    suspend fun loudnessDbOf(videoId: String): Double?
 }

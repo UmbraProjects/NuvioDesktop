@@ -33,6 +33,14 @@ expect fun MusicPlayerSurface(
     onSnapshot: (loadId: Long, snapshot: PlayerPlaybackSnapshot) -> Unit,
     onEnded: (loadId: Long) -> Unit,
     onError: (loadId: Long) -> Unit,
+    /**
+     * fork:gapless - the next track's stream, to queue behind [source] so it follows with no gap, or null for nothing
+     * queued. When the player moves on to it, [onNextStarted] reports it with the [loadId] it followed; the caller then
+     * gives the surface a new [loadId] with [continued] true, which it does not reopen.
+     */
+    nextSource: TrailerPlaybackSource?,
+    continued: Boolean,
+    onNextStarted: (loadId: Long) -> Unit,
 )
 
 /** Resolves a track the way the app does: [MusicResolver] on desktop. */

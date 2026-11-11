@@ -114,4 +114,64 @@ class MusicQueueTest {
         assertNull(q.current)
         assertNull(runSuspend { q.advance(all) })
     }
+
+    @Test
+    fun dropUpNextEndsTheQueueAfterTheTrackPlaying() {
+        val q = MusicQueue(album(5), MusicPlayMode.Audio, startIndex = 1)
+        assertEquals(listOf("id3", "id4", "id5"), q.dropUpNext().map { it.videoId })
+        assertTrue(q.upNext.isEmpty())
+        assertEquals("id2", q.current?.videoId)
+        assertNull(runSuspend { q.advance(all) })
+        // Back still reaches what was played before.
+        assertEquals("id1", runSuspend { q.retreat(all) }?.playable?.videoId)
+    }
+
+    @Test
+    fun shuffleAfterDropUpNextNeverBringsTheDroppedTracksBack() {
+        val q = MusicQueue(album(6), MusicPlayMode.Audio, startIndex = 2)
+        q.dropUpNext()
+        q.setShuffled(true)
+        assertEquals("id3", q.current?.videoId)
+        assertTrue(q.ordered.all { it.videoId in setOf("id1", "id2", "id3") })
+        q.setShuffled(false)
+        assertEquals(listOf("id1", "id2", "id3"), q.ordered.map { it.videoId })
+        assertEquals("id3", q.current?.videoId)
+    }
+    /** The album with every track but those in [missing] pointed at the addon (ids "nebula:..."), as NebulaMusicSource.prepare does. */
+    private fun addonCopy(n: Int, missing: Set<Int> = emptySet()) = album(n).let { a ->
+        a.copy(tracks = a.tracks.mapIndexed { i, t -> if (i in missing) t.copy(isAvailable = false) else t.copy(videoId = "nebula:${t.videoId}") })
+    }
+
+    @Test
+    fun swapUpcomingLeavesTheTrackPlayingAndSwapsTheRest() {
+        val q = MusicQueue(album(4), MusicPlayMode.Audio, startIndex = 1)
+        assertEquals(2, q.swapUpcoming(addonCopy(4)))
+        assertEquals("id2", q.current?.videoId)
+        assertEquals(listOf("nebula:id3", "nebula:id4"), q.upNext.map { it.videoId })
+        // What was already played is as it was, and the album keeps its length and order.
+        assertEquals(listOf("id1", "id2", "nebula:id3", "nebula:id4"), q.album.tracks.map { it.videoId })
+        assertEquals("nebula:id3", runSuspend { q.advance(all) }?.playable?.videoId)
+    }
+
+    @Test
+    fun swapUpcomingKeepsATrackTheAddonLacks() {
+        val q = MusicQueue(album(4), MusicPlayMode.Audio)
+        assertEquals(2, q.swapUpcoming(addonCopy(4, missing = setOf(2))))
+        assertEquals(listOf("nebula:id2", "id3", "nebula:id4"), q.upNext.map { it.videoId })
+        // Swapped once: the same copy again changes nothing.
+        assertEquals(0, q.swapUpcoming(addonCopy(4, missing = setOf(2))))
+    }
+
+    @Test
+    fun swapUpcomingFollowsTheShuffledOrderAndLeavesDroppedTracksAlone() {
+        val q = MusicQueue(album(6), MusicPlayMode.Audio, shuffled = true, seed = 7L, startIndex = 2)
+        val coming = q.upNext.map { it.videoId }
+        assertEquals(coming.size, q.swapUpcoming(addonCopy(6)))
+        assertEquals(coming.map { "nebula:$it" }, q.upNext.map { it.videoId })
+        assertEquals("id3", q.current?.videoId)
+
+        val dropped = MusicQueue(album(5), MusicPlayMode.Audio, startIndex = 1)
+        dropped.dropUpNext()
+        assertEquals(0, dropped.swapUpcoming(addonCopy(5)))
+    }
 }

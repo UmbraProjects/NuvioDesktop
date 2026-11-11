@@ -24,6 +24,8 @@ import nuvio.composeapp.generated.resources.settings_music_fanart_key
 import nuvio.composeapp.generated.resources.settings_music_fanart_key_description
 import nuvio.composeapp.generated.resources.settings_music_keep_audio_alive
 import nuvio.composeapp.generated.resources.settings_music_lastfm_key
+import nuvio.composeapp.generated.resources.settings_music_gemini_key
+import nuvio.composeapp.generated.resources.settings_music_gemini_key_description
 import nuvio.composeapp.generated.resources.settings_music_mb_offline
 import nuvio.composeapp.generated.resources.settings_music_nebula_link
 import nuvio.composeapp.generated.resources.settings_music_nebula_link_2
@@ -52,6 +54,12 @@ import nuvio.composeapp.generated.resources.settings_music_pause_for_trailers_de
 import nuvio.composeapp.generated.resources.settings_music_resume_after_playback
 import nuvio.composeapp.generated.resources.settings_music_resume_after_playback_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion
+import nuvio.composeapp.generated.resources.settings_music_album_lenses
+import nuvio.composeapp.generated.resources.settings_music_album_lenses_description
+import nuvio.composeapp.generated.resources.settings_music_artist_stage
+import nuvio.composeapp.generated.resources.settings_music_home
+import nuvio.composeapp.generated.resources.settings_music_home_description
+import nuvio.composeapp.generated.resources.settings_music_artist_stage_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion_description
 import nuvio.composeapp.generated.resources.settings_music_section_general
 import nuvio.composeapp.generated.resources.settings_music_lyrics_amll
@@ -91,7 +99,7 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
             val settings = state.settings
             SettingsGroup(
                 isTablet = isTablet,
-                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion"),
+                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion", "music-album-lenses", "music-artist-stage", "music-home"),
             ) {
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_music_show_tab),
@@ -112,6 +120,30 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     isTablet = isTablet,
                     onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(reducedMotion = it)) },
                 )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_album_lenses),
+                    description = stringResource(Res.string.settings_music_album_lenses_description),
+                    checked = settings.albumLenses,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(albumLenses = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_artist_stage),
+                    description = stringResource(Res.string.settings_music_artist_stage_description),
+                    checked = settings.artistStage,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(artistStage = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_music_home),
+                    description = stringResource(Res.string.settings_music_home_description),
+                    checked = settings.musicHome,
+                    isTablet = isTablet,
+                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(musicHome = it)) },
+                )
             }
         }
     }
@@ -129,6 +161,7 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     "music-fanart-key",
                     "music-audiodb-key",
                     "music-lastfm-key",
+                    "music-gemini-key",
                     "music-where-next",
                     "music-mb-offline",
                 ),
@@ -164,6 +197,17 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     secret = true,
                     summarizeAsConfigured = true,
                     onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(lastFmApiKey = it)) },
+                )
+                SettingsGroupDivider(isTablet)
+                SettingsTextInputRow(
+                    title = stringResource(Res.string.settings_music_gemini_key),
+                    description = stringResource(Res.string.settings_music_gemini_key_description),
+                    value = settings.geminiApiKey,
+                    placeholder = "Optional",
+                    isTablet = isTablet,
+                    secret = true,
+                    summarizeAsConfigured = true,
+                    onSave = { MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(geminiApiKey = it)) },
                 )
                 SettingsGroupDivider(isTablet)
                 SettingsTextInputRow(
@@ -340,6 +384,9 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
             }
         }
     }
+
+    musicFactsSettingsContent(isTablet) // fork:facts-filler
+    musicPlayLogSettingsContent(isTablet) // fork:shelf
 }
 
 /** The offline MusicBrainz copy: what it is, how far a download or build has got, and its buttons. */

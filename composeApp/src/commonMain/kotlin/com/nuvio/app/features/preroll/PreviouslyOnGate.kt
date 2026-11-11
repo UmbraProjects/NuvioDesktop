@@ -35,6 +35,7 @@ import com.nuvio.app.features.library.LibraryClock
 import com.nuvio.app.features.player.PlayerAutoPlayMode
 import com.nuvio.app.features.player.PlayerLaunch
 import com.nuvio.app.features.watched.WatchedRepository
+import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.Res
@@ -50,20 +51,31 @@ private const val ARTWORK_WAIT_MS = 2_500L
 private const val WAITING_INDICATOR_DELAY_MS = 800L
 private const val HOUR_MS = 3_600_000L
 
-/** A series episode started from the beginning, with the feature on: the only playback that can get a recap. */
+/**
+ * A series episode started from the beginning, or resumed (fork:previously-on-resume), with the feature on: the only
+ * playback that can get a recap. A resume is a launch that carries a saved position.
+ */
 internal fun previouslyOnEligible(launch: PlayerLaunch): Boolean =
     PreshowSettings.previouslyOnEnabled.value &&
         launch.parentMetaType == "series" &&
         launch.seasonNumber != null && launch.episodeNumber != null &&
-        launch.initialPositionMs <= 0L &&
         !launch.disableProgressTracking &&
         launch.autoPlayMode != PlayerAutoPlayMode.Playlist
+
+/** A launch that carries a saved position: a half-watched episode being picked up again. */
+internal fun isResumeLaunch(launch: PlayerLaunch): Boolean = launch.initialPositionMs > 0L
 
 /** The episode to recap for this launch, or null when there is none or the break has not been long enough. */
 internal fun previouslyOnTargetForLaunch(meta: MetaDetails, launch: PlayerLaunch, nowMs: Long): PreviouslyOnTarget? {
     val season = launch.seasonNumber ?: return null
     val episode = launch.episodeNumber ?: return null
-    return previouslyOnTargetForEpisode(meta, launch.parentMetaId, launch.parentMetaType, season, episode, nowMs)
+    val resume = isResumeLaunch(launch)
+    // The break counts from when this episode was last watched, not from the episode before it.
+    val resumedAtMs = if (resume) launch.videoId?.let { WatchProgressRepository.progressForVideo(it)?.lastUpdatedEpochMs } else null
+    return previouslyOnTargetForEpisode(
+        meta, launch.parentMetaId, launch.parentMetaType, season, episode, nowMs,
+        resume = resume, resumedAtMs = resumedAtMs,
+    )
 }
 
 /** The same for an episode named directly, which is how the prefetch asks. */
@@ -74,6 +86,8 @@ internal fun previouslyOnTargetForEpisode(
     season: Int,
     episode: Int,
     nowMs: Long,
+    resume: Boolean = false,
+    resumedAtMs: Long? = null,
 ): PreviouslyOnTarget? {
     val episodes = meta.videos.mapNotNull { video ->
         val s = video.playbackSeasonNumber() ?: return@mapNotNull null
@@ -89,7 +103,12 @@ internal fun previouslyOnTargetForEpisode(
     val target = previouslyOnTargetFor(episodes, season, episode) ?: return null
     val gap = PreshowSettings.previouslyOnBreakHours.value * HOUR_MS
     return target.takeIf {
-        previouslyOnGapPassed(it.watchedAtMs, nowMs, PreshowSettings.previouslyOnBreakOnly.value, gap)
+        previouslyOnGapPassed(
+            previouslyOnBreakFrom(resume, resumedAtMs, it.watchedAtMs),
+            nowMs,
+            PreshowSettings.previouslyOnBreakOnly.value,
+            gap,
+        )
     }
 }
 

@@ -125,6 +125,17 @@ class MusicParsersTest {
     }
 
     @Test
+    fun albumPageReadsTheExplicitBadge() {
+        assertEquals(false, assertNotNull(parseAlbum(albumPage, "MPREb_abc123")).explicit)
+        val badge = "\"badges\":[{\"musicInlineBadgeRenderer\":{\"icon\":{\"iconType\":\"MUSIC_EXPLICIT_BADGE\"}}}],"
+        val withTrackBadge = albumPage.replaceFirst("\"playlistItemData\":{\"videoId\":\"AAAAAAAAAAA\"}", badge + "\"playlistItemData\":{\"videoId\":\"AAAAAAAAAAA\"}")
+        assertEquals(true, assertNotNull(parseAlbum(withTrackBadge, "MPREb_abc123")).explicit)
+        val headerBadge = "\"subtitleBadge\":[{\"musicInlineBadgeRenderer\":{\"icon\":{\"iconType\":\"MUSIC_EXPLICIT_BADGE\"}}}],"
+        val withHeaderBadge = albumPage.replaceFirst("\"title\":{\"runs\":[{\"text\":\"Random Access Memories\"}]},", "\"title\":{\"runs\":[{\"text\":\"Random Access Memories\"}]}," + headerBadge)
+        assertEquals(true, assertNotNull(parseAlbum(withHeaderBadge, "MPREb_abc123")).explicit)
+    }
+
+    @Test
     fun albumWithoutTitleOrTracksIsNull() {
         assertNull(parseAlbum("{}", "MPREb_x"))
         assertNull(parseAlbum("nope", "MPREb_x"))
@@ -216,6 +227,20 @@ class MusicParsersTest {
     fun unknownTrackIsNull() {
         assertNull(parseCounterpart("""{"contents":[]}""", "AAAAAAAAAAA"))
         assertNull(parseCounterpart("garbage", "AAAAAAAAAAA"))
+    }
+
+    private fun shelf(description: String, footer: String?) = """{"musicDescriptionShelfRenderer":{
+      "description":{"runs":[{"text":"$description"}]}${footer?.let { ",\"footer\":{\"runs\":[{\"text\":\"$it\"}]}" } ?: ""}}}"""
+
+    @Test
+    fun albumPageKeepsAWikipediaBlurbOnly() {
+        val text = "Random Access Memories is the fourth studio album by French electronic duo Daft Punk, released in 2013."
+        val withWiki = albumPage.replace("\"x\":", "\"d\":${shelf(text, "From Wikipedia")},\"x\":")
+        assertEquals(text, parseAlbum(withWiki, "MPREb_abc123")?.wikipediaBlurb)
+        // A description that does not credit Wikipedia is not Wikipedia text; nor is a page with none.
+        val other = albumPage.replace("\"x\":", "\"d\":${shelf(text, "From a label")},\"x\":")
+        assertNull(parseAlbum(other, "MPREb_abc123")?.wikipediaBlurb)
+        assertNull(parseAlbum(albumPage, "MPREb_abc123")?.wikipediaBlurb)
     }
 }
 

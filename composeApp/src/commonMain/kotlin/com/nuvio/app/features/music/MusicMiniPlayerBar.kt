@@ -71,6 +71,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -90,7 +91,9 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -450,13 +453,18 @@ private fun SlimPill(state: MusicPlayerState, onOpenNowPlaying: () -> Unit, play
     }
 }
 
-internal fun subtitle(state: MusicPlayerState): String {
+/** The addon's quality tag ("FLAC") while its audio is what plays; a real video carries YouTube's own sound. */
+internal fun qualityTag(state: MusicPlayerState): String? =
+    state.track?.videoId?.let(com.nuvio.app.features.music.nebula.NebulaMusicSource::qualityOf)
+        ?.takeUnless { state.mode == MusicPlayMode.Video && !state.lyricVideo }
+
+/** [withQuality] false leaves the quality tag out, for a player that shows it as a pill of its own. */
+internal fun subtitle(state: MusicPlayerState, withQuality: Boolean = true): String {
     val artist = (state.track?.artists?.takeIf { it.isNotEmpty() } ?: state.album?.artists.orEmpty())
         .joinToString(", ") { it.name }
-    // Only while the addon's audio is what plays: a real video carries YouTube's own sound.
-    val quality = state.track?.videoId?.let(com.nuvio.app.features.music.nebula.NebulaMusicSource::qualityOf)
-        ?.takeUnless { state.mode == MusicPlayMode.Video && !state.lyricVideo }
-    return listOf(artist, state.albumTitle.orEmpty(), quality.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
+    val quality = if (withQuality) qualityTag(state) else null
+    // fork:music-radio - a radio, mix or playlist says which one it is playing from.
+    return listOf(artist, state.albumTitle.orEmpty(), playingFromLabel(state.album).orEmpty(), quality.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
 /** The three controls that stay on the bar: previous, play or pause, next. */
@@ -710,8 +718,14 @@ internal fun SeekBar(
     onNudge: ((Int) -> Unit)? = null,
     /** The app's glass for the track (a faint fill and a light edge) instead of the flat grey. */
     glass: Boolean = false,
+    /** fork:music - the text shown above the pointer while it hovers the bar (a time), given the place as 0..1. */
+    hoverLabel: ((Float) -> String)? = null,
+    /** fork:music - the colour of the played part; the app's accent when null (the dock tints it from the cover). */
+    fill: Color? = null,
 ) {
     val colors = MaterialTheme.nuvio.colors
+    var hover by remember { mutableStateOf<Float?>(null) }
+    var widthPx by remember { mutableIntStateOf(0) }
     // While dragging, follow the finger rather than the (older) playback position.
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = (dragging ?: fraction).coerceIn(0f, 1f)
@@ -723,6 +737,17 @@ internal fun SeekBar(
     Box(
         modifier = modifier
             .height(28.dp)
+            .onSizeChanged { widthPx = it.width }
+            .pointerInput(hoverLabel != null && enabled) {
+                if (hoverLabel == null || !enabled) return@pointerInput
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        hover = if (event.type == PointerEventType.Exit) null
+                        else event.changes.firstOrNull()?.position?.x?.let { (it / size.width).coerceIn(0f, 1f) }
+                    }
+                }
+            }
             .focusable(enabled = enabled, interactionSource = source)
             .onKeyEvent { event ->
                 if (onNudge == null || event.type != KeyEventType.KeyDown) return@onKeyEvent false
@@ -763,13 +788,29 @@ internal fun SeekBar(
                 else Modifier.background(Color.White.copy(alpha = 0.20f)),
             ),
         )
-        Box(Modifier.fillMaxWidth(shown).height(trackHeight).clip(track).background(colors.accent))
+        Box(Modifier.fillMaxWidth(shown).height(trackHeight).clip(track).background(fill ?: colors.accent))
         if (active && enabled) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Spacer(Modifier.weight(shown.coerceIn(0.001f, 0.999f)))
                 Box(Modifier.size(20.dp).clip(CircleShape).background(Color.White))
                 Spacer(Modifier.weight((1f - shown).coerceIn(0.001f, 0.999f)))
             }
+        }
+        val at = hover
+        if (at != null && hoverLabel != null && enabled) {
+            val lift = with(androidx.compose.ui.platform.LocalDensity.current) { 26.dp.roundToPx() }
+            val half = with(androidx.compose.ui.platform.LocalDensity.current) { 22.dp.roundToPx() }
+            Text(
+                hoverLabel(at),
+                style = MaterialTheme.typography.labelSmall,
+                color = colors.textPrimary,
+                maxLines = 1,
+                modifier = Modifier
+                    .offset { androidx.compose.ui.unit.IntOffset((at * widthPx).toInt().minus(half).coerceIn(0, (widthPx - 2 * half).coerceAtLeast(0)), -lift) }
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.78f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            )
         }
     }
 }
