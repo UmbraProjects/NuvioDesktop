@@ -218,7 +218,7 @@ class UpdateChannelTest {
         tagName = tag,
         name = tag,
         prerelease = false,
-        targetCommitish = "Spyder",
+        targetCommitish = "windows-tv-adaptive",
     )
 
     private fun publishedNightly(at: String) =
@@ -228,6 +228,6 @@ class UpdateChannelTest {
         tagName = "Nightly",
         name = "Nightly Testing",
         prerelease = true,
-        targetCommitish = "Spyder",
+        targetCommitish = "windows-tv-adaptive",
     )
 }
