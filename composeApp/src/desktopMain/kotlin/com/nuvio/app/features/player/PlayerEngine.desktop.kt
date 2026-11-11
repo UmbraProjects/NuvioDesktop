@@ -266,6 +266,9 @@ private fun NativePlayerSurface(
     val latestOnError = rememberUpdatedState(onError)
 
     LaunchedEffect(controller, playbackAttemptId, sourceUrl) {
+        // The attach below (after redirect resolution) is what loads this source; until its file
+        // has loaded, the controller's tracks are still the previous file's.
+        controller.hideTracksUntilNextFileLoads()
         onControllerReady(controller)
     }
 

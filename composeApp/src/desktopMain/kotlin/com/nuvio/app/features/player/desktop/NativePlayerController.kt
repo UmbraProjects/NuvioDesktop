@@ -168,6 +168,13 @@ internal class NativePlayerController(
     private var lastQuickAutoCrop = false
     private val handleLock = Any()
     private val attachGeneration = AtomicLong(0L)
+
+    // While >= 0: the attach generation that was current when a new source was handed to this
+    // controller. Until a later generation reports fileLoaded, the live handle still holds the
+    // previous file, and its track list must not be read as the new one's (see
+    // hideTracksUntilNextFileLoads).
+    @Volatile
+    private var tracksHiddenThroughGeneration = -1L
     @Volatile
     private var disposed = false
     @Volatile
@@ -1756,6 +1763,12 @@ internal class NativePlayerController(
             }
             else -> {
                 if (type == "fileLoaded") {
+                    // Events reach here only for the current generation, so a later one than the
+                    // hide marker means the new source's file is the one now loaded.
+                    val hiddenThrough = tracksHiddenThroughGeneration
+                    if (hiddenThrough >= 0 && attachGeneration.get() > hiddenThrough) {
+                        tracksHiddenThroughGeneration = -1L
+                    }
                     handle.takeIf { it != 0L }?.let { current ->
                         applyPendingSubtitleConfiguration(current)
                         // Align the overlay's tracked volume with mpv's real (possibly restored)
@@ -2413,7 +2426,20 @@ internal class NativePlayerController(
         NativePlayerBridge.runJavaScript(current, "window.nuvioSetPlayerBadges && window.nuvioSetPlayerBadges($payload)")
     }
 
+    /**
+     * Reports no tracks until the next source's file has loaded. The surface hands this controller
+     * to the player screen as soon as the source changes, but the attach (and with it the live
+     * player's `loadfile`) only follows the redirect resolution. Reading tracks in that window
+     * returned the previous episode's list, whose already-selected subtitle the screen took as its
+     * preferred track being on; the reused player then cleared `sid` for the new file and nothing
+     * selected it again. UI thread.
+     */
+    fun hideTracksUntilNextFileLoads() {
+        tracksHiddenThroughGeneration = attachGeneration.get()
+    }
+
     private fun decodeTracks(readJson: (Long) -> String): List<NativeMpvTrack> {
+        if (tracksHiddenThroughGeneration >= 0) return emptyList()
         val current = handle.takeIf { it != 0L } ?: return emptyList()
         return runCatching {
             json.decodeFromString<List<NativeMpvTrack>>(readJson(current))
