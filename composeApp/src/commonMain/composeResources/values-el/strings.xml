@@ -868,7 +868,7 @@
   <string name="settings_portable_mode">Φορητή λειτουργία</string>
   <string name="settings_portable_mode_description">Διατηρεί τις ρυθμίσεις και τις προσωρινές μνήμες σε φάκελο δεδομένων δίπλα στο Nuvio.exe αντί για το AppData. Η εναλλαγή επανεκκινεί το Nuvio και μεταφέρει τα δεδομένα σας.</string>
   <string name="settings_portable_mode_enable_title">Εναλλαγή σε φορητή λειτουργία;</string>
-  <string name="settings_portable_mode_enable_message">Το Nuvio θα επανεκκινήσει και θα αντιγράψει τις ρυθμίσεις σας σε έναν φάκελο δεδομένων δίπλα στο Nuvio.exe. Οι προσωρινές μνήμες εικόνων και torrent δεν αντιγράφονται· δημιουργούνται ξανά καθώς περιηγείστε. Ο φάκελος AppData παραμένει ως έχει.\n\nΑν έχετε εξαίρεση antivirus για το Nuvio, προσθέστε και τον νέο φάκελο δεδομένων σε αυτήν.</string>
+  <string name="settings_portable_mode_enable_message">Το Nuvio θα επανεκκινήσει και θα αντιγράψει τις ρυθμίσεις σας σε έναν φάκελο δεδομένων δίπλα στο Nuvio.exe. Οι προσωρινές μνήμες εικόνων και torrent δεν αντιγράφονται· δημιουργούνται ξανά καθώς περιηγείστε. Ο φάκελος AppData παραμένει ως έχει.&#10;&#10;Αν έχετε εξαίρεση antivirus για το Nuvio, προσθέστε και τον νέο φάκελο δεδομένων σε αυτήν.</string>
   <string name="settings_portable_mode_disable_title">Απενεργοποίηση φορητής λειτουργίας;</string>
   <string name="settings_portable_mode_disable_message">Το Nuvio θα επανεκκινήσει και θα αντιγράψει τις ρυθμίσεις σας πίσω στο AppData. Ο φορητός φάκελος διατηρείται ως data.old δίπλα στο Nuvio.exe και μπορείτε να τον διαγράψετε αργότερα.</string>
   <string name="settings_portable_mode_restart">Επανεκκίνηση</string>
@@ -1844,7 +1844,7 @@
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Σχεδιάζει στο βίντεο την ενεργή μέθοδο παρεμβολής και τον ρυθμό καρέ πηγής/εξόδου. Ισχύει από την επόμενη έναρξη αναπαραγωγής.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Βιβλιοθήκη shaders</string>
   <string name="settings_playback_desktop_custom_shader_paths_desc">Προσθέστε ένα αρχείο ή φάκελο shader ανά γραμμή. Οι φάκελοι εμφανίζουν τα άμεσα αρχεία .glsl και .hook στις Βελτιώσεις anime.</string>
-  <string name="settings_playback_desktop_custom_shader_paths_hint">π.χ.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
+  <string name="settings_playback_desktop_custom_shader_paths_hint">π.χ.&#10;C:\Shaders\Anime4K-Ultra.glsl&#10;C:\Shaders\MyPack</string>
   <string name="settings_playback_desktop_custom_shader_paths_warning">Τα προσαρμοσμένα shaders εκτελούνται μέσα στον renderer του mpv και μπορεί να μειώσουν την απόδοση ή να χαλάσουν την αναπαραγωγή. Επιλέξτε Off στις Βελτιώσεις anime αν ένα shader προκαλεί πρόβλημα.</string>
   <string name="settings_playback_desktop_seek_thumbnails">Μικρογραφίες γραμμής χρόνου</string>
   <string name="settings_playback_desktop_seek_thumbnails_desc">Προεπισκόπηση καρέ κατά την αιώρηση πάνω στη γραμμή χρόνου. Το «Μόνο τοπικά» κάνει προεπισκόπηση μόνο αρχείων σε αυτόν τον υπολογιστή ή στο δίκτυό σας, αποφεύγοντας τα όρια ρυθμού του debrid· το «Τοπικά + Seekr» προσθέτει τις μικρογραφίες του Seekr. Απενεργοποιημένο στην προρρύθμιση Metered.</string>
@@ -1863,7 +1863,7 @@
     <string name="settings_playback_desktop_headphone_surround_desc">Για ακουστικά: τα surround κομμάτια ακούγονται σαν να έρχονται από ηχεία γύρω σας, αντί να μιξάρονται επίπεδα σε αριστερό και δεξί κανάλι. Οι στερεοφωνικές πηγές παίζουν λίγο πιο χαμηλά. Δεν έχει επίδραση κατά το audio passthrough.</string>
   <string name="settings_playback_desktop_custom_mpv_options">Επιλογές MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Μία επιλογή ανά γραμμή ως key=value. Εφαρμόζονται πάνω από τις προεπιλογές του Nuvio· οι μη έγκυρες επιλογές αγνοούνται.</string>
-  <string name="settings_playback_desktop_custom_mpv_options_hint">π.χ.\nprofile=gpu-hq\ndeband=no</string>
+  <string name="settings_playback_desktop_custom_mpv_options_hint">π.χ.&#10;profile=gpu-hq&#10;deband=no</string>
   <string name="settings_playback_hero_tv_trailer">Αναπαραγωγή τρέιλερ στην κεφαλίδα</string>
   <string name="settings_playback_hero_tv_trailer_description">Πατήστε T για αναπαραγωγή του τρέιλερ σε αυτή τη θέση.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Αναμονή πριν την αναπαραγωγή</string>
@@ -3409,7 +3409,7 @@
   <string name="collections_editor_trakt_list_title_format">Λίστα Trakt %1$s</string>
   <string name="external_player_android_system">Πρόγραμμα αναπαραγωγής συστήματος Android</string>
   <string name="p2p_consent_title">Ροή P2P</string>
-  <string name="p2p_consent_body">Αυτή η ροή χρησιμοποιεί τεχνολογία peer-to-peer (P2P). Ενεργοποιώντας το P2P, αναγνωρίζετε και συμφωνείτε ότι:\n\n• Η διεύθυνση IP σας θα είναι ορατή σε άλλους peers του δικτύου\n• Είστε αποκλειστικά υπεύθυνοι για το περιεχόμενο στο οποίο έχετε πρόσβαση\n• Επιβεβαιώνετε ότι έχετε το νόμιμο δικαίωμα να παρακολουθείτε αυτό το περιεχόμενο στη δικαιοδοσία σας\n• Το Nuvio δεν φιλοξενεί, δεν διανέμει και δεν ελέγχει κανένα περιεχόμενο P2P\n• Το Nuvio δεν φέρει καμία ευθύνη για τυχόν νομικές συνέπειες που προκύπτουν από τη χρήση της ροής P2P\n\nΧρησιμοποιείτε αυτή τη λειτουργία εξ ολοκλήρου με δική σας ευθύνη. Το P2P μπορεί να απενεργοποιηθεί ανά πάσα στιγμή από τις Ρυθμίσεις.</string>
+  <string name="p2p_consent_body">Αυτή η ροή χρησιμοποιεί τεχνολογία peer-to-peer (P2P). Ενεργοποιώντας το P2P, αναγνωρίζετε και συμφωνείτε ότι:&#10;&#10;• Η διεύθυνση IP σας θα είναι ορατή σε άλλους peers του δικτύου&#10;• Είστε αποκλειστικά υπεύθυνοι για το περιεχόμενο στο οποίο έχετε πρόσβαση&#10;• Επιβεβαιώνετε ότι έχετε το νόμιμο δικαίωμα να παρακολουθείτε αυτό το περιεχόμενο στη δικαιοδοσία σας&#10;• Το Nuvio δεν φιλοξενεί, δεν διανέμει και δεν ελέγχει κανένα περιεχόμενο P2P&#10;• Το Nuvio δεν φέρει καμία ευθύνη για τυχόν νομικές συνέπειες που προκύπτουν από τη χρήση της ροής P2P&#10;&#10;Χρησιμοποιείτε αυτή τη λειτουργία εξ ολοκλήρου με δική σας ευθύνη. Το P2P μπορεί να απενεργοποιηθεί ανά πάσα στιγμή από τις Ρυθμίσεις.</string>
   <string name="p2p_consent_enable">Ενεργοποίηση P2P</string>
   <string name="p2p_consent_cancel">Ακύρωση</string>
   <string name="settings_p2p_title">Ροή P2P</string>

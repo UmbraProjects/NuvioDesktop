@@ -156,9 +156,6 @@ internal enum class ArtistLens(val label: String) {
     Story("Story"),
 }
 
-/** Windows narrower than this keep the old artist page even with the setting on (the three panels would not fit). */
-internal val ARTIST_STAGE_MIN_WIDTH = 1280.dp
-
 /** How long the keyboard rests on a song before its story is asked for (arrowing down the list asks nothing). */
 private const val STAGE_STORY_REST_MS = 700L
 
@@ -290,6 +287,9 @@ internal fun ArtistStage(
     BoxWithConstraints(modifier.background(colors.background)) {
         val viewport = maxHeight
         val side = lensPanelWidth(maxWidth)
+        // Short of room the panels go, as on the album page: the left one first, then the right.
+        val showRight = com.nuvio.app.features.music.lensShowsRight(maxWidth, side)
+        val showLeft = com.nuvio.app.features.music.lensShowsLeft(maxWidth, side)
         val inset = LocalMusicBarInset.current
         val scroll = rememberScrollState()
         // The page is two screens: the hero, then the three panels. Whether the person was on the panels is kept with the page, so
@@ -399,7 +399,7 @@ internal fun ArtistStage(
                 horizontalArrangement = Arrangement.spacedBy(LENS_GAP),
             ) {
                 val left = Modifier.width(side)
-                if (focusRow != null) {
+                if (!showLeft) Unit else if (focusRow != null) {
                     StageSongPanel(artist, focusRow, single = songKey(focusRow.title) in singles, onPlay = { playEssentials(focusRow.videoId) }, modifier = left)
                 } else {
                     StageArtistPanel(artist, discography, canPlay = mix != null || discography.playableCount > 0, onPlay = { playEssentials() }, modifier = left)
@@ -450,7 +450,7 @@ internal fun ArtistStage(
                         )
                     }
                 }
-                StageLibraryPanel(
+                if (showRight) StageLibraryPanel(
                     artist = artist,
                     discography = discography,
                     addonCount = addonKeys.size,
@@ -580,8 +580,8 @@ private fun StageHero(
                         Text(
                             chip.split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } },
                             style = MaterialTheme.typography.labelLarge,
-                            color = colors.textSecondary,
-                            modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(999.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
+                            color = colors.textSecondary.copy(alpha = colors.textSecondary.alpha * 0.75f),
+                            modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(999.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
                         )
                     }
                 }
@@ -601,26 +601,35 @@ private fun StageHero(
                     }
                 }
             }
-            FlowRow(
-                Modifier.padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                HeroButton("Play Essentials", Icons.Rounded.PlayArrow, primary = true, modifier = Modifier.focusRequester(playFocus), onClick = onPlayEssentials)
-                HeroButton("Shuffle all", Icons.Rounded.Shuffle, enabled = canShuffle, onClick = onShuffle)
-                topLabel?.let { HeroButton("Play $it", Icons.Rounded.LocalFireDepartment, onClick = onPlayTop) }
+            // The old artist page's round buttons, each named on hover (the labelled pills ran the width of the hero).
+            val actions = listOfNotNull(
+                HeroAction("Play Essentials", Icons.Rounded.PlayArrow, modifier = Modifier.focusRequester(playFocus), onClick = onPlayEssentials),
+                HeroAction("Shuffle all", Icons.Rounded.Shuffle, onClick = { if (canShuffle) onShuffle() }),
+                topLabel?.let { HeroAction("Play $it", Icons.Rounded.LocalFireDepartment, onClick = onPlayTop) },
                 // fork:music-radio - the artist's radio, as YouTube Music makes it.
-                if (artist.id.startsWith("UC")) HeroButton("Radio", Icons.Rounded.Radio, onClick = { com.nuvio.app.features.music.MusicRadioStarter.artist(artist.id, artist.name) })
-                HeroButton(
-                    if (inLibrary) "In your library" else "Add to library",
+                if (artist.id.startsWith("UC")) HeroAction("Radio", Icons.Rounded.Radio, onClick = { com.nuvio.app.features.music.MusicRadioStarter.artist(artist.id, artist.name) }) else null,
+                HeroAction(
+                    if (inLibrary) "In your library (remove)" else "Add to library",
                     if (inLibrary) Icons.Rounded.Check else Icons.Rounded.Add,
                     active = inLibrary,
                     onClick = { if (inLibrary) onRemove() else MusicLibraryRepository.add(artist.id) },
-                )
-                // The buttons are kept compact (14 dp inside, 8 dp apart) so they fit one centred line; Refresh, for a saved
-                // artist only, is an icon alone.
-                if (linkCount > 0) HeroButton("Links", Icons.Rounded.Link, onClick = onLinks)
-                if (saved) HeroButton(null, Icons.Rounded.Refresh, enabled = refreshing == null, description = refreshing ?: "Refresh", onClick = onRefresh)
+                ),
+                if (linkCount > 0) HeroAction("Links ($linkCount)", Icons.Rounded.Link, onClick = onLinks) else null,
+                if (saved) HeroAction(refreshing ?: "Refresh", Icons.Rounded.Refresh, onClick = { if (refreshing == null) onRefresh() }) else null,
+            )
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)) {
+                actions.forEach { action ->
+                    com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = action.label) {
+                        com.nuvio.app.features.details.components.DetailIconAction(
+                            label = action.label,
+                            icon = action.icon,
+                            active = action.active,
+                            size = 56.dp,
+                            modifier = action.modifier,
+                            onClick = action.onClick,
+                        )
+                    }
+                }
             }
             (notice ?: refreshing)?.let { line ->
                 Text(line, style = MaterialTheme.typography.bodyMedium, color = if (notice != null) colors.warning else colors.textMuted, textAlign = TextAlign.Center, maxLines = 2)
@@ -638,46 +647,14 @@ private fun StageHero(
     }
 }
 
-/** A labelled glass pill for the hero's row; [primary] is filled in the accent, [active] is edged in it. */
-@Composable
-private fun HeroButton(
-    /** Null draws the icon alone (named on hover by [description]). */
-    label: String?,
-    icon: ImageVector,
-    primary: Boolean = false,
-    active: Boolean = false,
-    enabled: Boolean = true,
-    description: String? = null,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(28.dp)
-    val fill = when {
-        primary -> colors.accent
-        active -> colors.accent.copy(alpha = 0.22f)
-        else -> Color.Black.copy(alpha = 0.45f)
-    }
-    val edge = when {
-        primary -> Color.White.copy(alpha = 0.85f)
-        active -> colors.accent.copy(alpha = 0.7f)
-        else -> Color.White.copy(alpha = 0.16f)
-    }
-    val tint = if (enabled) (if (primary) Color.White else colors.textPrimary) else colors.textDisabled
-    Row(
-        modifier.height(56.dp).clip(shape).background(fill).border(1.dp, edge, shape)
-            .musicKeyFocusRing(shape)
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = if (label == null) 18.dp else 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(icon, contentDescription = if (label == null) description else null, tint = tint, modifier = Modifier.size(20.dp))
-        if (label != null) {
-            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Medium, color = tint, maxLines = 1)
-        }
-    }
-}
+/** One of the hero's round buttons; [active] lights it (the artist is in the library). */
+private class HeroAction(
+    val label: String,
+    val icon: ImageVector,
+    val active: Boolean = false,
+    val modifier: Modifier = Modifier,
+    val onClick: () -> Unit,
+)
 
 // endregion
 
@@ -703,7 +680,7 @@ private fun StageArtistPanel(artist: LibraryArtist, discography: ArtistDiscograp
             centred = true,
         )
         // The story only when there is one (no box: it reads like Similar taste opposite); the facts are their own section.
-        val facts = remember(artist) { artistFactRows(artist) }
+        val facts = remember(artist) { artistFactSheet(artist) }
         Column(Modifier.fillMaxWidth().weight(1f)) {
             if (bio.isNotEmpty()) {
                 StageSectionHeading("THE STORY")
@@ -715,10 +692,7 @@ private fun StageArtistPanel(artist: LibraryArtist, discography: ArtistDiscograp
                     modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 4.dp),
                 )
             }
-            if (facts.isNotEmpty()) {
-                StageSectionHeading("FACTS")
-                StageFactRows(facts)
-            }
+            if (!facts.isEmpty) StageFacts(facts)
         }
         LensButton("Play Essentials", tint = colors.accent, enabled = canPlay, onClick = onPlay)
     }
@@ -924,19 +898,47 @@ private fun StageSectionHeading(label: String, note: String? = null) {
     }
 }
 
-/** Facts as centred pairs: the label right-aligned up to the middle, the value from it, so the list reads down the centre. */
+/**
+ * The facts under the story, drawn like the rest of the panel rather than as a form: a short hairline, the years active
+ * as one centred line, the span of releases under it, and the genres, style and mood as the hero's quiet outlined tags
+ * (the mood in the accent).
+ */
 @Composable
-private fun StageFactRows(facts: List<Pair<String, String>>) {
+private fun StageFacts(facts: ArtistFactSheet) {
     val colors = MaterialTheme.nuvio.colors
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        facts.forEach { (label, value) ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(label, style = MaterialTheme.typography.bodyLarge, color = colors.textMuted, textAlign = TextAlign.End, maxLines = 1, modifier = Modifier.weight(1f))
-                Text(value, style = MaterialTheme.typography.bodyLarge, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+    Column(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.fillMaxWidth(0.3f).height(1.dp).background(Color.White.copy(alpha = 0.12f)))
+        facts.years?.let {
+            Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, modifier = Modifier.padding(top = 22.dp))
+        }
+        facts.releases?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(top = 4.dp))
+        }
+        val tags = facts.tags.map { it.titleCasedTag() to false } + listOfNotNull(facts.mood?.let { it.titleCasedTag() to true })
+        if (tags.isNotEmpty()) {
+            FlowRow(
+                Modifier.padding(top = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                tags.forEach { (tag, mood) ->
+                    Text(
+                        tag,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (mood) colors.accent else colors.textSecondary,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .border(1.dp, if (mood) colors.accent.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.12f), RoundedCornerShape(999.dp))
+                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                    )
+                }
             }
         }
     }
 }
+
+/** "synth-pop" as "Synth-pop"; a word already in capitals ("EDM") stays as it is. */
+private fun String.titleCasedTag(): String = split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
 
 private const val SIMILAR_PER_ROW = 3
 private const val SIMILAR_ROWS = 3

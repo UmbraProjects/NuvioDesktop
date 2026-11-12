@@ -374,3 +374,81 @@ Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
 - [ ] With it on and The Map open, the panel's footer counts titles "placed with the AI's reading of their tone" and some tiles shift sideways; a dark comedy moves right of a family comedy
 - [ ] With it off, nothing is sent to the AI (no "Tonight map" lines in the log)
 
+
+## Top bar search predictions (Nov 11)
+
+- [ ] Typing in the top bar's Search (films and shows): the panel under the box swaps the recent searches for predictions, recent searches that match first (clock icon), then TMDB titles (film icon), with the typed part in bold
+- [ ] Enter with nothing highlighted searches exactly what was typed
+- [ ] Down/Up walk the predictions and put each one in the box; Up from the top one gives back what was typed; Enter runs the one shown
+- [ ] Tab puts the top prediction in the box without searching; Tab again moves to the next and wraps round; Tab never jumps to Discover from the search box
+- [ ] Mouse: hovering a prediction lights it; clicking runs it; "Clear history" shows only under the recent searches (empty box)
+- [ ] Escape hides the panel first (and gives back the typed text if you were walking it); a second Escape leaves the search
+- [ ] The same panel works on the Music tab (music note, YouTube Music completions), YouTube tab (YouTube autocomplete) and Live TV (channel names)
+- [ ] The search box no longer has the Discover (compass) button; Tab outside search still opens Discover
+
+## Album and artist page polish (Nov 12)
+
+- [ ] Album page song list: a small record icon marks a song released as a single, just left of an always-visible Add to playlist icon; no SINGLE text tag; the lengths still line up under TIME
+- [ ] Add to playlist icon brightens on hover and when reached with the keyboard (Right from the row), and opens the playlist picker
+- [ ] New artist page hero: round icon buttons (Play Essentials, Shuffle all, Play latest, Radio, Add to library, Links, Refresh) with their names on hover; Play Essentials still takes focus when the page opens
+- [ ] New artist page hero: the genre tags are a little dimmer than before
+- [ ] Artist page left panel: Facts is now a short line, the years active, the release span and quiet tags (mood in the accent), with no FACTS heading or label column
+- [ ] Release covers on the artist page and shelves show the album page's lossless icon (record with sound wave) instead of HQ
+- [ ] Album page panels: no icon/label line or AI/Library pills at the top, centred titles and headings like the artist page, no box around the story, Why it matters or Other versions rows, no "Written by AI" small print; Edit/Save/Cancel are plain text
+- [ ] Credits (was Who made it): the chosen person's songs have only a thin edge mark, no coloured wash behind the song list
+- [ ] Hits tab (second tab, was Best of): the artist's best songs (one on this album plays here, others open their album) and best albums as covers; the side panels are Song by song's
+
+## Album tabs, Stage side panel and video lyrics (Nov 12)
+
+- [ ] Album page tabs read: Song List, Hits, History, Cut to Fit, Sonic Map, Lineage, Credits
+- [ ] Stage side panel: the artist on one line and the album and year on the next, cut short with an ellipsis rather than wrapped into pieces (try a long album name)
+- [ ] Stage controls: volume at the left, then previous, play/pause, next and Add to playlist spread evenly across the row
+- [ ] Stage controls: the time (1:19 / 3:36) sits after the seek bar; nothing else is on the seek bar's line
+- [ ] Queue heading reads "QUEUE  •  Track 2 of 21"; with no queue there is no track count anywhere
+- [ ] Video layout, Scroll style: the sung line stays visible under the video and does not vanish
+- [ ] Video layout, Loud style: the words fit under the video and are not cut off at the top or bottom
+- [ ] Lyric sync is a glass pill in the top bar, left of Stage / Video and the same height; the offset or source note sits centred under it; it works on the Stage and under a video, and is gone from under the lyrics
+
+## Album page follow-ups (Nov 12, later)
+
+- [ ] The lines under the album's buttons never run under the tabs: the addon line, then one line joining the rest (video skips, unavailable tracks), cut short with an ellipsis
+- [ ] Hits tab is wider: best songs in a 3 by 3 grid (nine), best albums five across
+- [ ] Lineage rows: no -yr / +yr chips, no purple ring or edge; records not in your library still say so in their third line
+- [ ] Lyric sync pill sits right beside Stage / Video, with its note (e.g. "Word-synced · LRCMux") centred under the pill
+- [ ] Video layout, Scroll style: the sung line sits about a third of the way down the lyrics under the video, not at the foot; Stage view (no video) looks as before
+- [ ] Seek bar (Stage, dock, mini player): a drag or click lands where you let go, also after the song has changed a few times
+- [ ] Stage seek bar keeps one length while the time counts (1:19 / 3:36 and 10:05 / 12:00 alike)
+- [ ] Music search waits for Enter, like the films and shows search: typing shows predictions only, the Library stays until Enter; a voice search or a genre chip on the Stage still searches straight away; clearing the box goes back to the Library
+- [ ] Music search hero (TV Mode / Adaptive): more results have a description, each its own: an artist shows their story (saved artist's, else TheAudioDB, else Wikipedia); an album or single its own (TheAudioDB, else its Wikipedia page); a song or video the song's own; none of them falls back to the artist's story
+- [ ] Music search hero: an artist result shows their name logo in the logo slot like a film's (when one exists); songs and albums keep artwork with the name under it
+
+## TV hero and album page layout (Nov 12, later)
+
+- [ ] TV Mode hero on Home: the logo and description sit a little higher and the description's last lines are no longer hidden under the first shelf row
+- [ ] Album page: with a white or very bright cover, the left side stays dark enough that the left panel and its text read clearly
+- [ ] Album page: the new layout is the only one (Settings > Music has no "New album page" switch); narrow the window and the left panel goes first, then the right, while the songs stay
+- [ ] Artist page: the new page is the only one (Settings > Music has no "New artist page" switch); narrow the window and the left panel goes first, then the right, while the middle (Essentials, Albums, Singles, Story) stays
+
+## Strings, music facts and the music hero (Nov 12, later)
+
+- [ ] Settings > Music > Word-by-word lyrics: descriptions read "the song's title" with no backslashes (also the Gemini and Last.fm key descriptions)
+- [ ] Settings > Playback: the custom shader paths and custom mpv options hints show "e.g." and each example on its own line
+- [ ] The P2P consent text (first P2P stream) shows its paragraphs and bullet points on separate lines
+- [ ] French and the other languages: no stray backslash before apostrophes or quotes
+- [ ] Settings > Music > Music facts: the daily token limit is a dropdown (50k to 600k), like the app's other choices
+- [ ] Music search in TV Mode: the logo and description sit clearly higher above the shelf, and a long description shows up to about nine lines before it starts scrolling
+- [ ] TV Mode hero on Home is back where it was (the column a little lower, short synopses no longer look stranded); music search keeps its higher column
+- [ ] Music search hero, songs: several songs by one artist each get a different artist photo behind them (when the artist has more than one); a song with no artist photo gets a gradient of its cover's colours, not a small picture blown up
+- [ ] Music search hero, albums and singles: a large cover (1000 px or more) stands whole and uncropped at the right of the hero, full height, its left edge fading into a gradient of its own colours behind the text; a smaller cover gives the gradient alone
+- [ ] Music search hero, albums: when TheAudioDB has disc art, the disc peeks out to the right of the cover
+- [ ] Music search hero, facts line under the genres: a song shows e.g. "2013 · 128 BPM · No. 3 of CHVRCHES's most played · Explicit"; an album e.g. "20 Sep 2013 · Virgin · 12 tracks · 49 min · ★ 8.4"; a live or remix result is not given the studio version's facts
+- [ ] Music search hero, videos: the picture beside the name is the video's own large thumbnail
+- [ ] Music search: browse quickly through many results; descriptions, facts and photos keep filling in (no stretch where everything comes back empty); people-panel photos may fill in a little later when browsing fast
+- [ ] Music search hero, album gradients: brighter than before, still dark enough for the text
+- [ ] Music search hero, disc: shows for more than the first result: albums with "(Deluxe)" style titles, and songs (their album's disc), when TheAudioDB or fanart.tv has disc art
+- [ ] Music search guesses what you want: "Eminem" puts Artists first; "Eminem without me" puts Songs first with that song leading the row; "Eminem encore" puts Albums first with Encore leading; an ordinary search keeps the usual Songs, Albums, EPs, Singles, Artists, YouTube order
+- [ ] "Against the current gravity": the Gravity (The Acoustic Sessions Volume II) record shows in the EPs row (YouTube Music calls it a single) and EPs come first, ahead of the song Gravity; a release YouTube Music calls a single but your library (saved artist) knows as an EP is always in EPs
+- [ ] When an EP and a song (or single) share the search's title, EPs come first; an album of that name still beats them
+- [ ] Music search rows put well-known artists ahead of near-unknown uploads among equally good matches: "love is dead" shows CHVRCHES' album before Gofun's (7 fans); rows don't reshuffle after they appear (they may take up to about 1.5 s longer to show)
+- [ ] Music search: move quickly off an album before its details load, then come back: it fills in (description, genres, facts) instead of staying with the plain cover and no words (Kerli's Love Is Dead in "love is dead" was one)
+- [ ] Artwork that was half grey (Momento's Love Is Dead (Extended Mix) and the other song tiles in "love is dead") shows whole after its next load, in the row and in the hero; posters and other artwork across the app are no longer kept when a download is cut short

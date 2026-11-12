@@ -80,17 +80,15 @@ internal fun LazyListScope.musicFactsSettingsContent(isTablet: Boolean) {
                     },
                 )
                 SettingsGroupDivider(isTablet)
-                SettingsNavigationRow(
+                // A dropdown like the app's other choices (it was a row that stepped to the next amount on each click).
+                SettingsDropdownChoiceRow(
                     title = stringResource(Res.string.settings_music_facts_cap),
                     description = stringResource(Res.string.settings_music_facts_cap_description),
+                    options = (FILL_CAP_CHOICES + listOf(status.cap).filter { it !in FILL_CAP_CHOICES })
+                        .map { SettingsChoiceOption(it, capLabel(it)) },
+                    selectedValue = status.cap,
                     isTablet = isTablet,
-                    trailingContent = {
-                        Text(capLabel(status.cap), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.nuvio.colors.textPrimary)
-                    },
-                    onClick = {
-                        val at = FILL_CAP_CHOICES.indexOf(status.cap)
-                        FactsFiller.setCap(FILL_CAP_CHOICES[(at + 1) % FILL_CAP_CHOICES.size])
-                    },
+                    onSelected = { FactsFiller.setCap(it) },
                 )
                 SettingsGroupDivider(isTablet)
                 SettingsActionRow(

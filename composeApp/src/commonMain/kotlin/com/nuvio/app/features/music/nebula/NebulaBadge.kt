@@ -4,8 +4,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +29,8 @@ import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.features.music.library.addonLinks
 
 /**
- * fork:nebula - the lossless mark on a release's cover corner: the music addon has this album. An icon in a dark rounded
+ * fork:nebula - the lossless mark on a release's cover corner: the music addon has this album. The album page's own
+ * lossless glyph (MusicIcons.Lossless) in a dark rounded
  * square, sized to the cover it sits on (about a fifth of it, kept readable on a small one and modest on a large one), so
  * it never runs past a small cover. An overlay in the cover's own box, so the tile does not change when the answer arrives.
  */
@@ -48,7 +47,7 @@ internal fun BoxScope.LosslessPill(alignment: Alignment = Alignment.TopStart) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Rounded.HighQuality,
+                com.nuvio.app.features.music.MusicIcons.Lossless,
                 contentDescription = "Lossless",
                 tint = MaterialTheme.nuvio.colors.accent,
                 modifier = Modifier.size(badge * 0.74f),

@@ -47,6 +47,44 @@ internal actual fun extractHeroAccentColor(image: Image): Color? {
     return dominant.color()
 }
 
+internal actual fun extractHeroPaletteColors(image: Image, count: Int): List<Color> {
+    val bitmap = (image as? BitmapImage)?.bitmap ?: return emptyList()
+    if (bitmap.width <= 0 || bitmap.height <= 0) return emptyList()
+    val buckets = Array(HueBucketCount) { ColorBucket() }
+    var greyRed = 0f
+    var greyGreen = 0f
+    var greyBlue = 0f
+    var samples = 0
+    repeat(SampleRows) { row ->
+        val y = ((row + 0.5f) * bitmap.height / SampleRows).toInt().coerceIn(0, bitmap.height - 1)
+        repeat(SampleColumns) { column ->
+            val x = ((column + 0.5f) * bitmap.width / SampleColumns).toInt().coerceIn(0, bitmap.width - 1)
+            val color = bitmap.getColor(x, y)
+            val red = ((color shr 16) and 0xFF) / 255f
+            val green = ((color shr 8) and 0xFF) / 255f
+            val blue = (color and 0xFF) / 255f
+            greyRed += red; greyGreen += green; greyBlue += blue; samples++
+            val hsv = rgbToHsv(red, green, blue)
+            if (hsv.saturation < 0.12f || hsv.value < 0.10f) return@repeat
+            val bucketIndex = floor(hsv.hue * HueBucketCount).toInt().coerceIn(0, HueBucketCount - 1)
+            // Presence counts more than vividness here: the backdrop should look like the cover overall.
+            buckets[bucketIndex].add(red, green, blue, 0.4f + hsv.saturation * (0.35f + hsv.value))
+        }
+    }
+    // The strongest hues, each at least three buckets (45 degrees) from the ones already taken.
+    val picked = mutableListOf<Int>()
+    buckets.indices.sortedByDescending { buckets[it].score }.forEach { i ->
+        if (picked.size >= count || buckets[i].weight <= 0f) return@forEach
+        val far = picked.all { j -> val d = kotlin.math.abs(i - j); minOf(d, HueBucketCount - d) >= 3 }
+        // A hue far weaker than the first adds noise, not colour.
+        val strongEnough = picked.isEmpty() || buckets[i].score >= buckets[picked.first()].score * 0.12f
+        if (far && strongEnough) picked += i
+    }
+    if (picked.isNotEmpty()) return picked.map { buckets[it].color() }
+    if (samples == 0) return emptyList()
+    return listOf(Color(red = greyRed / samples, green = greyGreen / samples, blue = greyBlue / samples))
+}
+
 private data class Hsv(
     val hue: Float,
     val saturation: Float,

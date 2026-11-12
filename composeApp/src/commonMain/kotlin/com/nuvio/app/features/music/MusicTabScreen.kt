@@ -134,7 +134,27 @@ import kotlinx.coroutines.delay
  * [query], and while it holds something the tab shows the search's rows in the Library's place.
  */
 internal object MusicTabState {
-    var query by mutableStateOf("")
+    private var typed by mutableStateOf("")
+
+    /** What is in the app bar's box. Clearing it clears the search too. */
+    var query: String
+        get() = typed
+        set(value) {
+            typed = value
+            if (value.isBlank()) submitted = ""
+        }
+
+    /**
+     * fork:navbar-search - the search being shown: set by Enter (or a voice search, or a genre chip), like the films and
+     * shows search, which also waits for Enter. Typing alone only changes [query] and its predictions.
+     */
+    var submitted by mutableStateOf("")
+
+    /** Puts [text] in the box and searches it now. */
+    fun search(text: String) {
+        typed = text
+        submitted = text.trim()
+    }
 
     /**
      * The tab draws no search box: the app bar's Search searches the open tab (Music here), so the page always starts
@@ -186,7 +206,7 @@ object MusicTopBarSearch {
      */
     fun searchFor(query: String) {
         if (query.isBlank()) return
-        MusicTabState.query = query
+        MusicTabState.search(query)
         MusicTabState.focusResultsWhenReady = true
     }
 }
@@ -218,7 +238,8 @@ fun MusicTabScreen(
     var query by MusicTabState::query
     // fork:navbar-search - the tab is the Library; a search typed into the app bar's Search (on this tab it searches
     // music) shows its rows in the Library's place until it is cleared.
-    val searching = query.isNotBlank()
+    // Results take the Library's place once a search is sent (Enter), not while it is still being typed.
+    val searching = MusicTabState.submitted.isNotBlank()
     var ladder by remember { mutableStateOf<LadderRequest?>(null) } // fork:music - the open ladder, if any
     var libraryView by rememberSaveable { mutableStateOf(LibraryView.Shelf) }
     // A ladder asked for from the Stage (a genre chip): open it over a cleared search.

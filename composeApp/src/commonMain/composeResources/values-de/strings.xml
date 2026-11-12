@@ -1707,7 +1707,7 @@
     <string name="settings_portable_mode">Portabler Modus</string>
     <string name="settings_portable_mode_description">Speichert Einstellungen und Caches in einem Datenordner neben Nuvio.exe statt in AppData. Beim Wechsel startet Nuvio neu und verschiebt deine Daten.</string>
     <string name="settings_portable_mode_enable_title">Zum portablen Modus wechseln?</string>
-    <string name="settings_portable_mode_enable_message">Nuvio startet neu und kopiert deine Einstellungen in einen Datenordner neben Nuvio.exe. Bild- und Torrent-Caches werden nicht kopiert; sie bauen sich beim Stöbern neu auf. Dein AppData-Ordner bleibt unverändert.\n\nWenn du eine Antivirus-Ausnahme für Nuvio hast, füge ihr auch den neuen Datenordner hinzu.</string>
+    <string name="settings_portable_mode_enable_message">Nuvio startet neu und kopiert deine Einstellungen in einen Datenordner neben Nuvio.exe. Bild- und Torrent-Caches werden nicht kopiert; sie bauen sich beim Stöbern neu auf. Dein AppData-Ordner bleibt unverändert.&#10;&#10;Wenn du eine Antivirus-Ausnahme für Nuvio hast, füge ihr auch den neuen Datenordner hinzu.</string>
     <string name="settings_portable_mode_disable_title">Portablen Modus ausschalten?</string>
     <string name="settings_portable_mode_disable_message">Nuvio startet neu und kopiert deine Einstellungen zurück nach AppData. Der portable Ordner bleibt als data.old neben Nuvio.exe erhalten und kann danach gelöscht werden.</string>
     <string name="settings_portable_mode_restart">Neu starten</string>
@@ -2431,7 +2431,7 @@
     <string name="settings_playback_desktop_anime_svp_overlay_desc">Zeichnet die aktive Interpolationsmethode und die Quell-/Ausgabe-Bildrate auf das Video. Gilt ab dem nächsten Wiedergabestart.</string>
     <string name="settings_playback_desktop_custom_shader_paths">Shader-Bibliothek</string>
     <string name="settings_playback_desktop_custom_shader_paths_desc">Eine Shader-Datei oder einen Ordner pro Zeile hinzufügen. Ordner stellen ihre direkten .glsl- und .hook-Dateien in den Anime-Verbesserungen bereit.</string>
-    <string name="settings_playback_desktop_custom_shader_paths_hint">z. B.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
+    <string name="settings_playback_desktop_custom_shader_paths_hint">z. B.&#10;C:\Shaders\Anime4K-Ultra.glsl&#10;C:\Shaders\MyPack</string>
     <string name="settings_playback_desktop_custom_shader_paths_warning">Eigene Shader laufen im mpv-Renderer und können die Leistung mindern oder die Wiedergabe stören. Wähle in den Anime-Verbesserungen „Aus“, wenn ein Shader Probleme macht.</string>
     <string name="settings_playback_desktop_seek_thumbnails">Vorschaubilder der Zeitleiste</string>
     <string name="settings_playback_desktop_seek_thumbnails_desc">Vorschau-Frames beim Überfahren der Zeitleiste. „Nur lokal“ erstellt Vorschauen nur für Dateien auf diesem PC oder in deinem Netzwerk und vermeidet Debrid-Limits; „Lokal + Seekr“ ergänzt Vorschaubilder von Seekr. Aus beim Preset „Getaktet“.</string>
@@ -2450,7 +2450,7 @@
     <string name="settings_playback_desktop_headphone_surround_desc">Für Kopfhörer und Earbuds: Surround-Spuren klingen, als kämen sie von Lautsprechern um Sie herum, statt flach auf links und rechts heruntergemischt zu werden. Stereo-Quellen spielen etwas leiser. Ohne Wirkung bei Audio-Passthrough.</string>
     <string name="settings_playback_desktop_custom_mpv_options">MPV-Optionen</string>
     <string name="settings_playback_desktop_custom_mpv_options_desc">Eine Option pro Zeile als key=value. Wird zusätzlich zu den Nuvio-Standardwerten angewendet; ungültige Optionen werden ignoriert.</string>
-    <string name="settings_playback_desktop_custom_mpv_options_hint">z. B.\nprofile=gpu-hq\ndeband=no</string>
+    <string name="settings_playback_desktop_custom_mpv_options_hint">z. B.&#10;profile=gpu-hq&#10;deband=no</string>
     <string name="settings_playback_hero_tv_trailer">Hero-Trailer-Wiedergabe</string>
     <string name="settings_playback_hero_tv_trailer_description">Drücke T, um den Trailer an dieser Stelle abzuspielen.</string>
     <string name="settings_playback_hero_tv_trailer_delay">Wartezeit vor dem Abspielen</string>
@@ -3409,7 +3409,7 @@
     <string name="collections_editor_trakt_list_title_format">Trakt-Liste %1$s</string>
     <string name="external_player_android_system">Android-Systemplayer</string>
     <string name="p2p_consent_title">P2P-Streaming</string>
-    <string name="p2p_consent_body">Dieser Stream nutzt Peer-to-Peer-Technologie (P2P). Mit der Aktivierung von P2P bestätigst du und erklärst dich damit einverstanden, dass:\n\n• Deine IP-Adresse für andere Peers im Netzwerk sichtbar ist\n• Du allein für die Inhalte verantwortlich bist, auf die du zugreifst\n• Du bestätigst, dass du das Recht hast, diese Inhalte in deinem Land zu streamen\n• Nuvio keine P2P-Inhalte hostet, verteilt oder kontrolliert\n• Nuvio keine Haftung für rechtliche Folgen übernimmt, die sich aus deiner Nutzung von P2P-Streaming ergeben\n\nDu nutzt diese Funktion vollständig auf eigenes Risiko. P2P kann jederzeit in den Einstellungen deaktiviert werden.</string>
+    <string name="p2p_consent_body">Dieser Stream nutzt Peer-to-Peer-Technologie (P2P). Mit der Aktivierung von P2P bestätigst du und erklärst dich damit einverstanden, dass:&#10;&#10;• Deine IP-Adresse für andere Peers im Netzwerk sichtbar ist&#10;• Du allein für die Inhalte verantwortlich bist, auf die du zugreifst&#10;• Du bestätigst, dass du das Recht hast, diese Inhalte in deinem Land zu streamen&#10;• Nuvio keine P2P-Inhalte hostet, verteilt oder kontrolliert&#10;• Nuvio keine Haftung für rechtliche Folgen übernimmt, die sich aus deiner Nutzung von P2P-Streaming ergeben&#10;&#10;Du nutzt diese Funktion vollständig auf eigenes Risiko. P2P kann jederzeit in den Einstellungen deaktiviert werden.</string>
     <string name="p2p_consent_enable">P2P aktivieren</string>
     <string name="p2p_consent_cancel">Abbrechen</string>
     <string name="settings_p2p_title">P2P-Streaming</string>
@@ -4989,7 +4989,7 @@
     <string name="party_code_label">Party-Code</string>
     <string name="party_copy_invite">Einladung kopieren</string>
     <string name="party_invite_copied">Einladung kopiert</string>
-    <string name="party_invite_message">Tritt meiner Nuvio-Watchparty mit dem Code %1$s bei\n%2$s</string>
+    <string name="party_invite_message">Tritt meiner Nuvio-Watchparty mit dem Code %1$s bei&#10;%2$s</string>
     <string name="party_seats">%1$d von %2$d Plätzen</string>
     <string name="party_host">Host</string>
     <string name="party_you">Du</string>

@@ -132,6 +132,8 @@ internal fun LoudLyrics(
     tapping: Boolean,
     onSeek: (Long) -> Unit,
     onTapLine: (lineTimeMs: Long, positionMs: Long) -> Unit,
+    /** Room kept at the foot for the sync strip; 0 under a video, where the strip is at the top right. */
+    stripBandDp: Float = LOUD_STRIP_BAND_DP,
 ) {
     val smooth = rememberSmoothPositionMs(positionMs, playing)
     val active by remember(lines) { derivedStateOf { activeLyricIndex(lines, smooth.value + NOW_PLAYING_LYRIC_LEAD_MS) } }
@@ -152,11 +154,11 @@ internal fun LoudLyrics(
         // fork:stage - room kept for the next line under the words and the sync strip at the foot, so neither is overprinted.
         val nextText = next?.text?.takeIf { it.isNotBlank() }
         // Less the padding round the words (the click area and focus ring), which the stack's own height does not include.
-        val heightPx = with(density) { (loudStackHeightDp(maxHeight.value, nextText != null) - LOUD_STACK_PADDING_DP).coerceAtLeast(60f).dp.toPx() }
+        val heightPx = with(density) { (loudStackHeightDp(maxHeight.value, nextText != null, stripBandDp) - LOUD_STACK_PADDING_DP).coerceAtLeast(60f).dp.toPx() }
         val stageScale = (maxWidth.value / 1000f).coerceIn(0.4f, 1f)
         // The stack and the next line are one centred group, lifted by half the strip band so the group sits above it.
         Column(
-            Modifier.fillMaxSize().padding(bottom = (LOUD_STRIP_BAND_DP / 2f).dp),
+            Modifier.fillMaxSize().padding(bottom = (stripBandDp / 2f).dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {

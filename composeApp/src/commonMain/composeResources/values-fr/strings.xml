@@ -2192,7 +2192,7 @@
     <string name="settings_portable_mode">Mode portable</string>
     <string name="settings_portable_mode_description">Conserve les paramètres et caches dans un dossier data à côté de Nuvio.exe au lieu d’AppData. Le changement redémarre Nuvio et déplace vos données.</string>
     <string name="settings_portable_mode_enable_title">Passer en mode portable ?</string>
-    <string name="settings_portable_mode_enable_message">Nuvio va redémarrer et copier vos paramètres dans un dossier data à côté de Nuvio.exe. Les caches d’images et de torrents ne sont pas copiés ; ils se reconstruisent au fil de la navigation. Votre dossier AppData reste inchangé.\n\nSi vous avez une exclusion antivirus pour Nuvio, ajoutez-y aussi le nouveau dossier data.</string>
+    <string name="settings_portable_mode_enable_message">Nuvio va redémarrer et copier vos paramètres dans un dossier data à côté de Nuvio.exe. Les caches d’images et de torrents ne sont pas copiés ; ils se reconstruisent au fil de la navigation. Votre dossier AppData reste inchangé.&#10;&#10;Si vous avez une exclusion antivirus pour Nuvio, ajoutez-y aussi le nouveau dossier data.</string>
     <string name="settings_portable_mode_disable_title">Désactiver le mode portable ?</string>
     <string name="settings_portable_mode_disable_message">Nuvio va redémarrer et recopier vos paramètres dans AppData. Le dossier portable est conservé sous le nom data.old à côté de Nuvio.exe, et vous pourrez le supprimer ensuite.</string>
     <string name="settings_portable_mode_restart">Redémarrer</string>
@@ -2709,8 +2709,8 @@
     <string name="settings_playback_hud_layout_minimal">Minimal</string>
     <string name="settings_playback_hud_layout_pills">Pastilles des commandes minimales</string>
     <string name="settings_playback_hud_layout_pills_description">Place chaque groupe de commandes sur sa propre pastille translucide au lieu de le poser directement sur l’image.</string>
-    <string name="settings_playback_hud_dock_from_bar">Panneaux issus de la pastille d\'outils</string>
-    <string name="settings_playback_hud_dock_from_bar_description">Les panneaux des sous-titres, de l\'audio et les autres panneaux du lecteur s\'ouvrent depuis la pastille d\'outils, à sa largeur, d\'un seul tenant avec elle. Nécessite Pastilles des commandes minimales.</string>
+    <string name="settings_playback_hud_dock_from_bar">Panneaux issus de la pastille d'outils</string>
+    <string name="settings_playback_hud_dock_from_bar_description">Les panneaux des sous-titres, de l'audio et les autres panneaux du lecteur s'ouvrent depuis la pastille d'outils, à sa largeur, d'un seul tenant avec elle. Nécessite Pastilles des commandes minimales.</string>
     <string name="settings_playback_seek_handle">Poignée de la barre de progression</string>
     <string name="settings_playback_seek_handle_description">Dessine la poignée ronde sur la barre de progression. Désactivé, il ne reste que la barre de progression colorée.</string>
     <string name="settings_playback_hud_vignette">Vignettage des commandes</string>
@@ -2813,7 +2813,7 @@
     <string name="settings_playback_desktop_anime_svp_overlay_desc">Affiche sur la vidéo la méthode d’interpolation active et la fréquence d’images source/sortie. S’applique au prochain démarrage de la lecture.</string>
     <string name="settings_playback_desktop_custom_shader_paths">Bibliothèque de shaders</string>
     <string name="settings_playback_desktop_custom_shader_paths_desc">Ajoute un fichier ou un dossier de shader par ligne. Les dossiers exposent leurs fichiers .glsl et .hook directs dans Améliorations anime.</string>
-    <string name="settings_playback_desktop_custom_shader_paths_hint">p. ex.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
+    <string name="settings_playback_desktop_custom_shader_paths_hint">p. ex.&#10;C:\Shaders\Anime4K-Ultra.glsl&#10;C:\Shaders\MyPack</string>
     <string name="settings_playback_desktop_custom_shader_paths_warning">Les shaders personnalisés s’exécutent dans le moteur de rendu de mpv et peuvent réduire les performances ou casser la lecture. Choisis Désactivé dans Améliorations anime si un shader pose problème.</string>
     <string name="settings_playback_desktop_seek_thumbnails">Miniatures de la barre de progression</string>
     <string name="settings_playback_desktop_seek_thumbnails_desc">Aperçu des images au survol de la timeline. Local n’affiche que les fichiers de ce PC ou de ton réseau, ce qui évite les limites de débit debrid ; Local + Seekr ajoute les miniatures de Seekr. Désactivé avec le préréglage Limité.</string>
@@ -2829,10 +2829,10 @@
     <string name="settings_playback_desktop_audio_dialogue_boost">Renforcement des dialogues (downmix)</string>
     <string name="settings_playback_desktop_audio_dialogue_boost_desc">Augmente le canal central (dialogues) quand une piste surround est mixée sur moins de canaux, par exemple avec Canaux audio réglé sur Stéréo.</string>
     <string name="settings_playback_desktop_headphone_surround">Surround pour casque</string>
-    <string name="settings_playback_desktop_headphone_surround_desc">Pour casques et écouteurs : les pistes surround semblent venir d\'enceintes placées autour de vous au lieu d\'être mixées à plat en gauche et droite. Les sources stéréo jouent un peu moins fort. Sans effet en passthrough audio.</string>
+    <string name="settings_playback_desktop_headphone_surround_desc">Pour casques et écouteurs : les pistes surround semblent venir d'enceintes placées autour de vous au lieu d'être mixées à plat en gauche et droite. Les sources stéréo jouent un peu moins fort. Sans effet en passthrough audio.</string>
     <string name="settings_playback_desktop_custom_mpv_options">Options MPV</string>
     <string name="settings_playback_desktop_custom_mpv_options_desc">Une option par ligne sous la forme clé=valeur. Appliquées en plus des valeurs par défaut de Nuvio ; les options invalides sont ignorées.</string>
-    <string name="settings_playback_desktop_custom_mpv_options_hint">p. ex.\nprofile=gpu-hq\ndeband=no</string>
+    <string name="settings_playback_desktop_custom_mpv_options_hint">p. ex.&#10;profile=gpu-hq&#10;deband=no</string>
     <string name="settings_playback_hero_tv_trailer">Lecture de la bande-annonce Hero</string>
     <string name="settings_playback_hero_tv_trailer_description">Appuie sur T pour lire la bande-annonce à cet endroit.</string>
     <string name="settings_playback_hero_tv_trailer_delay">Attendre avant de lire</string>
@@ -3413,7 +3413,7 @@
     <string name="cw_airs_in_hours_short">Dans %1$dh</string>
     <string name="cw_airs_in_minutes_short">Dans %1$dmin</string>
     <string name="p2p_consent_title">Streaming P2P</string>
-    <string name="p2p_consent_body">Ce stream utilise la technologie pair-à-pair (P2P). En activant le P2P, tu reconnais et acceptes que :\n\n• Ton adresse IP sera visible par les autres pairs du réseau\n• Tu es seul responsable du contenu auquel tu accèdes\n• Tu confirmes avoir le droit légal de diffuser ce contenu dans ta juridiction\n• Nuvio n’héberge, ne distribue et ne contrôle aucun contenu P2P\n• Nuvio n’assume aucune responsabilité pour les conséquences juridiques découlant de ton utilisation du streaming P2P\n\nTu utilises cette fonctionnalité entièrement à tes risques. Le P2P peut être désactivé à tout moment dans les Paramètres.</string>
+    <string name="p2p_consent_body">Ce stream utilise la technologie pair-à-pair (P2P). En activant le P2P, tu reconnais et acceptes que :&#10;&#10;• Ton adresse IP sera visible par les autres pairs du réseau&#10;• Tu es seul responsable du contenu auquel tu accèdes&#10;• Tu confirmes avoir le droit légal de diffuser ce contenu dans ta juridiction&#10;• Nuvio n’héberge, ne distribue et ne contrôle aucun contenu P2P&#10;• Nuvio n’assume aucune responsabilité pour les conséquences juridiques découlant de ton utilisation du streaming P2P&#10;&#10;Tu utilises cette fonctionnalité entièrement à tes risques. Le P2P peut être désactivé à tout moment dans les Paramètres.</string>
     <string name="p2p_consent_enable">Activer le P2P</string>
     <string name="p2p_consent_cancel">Annuler</string>
     <string name="settings_p2p_title">Streaming P2P</string>
@@ -4993,7 +4993,7 @@
     <string name="party_code_label">Code de la soirée</string>
     <string name="party_copy_invite">Copier l’invitation</string>
     <string name="party_invite_copied">Invitation copiée</string>
-    <string name="party_invite_message">Rejoignez ma soirée cinéma Nuvio avec le code %1$s\n%2$s</string>
+    <string name="party_invite_message">Rejoignez ma soirée cinéma Nuvio avec le code %1$s&#10;%2$s</string>
     <string name="party_seats">%1$d places sur %2$d</string>
     <string name="party_host">Hôte</string>
     <string name="party_you">Vous</string>

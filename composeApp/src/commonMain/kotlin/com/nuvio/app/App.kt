@@ -49,6 +49,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.MusicNote // fork:music
@@ -3358,6 +3360,8 @@ private fun MainAppContent(
                         discoverTabVisible &&
                             currentBackStackEntry?.destination?.hasRoute<TabsRoute>() == true &&
                             selectedTab != AppScreenTab.Settings &&
+                            // fork:navbar-search - in search, Tab completes the top prediction (TabletFloatingTopBar).
+                            !searchOverlayActive && selectedTab != AppScreenTab.Search &&
                             !FirstRunWizardController.uiState.value.visible
                     if (event.key != Key.Tab || !canOpenDiscovery) return@onPreviewKeyEvent false
                     if (event.type == KeyEventType.KeyDown) {
@@ -4589,6 +4593,8 @@ private fun MainAppContent(
                                                     BarSearchScope.Media -> submitSearch(q)
                                                     BarSearchScope.Music -> {
                                                         if (q.isNotBlank()) com.nuvio.app.features.music.library.MusicSearchHistory.record(q.trim())
+                                                        // fork:navbar-search - music searches on Enter, as the films and shows search does.
+                                                        com.nuvio.app.features.music.MusicTabState.search(q)
                                                         com.nuvio.app.features.music.MusicTabState.focusResultsWhenReady = true
                                                         searchOverlayActive = false
                                                     }
@@ -7017,9 +7023,20 @@ private fun DesktopSidebarItem(
  * The search bar's dropdown only offers recent queries now. Catalog and genre selection moved to
  * the Discover tab's row-1 header, where it browses in place instead of hiding behind the bar.
  */
-private data class SearchPickerEntry(val query: String) {
-    val key: String = "history:$query"
-    val label: String = query
+/** fork:navbar-search - [text] with the part that matches [typed] in bold, so a prediction reads as a completion. */
+private fun boldMatch(text: String, typed: String): androidx.compose.ui.text.AnnotatedString {
+    val line = typed.trim()
+    val at = if (line.isEmpty()) -1 else text.indexOf(line, ignoreCase = true)
+    return androidx.compose.ui.text.buildAnnotatedString {
+        append(text)
+        if (at >= 0) {
+            addStyle(
+                androidx.compose.ui.text.SpanStyle(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                at,
+                at + line.length,
+            )
+        }
+    }
 }
 
 /**
@@ -7117,7 +7134,6 @@ private fun TabletFloatingTopBar(
     var searchBarHasFocus by remember { mutableStateOf(false) }
     val searchHistory by com.nuvio.app.features.search.SearchHistoryRepository.uiState.collectAsState()
     val discoverUiState by SearchRepository.discoverUiState.collectAsStateWithLifecycle()
-    var pickerSelectedIndex by remember { mutableStateOf(-1) }
     // fork:navbar-search - the recent searches of whatever the box searches.
     val musicHistory by com.nuvio.app.features.music.library.MusicSearchHistory.recent.collectAsState()
     val youTubeHistory by com.nuvio.app.features.youtube.YouTubeSearchHistory.recent.collectAsState()
@@ -7127,21 +7143,42 @@ private fun TabletFloatingTopBar(
         BarSearchScope.YouTube -> youTubeHistory
         BarSearchScope.LiveTv -> emptyList()
     }.take(5)
-    // Render and activate one immutable snapshot. A separate count plus live-list indexing allowed
-    // refreshes to invalidate an index while LazyColumn was measuring.
-    val pickerEntries = remember(visibleHistory) {
-        visibleHistory.map(::SearchPickerEntry)
+    // fork:navbar-search - an empty box lists the recent searches; once something is typed, predictions for it (the
+    // same ones the on-screen keyboard offers), walked with Down/Up/Tab (SearchBarPicker).
+    val livePredictions = com.nuvio.app.features.search.rememberBarPredictions(
+        scope = searchScope,
+        text = searchQuery,
+        recent = when (searchScope) {
+            BarSearchScope.Media -> searchHistory
+            BarSearchScope.Music -> musicHistory
+            BarSearchScope.YouTube -> youTubeHistory
+            BarSearchScope.LiveTv -> emptyList()
+        },
+        channels = {
+            com.nuvio.app.features.iptv.IptvTopBarSearch.playlistId
+                ?.let { com.nuvio.app.features.iptv.IptvRepository.contentState(it).value.content?.channels }
+                .orEmpty().asSequence().map { it.name }
+        },
+    )
+    val historyRows = remember(visibleHistory) {
+        visibleHistory.map { com.nuvio.app.features.search.Prediction(it, com.nuvio.app.features.search.PredictionSource.History) }
     }
-    val pickerItemCount = pickerEntries.size
-    val pickerVisible = isSearchActive && searchBarHasFocus && visibleHistory.isNotEmpty()
+    val showingHistory = searchQuery.isBlank()
+    val liveRows = if (showingHistory) historyRows else livePredictions
+    var picker by remember(isSearchActive, searchScope) {
+        mutableStateOf(com.nuvio.app.features.search.SearchBarPicker(typed = searchQuery))
+    }
+    // Escape hides the panel before it leaves the search; typing brings it back.
+    var panelDismissed by remember(isSearchActive) { mutableStateOf(false) }
+    LaunchedEffect(searchQuery) {
+        if (searchQuery != picker.fieldText) picker = picker.typed(searchQuery)
+    }
+    // Render and activate one immutable snapshot, so a refresh cannot move an index under a measuring LazyColumn.
+    val pickerEntries = picker.shown(liveRows)
+    val pickerSelectedIndex = picker.index
+    val pickerVisible = isSearchActive && searchBarHasFocus && pickerEntries.isNotEmpty() && !panelDismissed
     var historyShapeVisible by remember { mutableStateOf(false) }
     val attachedPanelVisible = historyShapeVisible || libraryMenuVisible
-
-    LaunchedEffect(pickerEntries) {
-        if (pickerSelectedIndex !in pickerEntries.indices) {
-            pickerSelectedIndex = -1
-        }
-    }
 
     LaunchedEffect(pickerVisible) {
         if (pickerVisible) {
@@ -7186,10 +7223,19 @@ private fun TabletFloatingTopBar(
         }
     }
 
-    fun activatePickerItem(entry: SearchPickerEntry) {
-        onSearchQueryChange(entry.query)
+    fun runSearch(query: String) {
+        picker = picker.typed(query)
+        onSearchQueryChange(query)
         focusManager.clearFocus()
-        onSearchSubmit(entry.query)
+        onSearchSubmit(query)
+    }
+
+    /** Moves the panel to [next] and puts its line in the box, caret at the end. */
+    fun walkTo(next: com.nuvio.app.features.search.SearchBarPicker) {
+        picker = next
+        val text = next.fieldText
+        searchFieldState = TextFieldValue(text, TextRange(text.length))
+        onSearchQueryChange(text)
     }
 
     // The settings glass: a night-blue pill with the cards' one-pixel edge. No item backgrounds:
@@ -7253,47 +7299,48 @@ private fun TabletFloatingTopBar(
                                 .onPreviewKeyEvent { event ->
                                     when (event.key) {
                                         Key.Enter -> {
-                                            if (event.type == KeyEventType.KeyUp) {
-                                                if (pickerSelectedIndex in 0 until pickerItemCount) {
-                                                    pickerEntries.getOrNull(pickerSelectedIndex)
-                                                        ?.let(::activatePickerItem)
-                                                } else {
-                                                    focusManager.clearFocus()
-                                                    onSearchSubmit(searchQuery)
-                                                }
-                                            }
+                                            // The box already holds the highlighted line (walkTo).
+                                            if (event.type == KeyEventType.KeyUp) runSearch(searchFieldState.text)
                                             true
                                         }
                                         Key.Escape -> {
                                             if (event.type == KeyEventType.KeyUp) {
-                                                onSearchOverlayDismiss()
-                                                pickerSelectedIndex = -1
+                                                when {
+                                                    picker.held != null -> {
+                                                        walkTo(picker.typed(picker.typed))
+                                                        panelDismissed = true
+                                                    }
+                                                    pickerVisible -> panelDismissed = true
+                                                    else -> onSearchOverlayDismiss()
+                                                }
                                             }
                                             true
                                         }
                                         Key.DirectionDown -> {
-                                            if (event.type == KeyEventType.KeyDown && isSearchActive && pickerItemCount > 0) {
-                                                pickerSelectedIndex = (pickerSelectedIndex + 1).coerceAtMost(pickerItemCount - 1)
-                                                pickerEntries.getOrNull(pickerSelectedIndex)?.let { historyEntry ->
-                                                    val query = historyEntry.query
-                                                    searchFieldState = searchFieldState.copy(text = query, selection = TextRange(query.length))
-                                                }
-                                                return@onPreviewKeyEvent true
-                                            }
-                                            false
+                                            if (event.type != KeyEventType.KeyDown || !isSearchActive) return@onPreviewKeyEvent false
+                                            val next = picker.down(liveRows)
+                                            if (next == picker) return@onPreviewKeyEvent false
+                                            panelDismissed = false
+                                            walkTo(next)
+                                            true
                                         }
                                         Key.DirectionUp -> {
-                                            if (event.type == KeyEventType.KeyDown && isSearchActive && pickerItemCount > 0) {
-                                                if (pickerSelectedIndex > -1) {
-                                                    pickerSelectedIndex--
-                                                    pickerEntries.getOrNull(pickerSelectedIndex)?.let { historyEntry ->
-                                                        val query = historyEntry.query
-                                                        searchFieldState = searchFieldState.copy(text = query, selection = TextRange(query.length))
-                                                    }
-                                                    return@onPreviewKeyEvent true
+                                            if (event.type != KeyEventType.KeyDown || !isSearchActive) return@onPreviewKeyEvent false
+                                            val next = picker.up(liveRows)
+                                            if (next == picker) return@onPreviewKeyEvent false
+                                            walkTo(next)
+                                            true
+                                        }
+                                        // Tab completes: the top prediction, then each next one. It never leaves the box.
+                                        Key.Tab -> {
+                                            if (event.type == KeyEventType.KeyDown && isSearchActive) {
+                                                val next = picker.tab(liveRows)
+                                                if (next != picker) {
+                                                    panelDismissed = false
+                                                    walkTo(next)
                                                 }
                                             }
-                                            false
+                                            true
                                         }
                                         else -> false
                                     }
@@ -7307,9 +7354,13 @@ private fun TabletFloatingTopBar(
                                         searchQuery.isBlank()) {
                                         suppressSearchActivationKey = false
                                     } else {
+                                        val textChanged = value.text != searchFieldState.text
                                         searchFieldState = value
-                                        onSearchQueryChange(value.text)
-                                        pickerSelectedIndex = -1
+                                        if (textChanged) {
+                                            picker = picker.typed(value.text)
+                                            panelDismissed = false
+                                            onSearchQueryChange(value.text)
+                                        }
                                     }
                                 },
                             modifier = Modifier
@@ -7347,16 +7398,12 @@ private fun TabletFloatingTopBar(
                             },
                         )
                     }
-                        // fork:navbar-search - predictions for the on-screen keyboard: films and shows from TMDB (with the recent
-                        // searches first), YouTube's own autocomplete. Music and Live TV offer theirs from their tabs.
-                        when (searchScope) {
-                            BarSearchScope.Media -> com.nuvio.app.core.ui.PublishKeyboardSuggestions(
-                                com.nuvio.app.features.search.rememberMediaPredictions(searchQuery, searchHistory),
-                            ) { picked -> onSearchQueryChange(picked) }
-                            BarSearchScope.YouTube -> com.nuvio.app.core.ui.PublishKeyboardSuggestions(
-                                com.nuvio.app.features.search.rememberYouTubePredictions(searchQuery, youTubeHistory),
-                            ) { picked -> onSearchQueryChange(picked) }
-                            else -> Unit
+                        // fork:navbar-search - the on-screen keyboard offers the panel's own predictions: films and shows from
+                        // TMDB (recent searches first), YouTube's autocomplete. Music and Live TV offer theirs from their tabs,
+                        // built by the same functions (SearchPredictions.kt), so the two never disagree.
+                        if (searchScope == BarSearchScope.Media || searchScope == BarSearchScope.YouTube) {
+                            val keyboardWords = remember(livePredictions) { livePredictions.map { it.text } }
+                            com.nuvio.app.core.ui.PublishKeyboardSuggestions(keyboardWords) { picked -> onSearchQueryChange(picked) }
                         }
                         // Voice search: Windows voice typing types what is said into the field.
                         com.nuvio.app.core.ui.VoiceSearchCommands(
@@ -7380,25 +7427,6 @@ private fun TabletFloatingTopBar(
                             size = NuvioTokens.Space.s32,
                             iconSize = 16.dp,
                         )
-                        // Mirrors the Tab key inside the field: toggles the discover-catalog
-                        // picker so discovery mode is reachable by mouse as well.
-                        if (discoverTabVisible && searchScope == BarSearchScope.Media) {
-                            IconButton(
-                                onClick = {
-                                    onTabSelected(AppScreenTab.Discover)
-                                    // Keep keyboard navigation live in the picker after a mouse click.
-                                    try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
-                                },
-                                modifier = Modifier.size(NuvioTokens.Space.s32),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Explore,
-                                    contentDescription = stringResource(Res.string.cd_browse_catalogs),
-                                    tint = inactiveIconTint,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                        }
                         IconButton(
                             onClick = onSearchOverlayDismiss,
                             modifier = Modifier.size(NuvioTokens.Space.s32),
@@ -7593,29 +7621,44 @@ private fun TabletFloatingTopBar(
                         ) {
                             items(
                                 items = shownEntries,
-                                key = SearchPickerEntry::key,
+                                key = { entry -> "${entry.source}:${entry.text}" },
                             ) { entry ->
                                 val index = shownEntries.indexOf(entry)
                                 val isSelected = index == shownSelectedIndex
+                                val rowInteraction = remember { MutableInteractionSource() }
+                                val rowHovered by rowInteraction.collectIsHoveredAsState()
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .background(if (isSelected) Color.White.copy(alpha = 0.1f) else Color.Transparent)
-                                        .clickable {
-                                            activatePickerItem(entry)
+                                        .background(
+                                            when {
+                                                isSelected -> Color.White.copy(alpha = 0.1f)
+                                                rowHovered -> Color.White.copy(alpha = 0.06f)
+                                                else -> Color.Transparent
+                                            },
+                                        )
+                                        .hoverable(rowInteraction)
+                                        .clickable(interactionSource = rowInteraction, indication = null) {
+                                            runSearch(entry.text)
                                         }
                                         .padding(horizontal = 16.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
                                     Icon(
-                                        painter = painterResource(Res.drawable.sidebar_search),
+                                        imageVector = when (entry.source) {
+                                            com.nuvio.app.features.search.PredictionSource.History -> Icons.Rounded.History
+                                            com.nuvio.app.features.search.PredictionSource.Title -> Icons.Rounded.Movie
+                                            com.nuvio.app.features.search.PredictionSource.YouTube -> Icons.Rounded.SmartDisplay
+                                            com.nuvio.app.features.search.PredictionSource.Music -> Icons.Rounded.MusicNote
+                                            com.nuvio.app.features.search.PredictionSource.Channel -> Icons.Rounded.LiveTv
+                                        },
                                         contentDescription = null,
                                         modifier = Modifier.size(NuvioTokens.Space.s16),
                                         tint = inactiveIconTint,
                                     )
                                     androidx.compose.material3.Text(
-                                        text = entry.label,
+                                        text = boldMatch(entry.text, picker.typed),
                                         modifier = Modifier.weight(1f),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = activeIconTint,
@@ -7626,9 +7669,9 @@ private fun TabletFloatingTopBar(
                             }
                         }
 
-                        // Mouse-only footer: the arrow keys walk the history entries above, so this
-                        // stays out of pickerEntries and pickerSelectedIndex.
-                        Row(
+                        // Mouse-only footer, and only under the recent searches: the arrow keys walk the
+                        // entries above, so this stays out of the picker.
+                        if (showingHistory && picker.held == null) Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(start = 8.dp, end = 8.dp, bottom = 4.dp),
@@ -7646,7 +7689,7 @@ private fun TabletFloatingTopBar(
                                             BarSearchScope.YouTube -> com.nuvio.app.features.youtube.YouTubeSearchHistory.clear()
                                             else -> com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
                                         }
-                                        pickerSelectedIndex = -1
+                                        picker = picker.typed(searchQuery)
                                     }
                                     .padding(horizontal = 8.dp, vertical = 8.dp),
                             )

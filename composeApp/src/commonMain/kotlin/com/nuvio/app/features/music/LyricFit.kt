@@ -46,8 +46,8 @@ internal const val LOUD_STRIP_BAND_DP = 72f
 internal const val LOUD_NEXT_LINE_DP = 40f
 
 /** The height, in dp, the loud lyric stack may use: the pane less the sync strip band and, when shown, the next line. */
-internal fun loudStackHeightDp(paneHeightDp: Float, hasNext: Boolean): Float =
-    (paneHeightDp - LOUD_STRIP_BAND_DP - (if (hasNext) LOUD_NEXT_LINE_DP else 0f)).coerceAtLeast(80f)
+internal fun loudStackHeightDp(paneHeightDp: Float, hasNext: Boolean, stripBandDp: Float = LOUD_STRIP_BAND_DP): Float =
+    (paneHeightDp - stripBandDp - (if (hasNext) LOUD_NEXT_LINE_DP else 0f)).coerceAtLeast(80f)
 
 /** The text with an ellipsis after its last word, for a line that had to be cut. */
 internal fun withEllipsis(text: String): String = text.trimEnd(',', ';', ':', '-', ' ', '.') + "…"

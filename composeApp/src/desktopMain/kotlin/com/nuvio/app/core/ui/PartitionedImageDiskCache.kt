@@ -45,6 +45,13 @@ internal class PartitionedImageDiskCache(
             stills.remove(key)
             return null
         }
+        // A body shorter than the length its response declared was cut off mid-download (2026-11-12: covers drawn with
+        // their lower part grey, a 10 KB file kept for an 81 KB image). A miss, so it heals on the next load.
+        if (fileSystem.isTruncatedEntry(snapshot.metadata, snapshot.data)) {
+            snapshot.close()
+            stills.remove(key)
+            return null
+        }
         return RoutingSnapshot(key, snapshot)
     }
 
@@ -103,6 +110,11 @@ internal class PartitionedImageDiskCache(
         }
 
         override fun commitAndOpenSnapshot(): DiskCache.Snapshot? {
+            // A download that ended early is not kept: it would be served, half grey, until it was evicted.
+            if (bodyWritten && fileSystem.isTruncatedEntry(delegate.metadata, delegate.data)) {
+                delegate.abort()
+                return null
+            }
             if (!bodyWritten || !fileSystem.isAnimatedImage(delegate.data)) {
                 return delegate.commitAndOpenSnapshot()?.let { RoutingSnapshot(key, it) }
             }
@@ -121,6 +133,25 @@ internal class PartitionedImageDiskCache(
             }
         }
     }
+}
+
+/**
+ * True when [data] is shorter than the `content-length` recorded in the entry's [metadata] (Coil's cached response:
+ * status, two times, a header count, then `name:value` lines). A compressed transfer is skipped, its length being the
+ * encoded one; a missing or unreadable length is not a truncation.
+ */
+internal fun FileSystem.isTruncatedEntry(metadata: Path, data: Path): Boolean {
+    val declared = runCatching {
+        if (!exists(metadata)) return false
+        val lines = read(metadata) { readUtf8() }.lineSequence().map { it.trim() }
+        val headers = lines.filter { ':' in it }.associate { it.substringBefore(':').lowercase() to it.substringAfter(':').trim() }
+        val encoding = headers["content-encoding"]?.lowercase()
+        if (encoding != null && encoding != "identity") return false
+        headers["content-length"]?.toLongOrNull()
+    }.getOrNull() ?: return false
+    if (declared <= 0L) return false
+    val actual = metadataOrNull(data)?.size ?: return false
+    return actual < declared
 }
 
 /** GIF, or a WebP whose extended header has the animation flag set. */

@@ -99,6 +99,8 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -1082,6 +1084,12 @@ private fun HeroBackdropImageLayer(
     LaunchedEffect(model) {
         if (model == null) onResolved(false)
     }
+    // fork:music-search - a music result whose backdrop is its own cover: not the cover itself (a small square picture blown
+    // up across the screen), but a clean gradient of the cover's own colours.
+    if (model != null && com.nuvio.app.features.music.home.MusicHeroLogos.isBlurred(model)) {
+        CoverColourBackdrop(coverUrl = model, modifier = modifier, onResolved = onResolved)
+        return
+    }
     if (framingPriorBias != null && model != null) {
         FramedHeroBackdropImageLayer(
             model = model,
@@ -1116,6 +1124,114 @@ private fun HeroBackdropImageLayer(
         },
     )
 }
+
+/**
+ * fork:music-search - a record's own cover as the hero's backdrop. Covers are square and the hero is wide, so a cover is
+ * never cropped to fill it (a square cut to 16:9 loses almost half of itself): the hero is a gradient of the cover's own
+ * colours (the main colour across it, the second and third drifting in from the far corners), and a large cover (at
+ * least [COVER_BACKDROP_MIN_PX] on both sides) stands whole at the right, full height, fading into that gradient at its
+ * left edge. A smaller one would be a small picture blown up, so it is the gradient alone. The hero's own scrims and the
+ * text sit on top. Resolves once it knows which, so the crossfade waits for it like for a picture.
+ */
+@Composable
+private fun CoverColourBackdrop(coverUrl: String, modifier: Modifier, onResolved: (hasArtwork: Boolean) -> Unit) {
+    val context = coil3.compose.LocalPlatformContext.current
+    val look by androidx.compose.runtime.produceState(CoverLookCache[coverUrl], coverUrl) {
+        if (value != null) return@produceState
+        // At its own size: that says whether it is big enough, and the colours are sampled from the same picture.
+        val image = (
+            coil3.SingletonImageLoader.get(context).execute(
+                coil3.request.ImageRequest.Builder(context).data(coverUrl).size(coil3.size.Size.ORIGINAL).build(),
+            ) as? coil3.request.SuccessResult
+        )?.image
+        val found = if (image == null) {
+            CoverLook(large = false, aspect = 1f, colours = emptyList())
+        } else {
+            CoverLook(
+                large = minOf(image.width, image.height) >= COVER_BACKDROP_MIN_PX,
+                aspect = image.width.toFloat() / image.height.coerceAtLeast(1),
+                colours = com.nuvio.app.features.home.extractHeroPaletteColors(image, count = 3),
+            )
+        }
+        CoverLookCache[coverUrl] = found
+        value = found
+    }
+    val known = look
+    val picked = known?.colours
+    LaunchedEffect(known != null) { if (known != null) onResolved(known.large || !picked.isNullOrEmpty()) }
+    if (known == null) return
+    Box(modifier) {
+        if (!picked.isNullOrEmpty()) CoverColourGradient(picked, Modifier.fillMaxSize())
+        if (known.large) {
+            AsyncImage(
+                model = coverUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .aspectRatio(known.aspect.coerceIn(0.5f, 2f))
+                    // The cover's left edge melts into the gradient, so it reads as one picture rather than a square
+                    // pasted on.
+                    .graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(
+                            Brush.horizontalGradient(
+                                0f to Color.Transparent,
+                                COVER_EDGE_FADE to Color.Black,
+                                1f to Color.Black,
+                            ),
+                            blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                        )
+                    },
+                contentScale = ContentScale.Fit,
+                desktopImageScaling = NuvioDesktopImageScaling.Disabled,
+            )
+        }
+    }
+}
+
+/** The colour gradient behind (or instead of) a record's cover. */
+@Composable
+private fun CoverColourGradient(picked: List<Color>, modifier: Modifier) {
+    // A backdrop, not a poster, but bright enough to read as the cover's colours.
+    fun tone(c: Color, keep: Float) = androidx.compose.ui.graphics.lerp(Color.Black, c, keep)
+    val main = tone(picked[0], 0.86f)
+    val second = tone(picked.getOrElse(1) { picked[0] }, 0.8f)
+    val third = tone(picked.getOrElse(2) { picked.getOrElse(1) { picked[0] } }, 0.72f)
+    Box(
+        modifier
+            .background(Brush.linearGradient(listOf(main, tone(picked[0], 0.58f), Color.Black.copy(alpha = 0.7f).compositeOver(main))))
+            .drawBehind {
+                // The other colours as soft light from the top right and the bottom right, where no text sits.
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(second.copy(alpha = 0.95f), Color.Transparent),
+                        center = androidx.compose.ui.geometry.Offset(size.width * 0.86f, size.height * 0.12f),
+                        radius = size.maxDimension * 0.62f,
+                    ),
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        listOf(third.copy(alpha = 0.75f), Color.Transparent),
+                        center = androidx.compose.ui.geometry.Offset(size.width * 0.7f, size.height * 0.95f),
+                        radius = size.maxDimension * 0.5f,
+                    ),
+                )
+            },
+    )
+}
+
+/** Whether a cover stands whole at the right ([large]), its shape, and its [colours]; kept for the session. */
+private class CoverLook(val large: Boolean, val aspect: Float, val colours: List<Color>)
+
+private val CoverLookCache = HashMap<String, CoverLook>()
+
+/** A cover at least this many pixels on both sides is sharp enough to stand whole in the hero. */
+private const val COVER_BACKDROP_MIN_PX = 1000
+
+/** How much of the cover's width, from its left edge, fades into the gradient. */
+private const val COVER_EDGE_FADE = 0.28f
 
 /**
  * [HeroBackdropImageLayer] with automatic framing: the crop follows this backdrop's own
@@ -1787,8 +1903,10 @@ private fun DesktopHomeHeroFrame(
 
         // Where the metadata column's box ends and how tall it would naturally be; the people
         // panel above it decides how much of that it actually gets.
+        // fork:music-search - a screen can lift TV Mode's column and give its plot more lines (LocalImmersiveHeroTuning).
+        val heroTuning = LocalImmersiveHeroTuning.current
         val immersiveContentBottom = layout.heroHeight - immersiveContentBottomPadding +
-            immersiveHeroContentOffsetY(layout.heroHeight)
+            immersiveHeroContentOffsetY(layout.heroHeight) - heroTuning.lift
         val immersiveNaturalContentHeight = immersiveHeroContentHeight(layout.heroHeight)
         val immersiveCompactPeoplePanel = immersiveMode &&
             immersiveContentBottom - immersiveHeroPeoplePanelBottom(rows = 2) <
@@ -1863,7 +1981,7 @@ private fun DesktopHomeHeroFrame(
                             Modifier
                                 .padding(bottom = immersiveContentBottomPadding)
                                 .height(immersiveContentHeight)
-                                .offset(y = immersiveHeroContentOffsetY(layout.heroHeight))
+                                .offset(y = immersiveHeroContentOffsetY(layout.heroHeight) - heroTuning.lift)
                         } else {
                             // Anchor to a fixed top baseline so cast/genre/ratings/synopsis stay
                             // put between items instead of drifting as content height changes
@@ -2380,7 +2498,7 @@ private fun DesktopHeroContentBlock(
                     showReleaseMetadata = !qualityBadgesEnabled,
                     includeAgeRating = false,
                 ).isNotBlank() || !item.ageRating.isNullOrBlank(),
-                hasRatings = ratings.isNotEmpty(),
+                hasRatings = ratings.isNotEmpty() || com.nuvio.app.features.music.home.MusicHeroLogos.factsFor(item.id) != null,
                 hasSynopsis = !item.description.isNullOrBlank(),
                 hasFooter = qualityHighlights.isNotEmpty() ||
                     (qualityBadgesEnabled && (!item.releaseInfo.isNullOrBlank() || item.runtime != null)),
@@ -2438,7 +2556,10 @@ private fun DesktopHeroContentBlock(
                     .height(desktopHeroLogoSlotHeight(layout))
             }
 
-            if (logoUrl != null && item.type.startsWith(com.nuvio.app.features.home.MUSIC_HERO_TYPE_PREFIX)) {
+            if (logoUrl != null && item.type.startsWith(com.nuvio.app.features.home.MUSIC_HERO_TYPE_PREFIX) &&
+                // An artist's name logo is drawn like a film's (the branch below); only artwork gets the lockup.
+                !com.nuvio.app.features.music.home.MusicHeroLogos.isNameLogo(logoUrl)
+            ) {
                 // fork:music-search - a music result's "logo" is its artwork (a cover is no title on its own): the picture
                 // in the logo slot with the name under it, within the slot's height so nothing below moves.
                 androidx.compose.foundation.layout.Column(
@@ -2446,7 +2567,26 @@ private fun DesktopHeroContentBlock(
                     verticalArrangement = Arrangement.spacedBy(10.dp, if (immersiveBudget != null) Alignment.Bottom else Alignment.CenterVertically),
                     horizontalAlignment = Alignment.Start,
                 ) {
-                    AsyncImage(
+                    val disc = com.nuvio.app.features.music.home.MusicHeroLogos.discFor(logoUrl)
+                    if (disc != null && item.posterShape != com.nuvio.app.features.home.PosterShape.Landscape) {
+                        // The record's disc out to the right of its cover, as on the album page and the Stage.
+                        Box(Modifier.weight(1f, fill = false).aspectRatio(1f + HERO_DISC_PEEK)) {
+                            AsyncImage(
+                                model = disc,
+                                contentDescription = null,
+                                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight(0.94f).aspectRatio(1f)
+                                    .clip(androidx.compose.foundation.shape.CircleShape),
+                                contentScale = ContentScale.Crop,
+                            )
+                            AsyncImage(
+                                model = logoUrl,
+                                contentDescription = item.name,
+                                modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight().aspectRatio(1f)
+                                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    } else AsyncImage(
                         model = logoUrl,
                         contentDescription = item.name,
                         modifier = Modifier
@@ -2583,6 +2723,19 @@ private fun DesktopHeroContentBlock(
 
             if (!item.heroMetadataPending) {
                 HomeHeroRatingsRow(ratings = ratings)
+                // fork:music-search - a song's or record's facts (year, tempo, label, length) in the ratings' place.
+                if (item.type.startsWith(com.nuvio.app.features.home.MUSIC_HERO_TYPE_PREFIX)) {
+                    com.nuvio.app.features.music.home.MusicHeroLogos.factsFor(item.id)?.let { facts ->
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = facts,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.78f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
 
                 item.description
                     ?.replace(Regex("\\s+"), " ")
@@ -2611,8 +2764,20 @@ private fun DesktopHeroContentBlock(
     }
 }
 
+/** fork:music-search - how far a record's disc peeks out of its cover in the logo slot. */
+private const val HERO_DISC_PEEK = 0.32f
+
 /** Lines of synopsis the hero shows before the rest has to be scrolled into view. */
 private const val HeroSynopsisMaxLines = 5
+
+/**
+ * fork:music-search - how one screen's TV Mode hero differs from Home's: the metadata column (logo, genres, plot) [lift]ed
+ * that far above the shelf, and the plot allowed up to [synopsisMaxLines] lines when the column has the room (Home's is 5).
+ * A composition local rather than a parameter: the hero's composables are near the JVM's argument limit.
+ */
+internal data class ImmersiveHeroTuning(val lift: Dp = 0.dp, val synopsisMaxLines: Int = HeroSynopsisMaxLines)
+
+internal val LocalImmersiveHeroTuning = androidx.compose.runtime.staticCompositionLocalOf { ImmersiveHeroTuning() }
 
 private class ImmersiveHeroColumnBudget(val synopsisMaxLines: Int)
 
@@ -2647,7 +2812,7 @@ private fun immersiveHeroColumnBudget(
     val synopsisLine = typography.bodyLarge.lineHeightDp()
     val lines = ((availableHeight - fixed) / synopsisLine).toInt()
     return ImmersiveHeroColumnBudget(
-        lines.coerceIn(IMMERSIVE_HERO_SYNOPSIS_MIN_LINES, HeroSynopsisMaxLines),
+        lines.coerceIn(IMMERSIVE_HERO_SYNOPSIS_MIN_LINES, maxOf(HeroSynopsisMaxLines, LocalImmersiveHeroTuning.current.synopsisMaxLines)),
     )
 }
 

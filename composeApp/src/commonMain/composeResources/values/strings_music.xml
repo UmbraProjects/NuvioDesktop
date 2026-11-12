@@ -11,8 +11,8 @@
     <string name="settings_music_fanart_key_description">Adds HD logos, banners, backgrounds and CD art. A free personal key from fanart.tv (Account, Your API keys). Applies the next time an artist is added or refreshed.</string>
     <string name="settings_music_lastfm_key">Last.fm API key</string>
     <string name="settings_music_gemini_key">Gemini API key</string>
-    <string name="settings_music_gemini_key_description">Writes a song\'s story from a Google search when the AI key above is out of its allowance or has nothing to go on. Only for songs you open. A free key from aistudio.google.com.</string>
-    <string name="settings_music_lastfm_key_description">Artist tags and ladder suggestions from Last.fm instead of MusicBrainz, which is often slow or unreachable. A free key from last.fm/api/account/create. MusicBrainz is still used when Last.fm has no answer. Also gives a song\'s story from Last.fm\'s song wiki when nothing else has one.</string>
+    <string name="settings_music_gemini_key_description">Writes a song's story from a Google search when the AI key above is out of its allowance or has nothing to go on. Only for songs you open. A free key from aistudio.google.com.</string>
+    <string name="settings_music_lastfm_key_description">Artist tags and ladder suggestions from Last.fm instead of MusicBrainz, which is often slow or unreachable. A free key from last.fm/api/account/create. MusicBrainz is still used when Last.fm has no answer. Also gives a song's story from Last.fm's song wiki when nothing else has one.</string>
     <string name="settings_music_audiodb_key">TheAudioDB API key</string>
     <string name="settings_music_audiodb_key_description">Biographies, logos and backgrounds. Without a key the shared test key is used, which is rate limited. Applies the next time an artist is added or refreshed.</string>
     <string name="settings_music_where_next">Build "Where next?" automatically</string>
@@ -50,15 +50,15 @@
     <string name="settings_music_mb_offline_retry">Try again</string>
     <string name="settings_music_section_lyrics">Word-by-word lyrics</string>
     <string name="settings_music_lyrics_unison">Unison</string>
-    <string name="settings_music_lyrics_unison_description">Community-submitted lyrics timed to the syllable (the database behind Better Lyrics). A lookup sends the song\'s title and artist to unison.betterlyrics.org. Turned on, lyrics are asked for when a track first plays and remembered on this computer.</string>
+    <string name="settings_music_lyrics_unison_description">Community-submitted lyrics timed to the syllable (the database behind Better Lyrics). A lookup sends the song's title and artist to unison.betterlyrics.org. Turned on, lyrics are asked for when a track first plays and remembered on this computer.</string>
     <string name="settings_music_lyrics_amll">AMLL TTML DB</string>
-    <string name="settings_music_lyrics_amll_description">An open collection of community-timed lyrics in the style of Apple Music. A lookup sends the song\'s title and artist to api.amll.dev.</string>
+    <string name="settings_music_lyrics_amll_description">An open collection of community-timed lyrics in the style of Apple Music. A lookup sends the song's title and artist to api.amll.dev.</string>
     <string name="settings_music_lyrics_netease">Netease Cloud Music</string>
-    <string name="settings_music_lyrics_netease_description">Word-timed lyrics from Netease\'s unofficial interface; it may not answer outside China. A lookup sends the song\'s title and artist to music.163.com.</string>
+    <string name="settings_music_lyrics_netease_description">Word-timed lyrics from Netease's unofficial interface; it may not answer outside China. A lookup sends the song's title and artist to music.163.com.</string>
     <string name="settings_music_lyrics_lrcmux">LRCMux</string>
-    <string name="settings_music_lyrics_lrcmux_description">The widest reach: a third-party service that relays other catalogues\' lyrics and does not state its terms, so it is off until you turn it on. A lookup sends the song\'s title, artist and length to api.lrcmux.dev.</string>
+    <string name="settings_music_lyrics_lrcmux_description">The widest reach: a third-party service that relays other catalogues' lyrics and does not state its terms, so it is off until you turn it on. A lookup sends the song's title, artist and length to api.lrcmux.dev.</string>
     <string name="settings_music_lyrics_lyricsplus">LyricsPlus</string>
-    <string name="settings_music_lyrics_lyricsplus_description">Syllable-timed lyrics from Apple Music, fetched through a third-party service that does not state its terms, so it is off until you turn it on. A lookup sends the song\'s title, artist and length to lyricsplus.binimum.org.</string>
+    <string name="settings_music_lyrics_lyricsplus_description">Syllable-timed lyrics from Apple Music, fetched through a third-party service that does not state its terms, so it is off until you turn it on. A lookup sends the song's title, artist and length to lyricsplus.binimum.org.</string>
     <!-- fork:facts-filler  Settings > Music > Music facts. The status lines under it are built in code. -->
     <string name="settings_music_facts_section">Music facts</string>
     <string name="settings_music_facts_switch">Fill album facts in the background</string>

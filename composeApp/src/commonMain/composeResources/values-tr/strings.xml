@@ -868,7 +868,7 @@
   <string name="settings_portable_mode">Taşınabilir Mod</string>
   <string name="settings_portable_mode_description">Ayarları ve önbellekleri AppData yerine Nuvio.exe'nin yanındaki bir veri klasöründe tut. Geçiş yapmak Nuvio'yu yeniden başlatır ve verilerini taşır.</string>
   <string name="settings_portable_mode_enable_title">Taşınabilir moda geçilsin mi?</string>
-  <string name="settings_portable_mode_enable_message">Nuvio yeniden başlayacak ve ayarlarını Nuvio.exe'nin yanındaki bir veri klasörüne kopyalayacak. Görsel ve torrent önbellekleri kopyalanmaz; göz attıkça yeniden oluşur. AppData klasörün olduğu gibi bırakılır.\n\nNuvio için bir antivirüs istisnan varsa yeni veri klasörünü de ona ekle.</string>
+  <string name="settings_portable_mode_enable_message">Nuvio yeniden başlayacak ve ayarlarını Nuvio.exe'nin yanındaki bir veri klasörüne kopyalayacak. Görsel ve torrent önbellekleri kopyalanmaz; göz attıkça yeniden oluşur. AppData klasörün olduğu gibi bırakılır.&#10;&#10;Nuvio için bir antivirüs istisnan varsa yeni veri klasörünü de ona ekle.</string>
   <string name="settings_portable_mode_disable_title">Taşınabilir mod kapatılsın mı?</string>
   <string name="settings_portable_mode_disable_message">Nuvio yeniden başlayacak ve ayarlarını AppData'ya geri kopyalayacak. Taşınabilir klasör, Nuvio.exe'nin yanında data.old olarak saklanır ve sonradan silebilirsin.</string>
   <string name="settings_portable_mode_restart">Yeniden başlat</string>
@@ -1844,7 +1844,7 @@
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Etkin ara kare yöntemini ve kaynak/çıkış kare hızını videonun üzerine çizer. Bir sonraki oynatma başlangıcından itibaren geçerli olur.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Gölgelendirici Kitaplığı</string>
   <string name="settings_playback_desktop_custom_shader_paths_desc">Her satıra bir gölgelendirici dosyası veya klasörü ekle. Klasörlerin doğrudan içindeki .glsl ve .hook dosyaları Anime İyileştirmeleri'nde görünür.</string>
-  <string name="settings_playback_desktop_custom_shader_paths_hint">örn.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
+  <string name="settings_playback_desktop_custom_shader_paths_hint">örn.&#10;C:\Shaders\Anime4K-Ultra.glsl&#10;C:\Shaders\MyPack</string>
   <string name="settings_playback_desktop_custom_shader_paths_warning">Özel gölgelendiriciler mpv&apos;nin oluşturucusu içinde çalışır; performansı düşürebilir veya oynatmayı bozabilir. Bir gölgelendirici sorun çıkarırsa Anime İyileştirmeleri'nde Kapalı'yı seç.</string>
   <string name="settings_playback_desktop_seek_thumbnails">İlerleme çubuğu küçük resimleri</string>
   <string name="settings_playback_desktop_seek_thumbnails_desc">Zaman çizelgesinin üzerine gelince kareleri önizler. Yalnızca yerel seçeneği bu bilgisayardaki veya ağındaki dosyaları önizler ve debrid hız sınırlarından kaçınır; Yerel + Seekr, Seekr'in küçük resimlerini de ekler. Metered ön ayarında kapalıdır.</string>
@@ -1863,7 +1863,7 @@
     <string name="settings_playback_desktop_headphone_surround_desc">Kulaklıklar için: surround parçalar sol ve sağa düz şekilde karıştırılmak yerine etrafınızdaki hoparlörlerden geliyormuş gibi duyulur. Stereo kaynaklar biraz daha kısık çalar. Ses passthrough sırasında etkisizdir.</string>
   <string name="settings_playback_desktop_custom_mpv_options">MPV Seçenekleri</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Her satıra anahtar=değer biçiminde bir seçenek. Nuvio'nun varsayılanlarının üzerine uygulanır; geçersiz seçenekler yok sayılır.</string>
-  <string name="settings_playback_desktop_custom_mpv_options_hint">örn.\nprofile=gpu-hq\ndeband=no</string>
+  <string name="settings_playback_desktop_custom_mpv_options_hint">örn.&#10;profile=gpu-hq&#10;deband=no</string>
   <string name="settings_playback_hero_tv_trailer">Tanıtım Fragmanı Oynatma</string>
   <string name="settings_playback_hero_tv_trailer_description">Fragmanı bu konumda oynatmak için T tuşuna bas.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Oynatmadan önce bekle</string>
@@ -3408,7 +3408,7 @@
   <string name="collections_editor_trakt_list_title_format">Trakt Listesi %1$s</string>
   <string name="external_player_android_system">Android sistem oynatıcısı</string>
   <string name="p2p_consent_title">P2P Yayını</string>
-  <string name="p2p_consent_body">Bu yayın eşler arası (P2P) teknolojisini kullanır. P2P'yi etkinleştirerek şunları bildiğini ve kabul ettiğini onaylarsın:\n\n• IP adresin ağdaki diğer eşler tarafından görülebilecek\n• Eriştiğin içerikten yalnızca sen sorumlusun\n• Bu içeriği bulunduğun yargı bölgesinde yayınlama yasal hakkına sahip olduğunu onaylıyorsun\n• Nuvio hiçbir P2P içeriğini barındırmaz, dağıtmaz veya kontrol etmez\n• Nuvio, P2P yayınını kullanmandan doğan hukuki sonuçlar için sorumluluk kabul etmez\n\nBu özelliği tamamen kendi sorumluluğunda kullanırsın. P2P'yi istediğin zaman Ayarlar'dan kapatabilirsin.</string>
+  <string name="p2p_consent_body">Bu yayın eşler arası (P2P) teknolojisini kullanır. P2P'yi etkinleştirerek şunları bildiğini ve kabul ettiğini onaylarsın:&#10;&#10;• IP adresin ağdaki diğer eşler tarafından görülebilecek&#10;• Eriştiğin içerikten yalnızca sen sorumlusun&#10;• Bu içeriği bulunduğun yargı bölgesinde yayınlama yasal hakkına sahip olduğunu onaylıyorsun&#10;• Nuvio hiçbir P2P içeriğini barındırmaz, dağıtmaz veya kontrol etmez&#10;• Nuvio, P2P yayınını kullanmandan doğan hukuki sonuçlar için sorumluluk kabul etmez&#10;&#10;Bu özelliği tamamen kendi sorumluluğunda kullanırsın. P2P'yi istediğin zaman Ayarlar'dan kapatabilirsin.</string>
   <string name="p2p_consent_enable">P2P'yi etkinleştir</string>
   <string name="p2p_consent_cancel">İptal</string>
   <string name="settings_p2p_title">P2P Yayını</string>

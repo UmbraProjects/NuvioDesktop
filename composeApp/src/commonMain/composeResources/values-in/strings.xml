@@ -868,7 +868,7 @@
   <string name="settings_portable_mode">Mode Portabel</string>
   <string name="settings_portable_mode_description">Simpan pengaturan dan cache di folder data di samping Nuvio.exe, bukan di AppData. Berpindah akan memulai ulang Nuvio dan memindahkan data Anda.</string>
   <string name="settings_portable_mode_enable_title">Beralih ke mode portabel?</string>
-  <string name="settings_portable_mode_enable_message">Nuvio akan dimulai ulang dan menyalin pengaturan Anda ke folder data di samping Nuvio.exe. Cache gambar dan torrent tidak disalin; keduanya dibangun ulang saat Anda menjelajah. Folder AppData Anda dibiarkan apa adanya.\n\nJika Anda memiliki pengecualian antivirus untuk Nuvio, tambahkan juga folder data yang baru ke dalamnya.</string>
+  <string name="settings_portable_mode_enable_message">Nuvio akan dimulai ulang dan menyalin pengaturan Anda ke folder data di samping Nuvio.exe. Cache gambar dan torrent tidak disalin; keduanya dibangun ulang saat Anda menjelajah. Folder AppData Anda dibiarkan apa adanya.&#10;&#10;Jika Anda memiliki pengecualian antivirus untuk Nuvio, tambahkan juga folder data yang baru ke dalamnya.</string>
   <string name="settings_portable_mode_disable_title">Matikan mode portabel?</string>
   <string name="settings_portable_mode_disable_message">Nuvio akan dimulai ulang dan menyalin pengaturan Anda kembali ke AppData. Folder portabel disimpan sebagai data.old di samping Nuvio.exe, dan Anda dapat menghapusnya setelahnya.</string>
   <string name="settings_portable_mode_restart">Mulai ulang</string>
@@ -1844,7 +1844,7 @@
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Menampilkan metode interpolasi aktif dan frame rate sumber/keluaran di atas video. Berlaku mulai pemutaran berikutnya.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Pustaka Shader</string>
   <string name="settings_playback_desktop_custom_shader_paths_desc">Tambahkan satu file atau folder shader per baris. Folder menampilkan file .glsl dan .hook langsungnya di Peningkatan Anime.</string>
-  <string name="settings_playback_desktop_custom_shader_paths_hint">mis.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
+  <string name="settings_playback_desktop_custom_shader_paths_hint">mis.&#10;C:\Shaders\Anime4K-Ultra.glsl&#10;C:\Shaders\MyPack</string>
   <string name="settings_playback_desktop_custom_shader_paths_warning">Shader kustom berjalan di dalam perender mpv dan dapat menurunkan performa atau merusak pemutaran. Pilih Nonaktif di Peningkatan Anime jika shader menimbulkan masalah.</string>
   <string name="settings_playback_desktop_seek_thumbnails">Thumbnail bilah geser</string>
   <string name="settings_playback_desktop_seek_thumbnails_desc">Pratinjau frame saat kursor di atas lini masa. Hanya Lokal menampilkan pratinjau file di PC ini atau jaringan Anda, menghindari batas laju debrid; Lokal + Seekr menambahkan thumbnail Seekr. Nonaktif pada preset Berbayar-Kuota.</string>
@@ -1863,7 +1863,7 @@
     <string name="settings_playback_desktop_headphone_surround_desc">Untuk headphone dan earbud: trek surround terdengar seolah berasal dari speaker di sekitar Anda, bukan dicampur datar ke kiri dan kanan. Sumber stereo diputar sedikit lebih pelan. Tidak berpengaruh saat audio passthrough.</string>
   <string name="settings_playback_desktop_custom_mpv_options">Opsi MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Satu opsi per baris dalam format key=value. Diterapkan di atas bawaan Nuvio; opsi yang tidak valid diabaikan.</string>
-  <string name="settings_playback_desktop_custom_mpv_options_hint">mis.\nprofile=gpu-hq\ndeband=no</string>
+  <string name="settings_playback_desktop_custom_mpv_options_hint">mis.&#10;profile=gpu-hq&#10;deband=no</string>
   <string name="settings_playback_hero_tv_trailer">Pemutaran Trailer Hero</string>
   <string name="settings_playback_hero_tv_trailer_description">Tekan T untuk memutar trailer di lokasi ini.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Tunggu sebelum memutar</string>
@@ -3406,7 +3406,7 @@
   <string name="collections_editor_trakt_list_title_format">Daftar Trakt %1$s</string>
   <string name="external_player_android_system">Pemutar sistem Android</string>
   <string name="p2p_consent_title">Streaming P2P</string>
-  <string name="p2p_consent_body">Stream ini menggunakan teknologi peer-to-peer (P2P). Dengan mengaktifkan P2P, Anda mengakui dan menyetujui bahwa:\n\n• Alamat IP Anda akan terlihat oleh peer lain di jaringan\n• Anda bertanggung jawab penuh atas konten yang Anda akses\n• Anda menyatakan memiliki hak hukum untuk melakukan streaming konten ini di yurisdiksi Anda\n• Nuvio tidak meng-host, mendistribusikan, atau mengontrol konten P2P apa pun\n• Nuvio tidak bertanggung jawab atas konsekuensi hukum apa pun yang timbul dari penggunaan streaming P2P Anda\n\nAnda menggunakan fitur ini sepenuhnya dengan risiko Anda sendiri. P2P dapat dinonaktifkan kapan saja di Setelan.</string>
+  <string name="p2p_consent_body">Stream ini menggunakan teknologi peer-to-peer (P2P). Dengan mengaktifkan P2P, Anda mengakui dan menyetujui bahwa:&#10;&#10;• Alamat IP Anda akan terlihat oleh peer lain di jaringan&#10;• Anda bertanggung jawab penuh atas konten yang Anda akses&#10;• Anda menyatakan memiliki hak hukum untuk melakukan streaming konten ini di yurisdiksi Anda&#10;• Nuvio tidak meng-host, mendistribusikan, atau mengontrol konten P2P apa pun&#10;• Nuvio tidak bertanggung jawab atas konsekuensi hukum apa pun yang timbul dari penggunaan streaming P2P Anda&#10;&#10;Anda menggunakan fitur ini sepenuhnya dengan risiko Anda sendiri. P2P dapat dinonaktifkan kapan saja di Setelan.</string>
   <string name="p2p_consent_enable">Aktifkan P2P</string>
   <string name="p2p_consent_cancel">Batal</string>
   <string name="settings_p2p_title">Streaming P2P</string>

@@ -868,7 +868,7 @@
   <string name="settings_portable_mode">Portabel modus</string>
   <string name="settings_portable_mode_description">Behold innstillinger og buffere i en datamappe ved siden av Nuvio.exe i stedet for AppData. Bytte starter Nuvio på nytt og flytter dataene dine over.</string>
   <string name="settings_portable_mode_enable_title">Bytte til portabel modus?</string>
-  <string name="settings_portable_mode_enable_message">Nuvio starter på nytt og kopierer innstillingene dine til en datamappe ved siden av Nuvio.exe. Bilde- og torrentbuffere kopieres ikke; de bygges opp igjen mens du blar. AppData-mappen din forblir som den er.\n\nHvis du har et antivirus-unntak for Nuvio, legg til den nye datamappen der også.</string>
+  <string name="settings_portable_mode_enable_message">Nuvio starter på nytt og kopierer innstillingene dine til en datamappe ved siden av Nuvio.exe. Bilde- og torrentbuffere kopieres ikke; de bygges opp igjen mens du blar. AppData-mappen din forblir som den er.&#10;&#10;Hvis du har et antivirus-unntak for Nuvio, legg til den nye datamappen der også.</string>
   <string name="settings_portable_mode_disable_title">Slå av portabel modus?</string>
   <string name="settings_portable_mode_disable_message">Nuvio starter på nytt og kopierer innstillingene dine tilbake til AppData. Den portable mappen beholdes som data.old ved siden av Nuvio.exe, og du kan slette den etterpå.</string>
   <string name="settings_portable_mode_restart">Start på nytt</string>
@@ -1844,7 +1844,7 @@
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Tegner aktiv interpoleringsmetode og bildefrekvens for kilde/utdata på videoen. Gjelder fra neste avspillingsstart.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Shaderbibliotek</string>
   <string name="settings_playback_desktop_custom_shader_paths_desc">Legg til én shaderfil eller mappe per linje. Mapper viser sine direkte .glsl- og .hook-filer i Anime-forbedringer.</string>
-  <string name="settings_playback_desktop_custom_shader_paths_hint">f.eks.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
+  <string name="settings_playback_desktop_custom_shader_paths_hint">f.eks.&#10;C:\Shaders\Anime4K-Ultra.glsl&#10;C:\Shaders\MyPack</string>
   <string name="settings_playback_desktop_custom_shader_paths_warning">Egendefinerte shadere kjører i mpv&apos;s renderer og kan redusere ytelsen eller ødelegge avspillingen. Velg Av i Anime-forbedringer hvis en shader skaper problemer.</string>
   <string name="settings_playback_desktop_seek_thumbnails">Miniatyrbilder på spolelinjen</string>
   <string name="settings_playback_desktop_seek_thumbnails_desc">Forhåndsvis bilder når du holder pekeren over tidslinjen. Kun lokalt forhåndsviser bare filer på denne PC-en eller nettverket ditt, og unngår debrid-begrensninger; Lokal + Seekr legger til Seekrs miniatyrbilder. Av på forhåndsinnstillingen Med datagrense.</string>
@@ -1863,7 +1863,7 @@
     <string name="settings_playback_desktop_headphone_surround_desc">For hodetelefoner og ørepropper: surroundspor høres ut som om de kommer fra høyttalere rundt deg, i stedet for å mikses flatt til venstre og høyre. Stereokilder spilles litt lavere. Har ingen effekt ved lyd-passthrough.</string>
   <string name="settings_playback_desktop_custom_mpv_options">MPV-alternativer</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Ett alternativ per linje som nøkkel=verdi. Brukes oppå Nuvios standarder; ugyldige alternativer ignoreres.</string>
-  <string name="settings_playback_desktop_custom_mpv_options_hint">f.eks.\nprofile=gpu-hq\ndeband=no</string>
+  <string name="settings_playback_desktop_custom_mpv_options_hint">f.eks.&#10;profile=gpu-hq&#10;deband=no</string>
   <string name="settings_playback_hero_tv_trailer">Avspilling av hero-trailer</string>
   <string name="settings_playback_hero_tv_trailer_description">Trykk T for å spille av traileren her.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Vent før avspilling</string>
@@ -3409,7 +3409,7 @@
   <string name="collections_editor_trakt_list_title_format">Trakt-liste %1$s</string>
   <string name="external_player_android_system">Androids systemavspiller</string>
   <string name="p2p_consent_title">P2P-strømming</string>
-  <string name="p2p_consent_body">Denne strømmen bruker peer-to-peer-teknologi (P2P). Ved å aktivere P2P erkjenner og godtar du at:\n\n• IP-adressen din vil være synlig for andre peers i nettverket\n• Du er alene ansvarlig for innholdet du får tilgang til\n• Du bekrefter at du har lovlig rett til å strømme dette innholdet i din jurisdiksjon\n• Nuvio hoster, distribuerer eller kontrollerer ikke noe P2P-innhold\n• Nuvio har intet ansvar for juridiske konsekvenser som følger av din bruk av P2P-strømming\n\nDu bruker denne funksjonen helt på eget ansvar. P2P kan deaktiveres når som helst i innstillingene.</string>
+  <string name="p2p_consent_body">Denne strømmen bruker peer-to-peer-teknologi (P2P). Ved å aktivere P2P erkjenner og godtar du at:&#10;&#10;• IP-adressen din vil være synlig for andre peers i nettverket&#10;• Du er alene ansvarlig for innholdet du får tilgang til&#10;• Du bekrefter at du har lovlig rett til å strømme dette innholdet i din jurisdiksjon&#10;• Nuvio hoster, distribuerer eller kontrollerer ikke noe P2P-innhold&#10;• Nuvio har intet ansvar for juridiske konsekvenser som følger av din bruk av P2P-strømming&#10;&#10;Du bruker denne funksjonen helt på eget ansvar. P2P kan deaktiveres når som helst i innstillingene.</string>
   <string name="p2p_consent_enable">Aktiver P2P</string>
   <string name="p2p_consent_cancel">Avbryt</string>
   <string name="settings_p2p_title">P2P-strømming</string>

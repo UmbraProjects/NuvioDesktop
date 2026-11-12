@@ -173,10 +173,22 @@ internal fun artistStageFacts(artist: LibraryArtist, total: Int, playable: Int):
 }
 
 /**
- * The Facts card under the story: what the library knows beyond the four tiles (years active, style, mood, genres, first and
- * latest release). Rows with nothing to say are left out.
+ * The facts under the artist's story, as the left panel draws them: the years active as a line of its own, the span of
+ * releases under it, and the genres, style and mood as quiet tags. Anything unknown is left out.
  */
-internal fun artistFactRows(artist: LibraryArtist): List<Pair<String, String>> {
+internal class ArtistFactSheet(
+    /** "2011–present", "1958–2009". */
+    val years: String?,
+    /** "Releases 2012 to 2027", or "First release 2012" when there is one year. */
+    val releases: String?,
+    /** Genres (three at most), then the style when it is not one of them. */
+    val tags: List<String>,
+    val mood: String?,
+) {
+    val isEmpty: Boolean get() = years == null && releases == null && tags.isEmpty() && mood == null
+}
+
+internal fun artistFactSheet(artist: LibraryArtist): ArtistFactSheet {
     val years = artist.beginYear?.takeIf { it.isNotBlank() }?.let { begin ->
         when {
             artist.ended && artist.endYear != null -> "$begin–${artist.endYear}"
@@ -185,13 +197,20 @@ internal fun artistFactRows(artist: LibraryArtist): List<Pair<String, String>> {
         }
     }
     val dates = artist.releases.mapNotNull { (it.year ?: it.releaseDate)?.take(4)?.takeIf { y -> y.length == 4 && y.all(Char::isDigit) } }
-    return listOfNotNull(
-        years?.let { "Years active" to it },
-        artist.genres.take(3).takeIf { it.isNotEmpty() }?.let { "Genres" to it.joinToString(", ") },
-        artist.style?.takeIf { it.isNotBlank() }?.let { "Style" to it },
-        artist.mood?.takeIf { it.isNotBlank() }?.let { "Mood" to it },
-        dates.minOrNull()?.let { "First release" to it },
-        dates.maxOrNull()?.takeIf { it != dates.minOrNull() }?.let { "Latest release" to it },
+    val first = dates.minOrNull()
+    val last = dates.maxOrNull()
+    val releases = when {
+        first == null -> null
+        last == null || last == first -> "First release $first"
+        else -> "Releases $first to $last"
+    }
+    val genres = artist.genres.take(3)
+    val style = artist.style?.takeIf { it.isNotBlank() && genres.none { g -> g.equals(it, ignoreCase = true) } }
+    return ArtistFactSheet(
+        years = years,
+        releases = releases,
+        tags = genres + listOfNotNull(style),
+        mood = artist.mood?.takeIf { it.isNotBlank() },
     )
 }
 

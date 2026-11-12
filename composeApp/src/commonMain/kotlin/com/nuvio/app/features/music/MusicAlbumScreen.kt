@@ -6,6 +6,7 @@ import com.nuvio.app.features.music.nebula.NebulaSourceRow
 import com.nuvio.app.features.music.nebula.rememberNebulaAlbumController
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.LibraryAdd
@@ -114,7 +115,6 @@ import com.nuvio.app.features.music.booklet.Pins
 import com.nuvio.app.features.music.booklet.TrackNotes
 import com.nuvio.app.features.music.booklet.StartHere
 import com.nuvio.app.features.music.library.ArtistTopSongs
-import com.nuvio.app.features.music.library.ESSENTIAL_ALBUM_COUNT
 import com.nuvio.app.features.music.library.EssentialSong
 import com.nuvio.app.features.music.library.essentialSongs
 import com.nuvio.app.features.music.library.playTopAlbums
@@ -238,10 +238,6 @@ private fun AlbumContent(
     val colors = MaterialTheme.nuvio.colors
     val state by player.state.collectAsStateWithLifecycle()
     var chosenMode by rememberSaveable(album.browseId) { mutableStateOf(player.state.value.mode) }
-    var descriptionOpen by rememberSaveable(album.browseId) { mutableStateOf(false) }
-    var flipped by rememberSaveable(album.browseId) { mutableStateOf(false) }
-    // null follows playback (the disc comes out while the album plays); a tap on the button takes over.
-    var discChoice by rememberSaveable(album.browseId) { mutableStateOf<Boolean?>(null) }
     val reducedMotion = rememberMusicReducedMotion()
     // Looks the album's artist up in the background (not saved) so an album opened from Search gets
     // the same label, mood, CD art and palette as one from the library. A saved artist is left alone.
@@ -282,8 +278,6 @@ private fun AlbumContent(
     // While this album plays, the player's mode is the truth: a failed switch to video leaves it on audio.
     val mode = if (loaded) state.mode else chosenMode
 
-    val playing = loaded && state.isPlaying
-    val discOut = discChoice ?: playing
     // fork:essentials - the artist's best songs and albums for the right-hand column, and the popularity bars and SINGLE
     // badges in the track list. Deezer's top songs and the library's own ranking; nothing here needs the AI.
     val artistInfo = info?.artist
@@ -297,34 +291,24 @@ private fun AlbumContent(
     val singles = remember(artistReleases) { singleKeys(artistReleases) }
     val hereKeys = remember(view.tracks) { view.tracks.map { songKey(it.title) }.toSet() }
     val hereReleaseKey = info?.release?.key
-    val essentialAlbums = remember(artistInfo, album.browseId, hereReleaseKey) {
+    // fork:lenses - the Hits tab: nine best songs (a 3 by 3 grid) and five best albums, more than the old column's six and four.
+    val hitsSongs = remember(topSongs, artistReleases) { essentialSongs(topSongs, artistReleases, limit = HITS_SONGS) }
+    val hitsAlbums = remember(artistInfo, album.browseId, hereReleaseKey) {
         artistInfo?.let { a ->
-            val top = selectTopAlbums(a, ESSENTIAL_ALBUM_COUNT)
-            // Only the really ranked ones: the rest of the five are just the newest, which is what this column replaces.
+            val top = selectTopAlbums(a, HITS_ALBUMS)
             top.releases.take(top.rankedCount).mapIndexed { i, r ->
                 EssentialAlbum(r, i + 1, here = r.ytBrowseId == album.browseId || r.key == hereReleaseKey)
             }
         }.orEmpty()
     }
-    // "Start here": one short AI recommendation per artist, asked once the albums and songs are known (a kept one shows at once).
     val artistName = artistInfo?.name
-    val startAlbums = remember(essentialAlbums) { essentialAlbums.map { a -> a.release.title + a.release.year?.let { y -> " ($y)" }.orEmpty() } }
-    val startReady = startAlbums.size >= 2 && (deezerId == null || topSongs.isNotEmpty())
     // Settings > Music > Album notes and facts: off, none of the written notes (Start here, In brief, song notes and
     // stories) is looked up or shown.
     val notesOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.albumNotes
-    var startHere by remember(artistName, notesOn) { mutableStateOf(artistName?.takeIf { notesOn }?.let { StartHere.peek(it) }) }
-    LaunchedEffect(artistName, startReady, notesOn) {
-        if (notesOn && artistName != null && startReady && startHere == null) {
-            startHere = StartHere.forArtist(artistName, startAlbums, essentialSongList.map { it.title }.take(5))
-        }
-    }
     // The album's notes under the case: the cache's (free), and the live ones while this album plays, as on the Stage.
     val bookletRequest = remember(album.browseId, artistInfo, notesOn) { if (notesOn) bookletRequestFor(album, artistInfo) else null }
     // Bumped after a pin is saved or cleared, so what is kept (and the pins laid over it) is read again.
     var pinTick by remember { mutableStateOf(0) }
-    // The pin key of the album's introduction, edited from the In brief card.
-    val introKey = bookletRequest?.let { PinKeys.intro(it.artist, it.album) }
     val cachedBooklet = remember(bookletRequest, loaded, pinTick) { bookletRequest?.let { AlbumBookletRepository.peek(it) } }
     val liveUi = if (loaded) rememberBookletUi(album, artistInfo) else null
     val liveBooklet = liveUi as? BookletUi.Ready
@@ -336,37 +320,8 @@ private fun AlbumContent(
     LaunchedEffect(bookletRequest, notesSettled) {
         if (bookletRequest != null && notesSettled) songNotes = TrackNotes.load(bookletRequest, booklet?.intro)
     }
-    // The line about the song playing: the notes' own word on it, else what is known of it (no AI needed).
-    val playingTrack = if (loaded) view.tracks.getOrNull(state.trackIndex) else null
-    val playingNote = playingTrack?.let { t ->
-        booklet?.trackNotes?.get(state.trackIndex + 1) ?: songNotes.lineFor(state.trackIndex + 1) ?: listOfNotNull(
-            "Released as a single".takeIf { songKey(t.title) in singles },
-            songRank(t.title, topSongs)?.let { "No. $it of ${artistName ?: "the artist"}'s most played songs" },
-            "Track ${state.trackIndex + 1} of ${view.tracks.size}",
-        ).joinToString(" · ")
-    }
-    // The starter path: the albums the recommendation names, in the order it names them, played one after the other.
+    // Plays a lens's records one after another (Lineage's roots and branches).
     val pathScope = rememberCoroutineScope()
-    val pathReleases = remember(startHere, essentialAlbums) {
-        startHere?.let { text -> starterPath(text, essentialAlbums.map { it.release.title }).map { essentialAlbums[it].release } }.orEmpty()
-    }
-    val playPath: (() -> Unit)? =
-        if (pathReleases.size >= 2) ({ pathScope.launch { playTopAlbums(catalog, pathReleases, shuffled = false) }; Unit }) else null
-    // Board 3: the object (case, disc and its two toggles) on the left, everything about the record on the right.
-    val objectPanel: @Composable (Dp, Boolean) -> Unit = { caseSize, discUp ->
-        AlbumObjectPanel(
-            album = album,
-            info = info,
-            flipped = flipped,
-            discOut = discOut || discUp,
-            discSpinning = (discOut || discUp) && playing,
-            reducedMotion = reducedMotion,
-            caseSize = caseSize,
-            discUp = discUp,
-            onFlip = { flipped = !flipped },
-            onDisc = { out -> discChoice = out },
-        )
-    }
     val actionRow: @Composable () -> Unit = {
         val canPlay = view.tracks.any { it.isAvailable }
         val addonReady = nebula?.offer is NebulaOffer.Available
@@ -427,56 +382,30 @@ private fun AlbumContent(
             }
         }
     }
-    val noteLines: @Composable () -> Unit = {
-        // The lines under the buttons say only what needs saying, centred like everything above them.
-        nebula?.let { NebulaSourceRow(it, onRetry = { nebulaRetry++ }) } // fork:nebula
-        val note = when {
-            loaded && state.notice != null -> state.notice
-            mode == MusicPlayMode.Video -> "Tracks without a music video are skipped."
-            else -> null
-        }
-        if (note != null) {
-            Text(
-                text = note,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (loaded && state.notice != null) colors.warning else colors.textSecondary,
-                textAlign = TextAlign.Center,
-            )
-        }
+    // fork:lenses - the lines under the buttons, in a fixed box: the addon line, then everything else joined on one line, cut
+    // short rather than wrapped, so nothing spills under the tabs below it.
+    val lensNoteLines: @Composable () -> Unit = {
+        nebula?.let { NebulaSourceRow(it, onRetry = { nebulaRetry++ }) }
+        val warning = if (loaded && state.notice != null) state.notice else null
         val unavailable = view.tracks.count { !it.isAvailable }
-        if (unavailable > 0) {
-            Text(
-                "$unavailable track${if (unavailable == 1) "" else "s"} unavailable${if (wantNebula) " on your addon" else " on YouTube Music"}.",
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textMuted,
-                textAlign = TextAlign.Center,
-            )
-        }
-        // Where the library and YouTube Music disagree is worth a line: it explains a "missing" song.
         val listed = info?.release?.trackCount
-        if (listed != null && listed != album.tracks.size) {
+        val parts = listOfNotNull(
+            warning,
+            "Tracks without a music video are skipped".takeIf { warning == null && mode == MusicPlayMode.Video },
+            "$unavailable track${if (unavailable == 1) "" else "s"} unavailable${if (wantNebula) " on your addon" else " on YouTube Music"}".takeIf { unavailable > 0 },
+            "your library lists $listed tracks".takeIf { listed != null && listed != album.tracks.size },
+        ).map { it.trimEnd('.') }
+        if (parts.isNotEmpty()) {
             Text(
-                "Your library lists $listed tracks for this release; YouTube Music has ${album.tracks.size}.",
+                parts.joinToString("  ·  ") + ".",
                 style = MaterialTheme.typography.bodySmall,
-                color = colors.textMuted,
+                color = if (warning != null) colors.warning else colors.textSecondary,
                 textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
-    val facts: @Composable () -> Unit = {
-        AlbumFacts(album = album, info = info, onArtistClick = onArtistClick)
-        info?.release?.let { release ->
-            // Liner notes: genre chips with the mood in the accent, and the description.
-            AlbumLinerNotes(
-                notes = buildLinerNotes(release, album.year),
-                descriptionOpen = descriptionOpen,
-                onToggleDescription = { descriptionOpen = !descriptionOpen },
-            )
-        }
-        actionRow()
-        noteLines()
-    }
-
     // fork:music-menu - one hold-to-select timer for the page's song rows.
     val trackHold = com.nuvio.app.core.ui.rememberHoldToSelectState()
     fun tapTrack(index: Int) {
@@ -494,27 +423,8 @@ private fun AlbumContent(
         val index = view.tracks.indexOfFirst { it.isAvailable && songKey(it.title) == key }
         if (index >= 0) tapTrack(index) else song.release?.ytBrowseId?.let(onAlbumClick)
     }
-    val pane: LazyListScope.() -> Unit = {
-        item(key = "legend") { TrackLegend() }
-        itemsIndexed(view.tracks) { index, track ->
-            TrackRow(
-                album = album,
-                track = track,
-                current = playingRow == index,
-                modifier = if (index == firstPlayable) Modifier.focusRequester(firstTrackFocus) else Modifier,
-                onAddToPlaylist = album.tracks.getOrNull(index)?.let { own -> { PlaylistPicker.request(listOf(own.forPlaylist(album))) } },
-                popularity = popularity.getOrNull(index),
-                single = songKey(track.title) in singles,
-                onClick = { tapTrack(index) },
-            )
-        }
-    }
-    val more = info?.more.orEmpty()
-    val moreTitle = "More from ${info?.artist?.name ?: "this artist"}"
-
     // fork:lenses - the redesigned page (Music settings, "New album page"), on a window wide enough for its three columns.
     val libraryState = MusicLibraryRepository.state.collectAsStateWithLifecycle().value
-    val lensesOn = libraryState.settings.albumLenses
     var lens by rememberSaveable(album.browseId) { mutableStateOf(AlbumLens.SongBySong) }
     // The song the lens is about: the one the keyboard or a click is on, else the one playing, else the first that plays.
     var lensFocus by remember(album.browseId) { mutableStateOf<Int?>(null) }
@@ -537,8 +447,8 @@ private fun AlbumContent(
     // The album's other editions on YouTube Music (its "Other versions" shelf: the censored "2001" beside the explicit one),
     // so the panel can offer the same song on them. Read once the lens is on screen; the catalog keeps them in memory.
     var editions by remember(album.browseId) { mutableStateOf<List<MusicAlbum>>(emptyList()) }
-    LaunchedEffect(lensesOn, lens, album.browseId) {
-        if (!lensesOn || lens != AlbumLens.SongBySong || album.otherVersionIds.isEmpty() || editions.isNotEmpty()) return@LaunchedEffect
+    LaunchedEffect(lens, album.browseId) {
+        if (!lens.songPanels || album.otherVersionIds.isEmpty() || editions.isNotEmpty()) return@LaunchedEffect
         val found = ArrayList<MusicAlbum>()
         for (id in album.otherVersionIds.take(MAX_LENS_EDITIONS)) {
             val other = try {
@@ -571,8 +481,8 @@ private fun AlbumContent(
         mutableStateOf(if (notesOn && lensArtist != null && storyKey != null) SongStories.peek(lensArtist, storyKey) else null)
     }
     var lensStoryLoading by remember(lensArtist, storyKey) { mutableStateOf(false) }
-    LaunchedEffect(lensesOn, lens, lensArtist, storyKey, notesOn) {
-        if (!notesOn || !lensesOn || lens != AlbumLens.SongBySong || lensArtist == null || storyKey == null) return@LaunchedEffect
+    LaunchedEffect(lens, lensArtist, storyKey, notesOn) {
+        if (!notesOn || !lens.songPanels || lensArtist == null || storyKey == null) return@LaunchedEffect
         // A kept Wikipedia-only story stays on screen while the AI is asked to write it up (when a key is set); a kept AI
         // story, or one with no key to improve it, needs nothing.
         val aiReady = com.nuvio.app.features.discover.DiscoverAiSettingsRepository.snapshot().isConfigured
@@ -585,8 +495,8 @@ private fun AlbumContent(
     }
     // The album's own note on the song (one AI request for the whole album, or MusicBrainz's credits), for a song with no
     // article. The classic page asks for these only while the album plays; the lens asks once the page is open.
-    LaunchedEffect(lensesOn, bookletRequest) {
-        if (!lensesOn || bookletRequest == null || songNotes.ai.isNotEmpty() || songNotes.credits.isNotEmpty()) return@LaunchedEffect
+    LaunchedEffect(bookletRequest) {
+        if (bookletRequest == null || songNotes.ai.isNotEmpty() || songNotes.credits.isNotEmpty()) return@LaunchedEffect
         delay(LENS_STORY_REST_MS)
         songNotes = runCatching { TrackNotes.load(bookletRequest, booklet?.intro) }.getOrDefault(songNotes)
     }
@@ -620,8 +530,8 @@ private fun AlbumContent(
     val bestOf = remember(cutTitles, popularity) { bestOfPick(cutTitles, popularity) }
     var cutAiPick by remember(album.browseId, cutMood) { mutableStateOf(CutPicks.peek(album.browseId, cutMood, cutTitles.size)) }
     var cutLoading by remember(album.browseId, cutMood) { mutableStateOf(false) }
-    LaunchedEffect(lensesOn, lens, cutMood, album.browseId) {
-        if (!lensesOn || lens != AlbumLens.CutToFit || !cutMood.ai || cutAiPick != null || !cutAiReady) return@LaunchedEffect
+    LaunchedEffect(lens, cutMood, album.browseId) {
+        if (lens != AlbumLens.CutToFit || !cutMood.ai || cutAiPick != null || !cutAiReady) return@LaunchedEffect
         cutLoading = true
         cutAiPick = runCatching {
             CutPicks.load(album.browseId, lensArtist ?: "", album.title, cutTitles, cutDurations, cutMood)
@@ -655,14 +565,14 @@ private fun AlbumContent(
         }
     }
     var sonicPrints by remember(album.browseId) { mutableStateOf<List<SoundPrint?>>(emptyList()) }
-    LaunchedEffect(lensesOn, lens, album.browseId, printTick, historyTick) {
-        if (!lensesOn || lens != AlbumLens.SonicMap) return@LaunchedEffect
+    LaunchedEffect(lens, album.browseId, printTick, historyTick) {
+        if (lens != AlbumLens.SonicMap) return@LaunchedEffect
         sonicPrints = withContext(Dispatchers.Default) { sonicKeys.map { keys -> keys.firstNotNullOfOrNull { loadSoundPrint(it) } } }
     }
     var sonicGuesses by remember(album.browseId) { mutableStateOf(SonicGuesses.peek(album.browseId, view.tracks.size)) }
     var sonicLoading by remember(album.browseId) { mutableStateOf(false) }
-    LaunchedEffect(lensesOn, lens, album.browseId) {
-        if (!lensesOn || lens != AlbumLens.SonicMap || sonicGuesses != null || !SonicGuesses.available() || lensArtist == null) return@LaunchedEffect
+    LaunchedEffect(lens, album.browseId) {
+        if (lens != AlbumLens.SonicMap || sonicGuesses != null || !SonicGuesses.available() || lensArtist == null) return@LaunchedEffect
         sonicLoading = true
         sonicGuesses = runCatching { SonicGuesses.load(album.browseId, lensArtist, album.title, view.tracks.map { it.title }) }.getOrNull()
         sonicLoading = false
@@ -687,8 +597,8 @@ private fun AlbumContent(
     }
     var creditsLoading by remember(album.browseId) { mutableStateOf(false) }
     var creditsAsked by remember(album.browseId) { mutableStateOf(false) }
-    LaunchedEffect(lensesOn, lens, album.browseId) {
-        if (!lensesOn || lens != AlbumLens.Credits || albumCredits != null || creditsArtist == null) return@LaunchedEffect
+    LaunchedEffect(lens, album.browseId) {
+        if (lens != AlbumLens.Credits || albumCredits != null || creditsArtist == null) return@LaunchedEffect
         creditsLoading = true
         albumCredits = PeopleCreditsBook.load(creditsArtist, album.title, album.browseId)
         creditsLoading = false
@@ -704,8 +614,8 @@ private fun AlbumContent(
         chosen?.let { p -> if (p.wholeAlbum) view.tracks.indices.toSet() else p.tracks.map { it - 1 }.filter { it in view.tracks.indices }.toSet() }.orEmpty()
     }
     var keptCredits by remember { mutableStateOf<Map<String, AlbumCredits>>(emptyMap()) }
-    LaunchedEffect(lensesOn, lens, creditsTick) {
-        if (!lensesOn || lens != AlbumLens.Credits) return@LaunchedEffect
+    LaunchedEffect(lens, creditsTick) {
+        if (lens != AlbumLens.Credits) return@LaunchedEffect
         keptCredits = withContext(Dispatchers.Default) { PeopleCreditsBook.allKept() }
     }
     val hereKey = creditsArtist?.let { creditsKey(it, album.title) }
@@ -735,8 +645,8 @@ private fun AlbumContent(
     var lineageAsked by remember(album.browseId) { mutableStateOf(false) }
     // True once the AI has answered or failed, so the panel stops saying it is asking the AI.
     var lineageAiDone by remember(album.browseId) { mutableStateOf(!lineageAiReady) }
-    LaunchedEffect(lensesOn, lens, album.browseId) {
-        if (!lensesOn || lens != AlbumLens.Lineage || lineageAt == null || lensArtist == null) return@LaunchedEffect
+    LaunchedEffect(lens, album.browseId) {
+        if (lens != AlbumLens.Lineage || lineageAt == null || lensArtist == null) return@LaunchedEffect
         // An open-data lineage kept from before an AI key was set still asks the AI once; the AI's answer replaces it.
         val kept = lineage
         if (kept != null && (kept.byAi || !lineageAiReady)) {
@@ -806,38 +716,21 @@ private fun AlbumContent(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // Wide enough for three columns: the object, the record and its songs, then the artist's best down the right. The two
-        // side columns are the same width (and padded as mirrors), so the record is centred on the window, always in the same
-        // place however long the track list is, and a window with nothing for the right keeps the space. Narrower, More from
-        // goes under the songs.
-        // The case grows with the window (a TV is read from the sofa) and the column grows with it, so the unused strip
-        // beside the case stays the same. A function of the window width only, never of content: nothing moves.
-        val grownCase = albumCaseSize(maxWidth)
-        val grownColumn = albumObjectColumnWidth(grownCase)
-        // 1320 dp and up (the record keeps at least 520 dp): both sides are the object column's width, or half of what the
-        // record leaves when the window is not wide enough for that (never under 400 dp), and the case shrinks to fit.
-        val sideRight = maxWidth >= 1320.dp
-        val sideWidth = if (sideRight) minOf(grownColumn, ((maxWidth - 520.dp) / 2).coerceAtLeast(400.dp)) else grownColumn
-        // The case and the disc peeking out of it are 1.3 times as wide as the case, and must fit the column's 44 dp of padding.
-        // Three columns: the flat case is as wide as the cards below it (edge to edge), its top level with the first of the best
-        // songs opposite and its foot a gap above the In brief card; the disc is always out, a crescent over its top. When the
-        // window is too short for that the case shrinks. Window size only, never content.
-        val caseTop = ESSENTIALS_FIRST_ROW_TOP
-        val caseSize = if (sideRight) {
-            minOf(sideWidth - 44.dp, maxHeight - 32.dp - AI_CARD_HEIGHT - 24.dp - caseTop).coerceAtLeast(300.dp)
-        } else grownCase
-        val essentialsOn = essentialSongList.isNotEmpty() || essentialAlbums.isNotEmpty()
-        if (lensesOn && sideRight) {
+        run {
             // fork:lenses - three columns of fixed size: the two panels are mirrors, the middle takes the rest. Every size here
             // comes from the window; a lens fills boxes, it never moves one.
             val panel = lensPanelWidth(maxWidth)
+            // Short of room the panels go, never the songs: the left panel first, then the right; the middle keeps 640 dp.
+            // Window width only, so nothing moves with what the album holds.
+            val showRight = lensShowsRight(maxWidth, panel)
+            val showLeft = lensShowsLeft(maxWidth, panel)
             Row(
                 Modifier.fillMaxSize().padding(start = LENS_OUTER, end = LENS_OUTER, top = 8.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(LENS_GAP),
             ) {
                 val panelModifier = Modifier.width(panel)
-                when (lens) {
-                    AlbumLens.SongBySong -> SongBySongLeft(
+                if (showLeft) when (lens) {
+                    AlbumLens.SongBySong, AlbumLens.BestOf -> SongBySongLeft(
                         song = lensSong,
                         story = lensStory,
                         note = lensNote,
@@ -1015,7 +908,7 @@ private fun AlbumContent(
                         Modifier.fillMaxWidth().height(LENS_NOTE_LINES_HEIGHT).clipToBounds().padding(top = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) { noteLines() }
+                    ) { lensNoteLines() }
                     AlbumLensTabs(selected = lens, onSelect = { lens = it })
                     if (lens == AlbumLens.SonicMap) {
                         SonicMapCentre(
@@ -1032,6 +925,18 @@ private fun AlbumContent(
                             reducedMotion = reducedMotion,
                             // The dock stands over the bottom of the middle column: the map ends clear of it.
                             modifier = Modifier.weight(1f).fillMaxWidth().padding(top = 16.dp, bottom = LENS_MAP_BOTTOM),
+                        )
+                    } else if (lens == AlbumLens.BestOf) {
+                        BestOfCentre(
+                            artist = artistName ?: "This artist",
+                            songs = hitsSongs,
+                            hereKeys = hereKeys,
+                            albums = hitsAlbums,
+                            onSongClick = onEssentialSong,
+                            onAlbumClick = onAlbumClick,
+                            maxWidth = HITS_MAX_WIDTH,
+                            bottom = LENS_LIST_BOTTOM,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
                     } else LazyColumn(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1074,6 +979,7 @@ private fun AlbumContent(
                                 popularity = popularity.getOrNull(index),
                                 single = songKey(track.title) in singles,
                                 marked = (lens == AlbumLens.SongBySong && index in lensMarked) || (lens == AlbumLens.Credits && index in chosenTracks),
+                                markWash = lens != AlbumLens.Credits,
                                 inFocus = lens == AlbumLens.SongBySong && index == lensIndex,
                                 inlineCredit = true,
                                 cutView = lens == AlbumLens.CutToFit,
@@ -1086,8 +992,8 @@ private fun AlbumContent(
                         }
                     }
                 }
-                when (lens) {
-                    AlbumLens.SongBySong -> SongBySongRight(
+                if (showRight) when (lens) {
+                    AlbumLens.SongBySong, AlbumLens.BestOf -> SongBySongRight(
                         title = lensTrack?.title,
                         versions = lensVersions,
                         counts = versionCounts(lensVersions),
@@ -1266,89 +1172,6 @@ private fun AlbumContent(
                     else -> LensComingSoon(lens, left = false, modifier = panelModifier)
                 }
             }
-        } else if (maxWidth >= 840.dp) {
-            Row(Modifier.fillMaxSize()) {
-                if (sideRight) {
-                    // The In brief card stands on the column's bottom edge, level with Start here opposite it: the same height
-                    // and the same 32 dp from the bottom, so the two lines match whatever is in them.
-                    Box(Modifier.width(sideWidth).fillMaxHeight()) {
-                        Column(
-                            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                                .padding(start = 32.dp, end = 12.dp, top = (caseTop - caseSize * DISC_PEEK).coerceAtLeast(8.dp), bottom = 32.dp + AI_CARD_HEIGHT + 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                        ) { objectPanel(caseSize, true) }
-                        booklet?.let {
-                            AlbumInBriefCard(it, playingNote, Modifier.align(Alignment.BottomCenter).padding(start = 32.dp, end = 12.dp, bottom = 32.dp).height(AI_CARD_HEIGHT), introKey = introKey, onIntroChanged = { pinTick++ })
-                        }
-                    }
-                } else Column(
-                    Modifier.width(sideWidth).fillMaxHeight().verticalScroll(rememberScrollState())
-                        .padding(start = 32.dp, end = 12.dp, top = 24.dp, bottom = 32.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    objectPanel(caseSize, false)
-                    booklet?.let { AlbumInBriefCard(it, playingNote, introKey = introKey, onIntroChanged = { pinTick++ }) }
-                }
-                LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    // Mirrored side columns: 12 dp from each, so the record is centred on the window (level with the docked player).
-                    contentPadding = PaddingValues(
-                        start = 12.dp,
-                        end = if (sideRight) 12.dp else 32.dp,
-                        top = 16.dp,
-                        bottom = 40.dp,
-                    ),
-                    // The record sits centred between the object on the left and More from on the right.
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    item(key = "facts") {
-                        Column(
-                            Modifier.widthIn(max = 720.dp).padding(bottom = 18.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(14.dp),
-                        ) { facts() }
-                    }
-                    pane()
-                    if (!sideRight && more.isNotEmpty()) item(key = "more") { MoreFromRow(moreTitle, more, onAlbumClick) }
-                }
-                if (sideRight) {
-                    when {
-                        essentialsOn -> EssentialsColumn(
-                            artist = artistName ?: "This artist",
-                            songs = essentialSongList,
-                            hereKeys = hereKeys,
-                            albums = essentialAlbums,
-                            startHere = startHere,
-                            onPlayPath = playPath,
-                            onSongClick = onEssentialSong,
-                            onAlbumClick = onAlbumClick,
-                            tile = ((sideWidth - 44.dp - 42.dp) / 4).coerceAtMost(108.dp),
-                            modifier = Modifier.width(sideWidth).fillMaxHeight(),
-                        )
-                        more.isNotEmpty() -> MoreFromColumn(moreTitle, more, onAlbumClick, sideWidth)
-                        else -> Spacer(Modifier.width(sideWidth))
-                    }
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
-            ) {
-                item(key = "object") {
-                    Column(Modifier.padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) { objectPanel(240.dp, false) }
-                }
-                booklet?.let { item(key = "brief") { AlbumInBriefCard(it, playingNote, Modifier.padding(bottom = 16.dp), introKey = introKey, onIntroChanged = { pinTick++ }) } }
-                item(key = "facts") {
-                    Column(
-                        Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                    ) { facts() }
-                }
-                pane()
-                if (more.isNotEmpty()) item(key = "more") { MoreFromRow(moreTitle, more, onAlbumClick) }
-            }
         }
     }
 }
@@ -1356,17 +1179,13 @@ private fun AlbumContent(
 /** Narrow enough that a song's length reads with its title, as on a record sleeve. */
 private val TRACK_ROW_MAX_WIDTH = 600.dp
 
+/** fork:lenses - the Hits tab: a wider column than the song list, nine songs and five albums. */
+private val HITS_MAX_WIDTH = 900.dp
+private const val HITS_SONGS = 9
+private const val HITS_ALBUMS = 5
+
 /** One round button in the album's action row. */
 private class AlbumAction(val label: String, val icon: ImageVector, val active: Boolean, val onClick: () -> Unit)
-private val MORE_TILE = 150.dp
-private const val TOP_ROW_SCROLL_DELAY_MS = 180L
-private val MORE_GAP = 16.dp
-private val OBJECT_COLUMN_WIDTH = 520.dp
-private val CASE_SIZE_MIN = 340.dp
-private val CASE_SIZE_MAX = 420.dp
-private val CASE_GROWS_FROM = 1500.dp
-/** The case plus the disc that slides out of it (see the `peek` passed to AlbumObject), as a share of the case's height. */
-private const val CASE_WIDTH_FACTOR = 1.3f
 
 /** fork:lenses - how long the cursor rests on a song before its story is asked for. */
 private const val LENS_STORY_REST_MS = 600L
@@ -1386,180 +1205,7 @@ private const val LENS_SUGGESTIONS = 4
 /** fork:lenses - the box under the buttons for the addon line and the notices: up to two lines, never more. */
 private val LENS_NOTE_LINES_HEIGHT = 52.dp
 
-/** fork:case - how far the always-out disc stands over the case's top, as a share of the case's height. */
-private const val DISC_PEEK = 0.22f
 
-/** fork:case - where the first of the Essentials' best songs starts down the page; the case's top stands level with it. */
-private val ESSENTIALS_FIRST_ROW_TOP = 165.dp
-
-/**
- * The album case's height for a window [width]: 340 dp up to 1500 dp wide (as before), then growing to 420 dp by about
- * 1920 dp, so on a TV the cover is the hero of the page. Window width only; the cover, the tracks and the artist never
- * change it.
- */
-internal fun albumCaseSize(width: Dp): Dp {
-    val grown = CASE_SIZE_MIN.value + (width.value - CASE_GROWS_FROM.value).coerceAtLeast(0f) * 0.19f
-    return grown.coerceAtMost(CASE_SIZE_MAX.value).dp
-}
-
-/** The object column's width for a case: 520 dp at the smallest case, wider by the case's growth times its width factor. */
-internal fun albumObjectColumnWidth(caseSize: Dp): Dp =
-    OBJECT_COLUMN_WIDTH + (caseSize - CASE_SIZE_MIN) * CASE_WIDTH_FACTOR
-
-/** More from the artist down the right of a wide window: two columns of covers, scrolling on their own. */
-@Composable
-private fun MoreFromColumn(title: String, more: List<LibraryRelease>, onAlbumClick: (String) -> Unit, width: Dp) {
-    val colors = MaterialTheme.nuvio.colors
-    val gridState = rememberLazyGridState()
-    val scope = rememberCoroutineScope()
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        state = gridState,
-        modifier = Modifier.width(width).fillMaxHeight(),
-        contentPadding = PaddingValues(start = 12.dp, end = 32.dp, top = 24.dp, bottom = 40.dp),
-        horizontalArrangement = Arrangement.spacedBy(MORE_GAP),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
-        item(key = "title", span = { GridItemSpan(maxLineSpan) }) {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-        }
-        gridItemsIndexed(more, key = { _, release -> release.key }) { index, release ->
-            val topRow = index < 2
-            Box(
-                Modifier
-                    // Arriving on the top row scrolls back to the title, so the column is seen from its start again. After the
-                    // focused tile's own scroll into view, which starts on the same frame and would cancel this one.
-                    .onFocusChanged {
-                        if (it.hasFocus && topRow) scope.launch {
-                            delay(TOP_ROW_SCROLL_DELAY_MS)
-                            gridState.animateScrollToItem(0)
-                        }
-                    }
-                    .onKeyEvent { event ->
-                        topRow && event.type == KeyEventType.KeyDown && arrowFocusDirection(event) == FocusDirection.Up
-                    },
-            ) { MoreFromTile(release, MORE_TILE, onAlbumClick) }
-        }
-    }
-}
-
-/** More from the artist under the songs, on a narrower window: one sideways row. */
-@Composable
-private fun MoreFromRow(title: String, more: List<LibraryRelease>, onAlbumClick: (String) -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    Column(Modifier.padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            items(more, key = { it.key }) { release -> MoreFromTile(release, 124.dp, onAlbumClick) }
-        }
-    }
-}
-
-@Composable
-private fun MoreFromTile(release: LibraryRelease, size: Dp, onAlbumClick: (String) -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    Column(
-        Modifier.width(size).clip(RoundedCornerShape(10.dp)).musicKeyFocusRing(RoundedCornerShape(10.dp)).clickable { release.ytBrowseId?.let(onAlbumClick) },
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        MusicCover(release.art.cover, release.title, size = size)
-        Text(release.title, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(
-            listOfNotNull(release.year, release.kind.label.takeIf { it != "Album" }).joinToString(" · "),
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textSecondary,
-            maxLines = 1,
-        )
-    }
-}
-
-/** The object itself (click to flip, drag to slide the disc), with a hint and a line saying where the art comes from. */
-@Composable
-private fun AlbumObjectPanel(
-    album: MusicAlbum,
-    info: LibraryAlbumInfo?,
-    flipped: Boolean,
-    discOut: Boolean,
-    discSpinning: Boolean,
-    reducedMotion: Boolean,
-    caseSize: Dp,
-    discUp: Boolean,
-    onFlip: () -> Unit,
-    onDisc: (out: Boolean) -> Unit,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // The case turns to its back cover (a click) and the disc slides out of it (a sideways drag); both snap
-        // under reduced motion.
-        AlbumObject(
-            album = album,
-            release = info?.release,
-            flipped = flipped,
-            discOut = discOut,
-            discSpinning = discSpinning,
-            reducedMotion = reducedMotion,
-            size = caseSize,
-            peek = if (discUp) DISC_PEEK else 0.3f,
-            discUp = discUp,
-            onFlip = onFlip,
-            onDisc = onDisc,
-        )
-    }
-}
-
-/** Kicker, serif title, artist line (photo, name, label, date) and the length line, as on board 3. */
-@Composable
-private fun AlbumFacts(album: MusicAlbum, info: LibraryAlbumInfo?, onArtistClick: (String) -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    val artistId = album.artists.firstOrNull()?.browseId
-    val minutes = album.tracks.sumOf { it.durationSeconds } / 60
-    val kicker = listOfNotNull(
-        album.kind,
-        album.year,
-        "${album.tracks.size} track${if (album.tracks.size == 1) "" else "s"}",
-        "$minutes min".takeIf { minutes > 0 },
-    ).joinToString(" · ").uppercase()
-    val notes = buildLinerNotes(info?.release, album.year)
-    val credit = listOfNotNull(notes.label, notes.date, "Explicit".takeIf { notes.explicit }).joinToString(" · ")
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = kicker,
-            style = MaterialTheme.typography.labelLarge,
-            color = colors.accent,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 1.6.sp,
-        )
-        Text(
-            text = album.title,
-            style = MaterialTheme.typography.displaySmall,
-            fontFamily = FontFamily.Serif,
-            color = colors.textPrimary,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-        )
-        if (album.artists.isNotEmpty()) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = if (artistId != null) Modifier.clip(RoundedCornerShape(8.dp)).musicKeyFocusRing(RoundedCornerShape(8.dp)).clickable { onArtistClick(artistId) } else Modifier,
-            ) {
-                info?.artist?.art?.thumb?.let { MusicCover(it, description = null, size = 30.dp, circle = true) }
-                Text(
-                    text = album.artists.joinToString(", ") { it.name },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (artistId != null) colors.accent else colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (credit.isNotEmpty()) {
-                    Text("· $credit", style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
-    }
-}
 
 /** The column names above the songs, on the same columns as [TrackRow]: number, title, how played, length. */
 @Composable
@@ -1572,7 +1218,7 @@ private fun TrackLegend(popularLabel: String = "POPULAR") {
     ) {
         Text("#", Modifier.width(32.dp), style = label, letterSpacing = 1.2.sp, color = colors.textMuted)
         Text("TITLE", Modifier.weight(1f), style = label, letterSpacing = 1.2.sp, color = colors.textMuted)
-        Spacer(Modifier.width(28.dp + 12.dp)) // the add button's place, and the gap after it
+        Spacer(Modifier.width(28.dp + 4.dp + 28.dp + 12.dp)) // the single mark's and add button's places, and the gap after
         Text(popularLabel, Modifier.width(56.dp), style = label, letterSpacing = 0.6.sp, color = colors.textMuted, maxLines = 1, softWrap = false)
         Spacer(Modifier.width(14.dp))
         Text("TIME", Modifier.width(44.dp), style = label, letterSpacing = 1.2.sp, color = colors.textMuted, textAlign = TextAlign.End)
@@ -1593,6 +1239,8 @@ private fun TrackRow(
     single: Boolean = false,
     /** fork:lenses - another copy of the song in focus (Song by song): a bar in the library tint at its left edge. */
     marked: Boolean = false,
+    /** fork:lenses - with [marked], also a faint wash behind the row; off on Who made it, where most rows are marked. */
+    markWash: Boolean = true,
     /** fork:lenses - the song the side panels are about (Song by song): a hairline in the accent, kept when focus moves on. */
     inFocus: Boolean = false,
     /** fork:lenses - the featured artist's chip on the title's line, so every row is the same height. */
@@ -1624,7 +1272,7 @@ private fun TrackRow(
             .background(
                 when {
                     current -> colors.accent.copy(alpha = 0.12f)
-                    marked -> LENS_LIBRARY_TINT.copy(alpha = 0.10f)
+                    marked && markWash -> LENS_LIBRARY_TINT.copy(alpha = 0.10f)
                     else -> Color.Transparent
                 },
             )
@@ -1662,16 +1310,6 @@ private fun TrackRow(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (single) {
-                    Text(
-                        "SINGLE",
-                        style = MaterialTheme.typography.labelSmall,
-                        letterSpacing = 0.8.sp,
-                        color = if (track.isAvailable) colors.textSecondary else colors.textDisabled,
-                        maxLines = 1,
-                        modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
-                    )
-                }
                 if (credit != null && inlineCredit) {
                     // fork:lenses - on the title's line (it gives way first when the row is short of room).
                     Text(
@@ -1701,18 +1339,37 @@ private fun TrackRow(
                 )
             }
         }
+        // fork:lenses - two fixed icon slots before the bar, always shown: a record when the song came out as a single,
+        // then Add to playlist. Fixed, so nothing in the row moves from song to song.
+        Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+            if (single) {
+                NuvioPosterHoverTooltip(title = "Released as a single") {
+                    Icon(
+                        Icons.Rounded.Album,
+                        contentDescription = "Released as a single",
+                        tint = if (track.isAvailable) colors.textSecondary else colors.textDisabled,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(4.dp))
         if (onAddToPlaylist != null && track.isAvailable) {
-            // Always laid out (only shown on hover), so the length does not jump when the pointer arrives.
-            // Shown on hover, or while the keyboard is on it (Right from the track row).
+            // Brighter on hover, or while the keyboard is on it (Right from the track row).
             var addFocused by remember { mutableStateOf(false) }
             NuvioPosterHoverTooltip(title = "Add to playlist") {
                 Box(
-                    Modifier.size(28.dp).alpha(if (hovered || addFocused) 1f else 0f)
+                    Modifier.size(28.dp)
                         .onFocusChanged { addFocused = it.hasFocus }
                         .clip(CircleShape).musicKeyFocusRing(CircleShape).clickable(onClick = onAddToPlaylist),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Rounded.Add, contentDescription = "Add to playlist", tint = colors.textSecondary, modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Rounded.PlaylistAdd,
+                        contentDescription = "Add to playlist",
+                        tint = if (hovered || addFocused) colors.textPrimary else colors.textMuted,
+                        modifier = Modifier.size(19.dp),
+                    )
                 }
             }
         } else {

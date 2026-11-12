@@ -18,6 +18,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -101,7 +102,9 @@ internal fun NowPlayingWidgets(
     val total = album?.tracks?.size ?: 0
     Column(modifier.graphicsLayer { this.alpha = alpha }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (queue.size > 1) {
-            Text("QUEUE", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
+            // Where the song is in the queue, beside the heading: it only means something when there is a queue.
+            val place = if (total > 1 && state.trackIndex >= 0) "  •  Track ${state.trackIndex + 1} of $total" else ""
+            Text("QUEUE$place", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             QueueWindow(queue, playingAt, album?.thumbnailUrl, player, Modifier.weight(1f, fill = false))
         }
         if (lyricsMissing && state.isPlaying && libraryArtist != null) MiniLadder(libraryArtist, onOpenArtist)
@@ -308,23 +311,24 @@ private fun MiniLadder(artist: LibraryArtist, onOpenArtist: (String) -> Unit) {
     note?.let { Text(it, color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
+/** Room for "88:88 / 88:88" at 15 sp: the time keeps one width whatever it says. */
+private val CONTROLS_TIME_WIDTH = 104.dp
+
 /** One white for every control and one softer shade for the texts either side (where in the album, the time). */
 private val CONTROLS_SIDE_TEXT = Color.White.copy(alpha = 0.7f)
 
 /**
  * The lyric view's own player, which stays on screen (the bar, dock and card step aside while the view is open). One
- * compact row: the volume on the left, previous / play / next and Add to playlist in the middle, the time on the right;
- * under it the seek bar, with where the song is in the queue in front of it when there is a queue (the bar runs the whole
- * width without one). The middle is placed in a Box on its own, so it never moves as the sides change width.
+ * row: the volume on the left, previous / play / next and Add to playlist spread over the rest; under it the seek bar and
+ * the time. Where the song is in the queue is beside the Queue heading (NowPlayingWidgets), so it shows only with a queue.
  */
 @Composable
 internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, modifier: Modifier = Modifier, barModifier: Modifier = Modifier) {
-    val total = state.album?.tracks?.size ?: 0
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Box(Modifier.fillMaxWidth().height(44.dp)) {
-            // The volume on the left of the buttons, the time on the right.
-            MusicVolumeControl(state, player, sliderWidth = 84.dp, modifier = Modifier.align(Alignment.CenterStart), tint = Color.White, glass = true)
-            Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+        // The volume at the left, then previous / play / next / Add to playlist spread evenly over the rest of the row.
+        Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+            MusicVolumeControl(state, player, sliderWidth = 84.dp, tint = Color.White, glass = true)
+            Row(Modifier.weight(1f).padding(start = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 ControlIcon(Icons.Rounded.SkipPrevious, "Previous") { player.previous() }
                 ControlIcon(
                     if (state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -340,23 +344,13 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
                     }
                 }
             }
-            Text(
-                "${formatMusicTime(state.positionMs)} / ${formatMusicTime(state.durationMs)}",
-                color = CONTROLS_SIDE_TEXT,
-                fontSize = 15.sp,
-                maxLines = 1,
-                modifier = Modifier.align(Alignment.CenterEnd),
-            )
         }
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Where the song is in the queue, in front of the seek bar; without a queue the bar runs the whole width.
-            if (total > 1 && state.trackIndex >= 0) {
-                Text("Track ${state.trackIndex + 1} of $total", color = CONTROLS_SIDE_TEXT, fontSize = 15.sp, maxLines = 1)
-            }
+            // The seek bar, then the time after it (where the song is in the queue is beside the Queue heading below).
             MusicSeekControl(
                 state,
                 player,
@@ -365,6 +359,17 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
                 barModifier = barModifier,
                 tint = Color.White,
                 glass = true,
+            )
+            // A fixed width with figures of one width, so the seek bar beside it never changes length as the time counts.
+            Text(
+                "${formatMusicTime(state.positionMs)} / ${formatMusicTime(state.durationMs)}",
+                color = CONTROLS_SIDE_TEXT,
+                fontSize = 15.sp,
+                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
+                maxLines = 1,
+                softWrap = false,
+                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                modifier = Modifier.width(CONTROLS_TIME_WIDTH),
             )
         }
     }

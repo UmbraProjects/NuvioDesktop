@@ -1704,7 +1704,7 @@
     <string name="settings_portable_mode">Modo portátil</string>
     <string name="settings_portable_mode_description">Guarda los ajustes y cachés en una carpeta de datos junto a Nuvio.exe en lugar de AppData. Al cambiar, Nuvio se reinicia y mueve tus datos.</string>
     <string name="settings_portable_mode_enable_title">¿Cambiar al modo portátil?</string>
-    <string name="settings_portable_mode_enable_message">Nuvio se reiniciará y copiará tus ajustes a una carpeta de datos junto a Nuvio.exe. Las cachés de imágenes y torrents no se copian; se reconstruyen mientras navegas. Tu carpeta AppData se deja como está.\n\nSi tienes una exclusión del antivirus para Nuvio, agrega también la nueva carpeta de datos.</string>
+    <string name="settings_portable_mode_enable_message">Nuvio se reiniciará y copiará tus ajustes a una carpeta de datos junto a Nuvio.exe. Las cachés de imágenes y torrents no se copian; se reconstruyen mientras navegas. Tu carpeta AppData se deja como está.&#10;&#10;Si tienes una exclusión del antivirus para Nuvio, agrega también la nueva carpeta de datos.</string>
     <string name="settings_portable_mode_disable_title">¿Desactivar el modo portátil?</string>
     <string name="settings_portable_mode_disable_message">Nuvio se reiniciará y copiará tus ajustes de vuelta a AppData. La carpeta portátil se conserva como data.old junto a Nuvio.exe y puedes eliminarla después.</string>
     <string name="settings_portable_mode_restart">Reiniciar</string>
@@ -2432,7 +2432,7 @@
     <string name="settings_playback_desktop_anime_svp_overlay_desc">Dibuja sobre el video el método de interpolación activo y la tasa de fotogramas de origen/salida. Se aplica desde el próximo inicio de reproducción.</string>
     <string name="settings_playback_desktop_custom_shader_paths">Biblioteca de shaders</string>
     <string name="settings_playback_desktop_custom_shader_paths_desc">Agrega un archivo o carpeta de shaders por línea. Las carpetas exponen sus archivos .glsl y .hook directos en Mejoras para anime.</string>
-    <string name="settings_playback_desktop_custom_shader_paths_hint">p. ej.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
+    <string name="settings_playback_desktop_custom_shader_paths_hint">p. ej.&#10;C:\Shaders\Anime4K-Ultra.glsl&#10;C:\Shaders\MyPack</string>
     <string name="settings_playback_desktop_custom_shader_paths_warning">Los shaders personalizados se ejecutan dentro del renderizador de mpv y pueden reducir el rendimiento o romper la reproducción. Elige Desactivado en Mejoras para anime si un shader causa problemas.</string>
     <string name="settings_playback_desktop_seek_thumbnails">Miniaturas de la barra de progreso</string>
     <string name="settings_playback_desktop_seek_thumbnails_desc">Vista previa de fotogramas al pasar el cursor por la línea de tiempo. Solo local previsualiza únicamente archivos de este PC o de tu red, evitando los límites de debrid; Local + Seekr agrega las miniaturas de Seekr. Desactivado en el preajuste Con límite de datos.</string>
@@ -2451,7 +2451,7 @@
     <string name="settings_playback_desktop_headphone_surround_desc">Para auriculares: las pistas envolventes suenan como si vinieran de altavoces a tu alrededor, en lugar de mezclarse planas en izquierda y derecha. Las fuentes estéreo suenan un poco más bajo. No tiene efecto con el passthrough de audio.</string>
     <string name="settings_playback_desktop_custom_mpv_options">Opciones de MPV</string>
     <string name="settings_playback_desktop_custom_mpv_options_desc">Una opción por línea como clave=valor. Se aplican sobre los valores predeterminados de Nuvio; las opciones no válidas se ignoran.</string>
-    <string name="settings_playback_desktop_custom_mpv_options_hint">p. ej.\nprofile=gpu-hq\ndeband=no</string>
+    <string name="settings_playback_desktop_custom_mpv_options_hint">p. ej.&#10;profile=gpu-hq&#10;deband=no</string>
     <string name="settings_playback_hero_tv_trailer">Reproducción del tráiler en el destacado</string>
     <string name="settings_playback_hero_tv_trailer_description">Pulsa T para reproducir el tráiler en esta ubicación.</string>
     <string name="settings_playback_hero_tv_trailer_delay">Esperar antes de reproducir</string>
@@ -3413,7 +3413,7 @@
     <string name="collections_editor_trakt_list_title_format">Lista de Trakt %1$s</string>
     <string name="external_player_android_system">Reproductor del sistema Android</string>
     <string name="p2p_consent_title">Streaming P2P</string>
-    <string name="p2p_consent_body">Esta fuente usa tecnología peer-to-peer (P2P). Al activar P2P, reconoces y aceptas que:\n\n• Tu dirección IP será visible para otros pares de la red\n• Eres el único responsable del contenido al que accedes\n• Confirmas que tienes el derecho legal de reproducir este contenido en tu jurisdicción\n• Nuvio no aloja, distribuye ni controla ningún contenido P2P\n• Nuvio no asume ninguna responsabilidad por las consecuencias legales derivadas de tu uso del streaming P2P\n\nUsas esta función bajo tu propio riesgo. Puedes desactivar P2P en cualquier momento en Configuración.</string>
+    <string name="p2p_consent_body">Esta fuente usa tecnología peer-to-peer (P2P). Al activar P2P, reconoces y aceptas que:&#10;&#10;• Tu dirección IP será visible para otros pares de la red&#10;• Eres el único responsable del contenido al que accedes&#10;• Confirmas que tienes el derecho legal de reproducir este contenido en tu jurisdicción&#10;• Nuvio no aloja, distribuye ni controla ningún contenido P2P&#10;• Nuvio no asume ninguna responsabilidad por las consecuencias legales derivadas de tu uso del streaming P2P&#10;&#10;Usas esta función bajo tu propio riesgo. Puedes desactivar P2P en cualquier momento en Configuración.</string>
     <string name="p2p_consent_enable">Activar P2P</string>
     <string name="p2p_consent_cancel">Cancelar</string>
     <string name="settings_p2p_title">Streaming P2P</string>
@@ -4993,7 +4993,7 @@
     <string name="party_code_label">Código de la party</string>
     <string name="party_copy_invite">Copiar invitación</string>
     <string name="party_invite_copied">Invitación copiada</string>
-    <string name="party_invite_message">Únete a mi watch party de Nuvio con el código %1$s\n%2$s</string>
+    <string name="party_invite_message">Únete a mi watch party de Nuvio con el código %1$s&#10;%2$s</string>
     <string name="party_seats">%1$d de %2$d lugares</string>
     <string name="party_host">Anfitrión</string>
     <string name="party_you">Tú</string>

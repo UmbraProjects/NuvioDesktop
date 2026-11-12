@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -50,78 +51,6 @@ import com.nuvio.app.features.music.library.songKey
 internal data class EssentialAlbum(val release: LibraryRelease, val rank: Int, val here: Boolean)
 
 @Composable
-internal fun EssentialsColumn(
-    artist: String,
-    songs: List<EssentialSong>,
-    hereKeys: Set<String>,
-    albums: List<EssentialAlbum>,
-    startHere: String?,
-    /** Plays the albums the recommendation names, in its order; null when it names fewer than two. */
-    onPlayPath: (() -> Unit)?,
-    onSongClick: (EssentialSong) -> Unit,
-    onAlbumClick: (String) -> Unit,
-    /** The size of an album tile: four of them and their gaps fill the column's content (108 dp in the widest column). */
-    tile: Dp,
-    modifier: Modifier = Modifier,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    // The Start here card stands on the bottom edge of the column, level with the In brief card opposite it (the same height,
-    // the same 32 dp from the bottom); what is above it scrolls in the room that is left.
-    BoxWithConstraints(modifier) {
-        // The best songs hang from the top and the best albums stand on the Start here card's line, 22 dp above it, so what
-        // is left over is the gap between them, whatever the window's height. A short window scrolls instead.
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).heightIn(min = maxHeight)
-                .padding(start = 12.dp, end = 32.dp, top = 24.dp, bottom = 32.dp + AI_CARD_HEIGHT + 22.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Essentials", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary)
-                    Text("$artist, best first. Ranked by listeners.", style = MaterialTheme.typography.bodySmall, color = colors.textSecondary)
-                }
-                if (songs.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        EssentialsLabel("BEST SONGS")
-                        songs.forEachIndexed { index, song ->
-                            EssentialSongRow(index + 1, song, here = songKey(song.title) in hereKeys, onClick = { onSongClick(song) })
-                        }
-                    }
-                }
-            }
-            if (albums.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    EssentialsLabel("BEST ALBUMS")
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        albums.forEach { EssentialAlbumTile(it, tile, onAlbumClick) }
-                    }
-                }
-            }
-        }
-        if (startHere != null) {
-            AlbumGlassCard(Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 32.dp, bottom = 32.dp).height(AI_CARD_HEIGHT)) {
-                BriefHeader("START HERE", ai = true)
-                Text(startHere, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
-                Spacer(Modifier.weight(1f))
-                Text("Written by AI, may contain mistakes", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
-                if (onPlayPath != null) {
-                    val pill = RoundedCornerShape(20.dp)
-                    Row(
-                        Modifier.clip(pill).background(Color.White.copy(alpha = 0.10f)).border(1.dp, Color.White.copy(alpha = 0.18f), pill)
-                            .musicKeyFocusRing(pill).clickable(onClick = onPlayPath).height(40.dp).padding(horizontal = 18.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = colors.textPrimary, modifier = Modifier.size(18.dp))
-                        Text("Play the starter path", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = colors.textPrimary)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun EssentialsLabel(text: String) {
     Text(
         text,
@@ -133,51 +62,7 @@ private fun EssentialsLabel(text: String) {
 }
 
 @Composable
-private fun EssentialSongRow(rank: Int, song: EssentialSong, here: Boolean, onClick: () -> Unit) {
-    val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(12.dp)
-    // A song opens the album it is on; one on this very record starts playing here. Nothing to open: not a button.
-    val actionable = here || song.release?.ytBrowseId != null
-    Row(
-        Modifier.fillMaxWidth().height(58.dp).clip(shape)
-            .background(Color.White.copy(alpha = if (here) 0.08f else 0.03f))
-            .musicKeyFocusRing(shape)
-            .clickable(enabled = actionable, onClick = onClick)
-            .padding(start = 8.dp, end = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text(
-            rank.toString(),
-            modifier = Modifier.width(22.dp),
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = colors.textMuted,
-        )
-        MusicCover(song.release?.art?.cover, description = null, size = 44.dp)
-        Column(Modifier.weight(1f)) {
-            Text(song.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (song.albumTitle.isNotBlank()) {
-                Text(song.albumTitle, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        if (here) {
-            Text(
-                "ON THIS ALBUM",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.8.sp,
-                color = colors.accent,
-                maxLines = 1,
-                modifier = Modifier.border(1.dp, colors.accent, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun EssentialAlbumTile(tile: EssentialAlbum, size: Dp, onAlbumClick: (String) -> Unit) {
+internal fun EssentialAlbumTile(tile: EssentialAlbum, size: Dp, onAlbumClick: (String) -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val release = tile.release
     val shape = RoundedCornerShape(10.dp)
@@ -206,5 +91,97 @@ private fun EssentialAlbumTile(tile: EssentialAlbum, size: Dp, onAlbumClick: (St
         }
         Text(release.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(release.year.orEmpty(), style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1)
+    }
+}
+
+/**
+ * fork:lenses - the Best of tab's middle: the artist's best songs, ranked by listeners, then their best albums as covers,
+ * in the album page's own quiet rows (no cards). A song on this record plays here; another opens its album.
+ */
+@Composable
+internal fun BestOfCentre(
+    artist: String,
+    songs: List<EssentialSong>,
+    hereKeys: Set<String>,
+    albums: List<EssentialAlbum>,
+    onSongClick: (EssentialSong) -> Unit,
+    onAlbumClick: (String) -> Unit,
+    maxWidth: Dp,
+    bottom: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    androidx.compose.foundation.lazy.LazyColumn(
+        modifier,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 16.dp, bottom = bottom),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        if (songs.isEmpty() && albums.isEmpty()) {
+            item(key = "empty") {
+                Text(
+                    "Nothing is ranked for $artist yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 40.dp),
+                )
+            }
+        }
+        if (songs.isNotEmpty()) {
+            item(key = "songs-label") {
+                Box(Modifier.widthIn(max = maxWidth).fillMaxWidth().padding(horizontal = 8.dp).padding(bottom = 6.dp)) { EssentialsLabel("BEST SONGS") }
+            }
+            // Three to a row, in rank order across then down; a short last row keeps its cells the same width.
+            val rows = songs.withIndex().chunked(HITS_GRID_COLUMNS)
+            items(rows.size, key = { "songs-$it" }) { r ->
+                Row(Modifier.widthIn(max = maxWidth).fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    rows[r].forEach { (i, song) ->
+                        BestSongCell(i + 1, song, here = songKey(song.title) in hereKeys, onClick = { onSongClick(song) }, modifier = Modifier.weight(1f))
+                    }
+                    repeat(HITS_GRID_COLUMNS - rows[r].size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+        if (albums.isNotEmpty()) {
+            item(key = "albums") {
+                BoxWithConstraints(Modifier.widthIn(max = maxWidth).fillMaxWidth().padding(horizontal = 8.dp).padding(top = 28.dp)) {
+                    // Five covers to the row, never bigger than 160 dp: a function of the column's width only.
+                    val tile = ((this.maxWidth - 14.dp * 4) / 5).coerceAtMost(160.dp)
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        EssentialsLabel("BEST ALBUMS")
+                        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            albums.forEach { EssentialAlbumTile(it, tile, onAlbumClick) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val HITS_GRID_COLUMNS = 3
+
+/** One best song in the Hits grid: rank, cover, title and album; the title in the accent when the song is on this album. */
+@Composable
+private fun BestSongCell(rank: Int, song: EssentialSong, here: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(10.dp)
+    val actionable = here || song.release?.ytBrowseId != null
+    Row(
+        modifier.height(68.dp).clip(shape).musicKeyFocusRing(shape)
+            .clickable(enabled = actionable, onClick = onClick)
+            .padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(rank.toString(), Modifier.width(18.dp), style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, textAlign = TextAlign.Center)
+        MusicCover(song.release?.art?.cover, description = null, size = 52.dp)
+        Column(Modifier.weight(1f)) {
+            Text(song.title, style = MaterialTheme.typography.bodyLarge, color = if (here) colors.accent else colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val line = if (here) "On this album" else song.albumTitle
+            if (line.isNotBlank()) {
+                Text(line, style = MaterialTheme.typography.bodySmall, color = if (here) colors.accent.copy(alpha = 0.8f) else colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }

@@ -2718,8 +2718,6 @@ private fun settingsSearchEntries(
         listOf(
             PlaybackSearchRow("music-show-tab", resolve(Res.string.settings_music_show_tab), resolve(Res.string.settings_music_show_tab_description), resolve(Res.string.settings_music_section_general)),
             PlaybackSearchRow("music-reduced-motion", resolve(Res.string.settings_music_reduced_motion), resolve(Res.string.settings_music_reduced_motion_description), resolve(Res.string.settings_music_section_general)),
-            PlaybackSearchRow("music-album-lenses", resolve(Res.string.settings_music_album_lenses), resolve(Res.string.settings_music_album_lenses_description), resolve(Res.string.settings_music_section_general)),
-            PlaybackSearchRow("music-artist-stage", resolve(Res.string.settings_music_artist_stage), resolve(Res.string.settings_music_artist_stage_description), resolve(Res.string.settings_music_section_general)),
             PlaybackSearchRow("music-album-notes", resolve(Res.string.settings_music_album_notes), resolve(Res.string.settings_music_album_notes_description), resolve(Res.string.settings_music_section_general)),
             PlaybackSearchRow("music-view-shelf", resolve(Res.string.settings_music_view_shelf), resolve(Res.string.settings_music_view_shelf_description), resolve(Res.string.settings_music_section_views)),
             PlaybackSearchRow("music-view-crates", resolve(Res.string.settings_music_view_crates), resolve(Res.string.settings_music_view_crates_description), resolve(Res.string.settings_music_section_views)),

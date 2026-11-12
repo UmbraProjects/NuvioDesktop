@@ -868,7 +868,7 @@
   <string name="settings_portable_mode">Tryb przenośny</string>
   <string name="settings_portable_mode_description">Przechowuj ustawienia i pamięć podręczną w folderze data obok Nuvio.exe zamiast w AppData. Przełączenie uruchamia Nuvio ponownie i przenosi Twoje dane.</string>
   <string name="settings_portable_mode_enable_title">Przełączyć na tryb przenośny?</string>
-  <string name="settings_portable_mode_enable_message">Nuvio uruchomi się ponownie i skopiuje Twoje ustawienia do folderu data obok Nuvio.exe. Pamięci podręczne obrazów i torrentów nie są kopiowane; odbudowują się podczas przeglądania. Twój folder AppData pozostaje bez zmian.\n\nJeśli masz wykluczenie antywirusa dla Nuvio, dodaj do niego także nowy folder data.</string>
+  <string name="settings_portable_mode_enable_message">Nuvio uruchomi się ponownie i skopiuje Twoje ustawienia do folderu data obok Nuvio.exe. Pamięci podręczne obrazów i torrentów nie są kopiowane; odbudowują się podczas przeglądania. Twój folder AppData pozostaje bez zmian.&#10;&#10;Jeśli masz wykluczenie antywirusa dla Nuvio, dodaj do niego także nowy folder data.</string>
   <string name="settings_portable_mode_disable_title">Wyłączyć tryb przenośny?</string>
   <string name="settings_portable_mode_disable_message">Nuvio uruchomi się ponownie i skopiuje Twoje ustawienia z powrotem do AppData. Folder przenośny zostanie zachowany jako data.old obok Nuvio.exe i możesz go potem usunąć.</string>
   <string name="settings_portable_mode_restart">Uruchom ponownie</string>
@@ -1844,7 +1844,7 @@
   <string name="settings_playback_desktop_anime_svp_overlay_desc">Rysuje na wideo aktywną metodę interpolacji oraz liczbę klatek na sekundę źródła i wyjścia. Działa od następnego uruchomienia odtwarzania.</string>
   <string name="settings_playback_desktop_custom_shader_paths">Biblioteka shaderów</string>
   <string name="settings_playback_desktop_custom_shader_paths_desc">Dodaj jeden plik shadera lub folder w każdej linii. Foldery udostępniają w Ulepszeniach anime swoje bezpośrednie pliki .glsl i .hook.</string>
-  <string name="settings_playback_desktop_custom_shader_paths_hint">np.\nC:\Shaders\Anime4K-Ultra.glsl\nC:\Shaders\MyPack</string>
+  <string name="settings_playback_desktop_custom_shader_paths_hint">np.&#10;C:\Shaders\Anime4K-Ultra.glsl&#10;C:\Shaders\MyPack</string>
   <string name="settings_playback_desktop_custom_shader_paths_warning">Własne shadery działają wewnątrz renderera mpv i mogą obniżyć wydajność lub zakłócić odtwarzanie. Wybierz Wyłączone w Ulepszeniach anime, jeśli shader sprawia problemy.</string>
   <string name="settings_playback_desktop_seek_thumbnails">Miniatury na pasku przewijania</string>
   <string name="settings_playback_desktop_seek_thumbnails_desc">Podgląd klatek po najechaniu na oś czasu. Tryb Tylko lokalnie pokazuje podglądy plików na tym komputerze lub w sieci, omijając limity debrid; Lokalnie + Seekr dodaje miniatury Seekr. Wyłączone w profilu Z limitem danych.</string>
@@ -1863,7 +1863,7 @@
     <string name="settings_playback_desktop_headphone_surround_desc">Do słuchawek: ścieżki przestrzenne brzmią, jakby dochodziły z głośników wokół ciebie, zamiast być płasko zmiksowane do lewego i prawego kanału. Źródła stereo grają nieco ciszej. Nie działa podczas passthrough dźwięku.</string>
   <string name="settings_playback_desktop_custom_mpv_options">Opcje MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Jedna opcja w linii w formacie klucz=wartość. Stosowane na wierzchu ustawień domyślnych Nuvio; nieprawidłowe opcje są ignorowane.</string>
-  <string name="settings_playback_desktop_custom_mpv_options_hint">np.\nprofile=gpu-hq\ndeband=no</string>
+  <string name="settings_playback_desktop_custom_mpv_options_hint">np.&#10;profile=gpu-hq&#10;deband=no</string>
   <string name="settings_playback_hero_tv_trailer">Odtwarzanie zwiastuna w sekcji hero</string>
   <string name="settings_playback_hero_tv_trailer_description">Naciśnij T, aby odtworzyć zwiastun w tym miejscu.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Opóźnienie przed odtworzeniem</string>
@@ -3419,7 +3419,7 @@
   <string name="collections_editor_trakt_list_title_format">Lista Trakt %1$s</string>
   <string name="external_player_android_system">Systemowy odtwarzacz Androida</string>
   <string name="p2p_consent_title">Strumieniowanie P2P</string>
-  <string name="p2p_consent_body">Ten strumień wykorzystuje technologię peer-to-peer (P2P). Włączając P2P, przyjmujesz do wiadomości i zgadzasz się, że:\n\n• Twój adres IP będzie widoczny dla innych uczestników sieci\n• Ponosisz wyłączną odpowiedzialność za treści, do których uzyskujesz dostęp\n• Potwierdzasz, że masz prawo do strumieniowania tych treści w swojej jurysdykcji\n• Nuvio nie hostuje, nie rozpowszechnia ani nie kontroluje żadnych treści P2P\n• Nuvio nie ponosi odpowiedzialności za żadne konsekwencje prawne wynikające z korzystania ze strumieniowania P2P\n\nKorzystasz z tej funkcji wyłącznie na własne ryzyko. P2P możesz w każdej chwili wyłączyć w Ustawieniach.</string>
+  <string name="p2p_consent_body">Ten strumień wykorzystuje technologię peer-to-peer (P2P). Włączając P2P, przyjmujesz do wiadomości i zgadzasz się, że:&#10;&#10;• Twój adres IP będzie widoczny dla innych uczestników sieci&#10;• Ponosisz wyłączną odpowiedzialność za treści, do których uzyskujesz dostęp&#10;• Potwierdzasz, że masz prawo do strumieniowania tych treści w swojej jurysdykcji&#10;• Nuvio nie hostuje, nie rozpowszechnia ani nie kontroluje żadnych treści P2P&#10;• Nuvio nie ponosi odpowiedzialności za żadne konsekwencje prawne wynikające z korzystania ze strumieniowania P2P&#10;&#10;Korzystasz z tej funkcji wyłącznie na własne ryzyko. P2P możesz w każdej chwili wyłączyć w Ustawieniach.</string>
   <string name="p2p_consent_enable">Włącz P2P</string>
   <string name="p2p_consent_cancel">Anuluj</string>
   <string name="settings_p2p_title">Strumieniowanie P2P</string>

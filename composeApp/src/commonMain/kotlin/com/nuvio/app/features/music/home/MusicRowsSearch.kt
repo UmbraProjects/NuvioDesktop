@@ -80,6 +80,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.music.library.ReleaseKind
+import com.nuvio.app.features.music.library.MusicLibraryRepository
 import com.nuvio.app.core.ui.NuvioInputField
 import com.nuvio.app.core.ui.NuvioPosterCard
 import com.nuvio.app.core.ui.NuvioPosterShape
@@ -167,8 +169,15 @@ private fun buildRows(
     releases: List<MusicAlbumSummary>?,
     artists: List<MusicArtistSummary>?,
     videos: List<MusicTrack>?,
+    /** What was searched: the row it seems to be after comes first (MusicSearchIntent.kt). */
+    query: String = "",
+    /**
+     * Releases YouTube Music calls singles that are really EPs: three or more songs on them (looked up for the ones the
+     * search names), or an EP in the library's own discography. "Gravity (The Acoustic Sessions Volume II)" is one.
+     */
+    epIds: Set<String> = emptySet(),
 ): List<MusicHitRow> {
-    fun kindOf(album: MusicAlbumSummary) = album.kind?.trim()?.lowercase()
+    fun kindOf(album: MusicAlbumSummary) = if (album.browseId in epIds) "ep" else album.kind?.trim()?.lowercase()
     val all = releases.orEmpty()
     val eps = all.filter { kindOf(it) == "ep" }
     val singles = all.filter { kindOf(it) == "single" }
@@ -182,6 +191,29 @@ private fun buildRows(
         MusicHitRow("youtube", "YouTube", videos.orEmpty().map(MusicHit::Video)),
     ).filter { it.hits.isNotEmpty() }
         .map { row -> row.copy(hits = row.hits.distinctBy { it.key }) }
+        .let { rows -> byIntent(query, rows) }
+}
+
+/** [rows] reordered for what [query] seems to be after: "Eminem" artists first, "Eminem encore" albums first. */
+private fun byIntent(query: String, rows: List<MusicHitRow>): List<MusicHitRow> {
+    val intentRows = rows.map { row ->
+        val kind = when (row.key) {
+            "artists" -> IntentKind.Artists
+            "albums" -> IntentKind.Albums
+            "eps" -> IntentKind.EPs
+            "singles" -> IntentKind.Singles
+            "youtube" -> IntentKind.Videos
+            else -> IntentKind.Songs
+        }
+        IntentRow(kind, row.hits.map { hit ->
+            val credited = if (hit is MusicHit.Artist) emptyList() else hit.creditedArtists()
+            // The artist's (or the first credited artist's) fans; videos keep YouTube's own order.
+            val who = if (hit is MusicHit.Artist) hit.title else credited.firstOrNull()
+            val tier = if (hit is MusicHit.Video || who == null) POPULARITY_UNKNOWN else popularityTier(MusicHeroInfo.peekFans(who))
+            IntentHit(hit.title, credited, tier)
+        })
+    }
+    return intentOrder(query, intentRows).map { (i, hitOrder) -> rows[i].copy(hits = hitOrder.map { rows[i].hits[it] }) }
 }
 
 @Composable
@@ -200,6 +232,8 @@ internal fun MusicRowsSearch(
 ) {
     val tab = MusicTabState
     val query = tab.query
+    // What is searched: the box's own text as it is typed, or (the app bar's box) only what Enter sent.
+    val searched = if (ownField) query.trim() else tab.submitted
     val history by MusicSearchHistory.recent.collectAsStateWithLifecycle()
     val homeSettings by remember {
         HomeCatalogSettingsRepository.snapshot()
@@ -245,26 +279,49 @@ internal fun MusicRowsSearch(
     }
     PublishKeyboardSuggestions(suggestions) { picked -> setQuery(picked) }
 
-    // The searches after the typing pause, all at once; each row fills in as its own answer comes back.
-    LaunchedEffect(query) {
-        val line = query.trim()
+    // The searches, all at once; each row fills in as its own answer comes back. A box of its own searches after the
+    // typing pause; the app bar's box searches when Enter is pressed.
+    LaunchedEffect(searched) {
+        val line = searched
         if (line.length < MIN_QUERY_LENGTH) {
             songs = null; releases = null; artists = null; videos = null; answeredQuery = null
             return@LaunchedEffect
         }
-        delay(SEARCH_PAUSE_MS)
+        if (ownField) delay(SEARCH_PAUSE_MS)
         songs = null; releases = null; artists = null; videos = null
         answeredQuery = line
+        // Each row waits (briefly) for its artists' fan counts before it shows, so its order is settled once and nothing
+        // moves after: a count that comes later only counts next time.
         coroutineScope {
-            launch { songs = runCatching { catalog.searchSongs(line) }.getOrDefault(emptyList()) }
-            launch { releases = runCatching { catalog.searchAlbums(line) }.getOrDefault(emptyList()) }
-            launch { artists = runCatching { catalog.searchArtists(line) }.getOrDefault(emptyList()) }
+            launch { songs = runCatching { catalog.searchSongs(line) }.getOrDefault(emptyList()).also { r -> warmFans(r.flatMap { t -> t.artists.map { it.name } }) } }
+            launch { releases = runCatching { catalog.searchAlbums(line) }.getOrDefault(emptyList()).also { r -> warmFans(r.flatMap { a -> a.artists.map { it.name } }) } }
+            launch { artists = runCatching { catalog.searchArtists(line) }.getOrDefault(emptyList()).also { r -> warmFans(r.map { it.name }) } }
             launch { videos = runCatching { catalog.searchYouTube(line) }.getOrDefault(emptyList()) }
         }
     }
-    val rows = remember(songs, releases, artists, videos) { buildRows(songs, releases, artists, videos) }
-    val waiting = query.trim().length >= MIN_QUERY_LENGTH &&
-        (answeredQuery != query.trim() || songs == null || releases == null || artists == null || videos == null)
+    // Singles that are really EPs. The library's own discography knows for a saved artist's records; for a single the search
+    // names (and only those, at most a few), its page is read to count its songs.
+    val libraryEps = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.artists.let { saved ->
+        remember(saved) { saved.flatMap { a -> a.releases.filter { it.kind == ReleaseKind.EP }.mapNotNull { it.ytBrowseId } }.toSet() }
+    }
+    var countedEps by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(releases, answeredQuery) {
+        val line = answeredQuery ?: return@LaunchedEffect
+        val named = releases.orEmpty().filter { r ->
+            r.kind.equals("single", ignoreCase = true) && r.browseId !in libraryEps && r.browseId !in countedEps &&
+                intentMatch(line, IntentKind.Singles, IntentHit(r.title, r.artists.map { it.name })) > 0
+        }.take(EP_CHECKS)
+        for (single in named) {
+            val songs = runCatching { catalog.album(single.browseId)?.tracks?.size }.getOrNull() ?: continue
+            if (songs >= EP_MIN_SONGS) countedEps = countedEps + single.browseId
+        }
+    }
+    val epIds = remember(libraryEps, countedEps) { libraryEps + countedEps }
+    val rows = remember(songs, releases, artists, videos, answeredQuery, epIds) {
+        buildRows(songs, releases, artists, videos, answeredQuery.orEmpty(), epIds)
+    }
+    val waiting = searched.length >= MIN_QUERY_LENGTH &&
+        (answeredQuery != searched || songs == null || releases == null || artists == null || videos == null)
 
     // Enter in the box (or a spoken search) sends the keyboard to the rows once they are in.
     LaunchedEffect(rows.isNotEmpty(), tab.focusResultsWhenReady) {
@@ -327,8 +384,19 @@ internal fun MusicRowsSearch(
         val hit = heroHit ?: return@LaunchedEffect
         if (mode == MusicSearchMode.Basic || heroInfo.containsKey(hit.key)) return@LaunchedEffect
         delay(HERO_INFO_PAUSE_MS)
-        heroInfo[hit.key] = runCatching { enrichedHeroMeta(hit, catalog) }
-            .getOrElse { hit.baseHeroMeta().copy(heroMetadataPending = false, banner = hit.bigArt()) }
+        // Moving on before it is done cancels the lookup: that is not a failure, and nothing is kept, so coming back to the
+        // result asks again. (It used to be kept as a failure: the plain cover as the backdrop and no words, for good.)
+        heroInfo[hit.key] = try {
+            enrichedHeroMeta(hit, catalog)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            // A real failure: the result's own cover, drawn as its colours like any other record's, never the picture itself.
+            hit.baseHeroMeta().copy(
+                heroMetadataPending = false,
+                banner = hit.bigArt()?.also { if (hit !is MusicHit.Artist) MusicHeroLogos.markBlurred(it) },
+            )
+        }
     }
     val heroMeta = heroHit?.let { heroInfo[it.key] ?: it.baseHeroMeta() }
     val heroItems = if (mode == MusicSearchMode.Basic) emptyList() else rows.flatMap { it.hits }.map { heroInfo[it.key] ?: it.baseHeroMeta() }
@@ -395,7 +463,7 @@ internal fun MusicRowsSearch(
         }
     val emptyLine: @Composable (Dp) -> Unit = { padding ->
         Text(
-            "Nothing found for “${query.trim()}”.",
+            "Nothing found for “$searched”.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.nuvio.colors.textMuted,
             modifier = Modifier.padding(horizontal = padding, vertical = 24.dp),
@@ -464,7 +532,7 @@ internal fun MusicRowsSearch(
         val sectionPadding = remember(maxWidth) { homeSectionHorizontalPaddingForWidth(maxWidth.value) }
         val viewportHeight = maxHeight
         val viewportWidth = maxWidth
-        val notFound = rows.isEmpty() && !waiting && query.trim().length >= MIN_QUERY_LENGTH
+        val notFound = rows.isEmpty() && !waiting && searched.length >= MIN_QUERY_LENGTH
 
         if (mode == MusicSearchMode.Tv) {
             // TV Mode's shelf: Home's height for landscape cards, which suits square covers better than the portrait
@@ -492,7 +560,11 @@ internal fun MusicRowsSearch(
                 focusedItem = 0
             }
             HdrFadeCorrected(background = Color.Black, modifier = Modifier.fillMaxSize().background(Color.Black).then(wheel)) {
-                if (heroMeta != null) {
+                // The music hero's words are longer than a film's tagline (a band's story, an album's notes): the column sits
+                // higher above the shelf and the plot may run to more lines.
+                if (heroMeta != null) androidx.compose.runtime.CompositionLocalProvider(
+                    com.nuvio.app.features.home.components.LocalImmersiveHeroTuning provides MUSIC_HERO_TUNING,
+                ) {
                     HomeHeroSection(
                         items = heroItems.ifEmpty { listOf(heroMeta) },
                         focusedItem = heroMeta,
@@ -766,7 +838,7 @@ private fun MusicHit.baseHeroMeta(): MetaPreview {
 private suspend fun enrichedHeroMeta(hit: MusicHit, catalog: MusicCatalog): MetaPreview = coroutineScope {
     val base = hit.baseHeroMeta()
     val primary = hit.artistName()
-    val artistJob = async { primary?.let { MusicHeroInfo.artist(it) } }
+    val artistJob = async { primary?.let { MusicHeroInfo.heroArtist(it, (hit as? MusicHit.Artist)?.artist?.browseId) } }
     val releaseJob = async {
         if (primary == null) return@async null
         when (hit) {
@@ -776,22 +848,82 @@ private suspend fun enrichedHeroMeta(hit: MusicHit, catalog: MusicCatalog): Meta
             else -> null
         }
     }
+    // Each result is described by its own words: an artist by their story, a record by its own (TheAudioDB, else its
+    // Wikipedia page), a song or video by the song's own. Nothing borrows the artist's story, so a record with nothing
+    // written about it shows no description rather than the artist's.
+    val ownText = async {
+        if (primary == null) return@async null
+        when (hit) {
+            is MusicHit.Artist -> null // the artist's story, from artistJob
+            is MusicHit.Release -> MusicHeroInfo.albumDescription(primary, hit.album.title)
+            is MusicHit.Song -> MusicHeroInfo.songDescription(primary, hit.track.title)
+            is MusicHit.Video -> MusicHeroInfo.songDescription(primary, stageSongTitleForVideo(hit.track.title))
+        }
+    }
     val peopleNames = when (hit) {
         is MusicHit.Artist -> runCatching { catalog.artist(hit.artist.browseId)?.related.orEmpty().map { it.name } }.getOrDefault(emptyList())
         else -> hit.creditedArtists()
     }.take(HERO_PEOPLE_MAX)
-    val people = peopleNames.map { name -> async { HeroCastMember(name = name, photo = MusicHeroInfo.artist(name)?.thumb) } }.awaitAll()
+    // The people panel's photos are extras: they give way while TheAudioDB's allowance is low (AudioDbGate).
+    val people = peopleNames.map { name -> async { HeroCastMember(name = name, photo = MusicHeroInfo.artist(name, essential = false)?.thumb) } }.awaitAll()
+    // The facts line where a film's ratings go: a song's year, tempo and chart place; a record's date, label and length.
+    val factsJob = async {
+        if (primary == null) return@async null
+        when (hit) {
+            is MusicHit.Song -> songFactsLine(MusicHeroInfo.songFacts(primary, hit.track.title), primary)
+            is MusicHit.Video -> songFactsLine(MusicHeroInfo.songFacts(primary, stageSongTitleForVideo(hit.track.title)), primary)
+            is MusicHit.Release -> albumFactsLine(MusicHeroInfo.albumFacts(primary, hit.album.title), releaseJob.await()?.score)
+            is MusicHit.Artist -> null
+        }
+    }
     val artist = artistJob.await()
     val release = releaseJob.await()
+    // An artist whose name is set as a logo (their "fancy name", as on their own page) shows it like a film's logo;
+    // songs and records keep their artwork with the name under it.
+    val nameLogo = artist?.logo?.takeIf { hit is MusicHit.Artist }?.also { MusicHeroLogos.mark(it) }
+    // Each result its own backdrop: an artist their main photo; a song or video one of the artist's photos picked by the
+    // result (so two songs by one artist rarely share it); a record its own cover, blurred, so the hero takes its colours
+    // instead of showing a square cover blown up. With no photo at all, the result's cover, blurred the same way.
+    val fanarts = artist?.fanarts.orEmpty()
+    // YouTube Music's cover first for the backdrop: it is served at up to 1200 px (TheAudioDB's are mostly 700), and a big
+    // enough cover is shown as itself (the hero's CoverColourBackdrop); TheAudioDB's stands in when YouTube has none.
+    val ownCover = hit.bigArt() ?: release?.cover?.takeIf { hit is MusicHit.Release }
+    val banner = when (hit) {
+        is MusicHit.Artist -> artist?.fanart ?: fanarts.firstOrNull()
+        is MusicHit.Song, is MusicHit.Video -> fanarts.takeIf { it.isNotEmpty() }?.let { it[kotlin.math.abs(hit.key.hashCode()) % it.size] }
+        is MusicHit.Release -> null
+    } ?: ownCover?.also { MusicHeroLogos.markBlurred(it) }
+    // The artwork beside the name at full size (TheAudioDB's HQ cover for a record), and the disc peeking out of it.
+    val cover = when (hit) {
+        is MusicHit.Artist -> base.logo
+        is MusicHit.Release -> release?.cover ?: base.logo
+        is MusicHit.Song -> base.logo
+        is MusicHit.Video -> "https://i.ytimg.com/vi/${hit.track.videoId}/hqdefault.jpg"
+    }
+    // The disc of the record the result is on: an album its own, a song or video the album it comes from.
+    val discAlbum = when (hit) {
+        is MusicHit.Release -> hit.album.title
+        is MusicHit.Song -> hit.track.albumTitle
+        else -> null
+    }
+    if (cover != null && primary != null && discAlbum != null) {
+        MusicHeroInfo.discArt(primary, discAlbum)?.let { MusicHeroLogos.setDisc(cover, it) }
+    }
+    factsJob.await()?.let { MusicHeroLogos.setFacts(base.id, it) }
     base.copy(
-        banner = artist?.fanart ?: hit.bigArt(),
+        banner = banner,
+        logo = nameLogo ?: cover,
         heroMetadataPending = false,
-        description = (release?.description ?: artist?.biography)?.let(::firstParagraph),
+        description = (if (hit is MusicHit.Artist) artist?.biography else ownText.await())?.let(::firstParagraph),
         genres = listOfNotNull(release?.genre ?: artist?.genre, artist?.style).distinctBy { it.lowercase() },
         releaseInfo = base.releaseInfo ?: release?.year,
         cast = people,
     )
 }
+
+/** A video's title as the song it is: "Song (Official Video)" looked up as "Song". */
+private fun stageSongTitleForVideo(title: String): String =
+    title.replace(Regex("""\s*[(\[][^)\]]*(official|video|lyric|audio|visuali[sz]er|live)[^)\]]*[)\]]""", RegexOption.IGNORE_CASE), "").trim().ifEmpty { title }
 
 /** A biography's first paragraph: the hero shows a few lines, and the rest of a long one only runs on past them. */
 private fun firstParagraph(text: String): String =
@@ -843,6 +975,28 @@ private const val MIN_QUERY_LENGTH = 2
 private const val RECENT_SHOWN = 8
 private const val COVER_SIZE = 544
 private const val HERO_INFO_PAUSE_MS = 250L
+
+/**
+ * The fan counts of up to [FAN_LOOKUPS] of [names], asked at once and waited for at most [FAN_WAIT_MS]: a row's order uses
+ * what is known by then.
+ */
+private suspend fun warmFans(names: List<String>) {
+    val wanted = names.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.take(FAN_LOOKUPS)
+    if (wanted.isEmpty()) return
+    kotlinx.coroutines.withTimeoutOrNull(FAN_WAIT_MS) {
+        coroutineScope { wanted.map { name -> async { MusicHeroInfo.artistFans(name) } }.awaitAll() }
+    }
+}
+
+private const val FAN_LOOKUPS = 12
+private const val FAN_WAIT_MS = 1_500L
+
+/** A "single" with this many songs or more is an EP; at most [EP_CHECKS] singles a search names are looked at. */
+private const val EP_MIN_SONGS = 3
+private const val EP_CHECKS = 3
+
+/** fork:music-search - TV Mode's hero on the music search: lifted 56 dp off the shelf, the plot up to 9 lines. */
+private val MUSIC_HERO_TUNING = com.nuvio.app.features.home.components.ImmersiveHeroTuning(lift = 56.dp, synopsisMaxLines = 9)
 
 /** One wheel step per this long in TV Mode: a flick of the wheel sends several notches at once. */
 private val WHEEL_STEP_GAP = kotlin.time.Duration.parse("180ms")

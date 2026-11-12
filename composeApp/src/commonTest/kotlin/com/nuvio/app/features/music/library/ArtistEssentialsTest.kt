@@ -115,9 +115,14 @@ class ArtistFactRowsTest {
     }
 
     @Test
-    fun factRowsSkipWhatIsUnknown() {
-        val artist = LibraryArtist(id = "UC1", name = "Gang Starr", beginYear = "1987", genres = listOf("Hip hop", "Jazz rap"))
-        assertEquals(listOf("Years active" to "1987–present", "Genres" to "Hip hop, Jazz rap"), artistFactRows(artist))
+    fun factSheetSkipsWhatIsUnknown() {
+        val artist = LibraryArtist(id = "UC1", name = "Gang Starr", beginYear = "1987", genres = listOf("Hip hop", "Jazz rap"), style = "hip hop")
+        val sheet = artistFactSheet(artist)
+        assertEquals("1987–present", sheet.years)
+        assertEquals(null, sheet.releases)
+        // The style is left out when it is already one of the genres.
+        assertEquals(listOf("Hip hop", "Jazz rap"), sheet.tags)
+        assertEquals(null, sheet.mood)
     }
 }
 

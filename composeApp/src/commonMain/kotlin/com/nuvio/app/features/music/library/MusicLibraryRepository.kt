@@ -74,8 +74,10 @@ data class MusicLibrarySettings(
     /** Word-by-word lyrics from LyricsPlus, a third-party service that relays Apple Music's lyrics. Off until chosen. */
     val lyricsPlusLyrics: Boolean = false,
     /** fork:lenses - the redesigned album page (header cover, lens tabs, mirrored side panels). Off until chosen. */
+    /** No longer read: the lens album page is the only one (Nov 12 2026). Kept so saved settings still load. */
     val albumLenses: Boolean = false,
     /** fork:artist-stage - the redesigned artist page (photo hero, then three panels with lens tabs). Off until chosen. */
+    /** No longer read: the new artist page is the only one (Nov 12 2026). Kept so saved settings still load. */
     val artistStage: Boolean = false,
     /** The Library views switched off (by [LibraryView] name). Empty shows them all. */
     val hiddenLibraryViews: Set<String> = emptySet(),

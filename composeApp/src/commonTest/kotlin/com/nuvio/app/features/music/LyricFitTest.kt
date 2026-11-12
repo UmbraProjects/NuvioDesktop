@@ -79,6 +79,8 @@ class LyricFitTest {
         assertEquals(900f - LOUD_STRIP_BAND_DP, loudStackHeightDp(900f, hasNext = false))
         assertEquals(900f - LOUD_STRIP_BAND_DP - LOUD_NEXT_LINE_DP, loudStackHeightDp(900f, hasNext = true))
         assertEquals(80f, loudStackHeightDp(100f, hasNext = true))
+        // Under a video the sync strip is at the top right: no band is kept at the foot.
+        assertEquals(300f - LOUD_NEXT_LINE_DP, loudStackHeightDp(300f, hasNext = true, stripBandDp = 0f))
     }
 
     @Test

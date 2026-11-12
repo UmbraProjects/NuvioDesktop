@@ -69,9 +69,8 @@ internal fun PinPill(label: String, tint: Color, onClick: () -> Unit, modifier: 
         maxLines = 1,
         modifier = modifier
             .clip(shape)
-            .border(1.dp, shown.copy(alpha = if (enabled) 0.5f else 0.25f), shape)
             .then(if (enabled) Modifier.musicKeyFocusRing(shape).clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 10.dp, vertical = 3.dp),
+            .padding(horizontal = 6.dp, vertical = 3.dp),
     )
 }
 

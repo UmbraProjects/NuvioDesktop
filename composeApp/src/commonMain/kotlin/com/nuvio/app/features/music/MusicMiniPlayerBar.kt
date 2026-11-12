@@ -724,6 +724,9 @@ internal fun SeekBar(
     fill: Color? = null,
 ) {
     val colors = MaterialTheme.nuvio.colors
+    // The pointer handlers below are set up once (keyed on [enabled] only), so they read the latest [onSeek] through this:
+    // the caller's lambda holds the song's length, and a stale one seeked a new song by the old song's length.
+    val seekNow by androidx.compose.runtime.rememberUpdatedState(onSeek)
     var hover by remember { mutableStateOf<Float?>(null) }
     var widthPx by remember { mutableIntStateOf(0) }
     // While dragging, follow the finger rather than the (older) playback position.
@@ -759,7 +762,7 @@ internal fun SeekBar(
             }
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
-                detectTapGestures { offset -> onSeek((offset.x / size.width).coerceIn(0f, 1f)) }
+                detectTapGestures { offset -> seekNow((offset.x / size.width).coerceIn(0f, 1f)) }
             }
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
@@ -774,7 +777,7 @@ internal fun SeekBar(
                         dragging = last
                     },
                     onDragEnd = {
-                        onSeek(last)
+                        seekNow(last)
                         dragging = null
                     },
                     onDragCancel = { dragging = null },

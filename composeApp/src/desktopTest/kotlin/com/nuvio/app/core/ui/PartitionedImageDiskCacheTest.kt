@@ -122,6 +122,47 @@ class PartitionedImageDiskCacheTest {
         assertNull(cache.openSnapshot("collection"))
     }
 
+    @Test
+    fun `a body shorter than its declared length is not kept`() {
+        val editor = assertNotNull(cache.openEditor("cover"))
+        fs.write(editor.metadata) { writeUtf8(meta("content-type:image/jpeg", "content-length:80931")) }
+        fs.write(editor.data) { write(PNG) }
+        assertNull(editor.commitAndOpenSnapshot())
+        assertNull(cache.openSnapshot("cover"))
+    }
+
+    @Test
+    fun `a whole body with its length declared is kept`() {
+        val editor = assertNotNull(cache.openEditor("cover"))
+        fs.write(editor.metadata) { writeUtf8(meta("content-length:${PNG.size}")) }
+        fs.write(editor.data) { write(PNG) }
+        assertNotNull(editor.commitAndOpenSnapshot()).close()
+        assertContentEquals(PNG, read("cover"))
+    }
+
+    @Test
+    fun `an entry cut short before this check is dropped when read`() {
+        // Written straight to the stills cache, as the old code did.
+        val editor = assertNotNull(stills.openEditor("old"))
+        fs.write(editor.metadata) { writeUtf8(meta("content-length:99999")) }
+        fs.write(editor.data) { write(PNG) }
+        editor.commitAndOpenSnapshot()?.close()
+        assertNull(cache.openSnapshot("old"))
+        assertNull(stills.openSnapshot("old"))
+    }
+
+    @Test
+    fun `a compressed transfer is not judged by its length`() {
+        val editor = assertNotNull(cache.openEditor("gz"))
+        fs.write(editor.metadata) { writeUtf8(meta("content-encoding:gzip", "content-length:99999")) }
+        fs.write(editor.data) { write(PNG) }
+        assertNotNull(editor.commitAndOpenSnapshot()).close()
+    }
+
+    /** A cached response's metadata as Coil writes it: status, two times, the header count, then the headers. */
+    private fun meta(vararg headers: String): String =
+        (listOf("200", "1", "2", headers.size.toString()) + headers).joinToString("\n", postfix = "\n")
+
     private fun write(key: String, body: ByteArray) {
         val editor = assertNotNull(cache.openEditor(key))
         fs.write(editor.metadata) { writeUtf8("meta") }

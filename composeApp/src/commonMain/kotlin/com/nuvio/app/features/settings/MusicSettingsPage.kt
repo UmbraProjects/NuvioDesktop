@@ -68,10 +68,6 @@ import nuvio.composeapp.generated.resources.settings_music_pause_for_trailers_de
 import nuvio.composeapp.generated.resources.settings_music_resume_after_playback
 import nuvio.composeapp.generated.resources.settings_music_resume_after_playback_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion
-import nuvio.composeapp.generated.resources.settings_music_album_lenses
-import nuvio.composeapp.generated.resources.settings_music_album_lenses_description
-import nuvio.composeapp.generated.resources.settings_music_artist_stage
-import nuvio.composeapp.generated.resources.settings_music_artist_stage_description
 import nuvio.composeapp.generated.resources.settings_music_reduced_motion_description
 import nuvio.composeapp.generated.resources.settings_music_section_general
 import nuvio.composeapp.generated.resources.settings_music_lyrics_amll
@@ -131,22 +127,6 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     checked = settings.reducedMotion,
                     isTablet = isTablet,
                     onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(reducedMotion = it)) },
-                )
-                SettingsGroupDivider(isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_music_album_lenses),
-                    description = stringResource(Res.string.settings_music_album_lenses_description),
-                    checked = settings.albumLenses,
-                    isTablet = isTablet,
-                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(albumLenses = it)) },
-                )
-                SettingsGroupDivider(isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_music_artist_stage),
-                    description = stringResource(Res.string.settings_music_artist_stage_description),
-                    checked = settings.artistStage,
-                    isTablet = isTablet,
-                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(artistStage = it)) },
                 )
                 SettingsGroupDivider(isTablet)
                 SettingsSwitchRow(

@@ -297,14 +297,16 @@ internal fun AlbumAmbientBackdrop(coverUrl: String?, modifier: Modifier = Modifi
         NuvioAsyncImage(
             model = coverUrl,
             contentDescription = null,
-            modifier = Modifier.fillMaxSize().blur(72.dp).graphicsLayer { alpha = 0.38f },
+            modifier = Modifier.fillMaxSize().blur(72.dp).graphicsLayer { alpha = 0.34f },
             contentScale = ContentScale.Crop,
         )
+        // Never less than half the page's own colour over the cover, even at the left: a white or very bright cover
+        // washed the left edge out to near white, and the panel standing on it lost its glass and its text.
         Box(
             Modifier.fillMaxSize().background(
                 Brush.horizontalGradient(
-                    0f to colors.background.copy(alpha = 0.1f),
-                    0.48f to colors.background.copy(alpha = 0.7f),
+                    0f to colors.background.copy(alpha = 0.55f),
+                    0.48f to colors.background.copy(alpha = 0.78f),
                     0.76f to colors.background,
                     1f to colors.background,
                 ),

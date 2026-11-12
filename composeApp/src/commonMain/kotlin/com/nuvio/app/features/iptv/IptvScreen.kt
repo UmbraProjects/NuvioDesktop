@@ -191,15 +191,10 @@ fun IptvScreen(
     val content = state.content
     // fork:navbar-search - the channels whose names hold what is typed (those that start with it first), offered by the
     // on-screen keyboard above its keys.
+    // The same list the top bar's search panel shows (SearchPredictions.kt).
     val channelWords = remember(filter, content) {
-        val typed = filter.trim()
-        if (typed.isEmpty()) emptyList()
-        else content?.channels.orEmpty().asSequence().map { it.name.trim() }
-            .filter { it.contains(typed, ignoreCase = true) && !it.equals(typed, ignoreCase = true) }
-            .distinctBy { it.lowercase() }
-            .sortedBy { !it.startsWith(typed, ignoreCase = true) }
+        com.nuvio.app.features.search.channelPredictions(filter, content?.channels.orEmpty().asSequence().map { it.name })
             .take(com.nuvio.app.core.ui.MAX_KEYBOARD_SUGGESTIONS)
-            .toList()
     }
     com.nuvio.app.core.ui.PublishKeyboardSuggestions(channelWords) { picked -> filter = picked }
     val categoryRegions = remember(content) { content?.let(IptvRegions::categoryRegions).orEmpty() }
