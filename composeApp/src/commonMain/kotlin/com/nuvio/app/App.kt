@@ -2050,6 +2050,7 @@ private fun MainAppContent(
                 AppShortcutAction.OpenSearch,
                 AppShortcutAction.OpenDiscover,
                 AppShortcutAction.OpenLiveTv,
+                AppShortcutAction.OpenSettings,
                 AppShortcutAction.OpenLibrary -> {
                     // Live TV only while it is in the navigation; the key then does nothing.
                     if (action == AppShortcutAction.OpenLiveTv &&
@@ -2078,6 +2079,11 @@ private fun MainAppContent(
                             AppScreenTab.Home
                         } else {
                             AppScreenTab.LiveTv
+                        }
+                        AppShortcutAction.OpenSettings -> if (selectedTab == AppScreenTab.Settings) {
+                            AppScreenTab.Home
+                        } else {
+                            AppScreenTab.Settings
                         }
                         else -> AppScreenTab.Home
                     }
@@ -7304,15 +7310,12 @@ private fun TabletFloatingTopBar(
                                             true
                                         }
                                         Key.Escape -> {
+                                            // One press closes the search, as the X does. It used to close the history
+                                            // and suggestions first and leave the box open, so Escape seemed to do
+                                            // nothing useful (2026-11-13).
                                             if (event.type == KeyEventType.KeyUp) {
-                                                when {
-                                                    picker.held != null -> {
-                                                        walkTo(picker.typed(picker.typed))
-                                                        panelDismissed = true
-                                                    }
-                                                    pickerVisible -> panelDismissed = true
-                                                    else -> onSearchOverlayDismiss()
-                                                }
+                                                panelDismissed = true
+                                                onSearchOverlayDismiss()
                                             }
                                             true
                                         }
@@ -7584,6 +7587,7 @@ private fun TabletFloatingTopBar(
                 properties = PopupProperties(focusable = true),
                 onDismissRequest = { libraryMenuVisible = false },
             ) {
+                com.nuvio.app.core.ui.KeyRouteLayer("app menu") // the focus router leaves an open menu alone
                 LibraryQuickAccessMenuPanel(
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
                     // The full bar's width (which counts the Discover quadrant when it is shown),

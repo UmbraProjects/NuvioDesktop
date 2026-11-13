@@ -2168,7 +2168,8 @@ fun MetaDetailsScreen(
                                         mouseActivity.onMouseMoved(event.changes.first().position)
                                     }
                             } else {
-                                Modifier
+                                // Its controls take focus themselves; the fallback returns it to the last one (KeyLayers).
+                                Modifier.keyLayer("Details")
                             },
                         ),
                 ) {

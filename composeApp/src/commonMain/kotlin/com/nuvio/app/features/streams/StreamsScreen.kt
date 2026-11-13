@@ -1,5 +1,7 @@
 package com.nuvio.app.features.streams
 
+import com.nuvio.app.core.ui.requestFocusLogged
+import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -807,6 +809,8 @@ fun StreamsScreen(
             .then(
                 if (isDesktop) {
                     Modifier
+                        // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back here.
+                        .keyLayer("Sources") { keyboardFocusRequester.requestFocusLogged() }
                         .focusRequester(keyboardFocusRequester)
                         .focusable()
                         .onPreviewKeyEvent { event ->
@@ -1928,6 +1932,7 @@ private fun StreamSortChip() {
             border = BorderStroke(0.5.dp, LibraryNavMenuBorderColor),
             modifier = Modifier.width(220.dp),
         ) {
+            com.nuvio.app.core.ui.KeyRouteLayer("sources menu") // the focus router leaves an open menu alone
             StreamListSortOrder.entries.forEach { option ->
                 LibraryMenuItem(label = option.label, selected = option == order) {
                     StreamBadgeSettingsRepository.setListSortOrder(option)

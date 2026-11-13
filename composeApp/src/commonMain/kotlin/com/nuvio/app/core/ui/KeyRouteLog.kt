@@ -40,6 +40,9 @@ object KeyRouteLog {
     private var passedWindow = false
 
     private var composeHasFocus = false
+
+    /** Whether anything in the window's content holds Compose focus (a popup's or dialog's own focus aside). */
+    val focusHeld: Boolean get() = composeHasFocus
     private var lastKey = "none"
     private var lastKeyAtMs = 0L
     private var handledSinceProblem = 0
@@ -47,14 +50,26 @@ object KeyRouteLog {
     /** Popups and dialogs that are open: they hold the keyboard in a layer of their own (see [KeyRouteLayer]). */
     private val layers = ArrayList<String>()
 
+    /** The open ones among [layers] that are menus: the focus router's fallback stays out of those. */
+    private val menus = ArrayList<String>()
+
     /** Reads where the focused control is in the window, set by [keyRouteOuter]; the only name a control has. */
     internal var focusPlace: (() -> String?)? = null
 
-    /** A popup or dialog that said so ([KeyRouteLayer]) is open. */
-    val popupOpen: Boolean get() = layers.isNotEmpty()
+    /** A menu that said so ([KeyRouteLayer]) is open. Dialogs do not count: they are a [keyLayer] of their own. */
+    val popupOpen: Boolean get() = menus.isNotEmpty()
 
-    internal fun layerOpened(name: String) { layers += name }
-    internal fun layerClosed(name: String) { layers.remove(name) }
+    internal fun layerOpened(name: String, menu: Boolean) {
+        layers += name
+        if (menu) menus += name
+    }
+
+    internal fun layerClosed(name: String, menu: Boolean) {
+        layers.remove(name)
+        if (menu) menus.remove(name)
+        // A menu hands focus to nobody when it closes (picked with the mouse): the screen under it takes it back.
+        if (menu) KeyLayers.settle("a menu closed")
+    }
 
     /** A navigation key went down, before anything has handled it. The caller follows with [settle], posted. */
     fun keyPressed(name: String) {
@@ -134,12 +149,16 @@ fun FocusRequester.requestFocusLogged(): Boolean {
     return moved
 }
 
-/** Marks a popup or dialog as open while it is composed, so its keys are not logged as lost. Call inside its content. */
+/**
+ * Marks a popup or dialog as open while it is composed, so its keys are not logged as lost. Call inside its content.
+ * [menu]: the focus router's fallback leaves the keyboard alone while it is open; false for a dialog, which is a
+ * [keyLayer] of its own and gets focus back when it loses it.
+ */
 @Composable
-fun KeyRouteLayer(name: String) {
-    DisposableEffect(name) {
-        KeyRouteLog.layerOpened(name)
-        onDispose { KeyRouteLog.layerClosed(name) }
+fun KeyRouteLayer(name: String, menu: Boolean = true) {
+    DisposableEffect(name, menu) {
+        KeyRouteLog.layerOpened(name, menu)
+        onDispose { KeyRouteLog.layerClosed(name, menu) }
     }
 }
 

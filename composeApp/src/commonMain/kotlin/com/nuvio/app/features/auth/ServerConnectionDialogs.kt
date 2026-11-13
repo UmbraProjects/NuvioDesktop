@@ -74,6 +74,7 @@ internal fun ServerConnectionMenu(
             containerColor = MaterialTheme.nuvio.colors.surfacePopover,
             shape = MaterialTheme.nuvio.shapes.compactCard,
         ) {
+            com.nuvio.app.core.ui.KeyRouteLayer("server menu") // the focus router leaves an open menu alone
             DropdownMenuItem(
                 text = { Text(stringResource(Res.string.server_menu_official)) },
                 enabled = activeServer.isCustom,

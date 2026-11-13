@@ -4254,6 +4254,7 @@
     <string name="shortcut_app_go_home">Go to Home</string>
     <string name="shortcut_app_open_search">Open Search</string>
     <string name="shortcut_app_open_library">Open Library (toggle back to Home)</string>
+    <string name="shortcut_app_open_settings">Open Settings (toggle back to Home)</string>
     <string name="shortcut_app_open_discover">Open Discover (toggle back to Home)</string>
     <string name="shortcut_app_open_calendar">Open Calendar</string>
     <string name="shortcut_app_open_live_tv">Open Live TV (toggle back to Home)</string>

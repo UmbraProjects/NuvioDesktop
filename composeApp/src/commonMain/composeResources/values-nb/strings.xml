@@ -4124,6 +4124,7 @@
   <string name="shortcut_app_go_home">Gå til Hjem</string>
   <string name="shortcut_app_open_search">Åpne Søk</string>
   <string name="shortcut_app_open_library">Åpne Bibliotek (bytt tilbake til Hjem)</string>
+  <string name="shortcut_app_open_settings">Åpne Innstillinger (bytt tilbake til Hjem)</string>
   <string name="shortcut_app_open_discover">Åpne Oppdag (bytt tilbake til Hjem)</string>
   <string name="shortcut_app_open_calendar">Åpne Kalender</string>
   <string name="shortcut_app_open_live_tv">Åpne Direkte-TV (bytt tilbake til Hjem)</string>

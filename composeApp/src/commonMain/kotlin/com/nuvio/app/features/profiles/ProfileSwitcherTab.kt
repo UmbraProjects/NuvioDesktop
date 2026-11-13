@@ -261,6 +261,7 @@ fun ProfileSwitcherTab(
                 properties = PopupProperties(focusable = true),
                 onDismissRequest = { showPopup = false },
             ) {
+                com.nuvio.app.core.ui.KeyRouteLayer("profile menu") // the focus router leaves an open menu alone
                 Box(
                     modifier = Modifier
                         .imePadding()

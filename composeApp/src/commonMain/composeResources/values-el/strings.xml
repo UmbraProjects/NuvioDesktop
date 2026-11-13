@@ -4124,6 +4124,7 @@
   <string name="shortcut_app_go_home">Μετάβαση στην Αρχική</string>
   <string name="shortcut_app_open_search">Άνοιγμα Αναζήτησης</string>
   <string name="shortcut_app_open_library">Άνοιγμα Βιβλιοθήκης (εναλλαγή πίσω στην Αρχική)</string>
+  <string name="shortcut_app_open_settings">Άνοιγμα Ρυθμίσεων (εναλλαγή πίσω στην Αρχική)</string>
   <string name="shortcut_app_open_discover">Άνοιγμα Ανακάλυψης (εναλλαγή πίσω στην Αρχική)</string>
   <string name="shortcut_app_open_calendar">Άνοιγμα Ημερολογίου</string>
   <string name="shortcut_app_open_live_tv">Άνοιγμα Live TV (εναλλαγή πίσω στην Αρχική)</string>

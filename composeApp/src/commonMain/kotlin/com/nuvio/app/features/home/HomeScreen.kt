@@ -2437,50 +2437,9 @@ fun HomeScreen(
     var filterStripHasFocus by remember { mutableStateOf(false) }
     val filterStripFocus = remember { BrowseFilterStripFocus(filterStripFocusRequester) { filterStripHasFocus = it } }
     var lastStateDrivenSearchQuery by remember { mutableStateOf<String?>(null) }
-    // Uncovered without being rebuilt (back from the Settings tab, where Home now stays composed):
-    // a rebuilt Home took focus in its first-composition effect; a kept one has to ask here, or
-    // the keyboard has nothing focused. Search hands focus to its text field instead.
-    val homeCoveredNow = LocalScreenCovered.current
-    var homeWasCovered by remember { mutableStateOf(homeCoveredNow) }
-    LaunchedEffect(homeCoveredNow) {
-        val uncovered = homeWasCovered && !homeCoveredNow
-        homeWasCovered = homeCoveredNow
-        if (!uncovered || contentMode is HomeContentMode.Search) return@LaunchedEffect
-        repeat(12) { attempt ->
-            delay(if (attempt == 0) 50 else 48)
-            requestHomeFocus()
-            if (homeRootHasFocus) return@LaunchedEffect
-        }
-    }
-    // The panel hands focus to nobody when it closes; Home takes it back, as after a filter menu.
-    var setupPanelWasOpen by remember { mutableStateOf(setupPanelOpen) }
-    LaunchedEffect(setupPanelOpen) {
-        val closed = setupPanelWasOpen && !setupPanelOpen
-        setupPanelWasOpen = setupPanelOpen
-        if (!closed || contentMode !is HomeContentMode.Normal) return@LaunchedEffect
-        repeat(12) { attempt ->
-            delay(if (attempt == 0) 50 else 48)
-            requestHomeFocus()
-            if (homeRootHasFocus) return@LaunchedEffect
-        }
-    }
-    // A filter-bar menu (Discover's catalog / filters, Library's) is a focusable popup: it takes the
-    // keyboard while open and hands it to nobody when it closes. Opened and picked with the mouse,
-    // no press ever lands on this root to reclaim it (the click was inside the popup), so the arrow
-    // keys went nowhere until the next click on the page. Take it back once the menu is gone.
-    var browseFilterMenuWasOpen by remember { mutableStateOf(browseFilterMenuOpen) }
-    LaunchedEffect(browseFilterMenuOpen) {
-        val closed = browseFilterMenuWasOpen && !browseFilterMenuOpen
-        browseFilterMenuWasOpen = browseFilterMenuOpen
-        if (!closed || contentMode is HomeContentMode.Search) return@LaunchedEffect
-        repeat(12) { attempt ->
-            delay(if (attempt == 0) 50 else 48)
-            // A menu opened from the keyboard hands focus back to its filter, which is inside this root.
-            if (homeRootHasFocus) return@LaunchedEffect
-            requestHomeFocus()
-            if (homeRootHasFocus) return@LaunchedEffect
-        }
-    }
+    // Taking focus back after Home is uncovered, after the setup panel closes and after a filter menu closes used to be
+    // three retry loops here, one per way of losing it. The focus router's fallback (keyLayer below, KeyLayers) now
+    // covers those and every other way: the first arrow or OK that goes to no one puts focus back here and still acts.
     // Move content-area focus when the user presses Down from the search bar.
     LaunchedEffect(navigateToContentCount) {
         if (navigateToContentCount > 0) {

@@ -95,8 +95,9 @@ fun NuvioModalDialog(
         // like the episode grid into an unreadable column.
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        KeyRouteLayer("dialog")
-        NuvioDialogSurface(modifier = modifier.widthIn(max = maxWidth), shape = shape) {
+        KeyRouteLayer("dialog", menu = false)
+        // A screen of its own for the focus router (KeyLayers): focus lost inside it comes back to its last control.
+        NuvioDialogSurface(modifier = modifier.widthIn(max = maxWidth).keyLayer("Dialog"), shape = shape) {
           Column {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 22.dp, bottom = 16.dp),
@@ -164,8 +165,9 @@ fun NuvioAlertDialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        KeyRouteLayer("alert dialog")
-        NuvioDialogSurface(modifier = modifier.widthIn(max = maxWidth), shape = shape) {
+        KeyRouteLayer("alert dialog", menu = false)
+        // A screen of its own for the focus router (KeyLayers): focus lost inside it comes back to its last control.
+        NuvioDialogSurface(modifier = modifier.widthIn(max = maxWidth).keyLayer("Dialog"), shape = shape) {
             // A dialog is its own window: the arrows (and a pad's D-pad) move between its controls and buttons, which
             // desktop Compose leaves to Tab otherwise.
             Column(Modifier.arrowKeyFocusNavigation()) {

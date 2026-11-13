@@ -4123,6 +4123,7 @@
   <string name="shortcut_app_go_home">Ana sayfaya git</string>
   <string name="shortcut_app_open_search">Aramayı aç</string>
   <string name="shortcut_app_open_library">Kitaplığı aç (Ana sayfaya geri dönmek için tekrar bas)</string>
+  <string name="shortcut_app_open_settings">Ayarları aç (Ana sayfaya geri dönmek için tekrar bas)</string>
   <string name="shortcut_app_open_discover">Keşfet'i aç (Ana sayfaya geri dönmek için tekrar bas)</string>
   <string name="shortcut_app_open_calendar">Takvimi aç</string>
   <string name="shortcut_app_open_live_tv">Canlı TV'yi aç (Ana sayfaya geri dönmek için tekrar bas)</string>

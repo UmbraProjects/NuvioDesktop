@@ -165,6 +165,8 @@ object AppShortcutsRepository {
         AppShortcutAction.OpenLiveTv to KeyEvent.VK_V,
         AppShortcutAction.OpenMusic to KeyEvent.VK_U,
         AppShortcutAction.OpenYouTube to KeyEvent.VK_Y,
+        // O for Options: S is Search. The player's O (Sources) is a separate set of keys.
+        AppShortcutAction.OpenSettings to KeyEvent.VK_O,
         AppShortcutAction.FocusMusicPlayer to KeyEvent.VK_B,
         AppShortcutAction.ToggleTrailer to KeyEvent.VK_T,
         AppShortcutAction.ToggleTrailerMute to KeyEvent.VK_M,

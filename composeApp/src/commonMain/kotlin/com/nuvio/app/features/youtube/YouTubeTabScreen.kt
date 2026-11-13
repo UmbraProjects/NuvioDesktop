@@ -1000,6 +1000,7 @@ private fun ChannelPicker(state: YouTubeChannelState, onOpenSettings: () -> Unit
                 onDismissRequest = { open = false },
                 properties = PopupProperties(focusable = true),
             ) {
+                com.nuvio.app.core.ui.KeyRouteLayer("youtube menu") // the focus router leaves an open menu alone
                 ProfileMenu(
                     state = state,
                     onPick = { identity ->

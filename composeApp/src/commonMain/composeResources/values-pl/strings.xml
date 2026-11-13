@@ -4134,6 +4134,7 @@
   <string name="shortcut_app_go_home">Przejdź do ekranu głównego</string>
   <string name="shortcut_app_open_search">Otwórz wyszukiwanie</string>
   <string name="shortcut_app_open_library">Otwórz bibliotekę (ponownie, aby wrócić do ekranu głównego)</string>
+  <string name="shortcut_app_open_settings">Otwórz ustawienia (ponownie, aby wrócić do ekranu głównego)</string>
   <string name="shortcut_app_open_discover">Otwórz Odkrywaj (ponownie, aby wrócić do ekranu głównego)</string>
   <string name="shortcut_app_open_calendar">Otwórz kalendarz</string>
   <string name="shortcut_app_open_live_tv">Otwórz telewizję na żywo (ponownie, aby wrócić do ekranu głównego)</string>

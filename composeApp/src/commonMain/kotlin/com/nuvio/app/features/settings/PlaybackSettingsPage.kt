@@ -704,6 +704,7 @@ private fun SubtitleColorDropdownRow(
                 shadowElevation = 0.dp,
                 border = BorderStroke(1.dp, SettingsSectionGlassEdge),
             ) {
+                com.nuvio.app.core.ui.KeyRouteLayer("playback settings menu") // the focus router leaves an open menu alone
                 options.forEach { option ->
                     val selected = option.color.toStorageHexString() == selectedOption.color.toStorageHexString()
                     DropdownMenuItem(

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.keyLayer
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.runtime.key
@@ -328,6 +329,9 @@ fun SettingsScreen(
     // which consume their own keystrokes, are never disrupted.
     val homeKeyModifier = if (isDesktop) {
         Modifier
+            // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back on the selected
+            // category, and the key is sent on. Replaces SettingsKeyboard.onUnhandledArrow, which swallowed that key.
+            .keyLayer("Settings") { SettingsKeyboard.focusPage() }
             .onFocusChanged { settingsKeyboardRoot.hasFocus = it.hasFocus }
             .focusRequester(homeKeyFocusRequester)
             .focusGroup()

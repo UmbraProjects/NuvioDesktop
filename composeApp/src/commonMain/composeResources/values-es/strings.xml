@@ -4128,6 +4128,7 @@
     <string name="shortcut_app_go_home">Ir a Inicio</string>
     <string name="shortcut_app_open_search">Abrir Búsqueda</string>
     <string name="shortcut_app_open_library">Abrir Biblioteca (alterna con Inicio)</string>
+    <string name="shortcut_app_open_settings">Abrir Configuración (alterna con Inicio)</string>
     <string name="shortcut_app_open_discover">Abrir Descubrir (alterna con Inicio)</string>
     <string name="shortcut_app_open_calendar">Abrir Calendario</string>
     <string name="shortcut_app_open_live_tv">Abrir TV en vivo (alterna con Inicio)</string>

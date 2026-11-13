@@ -191,6 +191,7 @@ private fun PluginSelectSetting(
                 }
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                com.nuvio.app.core.ui.KeyRouteLayer("plugin settings menu") // the focus router leaves an open menu alone
                 options.forEach { option ->
                     val objectValue = option as? JsonObject ?: return@forEach
                     val optionValue = objectValue["value"]?.jsonPrimitive?.contentOrNull.orEmpty()

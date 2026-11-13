@@ -1,5 +1,6 @@
 package com.nuvio.app.features.tonight
 
+import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -218,6 +219,8 @@ internal fun TonightCoinTossView(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back here.
+            .keyLayer("Tonight") { focus.requestFocusLogged() }
             .focusRequester(focus)
             .focusable()
             .tonightKeys { key ->
@@ -390,6 +393,8 @@ internal fun TonightKnockoutView(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
+            // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back here.
+            .keyLayer("Tonight") { focus.requestFocusLogged() }
             .focusRequester(focus)
             .focusable()
             .tonightKeys { key ->

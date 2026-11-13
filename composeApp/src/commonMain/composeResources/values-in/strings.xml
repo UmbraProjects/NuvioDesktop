@@ -4121,6 +4121,7 @@
   <string name="shortcut_app_go_home">Ke Beranda</string>
   <string name="shortcut_app_open_search">Buka Pencarian</string>
   <string name="shortcut_app_open_library">Buka Pustaka (tekan lagi untuk kembali ke Beranda)</string>
+  <string name="shortcut_app_open_settings">Buka Pengaturan (tekan lagi untuk kembali ke Beranda)</string>
   <string name="shortcut_app_open_discover">Buka Jelajahi (tekan lagi untuk kembali ke Beranda)</string>
   <string name="shortcut_app_open_calendar">Buka Kalender</string>
   <string name="shortcut_app_open_live_tv">Buka TV Langsung (tekan lagi untuk kembali ke Beranda)</string>

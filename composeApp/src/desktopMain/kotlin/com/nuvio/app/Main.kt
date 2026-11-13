@@ -635,13 +635,8 @@ fun main(args: Array<String>) {
             title = if (smokePlayerUrl == null) "Nuvio HTPC" else "Nuvio Player Smoke",
             state = windowState,
             icon = painterResource(NuvioDesktopIconPath),
-            // An arrow no control took, often because the control holding focus left the screen: on a music page,
-            // focus goes back onto the page (see MusicKeyboard); likewise in Settings (SettingsKeyboard). Window-level so it also runs with nothing focused.
-            onKeyEvent = { event ->
-                com.nuvio.app.core.ui.arrowFocusDirection(event) != null &&
-                    (com.nuvio.app.features.music.MusicKeyboard.onUnhandledArrow() ||
-                        com.nuvio.app.features.settings.SettingsKeyboard.onUnhandledArrow())
-            },
+            // An arrow no control took (often because the control holding focus left the screen) is handled by the
+            // focus router's fallback in the key listener below (KeyLayers): Music and Settings register there.
         ) {
             remember {
                 System.out.println(
@@ -854,6 +849,16 @@ fun main(args: Array<String>) {
                         KeyEvent.KEY_PRESSED -> {
                             val keyCode = (event as KeyEvent).keyCode
                             if (keyCode in KEYBOARD_NAVIGATION_KEYS) com.nuvio.app.core.ui.KeyboardInputMode.active = true
+                            // Any other key (a hotkey) that reached nobody because nothing held focus: put focus back
+                            // on the screen on top and send it again (KeyLayers). Navigation keys are handled below.
+                            if (
+                                keyCode !in KEYBOARD_NAVIGATION_KEYS &&
+                                keyCode != KeyEvent.VK_ESCAPE &&
+                                keyCode !in FOCUS_FALLBACK_SKIPPED_KEYS
+                            ) {
+                                val pressed = event as KeyEvent
+                                java.awt.EventQueue.invokeLater { replayKeyNobodyTook(pressed, onlyWhenFocusLost = true) }
+                            }
                             // Logging only: follow the key through its handlers, then write where it went.
                             if (keyCode in KEYBOARD_NAVIGATION_KEYS || keyCode == KeyEvent.VK_ESCAPE) {
                                 com.nuvio.app.core.ui.KeyRouteLog.keyPressed(KeyEvent.getKeyText(keyCode))
@@ -866,33 +871,7 @@ fun main(args: Array<String>) {
                                     // Focus router fallback (KeyLayers): an arrow or OK that nothing in the window took
                                     // (Compose consumes every key it handles, popups included) puts focus back on the
                                     // screen on top and is sent again. Not inside a dialog window or an open popup.
-                                    val window = focusManager.focusedWindow
-                                    if (
-                                        keyCode in FOCUS_FALLBACK_KEYS &&
-                                        !pressed.isConsumed &&
-                                        !com.nuvio.app.core.ui.KeyLayers.replaying &&
-                                        window is androidx.compose.ui.awt.ComposeWindow &&
-                                        !com.nuvio.app.core.ui.KeyRouteLog.popupOpen &&
-                                        com.nuvio.app.core.ui.KeyLayers.reclaim(KeyEvent.getKeyText(keyCode)) != null
-                                    ) {
-                                        val target: java.awt.Component = focusManager.focusOwner ?: window
-                                        com.nuvio.app.core.ui.KeyLayers.replaying = true
-                                        try {
-                                            target.dispatchEvent(
-                                                KeyEvent(
-                                                    target,
-                                                    KeyEvent.KEY_PRESSED,
-                                                    System.currentTimeMillis(),
-                                                    pressed.modifiersEx,
-                                                    keyCode,
-                                                    pressed.keyChar,
-                                                    pressed.keyLocation,
-                                                ),
-                                            )
-                                        } finally {
-                                            com.nuvio.app.core.ui.KeyLayers.replaying = false
-                                        }
-                                    }
+                                    if (keyCode in FOCUS_FALLBACK_KEYS) replayKeyNobodyTook(pressed, onlyWhenFocusLost = false)
                                 }
                             }
                         }
@@ -943,6 +922,8 @@ fun main(args: Array<String>) {
                     exitDesktopApplication,
                 )
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(backNavigationDispatcher)
+                KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(heldKeyReleaseDispatcher)
+                com.nuvio.app.core.ui.KeyLayers.onFocusSettled = { heldKeyReleaseDispatcher.swallowHeldReleases() }
                 Toolkit.getDefaultToolkit().systemEventQueue.push(mouseFiveShiftEventQueue)
                 Toolkit.getDefaultToolkit().addAWTEventListener(
                     mouseBackButtonListener,
@@ -963,6 +944,8 @@ fun main(args: Array<String>) {
                     window.removeWindowFocusListener(windowFocusListener)
                     window.removeWindowStateListener(windowStateListener)
                     KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(backNavigationDispatcher)
+                    KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(heldKeyReleaseDispatcher)
+                    com.nuvio.app.core.ui.KeyLayers.onFocusSettled = null
                     Toolkit.getDefaultToolkit().removeAWTEventListener(mouseBackButtonListener)
                     Toolkit.getDefaultToolkit().removeAWTEventListener(inputModeListener)
                     mouseFiveShiftEventQueue.uninstall()
@@ -1129,6 +1112,7 @@ fun main(args: Array<String>) {
                                 AppShortcutAction.OpenLiveTv,
                                 AppShortcutAction.OpenMusic,
                                 AppShortcutAction.OpenYouTube,
+                                AppShortcutAction.OpenSettings,
                                 // Routed through App so it inherits the same guard the other
                                 // navigation shortcuts get: nothing fires while the player is up.
                                 AppShortcutAction.ToggleGameMode -> {
@@ -1331,6 +1315,72 @@ private fun swallowHeldSelectKey(event: KeyEvent): Boolean {
 }
 
 /** The keys that mean "moving around with the keyboard" (or a pad's D-pad and A, which arrive as these). */
+/**
+ * Focus router fallback (KeyLayers): [pressed] came back from the window unconsumed. When the screen on top does not
+ * hold focus, focus goes back to it and the key is sent again. [onlyWhenFocusLost]: only when nothing at all holds
+ * focus (hotkeys), so an unused letter on a top-bar button does not pull focus off it.
+ */
+private fun replayKeyNobodyTook(pressed: KeyEvent, onlyWhenFocusLost: Boolean) {
+    if (pressed.isConsumed || com.nuvio.app.core.ui.KeyLayers.replaying) return
+    if (onlyWhenFocusLost && com.nuvio.app.core.ui.KeyRouteLog.focusHeld) return
+    val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
+    val window = focusManager.focusedWindow as? androidx.compose.ui.awt.ComposeWindow ?: return
+    if (com.nuvio.app.core.ui.KeyRouteLog.popupOpen) return
+    if (com.nuvio.app.core.ui.KeyLayers.reclaim(KeyEvent.getKeyText(pressed.keyCode)) == null) return
+    val target: java.awt.Component = focusManager.focusOwner ?: window
+    com.nuvio.app.core.ui.KeyLayers.replaying = true
+    try {
+        target.dispatchEvent(
+            KeyEvent(
+                target,
+                KeyEvent.KEY_PRESSED,
+                System.currentTimeMillis(),
+                pressed.modifiersEx,
+                pressed.keyCode,
+                pressed.keyChar,
+                pressed.keyLocation,
+            ),
+        )
+    } finally {
+        com.nuvio.app.core.ui.KeyLayers.replaying = false
+    }
+}
+
+/**
+ * Tracks which keys are held down. When the focus router settles focus on a screen ([KeyLayers.onFocusSettled]), the
+ * release of every key still held is kept from the window: that press belonged to whatever had focus before (a
+ * shortcut that switched panels), and a screen that acts on a key's release must not see half of it. A new press of
+ * the same key clears it. Modifiers are left alone. UI thread only.
+ */
+private object heldKeyReleaseDispatcher : java.awt.KeyEventDispatcher {
+    private val held = HashSet<Int>()
+    private val swallow = HashSet<Int>()
+
+    fun swallowHeldReleases() {
+        swallow += held.filter { it !in FOCUS_FALLBACK_SKIPPED_KEYS }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean = when (event.id) {
+        KeyEvent.KEY_PRESSED -> {
+            held += event.keyCode
+            swallow -= event.keyCode
+            false
+        }
+        KeyEvent.KEY_RELEASED -> {
+            held -= event.keyCode
+            swallow.remove(event.keyCode)
+        }
+        else -> false
+    }
+}
+
+/** Keys the fallback never sends on: Back (the window takes Escape and Backspace itself) and bare modifiers. */
+private val FOCUS_FALLBACK_SKIPPED_KEYS = setOf(
+    KeyEvent.VK_BACK_SPACE, KeyEvent.VK_SHIFT, KeyEvent.VK_CONTROL, KeyEvent.VK_ALT, KeyEvent.VK_ALT_GRAPH,
+    KeyEvent.VK_META, KeyEvent.VK_WINDOWS, KeyEvent.VK_CAPS_LOCK, KeyEvent.VK_NUM_LOCK, KeyEvent.VK_CONTEXT_MENU,
+    KeyEvent.VK_UNDEFINED,
+)
+
 /** Keys the focus router's fallback sends on to the screen on top when nothing took them (see KeyLayers). */
 private val FOCUS_FALLBACK_KEYS = setOf(
     KeyEvent.VK_UP, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT, KeyEvent.VK_ENTER,

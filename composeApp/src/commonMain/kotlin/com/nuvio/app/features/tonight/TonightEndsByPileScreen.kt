@@ -1,5 +1,7 @@
 package com.nuvio.app.features.tonight
 
+import com.nuvio.app.core.ui.requestFocusLogged
+import com.nuvio.app.core.ui.keyLayer
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -100,6 +102,8 @@ internal fun TonightEndsByView(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back here.
+            .keyLayer("Tonight") { focus.requestFocusLogged() }
             .focusRequester(focus)
             .focusable()
             .tonightKeys { key ->
@@ -306,6 +310,8 @@ internal fun TonightPileView(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back here.
+            .keyLayer("Tonight") { focus.requestFocusLogged() }
             .focusRequester(focus)
             .focusable()
             .tonightKeys { key ->

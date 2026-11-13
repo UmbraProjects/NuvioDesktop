@@ -4124,6 +4124,7 @@
   <string name="shortcut_app_go_home">Ir para o Início</string>
   <string name="shortcut_app_open_search">Abrir Pesquisa</string>
   <string name="shortcut_app_open_library">Abrir Biblioteca (alterna de volta ao Início)</string>
+  <string name="shortcut_app_open_settings">Abrir Definições (alterna de volta ao Início)</string>
   <string name="shortcut_app_open_discover">Abrir Descobrir (alterna de volta ao Início)</string>
   <string name="shortcut_app_open_calendar">Abrir Calendário</string>
   <string name="shortcut_app_open_live_tv">Abrir TV em direto (alterna de volta ao Início)</string>

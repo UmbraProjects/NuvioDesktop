@@ -2018,6 +2018,7 @@ private fun SettingsMenuPanel(
         // trigger back immediately, so a reopen never has to wait for the animation to finish.
         properties = PopupProperties(focusable = expanded),
     ) {
+        com.nuvio.app.core.ui.KeyRouteLayer("settings menu") // the focus router leaves an open menu alone
         AnimatedVisibility(
             visibleState = transition,
             enter = expandVertically(

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -146,6 +147,11 @@ internal fun Modifier.musicKeyboardRoot(
         }
     }
     return this
+        // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back on the music page on
+        // top, and the key is sent on. Replaces the window's call to onUnhandledArrow, which swallowed that key.
+        .then(
+            if (takeFocus && !isPlayer) Modifier.keyLayer("Music") { MusicKeyboard.onUnhandledArrow() } else Modifier,
+        )
         .then(if (trapFocus) Modifier.focusProperties { onExit = { cancelFocusChange() } }.focusGroup() else Modifier)
         .onFocusChanged { root.hasFocus = it.hasFocus }
         // A focus group, so the requester belongs to a focus node that knows which control inside it was focused: the

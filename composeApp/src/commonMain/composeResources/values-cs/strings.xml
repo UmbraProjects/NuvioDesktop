@@ -4134,6 +4134,7 @@
   <string name="shortcut_app_go_home">Přejít na Domů</string>
   <string name="shortcut_app_open_search">Otevřít Hledání</string>
   <string name="shortcut_app_open_library">Otevřít Knihovnu (opakovaně zpět na Domů)</string>
+  <string name="shortcut_app_open_settings">Otevřít Nastavení (opakovaně zpět na Domů)</string>
   <string name="shortcut_app_open_discover">Otevřít Objevit (opakovaně zpět na Domů)</string>
   <string name="shortcut_app_open_calendar">Otevřít Kalendář</string>
   <string name="shortcut_app_open_live_tv">Otevřít Živou televizi (opakovaně zpět na Domů)</string>

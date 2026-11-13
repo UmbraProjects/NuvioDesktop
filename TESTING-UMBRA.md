@@ -103,3 +103,42 @@ Covers Home (with Search, Library and Discover), catalog pages and details pages
 - [ ] Nothing feels different when focus was never lost (no double moves, no jumps back to the first row)
 - [ ] Log: a `went to no one ... focus put back on Home, key sent again` line whenever it stepped in; `PerfWork` counts `KeyLayers.reclaimed`
 
+## Focus router, step 2 (2026-11-13)
+
+- [ ] Home after coming back from Settings, from a details page, after the setup panel closes and after a filter menu closes (with the mouse): the first arrow moves the selection (no dead press)
+- [ ] Music (tab, album, artist, full player): after focus is lost (a section swap, a panel closing), the first arrow both brings focus back and moves
+- [ ] Settings: the same; the ring lands on the selected category or the control last used
+- [ ] Sources picker (docked on a details page): arrows keep working after clicking around it
+- [ ] A details page with keyboard mode off: after clicking empty space, an arrow returns to the control last used
+- [ ] Menus (a filter menu, the profile menu, a settings drop-down, a stream's actions menu): Left and Right inside them never throw focus back to the page behind
+- [ ] Log: `focus put back on Music` / `Settings` / `Sources` / `Details` lines appear when it steps in
+
+## Focus router, step 3 (2026-11-13)
+
+- [ ] Tonight: in each mode, after clicking with the mouse (empty space, a button), the next arrow moves the selection; Back still leaves
+- [ ] Live TV: the same; typing in its search box keeps the cursor in the box
+- [ ] Calendar: coming back to it quickly, and after clicking around, arrows work at once
+- [ ] A dialog (an add-on's settings, a confirm prompt): after clicking empty space inside it, an arrow returns to its last control; while it is open, arrows never act on the page behind
+
+## Focus router: hotkeys after panel switches (2026-11-13)
+
+- [ ] **BROKEN** Hotkeys keep working across panel switches (2026-11-13): broke 5+ times; YouTube -> Library -> Home in a row was enough; an arrow brought them back
+  - [ ] Re-check after the fix: switch YouTube -> Library -> Home -> Settings -> Music several times quickly, then use a hotkey without pressing an arrow first; it works every time, and the log shows `focus settled on <screen> (shown)`
+  - [ ] After picking from a filter menu with the mouse, a hotkey works straight away (`focus settled on Home (a menu closed)`)
+  - [ ] Typing in Search or Live TV's search box: letters go into the box, never to a hotkey
+  - [ ] **BROKEN** Home, I (Live TV), L (2026-11-13): Library opened and switched straight back to Home, every time
+    - [ ] Re-check after the fix: Home, I, L stays on Library; L again goes back to Home; the same with D (Discover) from Live TV, Music or YouTube
+- [x] Steps 2 and 3 in general (2026-11-13): works well apart from the items below
+
+## Settings shortcut and Music keyboard fixes (2026-11-13)
+
+- [ ] **BROKEN** Music: Escape in a search's results does not leave the search; the box had to be focused and cleared by hand (2026-11-13)
+  - [ ] Re-check after the fix: search on the Music tab, press Enter, move into the results, press Escape: the search clears, the Library comes back and the arrows work on it at once
+- [ ] **BROKEN** Music, Crates: Down from the view switch lands in the middle of the covers, not on the shelf list (2026-11-13)
+  - [ ] Re-check after the fix: Down from the Crates pill lands on the open shelf in the list on the left (or on All shelves in Artists / All albums)
+- [ ] **BROKEN** Music, Crates: the page dots and arrows take keyboard focus but show nothing (2026-11-13)
+  - [ ] Re-check after the fix: the arrows never stop on the dots or the page arrows; clicking them still turns the page
+- [ ] O opens Settings from Home, Library, Music, YouTube and Live TV; O on Settings goes back to Home; O while typing in a search box types an o; Settings > Keyboard shortcuts lists it and lets it be changed
+- [ ] **BROKEN** S, type something, Escape (2026-11-13): closed the search history but left the search open, which felt clunky
+  - [ ] Re-check after the fix: S, type, Escape closes the search in one press and Home's arrows work at once; the same in the Music, YouTube and Live TV search (clears the tab's search and returns to its page)
+

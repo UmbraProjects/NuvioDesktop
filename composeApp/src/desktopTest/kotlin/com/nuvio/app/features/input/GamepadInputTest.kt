@@ -166,6 +166,8 @@ class GamepadInputTest {
                 AppShortcutAction.OpenMusic,
                 // And YouTube, likewise a top-bar tab while it is turned on.
                 AppShortcutAction.OpenYouTube,
+                // Settings is a top-bar / sidebar entry the D-pad reaches too.
+                AppShortcutAction.OpenSettings,
                 // On a music page the pad's Y (the trailer key) does this; elsewhere the player is a D-pad stop away.
                 AppShortcutAction.FocusMusicPlayer,
             ),

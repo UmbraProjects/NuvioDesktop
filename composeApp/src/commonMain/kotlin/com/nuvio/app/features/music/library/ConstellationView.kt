@@ -813,6 +813,7 @@ private fun NotPlacedTray(artists: List<LibraryArtist>, library: List<LibraryArt
                             onDismissRequest = { pickerFor = null },
                             properties = PopupProperties(focusable = true),
                         ) {
+                            com.nuvio.app.core.ui.KeyRouteLayer("constellation menu") // the focus router leaves an open menu alone
                             GenrePickerPanel(
                                 artist = artist,
                                 library = library,

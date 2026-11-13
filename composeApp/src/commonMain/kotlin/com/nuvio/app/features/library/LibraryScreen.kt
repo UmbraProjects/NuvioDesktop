@@ -638,6 +638,7 @@ fun LibraryDisplayDropdownMenu(expanded: Boolean, onDismissRequest: () -> Unit) 
         border = BorderStroke(0.5.dp, LibraryNavMenuBorderColor),
         modifier = Modifier.width(260.dp),
     ) {
+        com.nuvio.app.core.ui.KeyRouteLayer("library menu") // the focus router leaves an open menu alone
         LibraryQuickAccessMenuItems(onDismissRequest = onDismissRequest)
     }
 }

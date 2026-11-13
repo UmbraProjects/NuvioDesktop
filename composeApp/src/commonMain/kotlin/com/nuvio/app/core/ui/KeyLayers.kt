@@ -2,6 +2,7 @@ package com.nuvio.app.core.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -41,6 +42,30 @@ object KeyLayers {
     /** True while the window sends a key again after [reclaim]; that second pass must not reclaim again. */
     var replaying = false
 
+    /**
+     * Bumped when the keyboard may have been left with nowhere to go: a screen came back into view (a panel switch,
+     * Back from a page), a panel over a screen closed, a menu closed. The screen on top then takes focus if nothing
+     * holds it (see [keyLayer]). Hotkeys only reach the app while something holds focus, so waiting for the next arrow
+     * left them dead after every panel switch (2026-11-13).
+     */
+    internal val settleRequests = androidx.compose.runtime.mutableIntStateOf(0)
+
+    fun settle(why: String) {
+        settleReason = why
+        settleRequests.intValue++
+    }
+
+    internal var settleReason = ""
+
+    internal fun isTop(layer: Layer): Boolean = top() === layer
+
+    /**
+     * Set by the window: called when focus has just been settled on a screen. Keys still held down at that moment were
+     * pressed for something else (L opening Library from Live TV), so their release must not reach the screen: Home
+     * acts on a shortcut's release, and L's toggles Library back to Home (2026-11-13).
+     */
+    var onFocusSettled: (() -> Unit)? = null
+
     internal fun add(layer: Layer) { stack += layer }
     internal fun remove(layer: Layer) { stack.remove(layer) }
 
@@ -74,16 +99,36 @@ fun Modifier.keyLayer(name: String, active: Boolean = true, reseat: () -> Boolea
     val covered = LocalScreenCovered.current
     val layer = remember(name) { KeyLayers.Layer(name) }
     val currentReseat by rememberUpdatedState(reseat)
+    val isActive = active && !covered
     SideEffect {
-        layer.active = active && !covered
+        layer.active = isActive
         layer.reseat = { currentReseat() }
     }
     DisposableEffect(layer) {
         KeyLayers.add(layer)
         onDispose { KeyLayers.remove(layer) }
     }
+    // Shown (or shown again), or asked to settle: when this is the screen on top and nothing holds focus, take it, so
+    // hotkeys and the first arrow have somewhere to go. Over a few frames: a route's exit animation can still hold
+    // focus, and the root may not be attached on the first frame.
+    val settleRequest = KeyLayers.settleRequests.intValue
+    LaunchedEffect(isActive, settleRequest) {
+        if (!isActive) return@LaunchedEffect
+        repeat(SETTLE_TRIES) { attempt ->
+            kotlinx.coroutines.delay(if (attempt == 0) 32L else 48L)
+            if (KeyRouteLog.focusHeld || TextInputFocusTracker.active.value) return@LaunchedEffect
+            if (!KeyLayers.isTop(layer)) return@LaunchedEffect
+            if (runCatching { layer.reseat() }.getOrDefault(false)) {
+                KeyLayers.onFocusSettled?.invoke()
+                KeyRouteLog.note("focus settled on ${layer.name} (${if (settleRequest == 0) "shown" else KeyLayers.settleReason})")
+                return@LaunchedEffect
+            }
+        }
+    }
     return onFocusChanged { layer.hasFocus = it.hasFocus }
 }
+
+private const val SETTLE_TRIES = 10
 
 /**
  * [keyLayer] for a screen whose controls take focus themselves (a grid of posters, a page of buttons) rather than a

@@ -1,6 +1,8 @@
 package com.nuvio.app.features.music.library
 // FORK UI (Spyder): Nick's Shelf redesign, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import androidx.compose.ui.focus.focusProperties
+import com.nuvio.app.features.music.MusicTabState
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.music.nebula.LosslessPill
 import androidx.compose.foundation.background
@@ -226,7 +228,7 @@ internal fun ShelfBrowser(
             ShelfPanel(Modifier.width(side)) {
                 when (current) {
                     ShelfSection.Artists -> {
-                        BackToShelves { section = ShelfSection.New.takeIf { shelves[it].orEmpty().isNotEmpty() } ?: ShelfSection.Recent }
+                        BackToShelves(entry = MusicTabState.cratesEntry) { section = ShelfSection.New.takeIf { shelves[it].orEmpty().isNotEmpty() } ?: ShelfSection.Recent }
                         Spacer(Modifier.height(14.dp))
                         ArtistFilters(
                             pending = pending,
@@ -240,7 +242,7 @@ internal fun ShelfBrowser(
                         )
                     }
                     ShelfSection.AllAlbums -> {
-                        BackToShelves { section = ShelfSection.New.takeIf { shelves[it].orEmpty().isNotEmpty() } ?: ShelfSection.Recent }
+                        BackToShelves(entry = MusicTabState.cratesEntry) { section = ShelfSection.New.takeIf { shelves[it].orEmpty().isNotEmpty() } ?: ShelfSection.Recent }
                         Spacer(Modifier.height(14.dp))
                         WallOptions(
                             sort = sort,
@@ -253,6 +255,7 @@ internal fun ShelfBrowser(
                         )
                     }
                     else -> ShelfList(
+                        entry = MusicTabState.cratesEntry,
                         current = current,
                         counts = shelves.mapValues { it.value.size },
                         signedIn = account.signedIn,
@@ -801,6 +804,12 @@ private fun Modifier.pageTurning(page: Int, pages: Int, turnTo: (Int) -> Unit): 
         }
 }
 
+/**
+ * Out of the keyboard's way: the page dots and arrows are for the mouse. The arrow keys turn the pages already (moving
+ * past a page's last cover), and as focus stops they showed no ring, so a press seemed to do nothing (2026-11-13).
+ */
+private fun Modifier.mouseOnly(): Modifier = focusProperties { canFocus = false }
+
 /** Under a grid: a page dot for each page (up to twelve), arrows and "Page 2 of 27", all clickable. Keeps its height whatever the page count. */
 @Composable
 private fun PageFooter(page: Int, pages: Int, turnTo: (Int) -> Unit) {
@@ -813,7 +822,7 @@ private fun PageFooter(page: Int, pages: Int, turnTo: (Int) -> Unit) {
             label,
             fontSize = 20.sp,
             color = if (on) colors.textPrimary else colors.textMuted.copy(alpha = 0.4f),
-            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = on) { turnTo(to) }.padding(horizontal = 10.dp),
+            modifier = Modifier.clip(RoundedCornerShape(6.dp)).mouseOnly().clickable(enabled = on) { turnTo(to) }.padding(horizontal = 10.dp),
         )
     }
     Arrow("‹", page - 1)
@@ -821,7 +830,7 @@ private fun PageFooter(page: Int, pages: Int, turnTo: (Int) -> Unit) {
     val first = (page - 5).coerceAtLeast(0).coerceAtMost((pages - 12).coerceAtLeast(0))
     for (p in first until minOf(pages, first + 12)) {
         Box(
-            Modifier.clickable { turnTo(p) }.padding(horizontal = 4.dp, vertical = 7.dp).height(8.dp).width(if (p == page) 28.dp else 8.dp).clip(CircleShape)
+            Modifier.mouseOnly().clickable { turnTo(p) }.padding(horizontal = 4.dp, vertical = 7.dp).height(8.dp).width(if (p == page) 28.dp else 8.dp).clip(CircleShape)
                 .background(if (p == page) colors.accent else Color.White.copy(alpha = 0.3f)),
         )
     }
@@ -1003,11 +1012,13 @@ private fun ShelfButton(
 
 /** The row that leads back from Artists A to Z or All albums to the list of shelves. */
 @Composable
-private fun BackToShelves(onBack: () -> Unit) {
+private fun BackToShelves(entry: FocusRequester? = null, onBack: () -> Unit) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(16.dp)
     Row(
-        Modifier.fillMaxWidth().height(52.dp).clip(shape).musicKeyFocusRing(shape).clickable(onClick = onBack).padding(horizontal = 12.dp),
+        Modifier.fillMaxWidth().height(52.dp).clip(shape)
+            .then(if (entry != null) Modifier.focusRequester(entry) else Modifier)
+            .musicKeyFocusRing(shape).clickable(onClick = onBack).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -1022,6 +1033,8 @@ private fun BackToShelves(onBack: () -> Unit) {
  */
 @Composable
 private fun ShelfList(
+    /** On the open shelf's row: where Down from the Music tab's view pills lands. */
+    entry: FocusRequester,
     current: ShelfSection,
     counts: Map<ShelfSection, Int>,
     signedIn: Boolean,
@@ -1048,6 +1061,7 @@ private fun ShelfList(
                 Modifier
                     .fillMaxWidth()
                     .height(52.dp)
+                    .then(if (on) Modifier.focusRequester(entry) else Modifier)
                     .onFocusChanged { if (it.hasFocus && s != ShelfSection.Artists && s != ShelfSection.AllAlbums) onChoose(s) }
                     .clip(shape)
                     .background(if (on) Color.White.copy(alpha = 0.12f) else if (hovered) MusicGlassRaised else Color.Transparent)

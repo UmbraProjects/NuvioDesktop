@@ -172,6 +172,9 @@ internal object MusicTabState {
     /** Down from the bar: onto that row. */
     fun focusPills(): Boolean = pillsFocus.requestFocusLogged()
 
+    /** Crates' first stop on its left panel (the open shelf, or All shelves): Down from the view pills. */
+    val cratesEntry = FocusRequester()
+
     /** Enter was pressed before the results came in: they take focus when they arrive. */
     var focusResultsWhenReady by mutableStateOf(false)
 }
@@ -276,6 +279,18 @@ fun MusicTabScreen(
         return
     }
 
+    // Escape anywhere in the results leaves the search: the box clears and the Library comes back, with the keyboard on
+    // it. Only the box itself did this before, so once the keyboard was in the results Escape did nothing and the
+    // search had to be cleared by hand (2026-11-13).
+    val leaveSearchOnEscape = Modifier.onPreviewKeyEvent { event ->
+        if (event.key != Key.Escape || !searching) return@onPreviewKeyEvent false
+        if (event.type == KeyEventType.KeyUp) {
+            MusicTabState.query = ""
+            com.nuvio.app.core.ui.KeyLayers.settle("left the music search")
+        }
+        true
+    }
+
     // TV Mode and Adaptive (Settings > Home): with the box on the floating top bar, the search's hero takes the whole
     // screen and runs under the bar, as Home's does.
     val searchMode = com.nuvio.app.features.music.home.rememberMusicSearchMode()
@@ -285,7 +300,7 @@ fun MusicTabScreen(
             onAlbumClick = onAlbumClick,
             onArtistClick = onArtistClick,
             ownField = false,
-            modifier = modifier.fillMaxSize(),
+            modifier = modifier.fillMaxSize().then(leaveSearchOnEscape),
         )
         return
     }
@@ -294,6 +309,7 @@ fun MusicTabScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .then(leaveSearchOnEscape)
             // The settings sky, so the glass header and the cover grid sit on the same night wash.
             .settingsSkyBackground(tokens.colors.background, tokens.colors.accent)
             // fork:music-navbar - with the box on the bar, what is under it starts right below the bar.
@@ -313,7 +329,14 @@ fun MusicTabScreen(
                 val libraryState by MusicLibraryRepository.state.collectAsState()
                 // The views as icons, the way Discover's row header shows its filters; the one in use is lit.
                 Row(
-                    modifier = Modifier.focusRequester(MusicTabState.pillsFocus),
+                    modifier = Modifier
+                        .focusRequester(MusicTabState.pillsFocus)
+                        // Down into Crates lands on its shelf list on the left, not on whatever cover is under the pill.
+                        .onPreviewKeyEvent { event ->
+                            event.key == Key.DirectionDown && event.type == KeyEventType.KeyDown &&
+                                libraryState.settings.shownLibraryView(libraryView) == LibraryView.Crates &&
+                                MusicTabState.cratesEntry.requestFocusLogged()
+                        },
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

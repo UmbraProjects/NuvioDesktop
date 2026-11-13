@@ -1,5 +1,6 @@
 package com.nuvio.app.features.iptv
 
+import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.NuvioGlass
@@ -408,6 +409,8 @@ fun IptvScreen(
             .fillMaxSize()
             // The settings sky and glass, so Live TV reads as part of the same app as Settings.
             .settingsSkyBackground(tokens.colors.background, tokens.colors.accent)
+            // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back here.
+            .keyLayer("Live TV") { screenFocus.requestFocusLogged() }
             .focusRequester(screenFocus)
             .focusable()
             .onGloballyPositioned { rootOrigin = it.positionInWindow() }

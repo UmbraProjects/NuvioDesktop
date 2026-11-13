@@ -1114,6 +1114,7 @@ private fun CustomDiscoverRefPicker(
                 shape = SettingsSectionGlassShape,
                 modifier = Modifier.heightIn(max = RefResultsMaxHeight),
             ) {
+                com.nuvio.app.core.ui.KeyRouteLayer("discover settings menu") // the focus router leaves an open menu alone
                 results.take(MAX_REF_RESULTS).forEach { candidate ->
                     val alreadyPicked = selected.any { it.id == candidate.ref.id }
                     DropdownMenuItem(

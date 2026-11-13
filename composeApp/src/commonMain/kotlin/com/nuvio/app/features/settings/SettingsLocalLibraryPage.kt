@@ -959,6 +959,7 @@ private fun CatalogAssignMenu(
     onSelect: (String?) -> Unit,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        com.nuvio.app.core.ui.KeyRouteLayer("local library menu") // the focus router leaves an open menu alone
         DropdownMenuItem(
             text = { Text(stringResource(Res.string.settings_local_library_unsorted)) },
             leadingIcon = { if (selectedCatalogId == null) Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp)) },

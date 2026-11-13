@@ -139,6 +139,7 @@ internal actual fun StreamRowContextMenu(
                 onDismissRequest = { menuOpen = false },
                 properties = PopupProperties(focusable = true),
             ) {
+                com.nuvio.app.core.ui.KeyRouteLayer("stream actions menu") // the focus router leaves an open menu alone
                 StreamActionsMenu(
                     scoreBreakdown = scoreBreakdown,
                     copyLabel = copyLabel,

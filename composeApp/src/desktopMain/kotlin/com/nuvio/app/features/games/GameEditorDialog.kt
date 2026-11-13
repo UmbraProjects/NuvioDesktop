@@ -575,6 +575,7 @@ private fun GameRowPicker(
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { onExpandedChange(false) }) {
+            com.nuvio.app.core.ui.KeyRouteLayer("game editor menu") // the focus router leaves an open menu alone
             DropdownMenuItem(
                 text = { Text(automaticLabel) },
                 trailingIcon = {
