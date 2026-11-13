@@ -63,7 +63,21 @@ object HeroDiscoveryMetadataService {
         }
         if (!ownsRequest) return pending.await()
 
+        // Kept between launches (see HeroBundleCache): a warm launch shows the badges without a hero summary fetch.
+        val bundleSerializer = kotlinx.serialization.builtins.ListSerializer(HeroDiscoveryFact.serializer())
+        val fromDisk = try {
+            HeroBundleCache.get("badges", cacheKey, bundleSerializer)
+        } catch (e: CancellationException) {
+            cacheMutex.withLock { inFlightRequests.remove(cacheKey)?.completeExceptionally(e) }
+            throw e
+        }
+        if (fromDisk != null) {
+            cacheMutex.withLock { inFlightRequests.remove(cacheKey)?.complete(fromDisk) }
+            return fromDisk
+        }
+
         val startedMs = now
+        var failed = false
         val facts = try {
             // Summary rather than the details-screen record. The badges that count seasons and
             // episodes read `meta.videos`, which comes from the addon and is unaffected by dropping
@@ -94,9 +108,13 @@ object HeroDiscoveryMetadataService {
             throw e
         } catch (e: Throwable) {
             log.w(e) { "Discovery request failed for $cacheKey" }
+            failed = true
             emptyList()
         }
 
+        if (!failed) {
+            HeroBundleCache.put("badges", cacheKey, facts, bundleSerializer, isEmpty = facts.isEmpty(), isSeries = type.isSeriesType())
+        }
         cacheMutex.withLock {
             inFlightRequests.remove(cacheKey)?.complete(facts)
         }
@@ -678,6 +696,7 @@ data class MatchedStudio(
     val tmdbId: Int?,
 )
 
+@kotlinx.serialization.Serializable
 data class HeroDiscoveryFact(
     val label: String,
     val type: String,
@@ -687,3 +706,5 @@ data class HeroDiscoveryFact(
     /** Set on the `director` slot only: the matched director's name as written in hero_discovery.json. */
     val directorName: String? = null,
 )
+
+private fun String.isSeriesType(): Boolean = equals("series", ignoreCase = true) || equals("tv", ignoreCase = true)

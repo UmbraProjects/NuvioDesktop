@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import com.nuvio.app.features.addons.httpRequestRaw
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -163,17 +164,37 @@ internal object AnimeArtworkService {
             }
         }
 
-    private suspend fun fetchKitsuCover(kitsuId: Int): String? =
-        runCatchingNonCancellable {
-            withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-                val payload = httpGetTextWithHeaders(
-                    url = "https://kitsu.io/api/edge/anime/$kitsuId",
-                    headers = mapOf("Accept" to "application/vnd.api+json"),
-                )
-                val cover = json.decodeFromString<KitsuResponse>(payload).data?.attributes?.coverImage
-                (cover?.original ?: cover?.large)?.takeIf { it.isNotBlank() }
+    private suspend fun fetchKitsuCover(kitsuId: Int): String? {
+        val cover = fetchKitsuAttributes(kitsuId)?.coverImage
+        return (cover?.original ?: cover?.large)?.takeIf { it.isNotBlank() }
+    }
+
+    // One Kitsu request per entry fills both the cover and the poster (optimization audit B4: the two lookups asked
+    // for the same URL separately, 2,576 Kitsu calls in a day), shared by concurrent callers. A failed request is not
+    // kept, so it can be tried again; an entry with no art is.
+    private val kitsuEntries = mutableMapOf<Int, kotlinx.coroutines.Deferred<KitsuAttributes?>>()
+    private val kitsuScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+
+    private suspend fun fetchKitsuAttributes(kitsuId: Int): KitsuAttributes? {
+        val pending = cacheMutex.withLock {
+            kitsuEntries.getOrPut(kitsuId) {
+                kitsuScope.async {
+                    val attributes = runCatchingNonCancellable {
+                        withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+                            val payload = httpGetTextWithHeaders(
+                                url = "https://kitsu.io/api/edge/anime/$kitsuId",
+                                headers = mapOf("Accept" to "application/vnd.api+json"),
+                            )
+                            json.decodeFromString<KitsuResponse>(payload).data?.attributes ?: KitsuAttributes()
+                        }
+                    }
+                    if (attributes == null) cacheMutex.withLock { kitsuEntries.remove(kitsuId) }
+                    attributes
+                }
             }
         }
+        return pending.await()
+    }
 
     private suspend fun fetchAniListCover(anilistId: Int): String? =
         runCatchingNonCancellable {
@@ -194,17 +215,10 @@ internal object AnimeArtworkService {
             }
         }
 
-    private suspend fun fetchKitsuPoster(kitsuId: Int): String? =
-        runCatchingNonCancellable {
-            withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-                val payload = httpGetTextWithHeaders(
-                    url = "https://kitsu.io/api/edge/anime/$kitsuId",
-                    headers = mapOf("Accept" to "application/vnd.api+json"),
-                )
-                val poster = json.decodeFromString<KitsuResponse>(payload).data?.attributes?.posterImage
-                (poster?.original ?: poster?.large)?.takeIf { it.isNotBlank() }
-            }
-        }
+    private suspend fun fetchKitsuPoster(kitsuId: Int): String? {
+        val poster = fetchKitsuAttributes(kitsuId)?.posterImage
+        return (poster?.original ?: poster?.large)?.takeIf { it.isNotBlank() }
+    }
 
     private inline fun <T> runCatchingNonCancellable(block: () -> T?): T? =
         try {

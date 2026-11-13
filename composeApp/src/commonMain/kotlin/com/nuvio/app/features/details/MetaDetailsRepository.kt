@@ -345,24 +345,46 @@ object MetaDetailsRepository {
         forceRefresh: Boolean = false,
         /** A bulk sweep rather than something the user is waiting on; see [backgroundFetchPermits]. */
         background: Boolean = false,
+        /**
+         * Only these seasons' episodes are decorated from TMDB; null for every season. For callers that show one
+         * episode (Up Next and Continue Watching cards): decorating every season of every watched series was most of
+         * the 120 TMDB season requests left at launch (optimization audit, 2026-11-13). Kept under its own key, so a
+         * partly decorated record never reaches a caller that wants them all; a full record already held is used.
+         */
+        episodeSeasons: Set<Int>? = null,
     ): MetaDetails? {
         // Keyed on the **resolved** lookup id, not the id the caller happened to hold — plan §23.3.
         // `tt11561116` and `tmdb:860508` are the same title and produce the identical addon URL, so
         // keying on the requested id made each alias pay for its own fetch. Resolving first is
         // effectively free now: it goes through `TmdbService.tmdbToImdb`, which is disk-cached.
         val metaLookupId = resolveMetaLookupId(itemId = id, itemType = type)
-        val requestKey = "$type:$metaLookupId:enrich=$enrichTmdb"
+        val fullRequestKey = "$type:$metaLookupId:enrich=$enrichTmdb"
+        val seasonScope = episodeSeasons?.takeIf { enrichTmdb && it.isNotEmpty() }
+        val requestKey = seasonScope?.let { "$fullRequestKey:seasons=${it.sorted().joinToString(",")}" } ?: fullRequestKey
         if (!forceRefresh) {
+            if (seasonScope != null) {
+                cachedMetaByRequestKey[fullRequestKey]?.let { return it.baseMeta }
+                // A record already decorated for more seasons than asked (Up Next's seed and next season, after
+                // Continue Watching asked for one of them, or the other way round) answers this one too.
+                val prefix = "$fullRequestKey:seasons="
+                // Written from other dispatchers too: a walk that races a write is just a miss.
+                runCatching {
+                    cachedMetaByRequestKey.entries.firstOrNull { (key, _) ->
+                        key.startsWith(prefix) &&
+                            key.removePrefix(prefix).split(',').mapNotNull { it.toIntOrNull() }.toSet().containsAll(seasonScope)
+                    }?.value?.baseMeta
+                }.getOrNull()?.let { return it }
+            }
             cachedMetaByRequestKey[requestKey]?.let { return it.baseMeta }
             val shared = fullMetaMutex.withLock {
                 inFlightFullMeta[requestKey] ?: scope.async {
                     try {
                         if (background) {
                             backgroundFetchPermits.withPermit {
-                                fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId)
+                                fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId, seasonScope)
                             }
                         } else {
-                            fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId)
+                            fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId, seasonScope)
                         }
                     } finally {
                         fullMetaMutex.withLock { inFlightFullMeta.remove(requestKey) }
@@ -372,9 +394,9 @@ object MetaDetailsRepository {
             return shared.await()
         }
         if (background) {
-            return backgroundFetchPermits.withPermit { fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId) }
+            return backgroundFetchPermits.withPermit { fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId, seasonScope) }
         }
-        return fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId)
+        return fetchUncached(type, id, enrichTmdb, requestKey, metaLookupId, seasonScope)
     }
 
     private suspend fun fetchUncached(
@@ -383,6 +405,7 @@ object MetaDetailsRepository {
         enrichTmdb: Boolean,
         requestKey: String,
         metaLookupId: String,
+        episodeSeasons: Set<Int>? = null,
     ): MetaDetails? = runMetaFetch(
         type = type,
         id = id,
@@ -396,6 +419,7 @@ object MetaDetailsRepository {
         trailerScope = TmdbMetadataService.TrailerScope.SingleSeason(preferredTrailerSeason(metaLookupId)),
         includeEpisodes = true,
         origin = "full",
+        episodeSeasons = episodeSeasons,
     )
 
     /**
@@ -416,6 +440,8 @@ object MetaDetailsRepository {
         origin: String,
         /** False for a background sweep that keeps its own cache — see [fetchForSchedule]. */
         cacheResult: Boolean = true,
+        /** Seasons TMDB decorates; null for all. See [fetch]. */
+        episodeSeasons: Set<Int>? = null,
     ): MetaDetails? {
         // forceRefresh bypasses the LRU so a background sweep (library auto-download) sees newly
         // aired episodes instead of a stale cached video list. The non-forced read happens in
@@ -435,6 +461,7 @@ object MetaDetailsRepository {
                     trailerScope = trailerScope,
                     includeEpisodes = includeEpisodes,
                     origin = "$origin:$requestKey",
+                    episodeSeasons = episodeSeasons,
                 )
             }
             if (result != null) {
@@ -1044,6 +1071,8 @@ object MetaDetailsRepository {
          * lightweight, full, supplemental) or one namespace failing to cache at all.
          */
         origin: String = "unknown",
+        /** Seasons TMDB decorates; null for all. See [fetch]. */
+        episodeSeasons: Set<Int>? = null,
     ): MetaDetails? = fetchAddonMetaCatching(manifest, type, id, origin) { parsed ->
         decorateAddonMeta(
             parsed = parsed,
@@ -1053,6 +1082,7 @@ object MetaDetailsRepository {
             trailerScope = trailerScope,
             includeEpisodes = includeEpisodes,
             tmdbDepth = tmdbDepth,
+            episodeSeasons = episodeSeasons,
         )
     }
 
@@ -1123,7 +1153,18 @@ object MetaDetailsRepository {
             val payload = response.body.takeIf { it.isNotBlank() }
                 ?: throw IllegalStateException(getString(Res.string.network_empty_response_body))
             log.d { "Raw payload length=${payload.length}" }
-            val parsed = MetaDetailsParser.parse(payload)
+            val parsed = try {
+                MetaDetailsParser.parse(payload)
+            } catch (missing: MetaMissingException) {
+                // Remembered like a 404 (optimization audit B4: `series/anilist:219714` was asked 43 times in a day and
+                // came back empty 41 times).
+                metaNotFoundMutex.withLock {
+                    if (metaNotFoundUrls.size >= META_NOT_FOUND_CACHE_LIMIT) metaNotFoundUrls.clear()
+                    metaNotFoundUrls += url
+                }
+                log.i { "No meta for $type/$id at ${com.nuvio.app.core.network.redactAddonUrl(manifest.transportUrl)} (empty answer)" }
+                return@withContext null
+            }
             then(parsed)
         } catch (e: Throwable) {
             if (e is CancellationException) {

@@ -7,6 +7,10 @@ import com.nuvio.app.features.details.youtubePlaybackUrl
 import com.nuvio.app.features.library.LibraryClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -72,6 +76,23 @@ object HeroTrailerMetadataService {
         }
         if (!ownsRequest) return pending.await()
 
+        // The work runs in the service's own scope, not the caller's: moving off a hero used to cancel its extraction
+        // part way, the extractor reported that as "unavailable", and the next visit started again from nothing (the
+        // same trailer ids "failed" two to four times a day, all with "The coroutine scope left the composition").
+        // Finishing it means the next visit to that hero plays at once. The caller only stops waiting.
+        resolveScope.launch { pending.complete(computeAndCache(type, id, sharpest, cacheKey, now)) }
+        return pending.await()
+    }
+
+    private val resolveScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private suspend fun computeAndCache(
+        type: String,
+        id: String,
+        sharpest: Boolean,
+        cacheKey: String,
+        now: Long,
+    ): TrailerPlaybackSource? {
         val source = try {
             // Summary rather than the details-screen record. It scopes TMDB trailers to season 1,
             // which is exactly what the spoiler filter below keeps - the full fetch was pulling a
@@ -100,9 +121,7 @@ object HeroTrailerMetadataService {
             }
                 .also { log.i { "resolve $type/$id playbackSource=${it != null} height=${it?.heightPx}" } }
         } catch (error: CancellationException) {
-            cacheMutex.withLock {
-                inFlightRequests.remove(cacheKey)?.completeExceptionally(error)
-            }
+            cacheMutex.withLock { inFlightRequests.remove(cacheKey)?.completeExceptionally(error) }
             throw error
         } catch (error: Throwable) {
             log.w { "Hero trailer resolve failed for $type/$id: ${error.message}" }
@@ -115,7 +134,7 @@ object HeroTrailerMetadataService {
         val keep = source != null || !com.nuvio.app.features.music.MusicRateLimit.isBlocked()
         cacheMutex.withLock {
             if (keep) cache[cacheKey] = CachedTrailer(source = source, expiresAtMs = now + ttl)
-            inFlightRequests.remove(cacheKey)?.complete(source)
+            inFlightRequests.remove(cacheKey)
         }
         return source
     }

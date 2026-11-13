@@ -25,7 +25,7 @@ internal object MetaDetailsParser {
         val root = json.parseToJsonElement(payload).asJsonObjectOrNull()
             ?: error("Expected top-level JSON object in response")
         val meta = root.extractMetaObject()
-            ?: error("Response did not contain a valid meta object")
+            ?: throw MetaMissingException()
         val links = meta.links()
 
         return MetaDetails(
@@ -376,3 +376,6 @@ internal object MetaDetailsParser {
 }
 
 private fun JsonElement?.asJsonObjectOrNull(): JsonObject? = this as? JsonObject
+
+/** An addon answered 200 with no meta object in it: as good as a 404 for that title. */
+internal class MetaMissingException : IllegalStateException("Response did not contain a valid meta object")

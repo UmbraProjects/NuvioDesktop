@@ -1088,8 +1088,15 @@ object WatchProgressRepository {
         entries: List<WatchProgressEntry>,
     ): RemoteMetadataResolutionResult {
         val (metaId, metaType) = key
+        // These cards read only their own episodes' titles and stills, so TMDB decorates just those seasons rather than
+        // every season of the series. An entry that does not know its season (some remote sources) asks for all.
+        val entrySeasons = entries.map { it.seasonNumber }
+        val episodeSeasons = entrySeasons
+            .takeIf { seasons -> seasons.isNotEmpty() && seasons.all { it != null && it > 0 } }
+            ?.mapNotNull { it }
+            ?.toSet()
         val meta = try {
-            MetaDetailsRepository.fetch(metaType, metaId, background = true)
+            MetaDetailsRepository.fetch(metaType, metaId, background = true, episodeSeasons = episodeSeasons)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {

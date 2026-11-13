@@ -18,6 +18,7 @@ import kotlinx.serialization.json.Json
  * One IMDb "interest": a sub-genre tag ("Folk Horror") together with the genre IMDb files it
  * under ("Horror"). Unlike TMDB keywords, this is a curated taxonomy with the genre link built in.
  */
+@Serializable
 data class ImdbInterest(
     val name: String,
     val category: String,
@@ -46,9 +47,16 @@ internal object ImdbInterestsService {
             cache[id]?.let { return it }
             inFlight[id] ?: scope.async {
                 try {
-                    request(id).also { result ->
-                        mutex.withLock { cache[id] = result }
-                    }
+                    // Kept between launches with the hero's other facts (see HeroBundleCache).
+                    val serializer = kotlinx.serialization.builtins.ListSerializer(ImdbInterest.serializer())
+                    val stored = com.nuvio.app.features.home.HeroBundleCache.get("interests", id, serializer)
+                    val result = stored ?: request(id)?.also { fresh ->
+                        com.nuvio.app.features.home.HeroBundleCache.put(
+                            "interests", id, fresh, serializer, isEmpty = fresh.isEmpty(), isSeries = false,
+                        )
+                    }.orEmpty()
+                    mutex.withLock { cache[id] = result }
+                    result
                 } finally {
                     mutex.withLock { inFlight.remove(id) }
                 }
@@ -57,7 +65,8 @@ internal object ImdbInterestsService {
         return shared.await()
     }
 
-    private suspend fun request(imdbId: String): List<ImdbInterest> = runCatching {
+    /** null when the request failed (not kept on disk, so the next launch asks again). */
+    private suspend fun request(imdbId: String): List<ImdbInterest>? = runCatching {
         val response = httpRequestRaw(
             method = "POST",
             url = IMDB_GRAPHQL_URL,
@@ -72,12 +81,13 @@ internal object ImdbInterestsService {
         )
         if (response.status !in 200..299 || response.body.isBlank()) {
             log.w { "IMDb interests request failed for $imdbId (${response.status})" }
-            return@runCatching emptyList()
+            return@runCatching null
         }
         parseImdbInterests(response.body)
     }.getOrElse { error ->
+        if (error is kotlinx.coroutines.CancellationException) throw error
         log.w(error) { "IMDb interests request failed for $imdbId" }
-        emptyList()
+        null
     }
 
     private fun query(imdbId: String): String = """

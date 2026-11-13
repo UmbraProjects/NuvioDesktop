@@ -5554,24 +5554,6 @@ private suspend fun resolveHomeNextUpCandidate(
         )
     }
     val contentId = completedEntry.content.id
-    val meta = try {
-        MetaDetailsRepository.fetch(
-            type = completedEntry.content.type,
-            id = contentId,
-            // Set only for a manual resync retrying a card whose episode still had no thumbnail;
-            // the LRU would otherwise hand back the same artwork-less video list all session.
-            forceRefresh = forceMetaRefresh,
-            background = true,
-        )
-    } catch (error: Throwable) {
-        if (error is CancellationException) throw error
-        null
-    }
-    if (meta == null) {
-        logNextUpResolutionRejected(completedEntry, "meta-fetch-failed")
-        return NextUpResolveOutcome(card = null)
-    }
-
     val resolvedProgressEntries = if (isTraktProgressActive) {
         remapTraktProgressEntries(watchProgressEntries, contentId)
     } else {
@@ -5581,6 +5563,31 @@ private suspend fun resolveHomeNextUpCandidate(
         remapTraktWatchedItems(watchedItems, contentId)
     } else {
         watchedItems
+    }
+
+
+    // The card shows one episode: TMDB decorates the seed's season and the one after it, where the next episode
+    // almost always is, not every season of the series. A forced refresh (a resync for a missing thumbnail) bypasses
+    // the cache but needs no more seasons than that either.
+    val seedSeasons = setOf(completedEntry.seasonNumber, completedEntry.seasonNumber + 1)
+        .takeIf { completedEntry.seasonNumber > 0 }
+    var meta = try {
+        MetaDetailsRepository.fetch(
+            type = completedEntry.content.type,
+            id = contentId,
+            // Set only for a manual resync retrying a card whose episode still had no thumbnail;
+            // the LRU would otherwise hand back the same artwork-less video list all session.
+            forceRefresh = forceMetaRefresh,
+            background = true,
+            episodeSeasons = seedSeasons,
+        )
+    } catch (error: Throwable) {
+        if (error is CancellationException) throw error
+        null
+    }
+    if (meta == null) {
+        logNextUpResolutionRejected(completedEntry, "meta-fetch-failed")
+        return NextUpResolveOutcome(card = null)
     }
 
     val action = meta.seriesPrimaryAction(
@@ -5612,6 +5619,23 @@ private suspend fun resolveHomeNextUpCandidate(
         return NextUpResolveOutcome(card = null)
     }
 
+    // The next episode sits outside the seasons decorated above (a gap earlier in the show, a rewatch): decorate its
+    // season too, so the card still gets TMDB's title and still. One season, and only for these cards.
+    val actionSeason = action.seasonNumber
+    if (seedSeasons != null && actionSeason != null && actionSeason > 0 && actionSeason !in seedSeasons) {
+        val withActionSeason = try {
+            MetaDetailsRepository.fetch(
+                type = completedEntry.content.type,
+                id = contentId,
+                background = true,
+                episodeSeasons = setOf(actionSeason),
+            )
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            null
+        }
+        if (withActionSeason != null) meta = withActionSeason
+    }
     val nextEpisode = meta.videoForSeriesAction(action)
     if (nextEpisode == null) {
         logNextUpResolutionRejected(completedEntry, "next-episode-missing-from-meta")
@@ -6035,8 +6059,13 @@ internal fun planNextUpResolution(
         }
         candidate.content.id to cached
     }.toMap()
+    // An episode that has not aired has no still to find yet: retrying it re-fetched the whole series on every launch
+    // for nothing (2026-11-13: five unaired Up Next episodes, every season of each). It is retried once it airs.
     val staleArtworkContentIds = cachedBySeries
-        .filterValues { (_, item) -> item.needsEpisodeThumbnailRefresh(hasArtworkLoadFailed) }
+        .filterValues { (_, item) ->
+            val airsAt = com.nuvio.app.features.watchprogress.parseReleaseDateToEpochMs(item.released)
+            (airsAt == null || airsAt <= nowMs) && item.needsEpisodeThumbnailRefresh(hasArtworkLoadFailed)
+        }
         .keys
     val staleReleasePrecisionContentIds = cachedBySeries
         .filterValues { (_, item) -> item.needsReleasePrecisionRefresh(todayIsoDate) }

@@ -185,6 +185,10 @@ object CloudLibraryRepository {
         scope.launch {
             // A throw here used to leave isRefreshing set for good, and ensureLoaded never retries
             // while it is.
+            // The connections this refresh is for, read before it runs: read afterwards, a key that arrived during the
+            // refresh was recorded as loaded and the library never refreshed for it.
+            val keysForThisRefresh = connectedCloudConnectionKeys()
+            val windowForThisRefresh = DebridSettingsRepository.snapshot().cloudLibraryWindow
             val refreshed = try {
                 store.refresh().carryResolvedNamesFrom(_uiState.value)
             } catch (error: Exception) {
@@ -198,9 +202,14 @@ object CloudLibraryRepository {
                 }
                 return@launch
             }
-            loadedConnectionKeys = connectedCloudConnectionKeys()
-            loadedWindow = DebridSettingsRepository.snapshot().cloudLibraryWindow
+            loadedConnectionKeys = keysForThisRefresh
+            loadedWindow = windowForThisRefresh
             _uiState.value = refreshed
+            if (connectedCloudConnectionKeys() != keysForThisRefresh) {
+                CloudLibraryLog.i { "connections changed during refresh; refreshing again" }
+                refresh()
+                return@launch
+            }
             resolveDisplayNames(refreshed)
         }
     }

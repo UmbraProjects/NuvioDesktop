@@ -122,11 +122,7 @@ object LibraryPvrScheduler {
                     // A backed-off retry can come due long before the next periodic sweep; the
                     // poll interval below means it starts within a minute of its scheduled time.
                     if (remaining <= 0L || hasDueRetry(now)) {
-                        // Logging only (optimization audit B2): this ran once a minute all day on 2026-11-12.
-                        // Says which of the two conditions woke it, and which retry if it was one.
-                        val dueRetries = LibraryPvrRepository.uiState.value.grabHistory.filter { grab ->
-                            grab.isAwaitingRetry && (grab.nextAttemptAtEpochMs ?: Long.MAX_VALUE) <= now
-                        }
+                        val dueRetries = dueRetryGrabs(now)
                         log.i {
                             "sweep starting: overdue by ${-remaining / 1000}s (interval ${settings.checkIntervalMs / 1000}s, " +
                                 "last completed ${settings.lastCompletedCheckEpochMs?.let { (now - it) / 1000 }}s ago), " +
@@ -135,7 +131,14 @@ object LibraryPvrScheduler {
                                     " [grab ${grab.id} status=${grab.status} due ${(now - (grab.nextAttemptAtEpochMs ?: now)) / 1000}s ago]"
                                 }
                         }
-                        runCheck()
+                        // Only retries came due: check just their titles, not every monitored one (optimization audit
+                        // B2: a single due retry re-ran the whole sweep, with forced meta refreshes, every minute).
+                        val ran = if (remaining <= 0L) {
+                            runCheck()
+                        } else {
+                            runCheck(onlyItemIds = dueRetries.mapTo(mutableSetOf()) { it.monitoredItemId })
+                        }
+                        if (ran) settleStaleRetries(dueRetries)
                         // A disabled/empty/playback-paused check intentionally leaves the last
                         // completed time untouched; avoid spinning while it remains overdue.
                         delay(SCHEDULER_POLL_MS)
@@ -219,20 +222,28 @@ object LibraryPvrScheduler {
         setPlaybackActive(playbackActive)
     }
 
-    private suspend fun runCheck() {
+    /**
+     * One sweep over the monitored titles, or only [onlyItemIds] when given. Returns false when it did not run
+     * (disabled, paused for playback, nothing monitored).
+     */
+    private suspend fun runCheck(onlyItemIds: Set<String>? = null): Boolean {
         LibraryPvrRepository.ensureLoaded()
         val settings = LibraryPvrRepository.currentSettings()
-        if (!settings.enabled) return
-        if (playbackActive && settings.pauseDownloadsWhilePlaying) return
-        val items = LibraryPvrRepository.monitoredItems().filterNot { it.paused }
-        if (items.isEmpty()) return
+        if (!settings.enabled) return false
+        if (playbackActive && settings.pauseDownloadsWhilePlaying) return false
+        val items = LibraryPvrRepository.monitoredItems()
+            .filterNot { it.paused }
+            .filter { onlyItemIds == null || it.id in onlyItemIds }
+        if (items.isEmpty() && onlyItemIds == null) return false
 
         LibraryPvrRepository.setChecking(true)
+        lastCheckReachedItemIds = emptySet()
         try {
             val folders = LocalLibraryRepository.uiState.value.folders.associateBy(LocalFolder::id)
             for (item in items) {
                 if (!hasAvailableDownloadSlot(settings.maxConcurrentDownloads)) break
                 val folder = folders[item.targetFolderId] ?: continue
+                lastCheckReachedItemIds = lastCheckReachedItemIds + item.id
                 runCatching {
                     if (item.isSeries) {
                         processSeries(item, folder, settings)
@@ -248,8 +259,9 @@ object LibraryPvrScheduler {
                 }
             }
         } finally {
-            LibraryPvrRepository.setChecking(false)
+            LibraryPvrRepository.setChecking(false, fullSweep = onlyItemIds == null)
         }
+        return true
     }
 
     private suspend fun forceStartItem(monitoredItemId: String) {
@@ -887,6 +899,51 @@ object LibraryPvrScheduler {
                     null
                 },
             )
+        }
+    }
+
+    private fun dueRetryGrabs(now: Long): List<GrabRecord> =
+        LibraryPvrRepository.uiState.value.grabHistory.filter { grab ->
+            grab.isAwaitingRetry && (grab.nextAttemptAtEpochMs ?: Long.MAX_VALUE) <= now
+        }
+
+    /**
+     * A retry that was due before the check and that the check left exactly as it was (same due time) is pushed back
+     * by its backoff, or dropped when it can never run, so it stops waking the scheduler every minute.
+     */
+    /** The titles the last check actually walked (it had a free slot and the title's folder exists). */
+    @kotlin.concurrent.Volatile
+    private var lastCheckReachedItemIds: Set<String> = emptySet()
+
+    private fun settleStaleRetries(dueBefore: List<GrabRecord>) {
+        if (dueBefore.isEmpty()) return
+        val monitored = LibraryPvrRepository.monitoredItems().associateBy { it.id }
+        val grabs = LibraryPvrRepository.uiState.value.grabHistory
+        val now = TraktPlatformClock.nowEpochMs()
+        dueBefore.forEach { before ->
+            val current = grabs.firstOrNull { it.id == before.id } ?: return@forEach
+            if (!current.isAwaitingRetry || current.nextAttemptAtEpochMs != before.nextAttemptAtEpochMs) return@forEach
+            val action = staleRetryAction(current, monitored, grabs)
+            log.i {
+                "retry ${current.id} (${current.title} S${current.season}E${current.episode}) not run by the check: $action" +
+                    if (current.monitoredItemId in lastCheckReachedItemIds) " (title was checked)" else " (title not reached)"
+            }
+            LibraryPvrRepository.updateGrab(current.id) { grab ->
+                when (action) {
+                    StaleRetryAction.EXPIRE -> grab.copy(nextAttemptAtEpochMs = null)
+                    // The check walked this title and still left the retry alone: its walk does not want that episode
+                    // now (already on disk, out of scope, held behind another), so ask again only after the longest
+                    // wait. Pushed back by its own short wait, Station Eleven S1E1 still woke the check every five
+                    // minutes (2026-11-13). Not reached at all (no free slot, folder missing): its usual wait.
+                    StaleRetryAction.PUSH_BACK -> grab.copy(
+                        nextAttemptAtEpochMs = now + if (grab.monitoredItemId in lastCheckReachedItemIds) {
+                            RETRY_BACKOFF_MS.last()
+                        } else {
+                            RETRY_BACKOFF_MS[(grab.retryCount - 1).coerceIn(0, RETRY_BACKOFF_MS.lastIndex)]
+                        },
+                    )
+                }
+            }
         }
     }
 

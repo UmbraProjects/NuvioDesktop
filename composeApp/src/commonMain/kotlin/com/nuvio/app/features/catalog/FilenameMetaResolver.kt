@@ -24,6 +24,14 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
+import com.nuvio.app.features.trakt.TraktPlatformClock
 
 /**
  * Gives catalog items a real title and poster when the addon supplies neither.
@@ -41,6 +49,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  */
 internal object FilenameMetaResolver {
 
+    @Serializable
     private data class ResolvedTitle(
         val title: String,
         val year: Int?,
@@ -63,6 +72,11 @@ internal object FilenameMetaResolver {
     // TMDB about the same unparseable name on every page. Insertion-ordered and capped: a large
     // library browsed all session long would otherwise grow this without limit.
     private val cache = linkedMapOf<String, ResolvedTitle?>()
+    // When each entry was looked up, for the copy kept on disk (optimization audit B3: the whole cloud library was
+    // searched on TMDB again on every launch, ~570 requests). Hits are kept a month, misses a week.
+    private val lookedUpAt = mutableMapOf<String, Long>()
+    private var diskLoaded = false
+    private var saveJob: Job? = null
     private val inFlight = mutableMapOf<String, Deferred<ResolvedTitle?>>()
     private val mutex = Mutex()
     private val gate = Semaphore(MAX_PARALLEL_LOOKUPS)
@@ -140,6 +154,7 @@ internal object FilenameMetaResolver {
     }
 
     private suspend fun resolveAll(queries: List<FilenameQuery>): Map<String, ResolvedTitle> {
+        mutex.withLock { loadFromDiskLocked() }
         val pending = queries.mapNotNull { query ->
             val known = mutex.withLock { cache.containsKey(query.cacheKey) }
             if (known) null else query
@@ -179,11 +194,51 @@ internal object FilenameMetaResolver {
         val resolved = best?.toResolvedTitle()
         mutex.withLock {
             cache[query.cacheKey] = resolved
+            lookedUpAt[query.cacheKey] = TraktPlatformClock.nowEpochMs()
             while (cache.size > MAX_CACHE_ENTRIES) {
+                lookedUpAt.remove(cache.keys.first())
                 cache.remove(cache.keys.first())
             }
+            scheduleSaveLocked()
         }
         return resolved
+    }
+
+    @Serializable
+    private data class StoredLookup(val match: ResolvedTitle? = null, val at: Long)
+
+    private val storedSerializer = MapSerializer(String.serializer(), StoredLookup.serializer())
+    private val json = Json { ignoreUnknownKeys = true }
+
+    private fun loadFromDiskLocked() {
+        if (diskLoaded) return
+        diskLoaded = true
+        val raw = runCatching { FilenameLookupStorage.load() }.getOrNull() ?: return
+        val stored = runCatching { json.decodeFromString(storedSerializer, raw) }.getOrNull() ?: return
+        val now = TraktPlatformClock.nowEpochMs()
+        stored.forEach { (key, entry) ->
+            val maxAge = if (entry.match != null) HIT_TTL_MS else MISS_TTL_MS
+            if (now - entry.at in 0..maxAge && !cache.containsKey(key)) {
+                cache[key] = entry.match
+                lookedUpAt[key] = entry.at
+            }
+        }
+        co.touchlab.kermit.Logger.withTag("FilenameMeta").i {
+            "filename lookups loaded: ${cache.count { it.value != null }} matches, ${cache.count { it.value == null }} misses " +
+                "(${stored.size - cache.size} expired)"
+        }
+    }
+
+    /** Lookups land in bursts (a cold library page is dozens); one write a few seconds after the burst. */
+    private fun scheduleSaveLocked() {
+        if (saveJob?.isActive == true) return
+        saveJob = scope.launch {
+            delay(SAVE_DEBOUNCE_MS)
+            val snapshot = mutex.withLock {
+                cache.mapNotNull { (key, match) -> lookedUpAt[key]?.let { key to StoredLookup(match, it) } }.toMap()
+            }
+            runCatching { FilenameLookupStorage.save(json.encodeToString(storedSerializer, snapshot)) }
+        }
     }
 
     private suspend fun search(title: String, query: FilenameQuery): TmdbSearchResult? {
@@ -320,6 +375,13 @@ internal object FilenameMetaResolver {
         return looksLikeReleaseFilename(item.name)
     }
 
+    // Fansub / release-group tags in front of the title (`[Erai-raws] InuYasha - 01`, `[SubsPlease] ...`). Left in, the
+    // TMDB search can never match. Square brackets only: a title may start with parentheses, `(500) Days of Summer`. And before the lookups were kept on disk it was asked again on every launch.
+    private val leadingGroupTagRegex = Regex("""^\s*(?:[\[【][^\]】]{1,40}[\]】]\s*[-_.]?\s*)+""")
+
+    private val bracketTagRegex = Regex("""\[[^\]]*\]|【[^】]*】""")
+    private val fansubEpisodeTailRegex = Regex("""\s+-\s+\d{1,4}(?:v\d)?(?:\s*~\s*\d{1,4})?(?:\s.*)?$""")
+
     // Tracker/site stamps glued to the front of a torrent name (`www.UIndex.org   -   Show S01E01`).
     // Left in place they dominate the title and every match fails.
     private val sitePrefixRegex = Regex(
@@ -338,7 +400,14 @@ internal object FilenameMetaResolver {
      * episode markers decide, and failing that both TMDB endpoints are searched.
      */
     internal fun parseFilenameQuery(name: String, catalogType: String): FilenameQuery? {
-        val raw = sitePrefixRegex.replace(name.trim(), "").trim().ifBlank { name.trim() }
+        val withoutSite = sitePrefixRegex.replace(name.trim(), "").trim().ifBlank { name.trim() }
+        val ungrouped = leadingGroupTagRegex.replace(withoutSite, "").trim().ifBlank { withoutSite }
+        // Fansub naming (`[Group] Title - 01 [1080p][...]`): with the group gone, the bracket tags and the absolute
+        // episode number after a spaced dash are not part of the title either.
+        val raw = if (ungrouped == withoutSite) ungrouped else fansubEpisodeTailRegex.replace(
+            bracketTagRegex.replace(ungrouped, " ").trim(),
+            "",
+        ).trim().ifBlank { ungrouped }
         val episode = FilenameParser.parseEpisode(raw)
         val hasEpisodeCoordinates = episode.season != null && episode.episode != null
         // A run range (`friends-1994-2004-full-series`) is the show's whole life, not a release year.
@@ -441,6 +510,9 @@ internal object FilenameMetaResolver {
     private const val MAX_PARALLEL_LOOKUPS = 6
     private const val RESOLVE_BUDGET_MS = 4_000L
     private const val MAX_CACHE_ENTRIES = 2_000
+    private const val HIT_TTL_MS = 30L * 24 * 60 * 60 * 1000
+    private const val MISS_TTL_MS = 7L * 24 * 60 * 60 * 1000
+    private const val SAVE_DEBOUNCE_MS = 5_000L
 }
 
 /** What a resolved release name turned into, for callers that don't hold a [MetaPreview]. */
@@ -480,4 +552,10 @@ internal data class FilenameQuery(
         val e = episode?.toString()?.padStart(2, '0') ?: return "$resolvedTitle S$s"
         return "$resolvedTitle S${s}E$e"
     }
+}
+
+/** The filename lookups kept between launches: one JSON map, per account (TMDB matches do not differ by profile). */
+internal expect object FilenameLookupStorage {
+    fun load(): String?
+    fun save(payload: String)
 }

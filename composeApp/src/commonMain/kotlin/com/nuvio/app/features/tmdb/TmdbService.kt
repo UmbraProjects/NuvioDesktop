@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
@@ -621,7 +622,9 @@ object TmdbService {
         if (trimmed.isBlank()) return emptyList()
 
         val normalized = mediaType?.let { normalizeMediaType(it) }
-        val movieResults = if (normalized == null || normalized == "movie") {
+        // With the type unknown both searches go out together, not one after the other (optimization audit B3).
+        return kotlinx.coroutines.coroutineScope {
+        val movieResults = async { if (normalized == null || normalized == "movie") {
             fetch<TmdbSearchResponse>(
                 endpoint = "search/movie",
                 apiKey = apiKey,
@@ -631,9 +634,9 @@ object TmdbService {
                     year?.let { put("primary_release_year", it.toString()) }
                 },
             )?.results.orEmpty().map { it.withMediaType("movie") }
-        } else emptyList()
+        } else emptyList() }
 
-        val tvResults = if (normalized == null || normalized == "tv") {
+        val tvResults = async { if (normalized == null || normalized == "tv") {
             fetch<TmdbSearchResponse>(
                 endpoint = "search/tv",
                 apiKey = apiKey,
@@ -643,11 +646,12 @@ object TmdbService {
                     year?.let { put("first_air_date_year", it.toString()) }
                 },
             )?.results.orEmpty().map { it.withMediaType("tv") }
-        } else emptyList()
+        } else emptyList() }
 
-        return (movieResults + tvResults)
+        (movieResults.await() + tvResults.await())
             .filter { it.id > 0 }
             .sortedByDescending { it.popularity }
+        }
     }
 
     /**

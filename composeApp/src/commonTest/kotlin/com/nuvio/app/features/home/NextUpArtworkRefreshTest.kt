@@ -93,6 +93,27 @@ class NextUpArtworkRefreshTest {
     }
 
     @Test
+    fun `an episode that has not aired is not retried for its thumbnail`() {
+        // Ghosts S6E3, Dec 11: no still exists before it airs, and the retry re-fetched the series every launch.
+        val nowMs = com.nuvio.app.features.watchprogress.parseReleaseDateToEpochMs("2026-11-13T04:00:00.000Z")!!
+        val unaired = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = mapOf(cachedCard("tt1", episodeThumbnail = null, released = "2026-12-11T01:00:00.000Z")),
+            nowMs = nowMs,
+            wasAirDateRechecked = { true },
+        )
+        assertTrue(unaired.staleArtworkContentIds.isEmpty())
+
+        val aired = planNextUpResolution(
+            completedSeriesCandidates = listOf(candidate("tt1")),
+            cachedNextUpItems = mapOf(cachedCard("tt1", episodeThumbnail = null, released = "2026-11-10T01:00:00.000Z")),
+            nowMs = nowMs,
+            wasAirDateRechecked = { true },
+        )
+        assertEquals(setOf("tt1"), aired.staleArtworkContentIds)
+    }
+
+    @Test
     fun `a blank thumbnail counts as missing, not as resolved`() {
         val plan = planNextUpResolution(
             completedSeriesCandidates = listOf(candidate("tt1")),

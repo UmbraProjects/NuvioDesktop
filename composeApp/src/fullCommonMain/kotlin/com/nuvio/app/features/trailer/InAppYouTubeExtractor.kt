@@ -391,13 +391,21 @@ class InAppYouTubeExtractor internal constructor(
         singleUrl: Boolean,
         useAccount: Boolean = false,
     ): TrailerResolution =
-        runCatching {
+        try {
             withTimeout(EXTRACTOR_TIMEOUT_MS) {
                 extractPlaybackSourceInternal(youtubeUrl, forceRefreshConfig, singleUrl, useAccount)
             }
-        }.onFailure {
-            log.w { "[${youTubeCallerLabel()}] extractor failed for $youtubeUrl: ${it.message}" }
-        }.getOrNull() ?: TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+        } catch (error: Throwable) {
+            // The caller giving up is not a verdict on the video: rethrow, so nothing caches it as unavailable and
+            // the fresh-config retry above does not run in a cancelled coroutine. Our own timeout is a failure.
+            if (error is kotlinx.coroutines.CancellationException &&
+                error !is kotlinx.coroutines.TimeoutCancellationException
+            ) {
+                throw error
+            }
+            log.w { "[${youTubeCallerLabel()}] extractor failed for $youtubeUrl: ${error.message}" }
+            TrailerResolution.Unavailable(TrailerUnavailableReason.UNKNOWN)
+        }
 
     private fun TrailerResolution.warrantsFreshConfig(): Boolean =
         this is TrailerResolution.Unavailable &&

@@ -1212,6 +1212,7 @@ fun main(args: Array<String>) {
             runCatching { HeroCastMetadataService.flushPendingWrites() }
             runCatching { MdbListMetadataService.flushPendingWrites() }
             runCatching { com.nuvio.app.features.details.LightweightMetaDiskCache.flushPendingWrites() }
+            runCatching { com.nuvio.app.features.home.HeroBundleCache.flushPendingWrites() }
             runCatching { com.nuvio.app.features.details.filler.AnimeFillerRepository.flushPendingWrites() }
             runCatching { com.nuvio.app.features.streams.CwStreamCache.flushPendingWrites() }
         }

@@ -285,9 +285,12 @@ object LibraryPvrRepository {
 
     // --- Scheduler bookkeeping ---
 
-    fun setChecking(checking: Boolean) = synchronized(lock) {
+    /** [fullSweep] false: a check of only the titles with a due retry, which must not reset the periodic sweep's clock. */
+    fun setChecking(checking: Boolean, fullSweep: Boolean = true) = synchronized(lock) {
         if (checking) {
             _uiState.value = _uiState.value.copy(isChecking = true)
+        } else if (!fullSweep) {
+            _uiState.value = _uiState.value.copy(isChecking = false)
         } else {
             val completedAt = TraktPlatformClock.nowEpochMs()
             settings = settings.copy(lastCompletedCheckEpochMs = completedAt)

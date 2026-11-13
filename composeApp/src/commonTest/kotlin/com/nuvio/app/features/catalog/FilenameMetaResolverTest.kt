@@ -301,4 +301,24 @@ class FilenameMetaResolverTest {
         )
         assertEquals(first.cacheKey, second.cacheKey)
     }
+
+    @Test
+    fun dropsLeadingReleaseGroupTags() {
+        val anime = assertNotNull(
+            FilenameMetaResolver.parseFilenameQuery("[Erai-raws] InuYasha - 01 [1080p][Multiple Subtitle].mkv", catalogType = "other"),
+        )
+        assertEquals("InuYasha", anime.title)
+        val stacked = assertNotNull(
+            FilenameMetaResolver.parseFilenameQuery("[SubsPlease][Batch] Frieren S01E05 1080p.mkv", catalogType = "series"),
+        )
+        assertEquals("Frieren", stacked.title)
+    }
+
+    @Test
+    fun keepsATitleThatStartsWithParentheses() {
+        val query = assertNotNull(
+            FilenameMetaResolver.parseFilenameQuery("(500) Days of Summer 2009 1080p BluRay x264.mkv", catalogType = "movie"),
+        )
+        assertEquals(true, query.title.contains("500"))
+    }
 }

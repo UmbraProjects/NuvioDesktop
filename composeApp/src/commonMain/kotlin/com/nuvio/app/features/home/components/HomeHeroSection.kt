@@ -234,6 +234,9 @@ private const val HERO_PICKER_FROST_BLUR_DP = 28f
 private const val HERO_PICKER_FROST_DIM = 0.45f
 private const val HERO_BACKDROP_FADE_FRACTION = 0.35f
 private const val HERO_METADATA_PREFETCH_CONCURRENCY = 4
+
+/** How many heroes each side of the one on screen are warmed ahead (see the warm-up in HomeHeroSection). */
+private const val HERO_METADATA_WARM_RADIUS = 2
 private val heroImageLog = Logger.withTag("HomeHeroImages")
 private val heroTrailerLog = Logger.withTag("HomeHeroTrailer")
 private val heroPrefetchLog = Logger.withTag("HeroDiscovery")
@@ -514,15 +517,43 @@ fun HomeHeroSection(
         val discoveryPriority = remember(heroInfoPriority) {
             HeroDiscoveryMetadataService.normalizePriority(heroInfoPriority)
         }
-        // Keep warming all nearby metadata, but put what the user can see first and avoid
-        // flooding the add-on/TMDB/image hosts with dozens of simultaneous cold requests.
-        val metadataTargets = (listOf(displayCurrentItemWithCast) + metadataPrefetchItems + displayItemsWithCast)
+        // Warm the hero on screen and its neighbours, not the whole carousel: every carousel item used to be warmed at
+        // launch (33 on one install, each a hero summary plus badges, credits, ratings and IMDb sub-genres; optimization
+        // audit B1). The rest is fetched as the carousel or the focus comes within reach of it.
+        val heroWarmNeighbours = run {
+            val count = displayItemsWithCast.size
+            val at = displayItemsWithCast.indexOfFirst { item ->
+                item.type == displayCurrentItemWithCast.type && item.id == displayCurrentItemWithCast.id
+            }
+            if (count == 0 || at < 0) {
+                displayItemsWithCast.take(HERO_METADATA_WARM_RADIUS + 1)
+            } else {
+                (-HERO_METADATA_WARM_RADIUS..HERO_METADATA_WARM_RADIUS)
+                    .map { step -> displayItemsWithCast[((at + step) % count + count) % count] }
+            }
+        }
+        val metadataTargets = (listOf(displayCurrentItemWithCast) + heroWarmNeighbours + metadataPrefetchItems)
             .distinctBy { item ->
                 "${item.type}:${item.id}"
             }
+        // The lookups run in a scope that outlives the effect below. The effect restarts each time the hero moves, and
+        // used to cancel every lookup still in flight, including those for titles that were still in range.
+        val heroWarmScope = rememberCoroutineScope()
+        val prefetchSlots = remember { Semaphore(HERO_METADATA_PREFETCH_CONCURRENCY) }
+        // Lookups already running, so a restart does not queue a second one for the same title.
+        val warmInFlight = remember { mutableSetOf<String>() }
         LaunchedEffect(metadataTargets, HeroDiscoveryMetadataService.CACHE_VERSION) {
             val settings = MdbListSettingsRepository.snapshot()
-            val prefetchSlots = Semaphore(HERO_METADATA_PREFETCH_CONCURRENCY)
+            fun launchOnce(tag: String, block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) {
+                if (!warmInFlight.add(tag)) return
+                heroWarmScope.launch {
+                    try {
+                        block()
+                    } finally {
+                        warmInFlight.remove(tag)
+                    }
+                }
+            }
             for (target in metadataTargets) {
                 val key = "${target.type}:${target.id}"
                 val discoveryKey = "$key:heroDiscoveryV${HeroDiscoveryMetadataService.CACHE_VERSION}"
@@ -530,7 +561,7 @@ fun HomeHeroSection(
                 // id: a cloud-library row is listed under a provider download key that resolves to
                 // nothing anywhere, so without this it has no cast, no ratings and no badges.
                 if (!castCache.containsKey(key) && !target.isOffCatalogHeroItem()) {
-                    launch {
+                    launchOnce("cast:$key") {
                         prefetchSlots.withPermit {
                             castCache[key] = HeroCastMetadataService.fetch(
                                 type = target.metadataType,
@@ -540,7 +571,7 @@ fun HomeHeroSection(
                     }
                 }
                 if (!discoveryCache.containsKey(discoveryKey) && !target.isOffCatalogHeroItem()) {
-                    launch {
+                    launchOnce("badges:$discoveryKey") {
                         val queuedAtMs = WatchProgressClock.nowEpochMs()
                         prefetchSlots.withPermit {
                             val waitedMs = WatchProgressClock.nowEpochMs() - queuedAtMs
@@ -557,7 +588,7 @@ fun HomeHeroSection(
                     }
                 }
                 if (!productionCache.containsKey(key) && !target.isOffCatalogHeroItem()) {
-                    launch {
+                    launchOnce("credits:$key") {
                         prefetchSlots.withPermit {
                             productionCache[key] = fetchHeroProductionCredits(
                                 type = target.metadataType,
@@ -571,7 +602,7 @@ fun HomeHeroSection(
                     if (imdbId == null) {
                         interestsCache[key] = emptyList()
                     } else {
-                        launch {
+                        launchOnce("interests:$key") {
                             prefetchSlots.withPermit {
                                 interestsCache[key] = ImdbInterestsService.fetch(imdbId)
                             }
@@ -592,7 +623,7 @@ fun HomeHeroSection(
                     ratingsCache[key] = emptyList()
                     continue
                 }
-                launch {
+                launchOnce("ratings:$key") {
                     prefetchSlots.withPermit {
                         val enriched = MdbListMetadataService.enrichMeta(
                             meta = baseMeta,
@@ -2974,6 +3005,7 @@ private enum class HeroPeoplePanelTab {
     Production,
 }
 
+@kotlinx.serialization.Serializable
 private data class HeroProductionCredit(
     val label: String,
     val role: String,
@@ -3361,12 +3393,22 @@ private suspend fun fetchHeroProductionCredits(
     type: String,
     id: String,
 ): List<HeroProductionCredit> {
+    // Kept between launches (see HeroBundleCache).
+    val serializer = kotlinx.serialization.builtins.ListSerializer(HeroProductionCredit.serializer())
+    val key = "$type:$id"
+    com.nuvio.app.features.home.HeroBundleCache.get("credits", key, serializer)?.let { return it }
     // Summary rather than the details-screen record: a director and a writer do not need every
     // episode of every season fetched to find them.
     val meta = MetaDetailsRepository.peek(type = type, id = id)
         ?: MetaDetailsRepository.fetchHeroSummary(type = type, id = id)
         ?: return emptyList()
-    return heroProductionCredits(meta)
+    return heroProductionCredits(meta).also { credits ->
+        com.nuvio.app.features.home.HeroBundleCache.put(
+            "credits", key, credits, serializer,
+            isEmpty = credits.isEmpty(),
+            isSeries = type.equals("series", ignoreCase = true) || type.equals("tv", ignoreCase = true),
+        )
+    }
 }
 
 private fun heroProductionCredits(meta: MetaDetails): List<HeroProductionCredit> =

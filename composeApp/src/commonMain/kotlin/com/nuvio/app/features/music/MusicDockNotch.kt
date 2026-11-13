@@ -138,11 +138,17 @@ internal fun MusicDockNotch(
     }
     // Opens at once on hover or focus; folds back a moment after both are gone.
     var open by remember { mutableStateOf(false) }
+    // Whether the dock was last held open by focus (the keyboard or a pad) rather than the pointer.
+    var heldByFocus by remember { mutableStateOf(false) }
     LaunchedEffect(hovered, focusWithin) {
         if (hovered || focusWithin) {
+            heldByFocus = focusWithin && !hovered
             open = true
         } else {
-            delay(FOLD_DELAY_MS)
+            // The grace is for a pointer slipping off the edge for a moment. Focus leaving (Back, Escape, a pad's B)
+            // is deliberate, so the dock folds at once (2026-11-13: B felt slow).
+            if (!heldByFocus) delay(FOLD_DELAY_MS)
+            heldByFocus = false
             open = false
         }
     }

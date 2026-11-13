@@ -1,5 +1,12 @@
 @AGENTS.md
 
+## On `windows-tv-adaptive` (UmbraProjects' branch)
+
+The sections below came in with the merge of Spyder's branch and are written from Nick's side ("this branch" there
+means `Spyder`). On `windows-tv-adaptive` the user is not Nick and there is no linked PC: work in this checkout. Test
+checks for work on this branch go in `TESTING-UMBRA.md`, not `TESTING.md` (Nick's checklist). The fork-UI merge
+warning below still applies to anything sent to Spyder's branch.
+
 ## Where to work: Nick's PC (D:\NuvioBuild\NuvioDesktop), then push
 
 Nick builds the desktop app on his own PC with `D:\NuvioBuild\build.cmd` (it pulls Spyder, then builds into

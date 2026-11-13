@@ -38,13 +38,28 @@ object DebridSettingsRepository {
     private var streamNameTemplate = DebridStreamFormatterDefaults.NAME_TEMPLATE
     private var streamDescriptionTemplate = DebridStreamFormatterDefaults.DESCRIPTION_TEMPLATE
 
+    // Loading is guarded: `hasLoaded` is set at the start of loadFromDisk (so its own calls back in here return), and a
+    // second thread used to see it and read the empty defaults before the keys were in. The cloud library's refresh runs
+    // on a background thread at startup and was that thread: "no connected service offers a cloud library", TorBox
+    // gone from Library until the next launch (2026-11-13). Other threads now wait for the load to finish.
+    private val loadLock = Any()
+    @kotlin.concurrent.Volatile
+    private var loadFinished = false
+
     fun ensureLoaded() {
-        if (hasLoaded) return
-        loadFromDisk()
+        if (loadFinished) return
+        synchronized(loadLock) {
+            if (hasLoaded) return
+            loadFromDisk()
+            loadFinished = true
+        }
     }
 
     fun onProfileChanged() {
-        loadFromDisk()
+        synchronized(loadLock) {
+            loadFromDisk()
+            loadFinished = true
+        }
     }
 
     fun snapshot(): DebridSettings {

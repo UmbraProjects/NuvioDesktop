@@ -44,3 +44,29 @@ internal fun grabWalkDecision(
 
     return GrabWalkDecision.GRAB
 }
+
+/** What to do with a retry that was due before a check and is still due, untouched, after it. */
+internal enum class StaleRetryAction {
+    /** The check could not get to it this time (no free slot, folder missing): try again after the usual backoff. */
+    PUSH_BACK,
+
+    /** It can never run (its title is gone, or a newer grab of the same episode replaced it): drop the retry. */
+    EXPIRE,
+}
+
+/**
+ * A retry the check skipped must not stay due, or it wakes the scheduler every minute for good (2026-11-12: one
+ * FAILED grab, due for 4.7 days, re-ran the whole sweep every minute). [monitored] is every monitored title by id;
+ * [allGrabs] every grab record.
+ */
+internal fun staleRetryAction(
+    grab: GrabRecord,
+    monitored: Map<String, MonitoredItem>,
+    allGrabs: List<GrabRecord>,
+): StaleRetryAction {
+    if (grab.monitoredItemId !in monitored) return StaleRetryAction.EXPIRE
+    val superseded = allGrabs.any { other ->
+        other.id != grab.id && other.logicalKey == grab.logicalKey && other.createdAtEpochMs > grab.createdAtEpochMs
+    }
+    return if (superseded) StaleRetryAction.EXPIRE else StaleRetryAction.PUSH_BACK
+}

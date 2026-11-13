@@ -13,6 +13,9 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -347,6 +350,13 @@ internal fun ArtistStage(
         // focus can land on a control in the panels before Play Essentials takes it, and scrolls part way down to show it; once
         // Play Essentials has focus the page goes back to the top.
         val onHeroFocused: () -> Unit = { if (!returnToPanels) scope.launch { settledOnPanels = false; scroll.scrollTo(0) } }
+        // Focus moving between the hero and the panels (the keyboard, a pad) snaps the page the same way the wheel does: the
+        // page's own bring-into-view goes the whole way to the other screen in one animation. Before, it scrolled just far
+        // enough to show the control, stopped, and the settle logic above then scrolled the rest (2026-11-13). The panels'
+        // own lists keep the normal behaviour.
+        val innerBringIntoView = LocalBringIntoViewSpec.current
+        val snapBringIntoView = remember(scroll) { snapBringIntoViewSpec(scroll) }
+        CompositionLocalProvider(LocalBringIntoViewSpec provides snapBringIntoView) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -377,7 +387,7 @@ internal fun ArtistStage(
                 }
                 // The wheel is the snapping above, not a free scroll; focus and the code still move the page.
                 .verticalScroll(scroll, enabled = false),
-        ) {
+        ) { CompositionLocalProvider(LocalBringIntoViewSpec provides innerBringIntoView) {
             StageHero(
                 artist = artist,
                 discography = discography,
@@ -480,9 +490,22 @@ internal fun ArtistStage(
                     modifier = Modifier.width(side),
                 )
             }
+        } }
         }
         // Always in the top left corner, over the hero and over the panels, so Back never needs a scroll to the top first.
         Box(Modifier.padding(start = 24.dp, top = 16.dp)) { NuvioBackButton(onClick = onBack) }
+    }
+}
+
+/**
+ * Bring-into-view for the two-screen artist page: a control already in view stays put; one above goes to the hero (the top),
+ * one below to the panels (the bottom), so a focus move snaps a whole screen in a single animation, as the wheel does.
+ */
+private fun snapBringIntoViewSpec(scroll: androidx.compose.foundation.ScrollState) = object : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = when {
+        offset >= 0f && offset + size <= containerSize -> 0f
+        offset < 0f -> -scroll.value.toFloat()
+        else -> (scroll.maxValue - scroll.value).toFloat()
     }
 }
 
