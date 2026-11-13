@@ -214,6 +214,21 @@ internal fun TonightCoinTossView(
         vetoes += TonightVeto(title, tonightVetoTrait(title, pool))
     }
 
+    // fork:phone-remote tonight - ◀ not this, OK play, ▲ hold, ▼ its page, all as the TV's keys.
+    MirrorOnPhone(
+        com.nuvio.app.features.remote.RemoteTonightScreen(
+            view = com.nuvio.app.features.remote.RemoteTonightScreen.COIN_TOSS,
+            loading = loading && current == null,
+            number = vetoes.size + 1,
+            cards = listOfNotNull(current?.remoteCard("NUVIO PICKED THIS", "", clock, minutesUntilBed)),
+            answers = vetoes.takeLast(3).map { v -> v.title.name + (v.trait?.let { " · ${it.reason}" } ?: "") },
+            extra = tonightLeanLabel(vetoes),
+            seconds = if (current == null) -1 else secondsLeft,
+            secondsTotal = TONIGHT_COIN_SECONDS,
+            paused = paused,
+        ),
+    )
+
     Box(modifier = Modifier.fillMaxSize()) {
     TonightAmbientWash(rememberColoursOf(current?.let { it.poster ?: it.backdrop }))
     Column(
@@ -384,6 +399,35 @@ internal fun TonightKnockoutView(
         leftColours?.firstOrNull(),
         rightColours?.getOrNull(1),
     ).takeIf { it.isNotEmpty() }
+
+    // fork:phone-remote tonight - tap a side to keep it (◀ ▶), Taste (▼), Back undoes, OK plays the winner.
+    val phoneMatch = bracket.currentMatch
+    MirrorOnPhone(
+        com.nuvio.app.features.remote.RemoteTonightScreen(
+            view = com.nuvio.app.features.remote.RemoteTonightScreen.KNOCKOUT,
+            loading = loading && bracket.entrants.size < 2,
+            prompt = when {
+                champion != null -> "Tonight's winner"
+                bracket.entrants.size < 2 -> null
+                bracket.roundNumber == bracket.roundCount -> "The final"
+                else -> "Round ${bracket.roundNumber} of ${bracket.roundCount}"
+            },
+            number = bracket.roundNumber,
+            total = bracket.roundCount,
+            countLeft = bracket.entrants.size,
+            cards = when {
+                champion != null -> listOf(champion.remoteCard("WINNER", "", clock, minutesUntilBed))
+                phoneMatch != null -> listOf(
+                    phoneMatch.first.remoteCard("◀ KEEP", "", clock, minutesUntilBed),
+                    phoneMatch.second.remoteCard("KEEP ▶", "", clock, minutesUntilBed),
+                )
+                else -> emptyList()
+            },
+            extra = phoneMatch?.let { m -> tasting?.let { "Taste ${it + 1} of 2 · ${if (it == 0) m.first.name else m.second.name}" } },
+            seconds = if (champion != null) secondsLeft else -1,
+            secondsTotal = KNOCKOUT_WINNER_SECONDS,
+        ),
+    )
 
     // Laid out like Three Cards and Three Questions (user, Nov 12: one system): the heading and its line at the top
     // left, the match centred on the screen in the same band as the dealt cards, the strip of buttons straight under

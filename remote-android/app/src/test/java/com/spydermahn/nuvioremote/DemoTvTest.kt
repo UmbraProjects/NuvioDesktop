@@ -253,4 +253,42 @@ class DemoTvTest {
         awake.close()
         session.close()
     }
+
+    @Test
+    fun aLongPressMarksAnEpisodeAndTheListFollows() {
+        val (session, lines) = connect()
+        val show = LibraryTitle("Favourites", "series", "demo-s1", "Harbour Lights", "2019", null, null, false)
+        val episode = EpisodeInfo(2, 1, "Chapter 21", "demo-s1:2:1", null, null, 0f)
+        session.menu(MenuTarget.episode(show, episode))
+        val menu = lines.next<ServerLine.Menu>()
+        assertEquals("demo-s1:2:1", menu.target.ref)
+        val watched = menu.actions.first { it.code == MenuCode.WATCHED }
+        assertEquals("Mark as watched", watched.label)
+
+        session.act(menu.target, watched.code)
+        val done = lines.next<ServerLine.Done>()
+        assertTrue(done.ok)
+        assertTrue(LibraryLines.REFRESH_EPISODES in done.refresh)
+        session.episodes(show.type, show.id)
+        val listed = lines.next<ServerLine.Episodes>().episodes.first { it.videoId == "demo-s1:2:1" }
+        assertEquals(1f, listed.progress, 0.001f)
+
+        // And back, so the demo is as it was for the other tests.
+        session.act(menu.target, MenuCode.WATCHED)
+        assertTrue(lines.next<ServerLine.Done>().ok)
+        session.close()
+    }
+
+    @Test
+    fun aPlaylistPickerThenAnAdd() {
+        val (session, lines) = connect()
+        val target = MenuTarget("title", "series", "demo-s2", null)
+        session.act(target, MenuCode.PLAYLIST)
+        val pick = lines.next<ServerLine.Playlists>()
+        assertEquals(listOf(1, 2), pick.seasons)
+        assertTrue(pick.playlists.isNotEmpty())
+        session.act(target, MenuCode.ADD_TO_PLAYLIST, listOf(pick.playlists.first().id, pick.scope, "2"))
+        assertTrue(lines.next<ServerLine.Done>().message.startsWith("Added to"))
+        session.close()
+    }
 }

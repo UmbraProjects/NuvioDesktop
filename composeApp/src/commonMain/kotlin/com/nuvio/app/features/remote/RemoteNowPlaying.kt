@@ -108,16 +108,17 @@ object RemotePlayerHub {
         _youTubeOpens.tryEmit(request)
     }
 
-    private val _resumes = MutableSharedFlow<com.nuvio.app.features.watchprogress.ContinueWatchingItem>(extraBufferCapacity = 2)
+    private val _resumes = MutableSharedFlow<RemoteResumeRequest>(extraBufferCapacity = 2)
 
     /**
      * Continue Watching titles the phone asked to resume (its Watch tab, Resume on the TV). The app root plays them as
-     * the card's last-link shortcut does: the same source again, from where it stopped.
+     * the card's last-link shortcut does (the same source again, from where it stopped), or as its long-press menu's
+     * Start from beginning and Choose source do, by [RemoteResumeRequest.mode].
      */
-    val resumes: SharedFlow<com.nuvio.app.features.watchprogress.ContinueWatchingItem> = _resumes.asSharedFlow()
+    val resumes: SharedFlow<RemoteResumeRequest> = _resumes.asSharedFlow()
 
-    fun resume(item: com.nuvio.app.features.watchprogress.ContinueWatchingItem) {
-        _resumes.tryEmit(item)
+    fun resume(item: com.nuvio.app.features.watchprogress.ContinueWatchingItem, mode: RemotePlayMode = RemotePlayMode.Normal) {
+        _resumes.tryEmit(RemoteResumeRequest(item, mode))
     }
 
     private val _episodePlays = MutableSharedFlow<RemoteEpisodePlay>(extraBufferCapacity = 2)
@@ -146,6 +147,16 @@ data class RemoteEpisodePlay(
     val episodeThumbnail: String?,
     val pauseDescription: String?,
     val resumePositionMs: Long?,
+    /** fork:phone-remote menus - Normal plays as a click does; the long-press menu can ask for the others. */
+    val mode: RemotePlayMode = RemotePlayMode.Normal,
+)
+
+/** How the phone asked for something to play: as a click, from the start, or through the source list. */
+enum class RemotePlayMode { Normal, FromStart, ChooseSource }
+
+data class RemoteResumeRequest(
+    val item: com.nuvio.app.features.watchprogress.ContinueWatchingItem,
+    val mode: RemotePlayMode,
 )
 
 data class RemoteYouTubeOpen(val videoId: String, val startSeconds: Int? = null)

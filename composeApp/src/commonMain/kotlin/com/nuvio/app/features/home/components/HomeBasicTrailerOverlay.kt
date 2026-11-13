@@ -94,10 +94,18 @@ internal fun HomeBasicTrailerOverlay(
 
     // Publishes "a trailer is showing" for the Escape mapping and the hover preview's stand-down.
     LaunchedEffect(playing, enabled) {
-        if (enabled) HomeHeroTrailerManualTrigger.setActive(playing)
+        if (enabled) {
+            HomeHeroTrailerManualTrigger.setActive(playing)
+            HomeHeroTrailerManualTrigger.setOnScreen(playing)
+        }
     }
     DisposableEffect(enabled) {
-        onDispose { if (enabled) HomeHeroTrailerManualTrigger.setActive(false) }
+        onDispose {
+            if (enabled) {
+                HomeHeroTrailerManualTrigger.setActive(false)
+                HomeHeroTrailerManualTrigger.setOnScreen(false)
+            }
+        }
     }
 
     LaunchedEffect(request?.token, enabled) {
@@ -170,6 +178,7 @@ internal fun HomeBasicTrailerOverlay(
         HomeHeroTrailerSurface(
             sourceUrl = activeSource.videoUrl,
             sourceAudioUrl = activeSource.audioUrl,
+            sourceHeaders = activeSource.headers, // fork:trailer-signed-in
             playWhenReady = playing,
             muted = muted,
             volume = volume,

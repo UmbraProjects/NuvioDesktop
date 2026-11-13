@@ -133,6 +133,7 @@ fun DetailHero(
     onHeightChanged: (Int) -> Unit = {},
     heroTrailerSourceUrl: String? = null,
     heroTrailerSourceAudioUrl: String? = null,
+    heroTrailerSourceHeaders: Map<String, String> = emptyMap(), // fork:trailer-signed-in
     heroTrailerReady: Boolean = false,
     heroTrailerPlayWhenReady: Boolean = false,
     heroTrailerMuted: Boolean = true,
@@ -350,6 +351,7 @@ fun DetailHero(
                     HeroTrailerPlayerSurface(
                         sourceUrl = heroTrailerSourceUrl,
                         sourceAudioUrl = heroTrailerSourceAudioUrl,
+                        sourceHeaders = heroTrailerSourceHeaders,
                         playWhenReady = heroTrailerPlayWhenReady,
                         muted = heroTrailerMuted,
                         volume = heroTrailerVolume,
@@ -463,6 +465,7 @@ fun DetailHero(
                     HeroTrailerPlayerSurface(
                         sourceUrl = heroTrailerSourceUrl,
                         sourceAudioUrl = heroTrailerSourceAudioUrl,
+                        sourceHeaders = heroTrailerSourceHeaders,
                         playWhenReady = heroTrailerPlayWhenReady,
                         muted = heroTrailerMuted,
                         volume = heroTrailerVolume,

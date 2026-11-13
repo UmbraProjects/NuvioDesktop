@@ -74,6 +74,10 @@ internal interface PhoneRemoteListener {
     fun onPlayTrack(browseId: String, index: Int): String? = null
     /** fork:phone-remote tonight: a tap on the phone's Tonight mirror. */
     fun onTonight(action: com.nuvio.app.features.remote.RemoteTonightAction, number: Int) = Unit
+    /** A long press on the phone: answer with a MENU line (PhoneRemoteActions). */
+    fun onMenu(target: RemoteMenuTarget, reply: (String) -> Unit) = Unit
+    /** A row of that menu: answer with DONE, PLAYLISTS or RECAP lines. */
+    fun onMenuAction(target: RemoteMenuTarget, code: String, args: List<String>, reply: (String) -> Unit) = Unit
 }
 
 /**
@@ -333,6 +337,8 @@ internal class PhoneRemoteServer(
                             is RemoteMessage.AlbumTracks -> listener.onAlbumTracks(message.browseId, ::trySend)
                             is RemoteMessage.PlayTrack -> sendOpening(listener.onPlayTrack(message.browseId, message.index))
                             is RemoteMessage.TonightDo -> listener.onTonight(message.action, message.number)
+                            is RemoteMessage.Menu -> listener.onMenu(message.target, ::trySend)
+                            is RemoteMessage.Do -> listener.onMenuAction(message.target, message.code, message.args, ::trySend)
                             else -> Unit
                         }
                     }

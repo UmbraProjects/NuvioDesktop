@@ -708,6 +708,24 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.KeyboardShortcuts,
+            key = "panel-ring",
+            title = resolve(Res.string.panel_ring_settings_section),
+            description = resolve(Res.string.panel_ring_search_description),
+            pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
+            section = resolve(Res.string.panel_ring_settings_section),
+            icon = Icons.Rounded.Keyboard,
+        )
+        addRow(
+            page = SettingsPage.KeyboardShortcuts,
+            key = "gamepad-rebind",
+            title = resolve(Res.string.settings_shortcuts_controller_buttons),
+            description = resolve(Res.string.gamepad_rebind_search_description),
+            pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
+            section = resolve(Res.string.settings_shortcuts_controller_buttons),
+            icon = Icons.Rounded.Keyboard,
+        )
+        addRow(
+            page = SettingsPage.KeyboardShortcuts,
             key = "esc-windowed-first",
             title = resolve(Res.string.settings_shortcuts_esc_windowed_first),
             description = resolve(Res.string.settings_search_in_fullscreen_playback_escape_leaves_fullscreen),

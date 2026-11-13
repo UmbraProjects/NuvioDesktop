@@ -349,7 +349,7 @@ object DemoTv {
         fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
         return when (kind) {
             LibraryLines.VIDEO -> "LIBRARY video 1 " + DEMO_TITLES.joinToString(";") { t ->
-                listOf(f(t.section), f(t.type), f(t.id), f(t.name), f(t.year), f(poster(t.name)), "-", if (t.watched) "1" else "0").joinToString(",")
+                listOf(f(t.section), f(t.type), f(t.id), f(t.name), f(t.year), f(poster(t.name)), "-", if (watchedNow(t)) "1" else "0").joinToString(",")
             }
             else -> {
                 val artists = DEMO_ALBUMS.map { it.artist }.distinct().joinToString(";") { name ->
@@ -366,6 +366,201 @@ object DemoTv {
     // ------------------------------------------------------------------------------------------ Queue and lyrics
 
     private fun songId(index: Int) = "demo-song-$index"
+
+    // ------------------------------------------------------------------------------------------ Long-press menus
+
+    /** Titles and episodes whose watched mark the phone flipped (title ids, and `show:season:episode`). */
+    private val flipped: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val playlists = mutableListOf("demo-p1" to "Sunday night", "demo-p2" to "Short ones")
+    private val playlistCounts = java.util.concurrent.ConcurrentHashMap(mapOf("demo-p1" to 6, "demo-p2" to 2))
+
+    private fun watchedNow(title: DemoTitle) = title.watched != (title.id in flipped)
+
+    private fun episodeProgress(showId: String, season: Int, episode: Int): Int {
+        val base = if (season == 1 && episode <= 3) 1000 else if (season == 1 && episode == 4) 400 else 0
+        return if ("$showId:$season:$episode" !in flipped) base else if (base == 1000) 0 else 1000
+    }
+
+    private fun setEpisodes(showId: String, episodes: List<Pair<Int, Int>>, watched: Boolean) {
+        episodes.forEach { (season, episode) ->
+            if ((episodeProgress(showId, season, episode) == 1000) != watched) {
+                val key = "$showId:$season:$episode"
+                if (!flipped.add(key)) flipped.remove(key)
+            }
+        }
+    }
+
+    private val demoEpisodes = (1..2).flatMap { season -> (1..6).map { season to it } }
+
+    /** `MENU <kind> <type> <id> <ref>` answered as the PC would, with the demo's own titles. */
+    private fun menuLine(parts: List<String>): String {
+        fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+        val kind = parts.getOrElse(1) { "title" }
+        val id = RemoteProtocol.decode(parts.getOrElse(3) { "" })
+        val ref = parts.getOrNull(4)?.takeUnless { it == "-" }?.let(RemoteProtocol::decode)
+        val echo = parts.drop(1).take(4).joinToString(" ")
+        val title = DEMO_TITLES.firstOrNull { it.id == id }
+        note("Long press on ${title?.name ?: id} ($kind)")
+        val (heading, detail, rows) = when (kind) {
+            "title" -> {
+                val t = title ?: return "MENU $echo ${f("Couldn't load this")} - -"
+                val show = t.type == "series"
+                Triple(
+                    t.name,
+                    listOfNotNull(if (show) "Show" else "Film", t.year).joinToString(" · "),
+                    listOfNotNull(
+                        "watched" to if (watchedNow(t)) "Mark as unwatched" else "Mark as watched",
+                        "library" to "Remove from library",
+                        if (show) null else "choose_source" to "Choose a source on the TV",
+                        "playlist" to "Add to a playlist",
+                        "not_interested" to "Not interested",
+                        "details" to "Details on the TV",
+                    ),
+                )
+            }
+            "resume" -> {
+                val r = DEMO_CONTINUE.firstOrNull { it.parentId == id } ?: return "MENU $echo ${f("Couldn't load this")} - -"
+                Triple(
+                    r.title,
+                    r.episode ?: "Film",
+                    listOf(
+                        "resume" to "Resume on the TV", "from_start" to "Start from the beginning",
+                        "choose_source" to "Choose a source on the TV",
+                        "watched" to if (r.episode != null) "Mark episode as watched" else "Mark as watched",
+                        "playlist" to if (r.episode != null) "Add episode to a playlist" else "Add to a playlist",
+                        "details" to "Details on the TV", "remove" to "Remove from Continue watching",
+                    ),
+                )
+            }
+            "episode" -> {
+                val bits = ref.orEmpty().split(':')
+                val season = bits.getOrNull(1)?.toIntOrNull() ?: 1
+                val episode = bits.getOrNull(2)?.toIntOrNull() ?: 1
+                val seasonAll = demoEpisodes.filter { it.first == season }.all { (s, e) -> episodeProgress(id, s, e) == 1000 }
+                Triple(
+                    "S$season E$episode · Chapter ${season * 10 + episode}",
+                    title?.name,
+                    listOfNotNull(
+                        "watched" to if (episodeProgress(id, season, episode) == 1000) "Mark as unwatched" else "Mark as watched",
+                        if (season == 1 && episode == 1) null else "previous_watched" to "Mark earlier episodes as watched",
+                        "season_watched" to if (seasonAll) "Mark Season $season as unwatched" else "Mark Season $season as watched",
+                        if (episodeProgress(id, season, episode) in 1..999) "from_start" to "Start from the beginning" else null,
+                        "choose_source" to "Choose a source on the TV",
+                        if (season == 1 && episode == 1) null else "recap" to "Recap the story so far",
+                        "playlist" to "Add episode to a playlist",
+                        "playlist_season" to "Add Season $season to a playlist",
+                    ),
+                )
+            }
+            else -> {
+                val season = ref?.toIntOrNull() ?: 1
+                val seasonAll = demoEpisodes.filter { it.first == season }.all { (s, e) -> episodeProgress(id, s, e) == 1000 }
+                Triple(
+                    "Season $season",
+                    title?.name,
+                    listOfNotNull(
+                        "season_watched" to if (seasonAll) "Mark Season $season as unwatched" else "Mark Season $season as watched",
+                        if (season > 1) "earlier_seasons_watched" to "Mark earlier seasons as watched" else null,
+                        if (season > 1) "recap" to "Recap before Season $season" else null,
+                        "playlist_season" to "Add Season $season to a playlist",
+                        "details" to "Details on the TV",
+                    ),
+                )
+            }
+        }
+        return "MENU $echo ${f(heading)} ${f(detail)} " + rows.joinToString(";") { (code, label) -> "$code,${f(label)}" }
+    }
+
+    /** `DO <kind> <type> <id> <ref> <code> [args]`: pretends, and answers as the PC would. */
+    private fun menuAction(parts: List<String>, send: (String) -> Unit) {
+        fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
+        val kind = parts.getOrElse(1) { "title" }
+        val id = RemoteProtocol.decode(parts.getOrElse(3) { "" })
+        val ref = parts.getOrNull(4)?.takeUnless { it == "-" }?.let(RemoteProtocol::decode)
+        val code = parts.getOrElse(5) { "" }
+        val args = parts.drop(6).map(RemoteProtocol::decode)
+        val echo = parts.drop(1).take(4).joinToString(" ")
+        val name = DEMO_TITLES.firstOrNull { it.id == id }?.name ?: DEMO_CONTINUE.firstOrNull { it.parentId == id }?.title ?: "the title"
+        fun done(message: String, refresh: String = "library,continue,episodes") = send("DONE 1 ${f(message)} $refresh")
+        val bits = ref.orEmpty().split(':')
+        val season = if (kind == "season") ref?.toIntOrNull() ?: 1 else bits.getOrNull(1)?.toIntOrNull() ?: 1
+        val episode = bits.getOrNull(2)?.toIntOrNull() ?: 1
+        note("Menu: $code on $name")
+        when (code) {
+            "watched" -> if (kind == "episode") {
+                val was = episodeProgress(id, season, episode) == 1000
+                setEpisodes(id, listOf(season to episode), !was)
+                done(if (was) "S$season E$episode marked as unwatched" else "S$season E$episode marked as watched")
+            } else {
+                if (!flipped.add(id)) flipped.remove(id)
+                done("$name marked as ${if (DEMO_TITLES.firstOrNull { it.id == id }?.let(::watchedNow) == false) "unwatched" else "watched"}")
+            }
+            "previous_watched" -> {
+                setEpisodes(id, demoEpisodes.takeWhile { it != season to episode }, true)
+                done("Earlier episodes marked as watched")
+            }
+            "season_watched" -> {
+                val list = demoEpisodes.filter { it.first == season }
+                val all = list.all { (s, e) -> episodeProgress(id, s, e) == 1000 }
+                setEpisodes(id, list, !all)
+                done("Season $season marked as ${if (all) "unwatched" else "watched"}")
+            }
+            "earlier_seasons_watched" -> {
+                setEpisodes(id, demoEpisodes.filter { it.first < season }, true)
+                done("Earlier seasons marked as watched")
+            }
+            "playlist", "playlist_season" -> {
+                val scope = when {
+                    code == "playlist_season" || kind == "season" -> "season"
+                    kind == "title" -> "title"
+                    else -> "episode"
+                }
+                val label = when (scope) {
+                    "season" -> "$name · Season $season"
+                    "episode" -> if (kind == "resume") name else "$name S$season E$episode"
+                    else -> name
+                }
+                val seasons = if (scope == "title" && DEMO_TITLES.firstOrNull { it.id == id }?.type == "series") "1;2" else "-"
+                val lists = playlists.joinToString(";") { (pid, pname) -> "${f(pid)},${f(pname)},${playlistCounts[pid] ?: 0}" }.ifEmpty { "-" }
+                send("PLAYLISTS $echo $scope ${f(label)} $seasons $lists")
+            }
+            "add_to_playlist" -> {
+                val target = args.getOrNull(0).orEmpty()
+                val pid = if (target == "+") {
+                    "demo-p${playlists.size + 1}".also { playlists += it to name }
+                } else {
+                    target
+                }
+                playlistCounts[pid] = (playlistCounts[pid] ?: 0) + 1
+                done("Added to ${playlists.firstOrNull { it.first == pid }?.second ?: "the playlist"}", "-")
+            }
+            "recap" -> {
+                val heading = "$name · Before " + if (kind == "season") "Season $season" else "S$season E$episode"
+                send("RECAP 0 ${f(heading)} -")
+                ticker.schedule({
+                    send(
+                        "RECAP 1 ${f(heading)} " + f(
+                            "This is the demo's pretend recap. On a real TV, Nuvio's AI writes the story so far from the " +
+                                "episodes before this one, without spoiling what comes next.\n\nThe lighthouse keeper found the " +
+                                "letters; the harbour master still doesn't know who sent them.",
+                        ),
+                    )
+                }, 2, TimeUnit.SECONDS)
+            }
+            "remove" -> done("Removed $name from Continue watching (the demo puts it back)", "continue")
+            "library" -> done("Removed $name from the library (the demo keeps it)", "library")
+            "not_interested" -> done("$name won't be suggested again", "-")
+            "details" -> {
+                done("Opening the details on the TV", "-")
+                showSources(name, "Details")
+            }
+            "resume", "from_start", "choose_source" -> {
+                done(if (code == "choose_source") "Sources for $name are on the TV" else "Playing $name on the TV", "-")
+                showSources(name, if (code == "from_start") "From the start" else "Pick a source")
+            }
+            else -> send("DONE 0 ${f("The demo doesn't do that")} -")
+        }
+    }
 
     private fun queueLine(): String {
         fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
@@ -630,7 +825,7 @@ object DemoTv {
                     fun f(value: String?) = value?.takeIf { it.isNotBlank() }?.let(RemoteProtocol::encode) ?: "-"
                     val episodes = if (show == null) "-" else (1..2).flatMap { season -> (1..6).map { season to it } }
                         .joinToString(";") { (season, episode) ->
-                            val watched = if (season == 1 && episode <= 3) 1000 else if (season == 1 && episode == 4) 400 else 0
+                            val watched = episodeProgress(id, season, episode)
                             listOf(
                                 season.toString(), episode.toString(), f("Chapter ${season * 10 + episode}"), f("$id:$season:$episode"),
                                 f("https://picsum.photos/seed/${id}e$season$episode/320/180"), f("202${season}-0$episode-01"), watched.toString(),
@@ -651,6 +846,8 @@ object DemoTv {
                         showSources(show.name, "S${bits[1]} E${bits[2]} · Chapter ${bits[1].toInt() * 10 + bits[2].toInt()}")
                     }
                 }
+                "MENU" -> send(menuLine(parts))
+                "DO" -> menuAction(parts, ::send)
                 "QUEUE" -> send(queueLine())
                 "QUEUE_PLAY", "QUEUE_NEXT", "QUEUE_REMOVE" -> {
                     val id = RemoteProtocol.decode(parts.getOrElse(1) { "" })

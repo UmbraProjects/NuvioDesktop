@@ -36,6 +36,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -199,11 +202,32 @@ fun DisplayTitle(text: String, modifier: Modifier = Modifier, size: Int = 26, ma
 
 /** An outlined pill beside a label ("Library", "4K · HDR", "Queue · 26"); [onClick] makes it a small button. */
 @Composable
-fun GlassTag(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null, accent: Boolean = false, onClick: (() -> Unit)? = null) {
+fun GlassTag(
+    text: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    accent: Boolean = false,
+    /** A long press (the season tags open the season's menu with it). */
+    onLongClick: (() -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+) {
     val g = LocalGlass.current
+    val haptics = LocalHapticFeedback.current
     val shape = RoundedCornerShape(50)
     var m = modifier.clip(shape).border(1.dp, if (accent) g.tintEdge else g.tagEdge, shape)
-    if (onClick != null) m = m.pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
+    if (onClick != null) {
+        m = m.pointerInput(onClick, onLongClick) {
+            detectTapGestures(
+                onTap = { onClick() },
+                onLongPress = onLongClick?.let { hold ->
+                    {
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        hold()
+                    }
+                },
+            )
+        }
+    }
     Row(m.height(if (onClick != null) 34.dp else 26.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) {
             Icon(icon, contentDescription = null, tint = if (accent) g.accent else Color(0xFFD5D9DE), modifier = Modifier.size(14.dp))
@@ -243,6 +267,25 @@ fun StatTile(label: String, value: String, modifier: Modifier = Modifier, onLong
         Text(label, color = g.textSecondary, fontSize = 12.sp)
         Text(value, color = g.text, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+}
+
+/**
+ * A tap, and with [onHold] a long press too (a light buzz, then [onHold]): the Watch tab's posters, cards and episode
+ * rows open their menu this way, like a long press on the TV.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun Modifier.tapOrHold(onHold: (() -> Unit)?, onTap: () -> Unit): Modifier {
+    if (onHold == null) return clickable(onClick = onTap)
+    val haptics = LocalHapticFeedback.current
+    return combinedClickable(
+        onClick = onTap,
+        onLongClickLabel = "More",
+        onLongClick = {
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            onHold()
+        },
+    )
 }
 
 // ------------------------------------------------------------------------------------------------ Keys

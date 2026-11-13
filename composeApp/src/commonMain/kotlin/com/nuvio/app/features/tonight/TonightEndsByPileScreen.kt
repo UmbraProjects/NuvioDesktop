@@ -97,6 +97,29 @@ internal fun TonightEndsByView(
     val chosen = rows.getOrNull(selected)?.title
     val glow = rememberGlowOf(chosen?.let { it.backdrop ?: it.poster }, lerp(accent, Color.White, 0.2f))
 
+    // fork:phone-remote tonight - the rows as a list; a tap plays that row, ◀ ▶ move bedtime, ▲ ▼ the selection.
+    MirrorOnPhone(
+        com.nuvio.app.features.remote.RemoteTonightScreen(
+            view = com.nuvio.app.features.remote.RemoteTonightScreen.ENDS_BY,
+            loading = loading && rows.isEmpty(),
+            cards = rows.take(PHONE_ROWS).map { row ->
+                val slot = when {
+                    row.title.kind == TonightKind.Show -> "${row.episodesBeforeBed} before bed"
+                    row.fits -> row.title.endsAtLabel(clock.minuteOfDay)?.let { "Ends $it" } ?: "Fits"
+                    else -> "Past bed"
+                }
+                row.title.remoteCard(slot, "", clock, minutesUntilBed, flag = row.fits)
+            },
+            extra = "Bed at ${clockLabel(settings.bedMinuteOfDay)}",
+            selected = if (rows.isEmpty()) 0 else selected + 1,
+        ),
+    ) { action, n ->
+        if (action == com.nuvio.app.features.remote.RemoteTonightAction.Play && n > 0) {
+            rows.getOrNull(n - 1)?.let { selected = n - 1; onPlay(it.title) }
+            true
+        } else false
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
     TonightAmbientWash(rememberColoursOf(chosen?.let { it.backdrop ?: it.poster }))
     Column(
@@ -265,6 +288,9 @@ private const val PILE_SEL_BACK = -1
 private const val PILE_SEL_PLAY = -2
 private const val PILE_SEL_LET_GO = -3
 
+/** The most rows a list mode sends to the phone. */
+private const val PHONE_ROWS = 30
+
 @Composable
 internal fun TonightPileView(
     titles: List<TonightTitle>,
@@ -288,16 +314,44 @@ internal fun TonightPileView(
     val totalRows = (pile.size + PILE_COLUMNS - 1) / PILE_COLUMNS
     val firstRow = windowStart(selected / PILE_COLUMNS, totalRows, PILE_ROWS)
 
+    fun letGoFor(item: PileItem) {
+        DiscoverRecommendationsRepository.markNotInterested(item.title.toMetaPreview())
+        TonightPool.forget(item.title.key)
+        letGo += item.title.key
+        confirming = false
+    }
+
     fun letItGo() {
         val item = current ?: return
         if (!confirming) {
             confirming = true
             return
         }
-        DiscoverRecommendationsRepository.markNotInterested(item.title.toMetaPreview())
-        TonightPool.forget(item.title.key)
-        letGo += item.title.key
-        confirming = false
+        letGoFor(item)
+    }
+
+    // fork:phone-remote tonight - the pile as a list: a tap plays a row, Let go (the phone asks first) lets that row go.
+    MirrorOnPhone(
+        com.nuvio.app.features.remote.RemoteTonightScreen(
+            view = com.nuvio.app.features.remote.RemoteTonightScreen.PILE,
+            loading = loading && pile.isEmpty(),
+            total = pile.size,
+            cards = pile.take(PHONE_ROWS).map { it.title.remoteCard(pileAgeLabel(it.waitedDays), "", clock, minutesUntilBed) },
+            selected = if (pile.isEmpty()) 0 else selected + 1,
+            paused = confirming,
+        ),
+    ) { action, n ->
+        when {
+            action == com.nuvio.app.features.remote.RemoteTonightAction.Play && n > 0 -> {
+                pile.getOrNull(n - 1)?.let { selected = n - 1; onPlay(it.title) }
+                true
+            }
+            action == com.nuvio.app.features.remote.RemoteTonightAction.LetGo -> {
+                pile.getOrNull((if (n > 0) n else selected + 1) - 1)?.let(::letGoFor)
+                true
+            }
+            else -> false
+        }
     }
 
     fun move(by: Int) {

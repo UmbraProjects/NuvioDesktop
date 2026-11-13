@@ -2,6 +2,7 @@ package com.nuvio.app.core.ui
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -209,8 +210,39 @@ internal fun HeroAmbientBackdrop(
                 modifier = Modifier.fillMaxSize(),
             ) { activeBackdrop -> washContent(activeBackdrop) }
         }
+        // Lights out: while a hero trailer is on screen the wash goes the way the details page's
+        // surround does (Settings > Details > trailer background). TV Mode's ambient wash otherwise
+        // stays lit around the video, a coloured cloud around a black-edged picture.
+        val trailerOnScreen by com.nuvio.app.features.home.components.HomeHeroTrailerManualTrigger.onScreen
+            .collectAsState()
+        val metaSettings by com.nuvio.app.features.details.MetaScreenSettingsRepository.uiState.collectAsState()
+        val lightsOutColor = when (metaSettings.heroTrailerBackgroundMode) {
+            com.nuvio.app.features.details.MetaHeroTrailerBackgroundMode.Black -> Color.Black
+            com.nuvio.app.features.details.MetaHeroTrailerBackgroundMode.Theme -> background
+            com.nuvio.app.features.details.MetaHeroTrailerBackgroundMode.Backdrop -> null
+        }
+        // In with the trailer: the hero swaps its backdrop for the video in one frame the moment
+        // playback moves (HomeHeroTrailerSurface's reveal), so a slow fade here trailed visibly
+        // behind it. Out slower, as the artwork comes back when the trailer ends.
+        val lightsOutTarget = trailerOnScreen && lightsOutColor != null
+        val lightsOut by animateFloatAsState(
+            targetValue = if (lightsOutTarget) 1f else 0f,
+            animationSpec = tween(durationMillis = if (lightsOutTarget) AmbientLightsOutInMs else AmbientLightsOutOutMs),
+            label = "${label}_lights_out",
+        )
+        if (lightsOut > 0f && lightsOutColor != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = lightsOut }
+                    .background(lightsOutColor),
+            )
+        }
     }
 }
+
+private const val AmbientLightsOutInMs = 120
+private const val AmbientLightsOutOutMs = 400
 
 /**
  * The accent gradient and the flat dim above it, folded into a single gradient.

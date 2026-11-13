@@ -2,6 +2,7 @@ package com.nuvio.app.features.input
 
 import com.nuvio.app.core.storage.DesktopStorage
 import com.nuvio.app.core.storage.ProfileScopedKey
+import com.nuvio.app.features.panelring.PanelRingSize
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,8 +12,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * defaults map that an untouched install matches exactly, and a `@Volatile` mirror because the
  * poll thread reads these on every tick while the UI writes them.
  *
- * Bindings themselves are not stored yet — [GamepadDefaults] is the whole layout. When a rebinding
- * UI lands it belongs here, keyed by [GamepadButton.id] the way shortcuts are keyed by action id.
+ * Rebound buttons are stored here too, one key per button ([GamepadButton.id]) holding both of its
+ * meanings (see [GamepadTargetCodec]); a button never rebound has no key and follows
+ * [GamepadDefaults]. So are the panel ring's settings: which button opens it, its size, and
+ * whether the middle mouse button opens it.
  */
 object GamepadSettingsRepository {
     /** Off by default: a pad plugged in for a game should not start driving the UI unasked. */
@@ -42,6 +45,31 @@ object GamepadSettingsRepository {
     private const val KEY_DEAD_ZONE = "gamepad_dead_zone_pct"
     private const val KEY_REPEAT_INTERVAL = "gamepad_repeat_interval_ms"
     private const val KEY_MOUSE_KEYBOARD = "osk_mouse_enabled"
+    private const val KEY_BINDING_PREFIX = "gamepad_bind_"
+    private const val KEY_RING_BUTTON = "panel_ring_pad_button"
+    private const val KEY_RING_SIZE = "panel_ring_size"
+    private const val KEY_RING_MOUSE = "panel_ring_middle_mouse"
+
+    /** Hold this to open the panel ring; a tap still does the button's own action. */
+    val DEFAULT_RING_BUTTON: GamepadButton? = GamepadButton.LeftShoulder
+    const val RING_BUTTON_OFF = "off"
+
+    /**
+     * Buttons that can open the ring. Not View: holding it is push-to-talk. Not the D-pad, sticks'
+     * directions or A/B: they move and select inside the ring.
+     */
+    val RING_BUTTON_CHOICES: List<GamepadButton> = listOf(
+        GamepadButton.LeftShoulder,
+        GamepadButton.RightShoulder,
+        GamepadButton.LeftTrigger,
+        GamepadButton.RightTrigger,
+        GamepadButton.LeftThumb,
+        GamepadButton.RightThumb,
+        GamepadButton.X,
+        GamepadButton.Y,
+        GamepadButton.Start,
+    )
+    const val DEFAULT_RING_MOUSE = true
 
     private val store = DesktopStorage.store("nuvio_gamepad")
 
@@ -76,6 +104,27 @@ object GamepadSettingsRepository {
     private val _repeatIntervalState = MutableStateFlow(DEFAULT_REPEAT_INTERVAL_MS)
     val repeatIntervalState: StateFlow<Int> = _repeatIntervalState.asStateFlow()
 
+    /** Buttons the user has rebound; read by the poll thread on every press. */
+    @Volatile
+    private var overrides: Map<GamepadButton, GamepadBinding> = emptyMap()
+
+    @Volatile
+    var ringButton: GamepadButton? = DEFAULT_RING_BUTTON
+        private set
+
+    private val _ringButtonState = MutableStateFlow(DEFAULT_RING_BUTTON)
+    val ringButtonState: StateFlow<GamepadButton?> = _ringButtonState.asStateFlow()
+
+    private val _ringSizeState = MutableStateFlow(PanelRingSize.Medium)
+    val ringSizeState: StateFlow<PanelRingSize> = _ringSizeState.asStateFlow()
+
+    private val _ringMouseState = MutableStateFlow(DEFAULT_RING_MOUSE)
+    val ringMouseState: StateFlow<Boolean> = _ringMouseState.asStateFlow()
+
+    /** Bumped on every rebind, so the settings list redraws. */
+    private val _bindingsVersion = MutableStateFlow(0)
+    val bindingsVersion: StateFlow<Int> = _bindingsVersion.asStateFlow()
+
     /** True while a pad is actually answering XInput, for the settings page's status line. */
     private val _connected = MutableStateFlow(false)
     val connected: StateFlow<Boolean> = _connected.asStateFlow()
@@ -96,8 +145,89 @@ object GamepadSettingsRepository {
         repeatIntervalMs = (store.getInt(scoped(KEY_REPEAT_INTERVAL)) ?: DEFAULT_REPEAT_INTERVAL_MS)
             .coerceIn(MIN_REPEAT_INTERVAL_MS, MAX_REPEAT_INTERVAL_MS)
         _mouseKeyboardState.value = store.getBoolean(scoped(KEY_MOUSE_KEYBOARD)) ?: DEFAULT_MOUSE_KEYBOARD
+        overrides = GamepadButton.entries.mapNotNull { button ->
+            val fallback = GamepadDefaults.binding(button)
+            GamepadTargetCodec.decodeBinding(store.getString(scoped(bindingKey(button))), fallback)
+                ?.let { button to it }
+        }.toMap()
+        ringButton = decodeRingButton(store.getString(scoped(KEY_RING_BUTTON)))
+        _ringSizeState.value = PanelRingSize.fromKey(store.getString(scoped(KEY_RING_SIZE)))
+        _ringMouseState.value = store.getBoolean(scoped(KEY_RING_MOUSE)) ?: DEFAULT_RING_MOUSE
         publish()
     }
+
+    /** What [button] does now: the user's rebind if there is one, else the default layout. */
+    fun binding(button: GamepadButton): GamepadBinding {
+        ensureLoaded()
+        return overrides[button] ?: GamepadDefaults.binding(button)
+    }
+
+    fun isRebound(button: GamepadButton): Boolean {
+        ensureLoaded()
+        return button in overrides
+    }
+
+    /** Sets one of [button]'s two meanings; the other keeps whatever it has now. */
+    fun setTarget(button: GamepadButton, inPlayer: Boolean, target: GamepadTarget) {
+        val current = binding(button)
+        val next = if (inPlayer) current.copy(player = target) else current.copy(browsing = target)
+        setBinding(button, next)
+    }
+
+    fun setBinding(button: GamepadButton, binding: GamepadBinding) {
+        ensureLoaded()
+        val encoded = GamepadTargetCodec.encodeBinding(binding)
+        if (binding == GamepadDefaults.binding(button) || encoded == null) {
+            overrides = overrides - button
+            store.remove(scoped(bindingKey(button)))
+        } else {
+            overrides = overrides + (button to binding)
+            store.putString(scoped(bindingKey(button)), encoded)
+        }
+        _bindingsVersion.value++
+    }
+
+    fun resetButton(button: GamepadButton) = setBinding(button, GamepadDefaults.binding(button))
+
+    fun resetAllButtons() {
+        ensureLoaded()
+        GamepadButton.entries.forEach { store.remove(scoped(bindingKey(it))) }
+        overrides = emptyMap()
+        _bindingsVersion.value++
+    }
+
+    fun setRingButton(button: GamepadButton?) {
+        ensureLoaded()
+        val value = button?.takeIf { it in RING_BUTTON_CHOICES }
+        ringButton = value
+        if (value == DEFAULT_RING_BUTTON) {
+            store.remove(scoped(KEY_RING_BUTTON))
+        } else {
+            store.putString(scoped(KEY_RING_BUTTON), value?.id ?: RING_BUTTON_OFF)
+        }
+        _ringButtonState.value = value
+    }
+
+    fun setRingSize(size: PanelRingSize) {
+        ensureLoaded()
+        if (size == PanelRingSize.Medium) store.remove(scoped(KEY_RING_SIZE)) else store.putString(scoped(KEY_RING_SIZE), size.key)
+        _ringSizeState.value = size
+    }
+
+    fun setRingMouse(enabled: Boolean) {
+        ensureLoaded()
+        if (enabled == DEFAULT_RING_MOUSE) store.remove(scoped(KEY_RING_MOUSE)) else store.putBoolean(scoped(KEY_RING_MOUSE), enabled)
+        _ringMouseState.value = enabled
+    }
+
+    /** Never set: the default. "off": no button. Anything else: that button, if it may open the ring. */
+    internal fun decodeRingButton(stored: String?): GamepadButton? = when (stored) {
+        null -> DEFAULT_RING_BUTTON
+        RING_BUTTON_OFF -> null
+        else -> GamepadButton.fromId(stored)?.takeIf { it in RING_BUTTON_CHOICES } ?: DEFAULT_RING_BUTTON
+    }
+
+    private fun bindingKey(button: GamepadButton) = KEY_BINDING_PREFIX + button.id
 
     fun setEnabled(value: Boolean) {
         ensureLoaded()
@@ -150,6 +280,8 @@ object GamepadSettingsRepository {
     }
 
     private fun publish() {
+        _ringButtonState.value = ringButton
+        _bindingsVersion.value++
         _enabledState.value = enabled
         _deadZoneState.value = deadZone
         _repeatIntervalState.value = repeatIntervalMs

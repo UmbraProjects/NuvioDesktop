@@ -1650,8 +1650,16 @@ private fun DesktopHomeHeroFrame(
     LaunchedEffect(heroTrailerVisible, tvHeroActive) {
         if (tvHeroActive) HomeHeroTrailerManualTrigger.setActive(heroTrailerVisible)
     }
+    LaunchedEffect(heroTrailerReady, tvHeroActive) {
+        if (tvHeroActive) HomeHeroTrailerManualTrigger.setOnScreen(heroTrailerReady)
+    }
     DisposableEffect(tvHeroActive) {
-        onDispose { if (tvHeroActive) HomeHeroTrailerManualTrigger.setActive(false) }
+        onDispose {
+            if (tvHeroActive) {
+                HomeHeroTrailerManualTrigger.setActive(false)
+                HomeHeroTrailerManualTrigger.setOnScreen(false)
+            }
+        }
     }
     // Full backdrop runs the artwork the whole way down and the whole way across; the default
     // stops it above the shelf and confines it to the right-hand region, which is what makes the
@@ -1856,6 +1864,7 @@ private fun DesktopHomeHeroFrame(
                 HomeHeroTrailerSurface(
                     sourceUrl = source.videoUrl,
                     sourceAudioUrl = source.audioUrl,
+                    sourceHeaders = source.headers, // fork:trailer-signed-in
                     playWhenReady = heroTrailerPlaybackRequested,
                     muted = heroTrailerMuted,
                     volume = heroTrailerVolume,

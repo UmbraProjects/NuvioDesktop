@@ -142,3 +142,48 @@ Covers Home (with Search, Library and Discover), catalog pages and details pages
 - [ ] **BROKEN** S, type something, Escape (2026-11-13): closed the search history but left the search open, which felt clunky
   - [ ] Re-check after the fix: S, type, Escape closes the search in one press and Home's arrows work at once; the same in the Music, YouTube and Live TV search (clears the tab's search and returns to its page)
 
+
+## First launch, theme songs and Continue Watching bar (2026-11-13)
+
+- [ ] On a PC that has run the official Nuvio but never Nuvio HTPC (or after renaming `%LOCALAPPDATA%\NuvioHTPC` away), the first launch opens the window promptly and shows the setup wizard; Always Show Top Bar is on
+- [ ] With Always Show Top Bar on, the top bar stays visible on Home, Library and Discover without hovering; off, it fades until hovered
+- [ ] Station 19's details page no longer plays the Friends theme (it may play nothing, or the show's "Hero" song); Friends still plays its own theme
+- [ ] Continue Watching (landscape cards): the progress bar runs flush along the card's bottom edge, rounded into the corners, white on a dark track, no glow; the time-left badge and the source shortcut button are not covered by it
+- [ ] Continue Watching in poster style: the same edge bar instead of the old pill
+- [ ] Library: titles saved from a details page whose metadata addon serves badge posters ("#79 Today", "2026 · Horror · ★ 64") now show plain posters like the rest of the row
+
+## Discover anime and tags, lights out behind Home trailers (2026-11-13)
+
+- [ ] Discover, TMDB browser: the sparkle button steps Anime: included → only → excluded (tooltip says which); Only shows just anime, Excluded drops anime but keeps Western animation (Arcane, Bluey); Clear filters leaves the choice as it is
+- [ ] Discover, Tags: search "heist", pick it, the row shows heist titles; two tags show titles with either, "Must match every tag" narrows to both; with Only anime on, the menu says every tag must match
+- [ ] Discover, Trending sort with a tag or the anime choice still filters the trending list
+- [ ] TV Mode with the ambient background on: when the Home hero trailer starts, the coloured wash around it goes black at the same moment the trailer appears (not a beat after) (or to the theme colour if Settings > Details' trailer background is Theme; unchanged on Backdrop), and comes back when the trailer ends
+- [ ] The same on Search, Library and a Collection with the ambient wash
+
+## Panel ring and controller rebinding (2026-11-13)
+
+- [ ] Keyboard: on Home press R; a ring of every panel in the nav bar's order (then Settings) opens in the middle, each tile numbered 1-0; pressing a number switches to that panel
+- [ ] Keyboard: with the ring open, Left / Right step round it (accent ring on the aimed tile, a short accent arc on the centre ring points at it), Enter switches, Escape or R closes; no key reaches the page underneath while it is open
+- [ ] Keyboard + mouse: hold R, move the mouse towards a panel, let go of R: it switches; a plain tap of R leaves the ring open with its numbers
+- [ ] Mouse: hold the middle button anywhere, the ring opens at the pointer; drag towards a panel and let go: it switches; let go in the middle after a long hold: it closes; a quick middle click leaves it open to click a tile
+- [ ] Mouse: with the ring open a left click switches to the aimed panel, a right click closes it, and the click never reaches the page underneath
+- [ ] Controller: hold LB, the ring opens after a moment (at once if a stick is pushed); tilt either stick towards a panel, the slot under it lights up; let go of LB: it switches
+- [ ] Controller: a quick tap of LB still opens Library as before; inside the ring A switches, B closes, the D-pad steps round
+- [ ] Controller: letting the stick spring back before letting go of LB still switches to the slot last aimed at
+- [ ] The ring follows Settings > Appearance > Navigation order and the tabs that are switched off (no Live TV slot when Live TV is hidden); Settings is always the last slot
+- [ ] Picking What to watch from the ring opens the Tonight picker; picking a panel from a details page goes back to the tabs and opens it
+- [ ] The ring does nothing during playback (R, LB hold and the middle button all leave the player alone)
+- [ ] Home with a hero trailer playing: opening the ring stops the trailer, so the ring is not hidden under the video
+- [ ] Known gap to check: a details page with its trailer playing; does the trailer cover part of the ring?
+- [ ] Settings > Keyboard shortcuts > Panel ring: Controller button (Off, LB, RB, ...), Hold the middle mouse button and Ring size (small / medium / large) each take effect at once and survive a restart
+- [ ] Settings > Keyboard shortcuts > Navigation lists "Open the panel ring" as R and it can be rebound
+- [ ] Settings > Keyboard shortcuts > Controller · Buttons: clicking a button opens a picker with While browsing and During playback; a change shows "Changed" on the row and works on the pad at once
+- [ ] Controller · Buttons: Reset default in the picker, and Reset on the section heading, put the buttons back; a rebind survives a restart and is per profile
+- [ ] Settings search: "ring" and "rebind" find the new rows
+- [ ] Look (restyled after "looks a bit cheap"): the panels are dark, nearly opaque circles, the centre is a thin ring with a short arc pointing at the aimed panel, and the highlight uses the app's accent colour (blue on a blue theme, not yellow); with the keyboard each circle has a small number badge at its upper right
+
+## Picked from Spyder's branch (2026-11-13)
+
+- [ ] Trailers: a title whose trailer used to come up empty (the log showed `LOGIN_REQUIRED`, e.g. `RYjnanieeMQ`) now plays its trailer in the Home hero and on its details page; ordinary trailers still play as before
+- [ ] Tonight: a title Tonight found in Trending (not in your library) opens its details and plays instead of "Failed to load", in Three Cards, Knockout and The Map
+- [ ] Phone remote (low priority; Spyder's own checks are in `TESTING.md`): long-press menus on posters and episodes, every Tonight mode mirrored on the phone, the "Ends at" clock on the film screen. Needs a remote APK built from this branch: the `android-remote.yml` workflow only runs on a branch named `Spyder`

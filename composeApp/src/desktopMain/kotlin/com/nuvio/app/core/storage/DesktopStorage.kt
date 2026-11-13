@@ -33,12 +33,6 @@ internal object DesktopStorage {
     private var freshInstall = false
 
     /**
-     * True when neither a Nuvio HTPC data directory nor a legacy Nuvio directory existed when
-     * storage was first resolved — i.e. a genuinely new user, not an upgrade and not someone who
-     * simply never changed a given setting. Touching this resolves [rootDir], so the answer is
-     * captured before anything has had a chance to create the directory.
-     */
-    /**
      * True when this session's account folder has never been used: a fresh install, or a new
      * account signing in on this PC. What decides new-user defaults and the first-run wizard now
      * that settings live per account; [isFreshInstall] only says the data directory is new.
@@ -49,6 +43,10 @@ internal object DesktopStorage {
             return DesktopAccountSlots.isFreshSlot
         }
 
+    /**
+     * True when the data directory did not exist when storage was first resolved. Touching this
+     * resolves [rootDir], so the answer is captured before anything could create the directory.
+     */
     val isFreshInstall: Boolean
         get() {
             rootDir
@@ -143,9 +141,8 @@ internal object DesktopStorage {
                     ?: userHome.resolve(".config")
             }
             val destination = parent.resolve(if (osName.contains("mac")) "NuvioHTPC" else "nuviohtpc")
-            val legacy = parent.resolve(if (osName.contains("mac")) "Nuvio" else "nuvio")
-            freshInstall = !destination.exists() && !legacy.exists()
-            migrateLegacyDirectories(destination, legacy)
+            freshInstall = !destination.exists()
+            Files.createDirectories(destination)
             return destination
         }
 
@@ -154,23 +151,13 @@ internal object DesktopStorage {
             ?.let(Paths::get)
             ?: userHome.resolve("AppData/Local")
         val destination = localAppData.resolve("NuvioHTPC")
-        if (destination.exists()) return destination
-
-        // Nuvio Desktop stored preferences in roaming AppData while its logs, custom badges,
-        // and updater files lived in Local AppData. Nuvio HTPC uses a single Local AppData
-        // directory, so bring both old locations forward once before creating any new files.
-        val roamingNuvio = System.getenv("APPDATA")
-            ?.takeIf { it.isNotBlank() }
-            ?.let(Paths::get)
-            ?.resolve("Nuvio")
-            ?: userHome.resolve("AppData/Roaming/Nuvio")
-        val localNuvio = localAppData.resolve("Nuvio")
-        // These are also the *official* Nuvio Desktop's directories (settings in roaming, cache in
-        // local), so their existence alone only proves the user has tried upstream. That user is
-        // new to this fork and gets the wizard and new-install defaults; only a directory holding a
-        // store this fork alone ever wrote marks an upgrade from a pre-1.10 HTPC build.
-        freshInstall = listOf(roamingNuvio, localNuvio).none(::holdsHtpcOnlyStore)
-        migrateLegacyDirectories(destination, roamingNuvio, localNuvio)
+        // No import from the old `Nuvio` folders any more (dropped 2026-11-13). They are also the
+        // official Nuvio Desktop's, and copying them across handed new users upstream's settings,
+        // marked their account folder as seeded so the setup wizard never showed, and made the
+        // first launch slow enough to be reported as "the app doesn't start". Account sync is the
+        // way to bring settings over; everyone else starts from this fork's defaults.
+        freshInstall = !destination.exists()
+        Files.createDirectories(destination)
         return destination
     }
 
@@ -446,80 +433,6 @@ internal object DesktopStorage {
         "single-instance-port.txt",
         PORTABLE_RETURN_FLAG,
     )
-
-    /**
-     * Top-level entries of the old `Nuvio` folders the legacy migration leaves behind: everything
-     * the portable copy skips, plus what only the official Nuvio Desktop keeps there (its WebView2
-     * profile, crash reports, TorrServer binary and data). All of it is rebuilt on demand.
-     */
-    private val LEGACY_MIGRATION_SKIP = PORTABLE_MIGRATION_SKIP + setOf(
-        "webview2",
-        "sentry",
-        "torrserver",
-    )
-
-    private fun skipsInLegacyMigration(entry: Path): Boolean =
-        entry.fileName.toString().lowercase(Locale.ROOT) in LEGACY_MIGRATION_SKIP
-
-    /**
-     * Stores HTPC wrote into the shared `Nuvio` directory up to 1.9 (1.10 moved to `NuvioHTPC`)
-     * that upstream Nuvio Desktop has never had. Checked against upstream/Dev on 2026-09-25; if
-     * upstream later adopts one of these names, drop it from the list.
-     */
-    private val HTPC_ONLY_LEGACY_STORES = listOf(
-        "nuvio_api_keys_onboarding",
-        "nuvio_discord_presence",
-        "nuvio_mdblist_ratings_cache",
-        "nuvio_player_shortcuts",
-        "nuvio_settings_category_order",
-        "nuvio_settings_favorites",
-        "nuvio_simkl_settings",
-        "nuvio_tvdb_settings",
-    )
-
-    internal fun holdsHtpcOnlyStore(directory: Path): Boolean =
-        directory.exists() && HTPC_ONLY_LEGACY_STORES.any { name -> directory.resolve("$name.properties").exists() }
-
-    // Runs before the window exists, so it copies only settings and user data. It used to take
-    // whole folders: for anyone who had run the official Nuvio Desktop that meant its caches,
-    // staged update installers and WebView2 profile (2 GB or more), and a first launch sat
-    // windowless for minutes while that copied and Defender scanned every file.
-    internal fun migrateLegacyDirectories(destination: Path, vararg sources: Path) {
-        synchronized(stores) {
-            if (destination.exists()) return
-            val staging = destination.resolveSibling("${destination.fileName}.migrating-${UUID.randomUUID()}")
-            try {
-                Files.createDirectories(staging)
-                sources
-                    .filter { it.exists() && it != destination }
-                    .forEach { source ->
-                        Files.walkFileTree(source, object : SimpleFileVisitor<Path>() {
-                            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
-                                if (dir != source && dir.parent == source && skipsInLegacyMigration(dir)) {
-                                    return FileVisitResult.SKIP_SUBTREE
-                                }
-                                Files.createDirectories(staging.resolve(source.relativize(dir).toString()))
-                                return FileVisitResult.CONTINUE
-                            }
-
-                            override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                                if (file.parent == source && skipsInLegacyMigration(file)) return FileVisitResult.CONTINUE
-                                val target = staging.resolve(source.relativize(file).toString())
-                                if (!target.exists()) Files.copy(file, target)
-                                return FileVisitResult.CONTINUE
-                            }
-                        })
-                    }
-                runCatching { Files.move(staging, destination, StandardCopyOption.ATOMIC_MOVE) }
-                    .getOrElse { Files.move(staging, destination) }
-            } catch (error: Exception) {
-                // Migration problems must not block startup; the original Nuvio folders remain
-                // untouched and the app starts with a fresh destination instead.
-                System.err.println("Unable to migrate Nuvio data to $destination: ${error.message}")
-                Files.createDirectories(destination)
-            }
-        }
-    }
 
     /**
      * Writes are coalesced: [Store.putString] and friends update memory and schedule a flush on this

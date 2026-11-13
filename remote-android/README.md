@@ -45,6 +45,12 @@ queue, and can "sleep" to try Wake. A strip shows what it was sent. This is for 
   place.
 - The library as posters, with the same sections as Nuvio's Library tab. Tapping a film opens it on the TV. Tapping a
   show lists its seasons and episodes on the phone, with progress; tapping an episode plays it.
+- **Hold** a poster, a Continue watching card, an episode or a season tag for the TV's long-press menu as a glass
+  sheet: mark watched or unwatched (an episode, the earlier episodes, a season, earlier seasons, or a whole film or show),
+  add to or remove from the library (or all libraries), start from the beginning, choose a source on the TV, start a
+  Simkl rewatch, add to a playlist (a picker on the phone, with a season choice for a whole show, or a new playlist),
+  an AI recap of the story so far, Not interested, Remove from Continue watching, and Details on the TV. The TV words
+  the rows, so they match what it would offer.
 - **Search** covers your library first. Once typing pauses, it also covers everything Nuvio's Search tab finds in every
   addon. The mic searches by voice.
 
@@ -55,8 +61,10 @@ queue, and can "sleep" to try Wake. A strip shows what it was sent. This is for 
 **Other**
 - **Tonight:** while the TV shows the Tonight picker (Movies & TV's "How shall we choose tonight?"), the Remote tab
   mirrors it: start Three Questions or Three Cards, answer each question with a big tap (Left, Right, Either is fine,
-  Back), and tap a card to play it on the TV (Details opens its page; Reshuffle once a night). The other modes stay on the
-  TV; the header tag swaps to the pad for them. Needs a Nuvio from Nov 10, 2026 or later.
+  Back), and tap a card to play it on the TV (Details opens its page; Reshuffle once a night). Since Nov 11 every mode is
+  on the phone too: the launcher lists all eight; Coin Toss, Knockout and Channel Flick have big buttons for the TV's
+  keys, Ends By and The Pile are lists (tap to play, Let go asks first), and The Map is a touchpad that moves the TV's
+  lens. The header tag still swaps to the pad. Needs a Nuvio from Nov 11, 2026 or later for the modes.
 - **Send to Nuvio:** share a YouTube or YouTube Music link from any app and it plays on the TV.
 - **Wake:** when the PC is asleep or off, the app offers to wake it with Wake-on-LAN. The PC sends its network card and
   broadcast addresses while connected. Wake-on-LAN must be on in the PC's BIOS and network adapter settings.
@@ -78,6 +86,7 @@ source lines are built in `PhoneRemoteLibraryLines.kt` and answered in `PhoneRem
 | Music | `PLAY_ALBUM`, `ALBUM_TRACKS`, `PLAY_TRACK`, `ARTIST`, `QUEUE`, `QUEUE_PLAY`, `QUEUE_NEXT`, `QUEUE_REMOVE` | `ALBUM_TRACKS`, `QUEUE` |
 | Sources | `PICK_SOURCE` | `SOURCES` |
 | Tonight | `TONIGHT_DO` | `TONIGHT` (after `SUBSCRIBE`, whenever it changes) |
+| Long-press menus | `MENU`, `DO` | `MENU`, `DONE`, `PLAYLISTS`, `RECAP` |
 | Links | `OPEN` | `OPENING`, `CANT_OPEN` |
 
 The QR code holds `nuvioremote://pair?n=<name>&p=<port>&c=<code>&a=<addresses>`. The app tries each address until one

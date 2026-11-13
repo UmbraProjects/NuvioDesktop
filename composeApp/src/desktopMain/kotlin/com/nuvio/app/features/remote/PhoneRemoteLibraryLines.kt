@@ -93,6 +93,55 @@ internal data class RemoteAlbum(
     val starred: Boolean,
 )
 
+/**
+ * fork:phone-remote menus - what a long press on the phone points at: a library poster (`title`), a Continue Watching
+ * card (`resume`, [ref] = its video id), an episode row (`episode`, [ref] = the id it plays by) or a season header
+ * (`season`, [ref] = the season number). [type] and [id] are the title's (the show's, for the last three).
+ */
+internal enum class RemoteMenuKind(val wire: String) {
+    Title("title"), Resume("resume"), Episode("episode"), Season("season");
+
+    companion object {
+        fun fromWire(wire: String): RemoteMenuKind? = entries.firstOrNull { it.wire == wire }
+    }
+}
+
+internal data class RemoteMenuTarget(val kind: RemoteMenuKind, val type: String, val id: String, val ref: String?)
+
+/** One row of the phone's long-press sheet: [code] is what DO sends back, [label] what the row says. */
+internal data class RemoteMenuAction(val code: String, val label: String)
+
+/** A playlist the phone can add to. */
+internal data class RemotePlaylistChoice(val id: String, val name: String, val count: Int)
+
+/** The action codes. Stable on the wire; the phone picks an icon by them and shows any it does not know plainly. */
+internal object RemoteMenuCode {
+    const val WATCHED = "watched"
+    const val PREVIOUS_WATCHED = "previous_watched"
+    const val SEASON_WATCHED = "season_watched"
+    const val EARLIER_SEASONS_WATCHED = "earlier_seasons_watched"
+    const val LIBRARY = "library"
+    const val ALL_LIBRARIES = "all_libraries"
+    const val REWATCH = "rewatch"
+    const val RESUME = "resume"
+    const val FROM_START = "from_start"
+    const val CHOOSE_SOURCE = "choose_source"
+    const val RECAP = "recap"
+    /** Opens the phone's playlist picker for [PLAYLIST_SCOPE_TITLE], `_EPISODE` or `_SEASON` (the DO's first argument). */
+    const val PLAYLIST = "playlist"
+    /** The playlist picker for the season an episode row or season header is in. */
+    const val PLAYLIST_SEASON = "playlist_season"
+    /** Adds to a playlist: arguments are the playlist id (`+` makes a new one), the scope, and a season (0 = every season). */
+    const val ADD_TO_PLAYLIST = "add_to_playlist"
+    const val NOT_INTERESTED = "not_interested"
+    const val REMOVE = "remove"
+    const val DETAILS = "details"
+
+    const val PLAYLIST_SCOPE_TITLE = "title"
+    const val PLAYLIST_SCOPE_EPISODE = "episode"
+    const val PLAYLIST_SCOPE_SEASON = "season"
+}
+
 internal object PhoneRemoteLibraryLines {
     const val VIDEO = "video"
     const val MUSIC = "music"
@@ -224,8 +273,10 @@ internal object PhoneRemoteLibraryLines {
     /**
      * fork:phone-remote tonight - `TONIGHT 0` while the Tonight picker is not on screen, else
      * `TONIGHT 1 <view> <mode> <loading> <number> <total> <countFrom> <countLeft> <reshuffleLeft> <prompt> <leftLabel>
-     * <leftDetail> <rightLabel> <rightDetail> <answers> <cards>`: always sixteen fields, `-` for an empty one. Answers
-     * are records of one field; each card is slot, name, why, meta, poster. The phone answers with
+     * <leftDetail> <rightLabel> <rightDetail> <answers> <cards> <extra> <seconds> <secondsTotal> <paused> <selected>`:
+     * always twenty-one fields, `-` for an empty one (the last five came with every mode on the phone, Nov 11; older
+     * apps read the first sixteen and ignore them). Answers are records of one field; each card is slot, name, why,
+     * meta, poster, flag (older apps read the first five). The phone answers with
      * `TONIGHT_DO <action> [n]` (see RemoteTonightAction). Mirrored by `parseTonight` in the app's LibraryLines.kt.
      */
     fun tonightLine(screen: com.nuvio.app.features.remote.RemoteTonightScreen?): String {
@@ -237,9 +288,48 @@ internal object PhoneRemoteLibraryLines {
             flag(screen.reshuffleLeft),
             text(screen.prompt), text(screen.leftLabel), text(screen.leftDetail), text(screen.rightLabel), text(screen.rightDetail),
             records(screen.answers) { listOf(text(it)) },
-            records(screen.cards) { c -> listOf(text(c.slot), text(c.name), text(c.why), text(c.meta), url(c.poster)) },
+            records(screen.cards) { c -> listOf(text(c.slot), text(c.name), text(c.why), text(c.meta), url(c.poster), flag(c.flag)) },
+            text(screen.extra),
+            screen.seconds.toString(),
+            screen.secondsTotal.toString(),
+            flag(screen.paused),
+            screen.selected.toString(),
         ).joinToString(" ")
     }
+
+    // --- fork:phone-remote menus: the long-press sheet (see PhoneRemoteActions). ---
+
+    /** What the phone should reload after a menu action changed something. */
+    const val REFRESH_LIBRARY = "library"
+    const val REFRESH_CONTINUE = "continue"
+    const val REFRESH_EPISODES = "episodes"
+
+    private fun target(target: RemoteMenuTarget): String =
+        "${target.kind.wire} ${text(target.type)} ${text(target.id)} ${text(target.ref)}"
+
+    /** `MENU <kind> <type> <id> <ref> <heading> <detail> <actions>`: the sheet for a long press, actions as `code,label`. */
+    fun menuLine(target: RemoteMenuTarget, heading: String, detail: String?, actions: List<RemoteMenuAction>): String =
+        "MENU ${target(target)} ${text(heading)} ${text(detail)} " + records(actions) { listOf(text(it.code), text(it.label)) }
+
+    /** `DONE <ok 0|1> <message> <refresh>`: a menu action finished; refresh is a comma list of what to ask for again. */
+    fun doneLine(ok: Boolean, message: String, refresh: Collection<String> = emptyList()): String =
+        "DONE ${flag(ok)} ${text(message)} ${refresh.joinToString(",").ifEmpty { "-" }}"
+
+    /**
+     * `PLAYLISTS <kind> <type> <id> <ref> <scope> <label> <seasons> <playlists>`: the phone's playlist picker. Seasons
+     * (a show added from its poster: pick one or all) are numbers; playlists are `id,name,entries`.
+     */
+    fun playlistsLine(target: RemoteMenuTarget, scope: String, label: String, seasons: List<Int>, playlists: List<RemotePlaylistChoice>): String =
+        "PLAYLISTS ${target(target)} ${text(scope)} ${text(label)} " +
+            records(seasons) { listOf(it.toString()) } + " " +
+            records(playlists) { listOf(text(it.id), text(it.name), it.count.coerceAtLeast(0).toString()) }
+
+    /** `RECAP <state 0 writing|1 ready|2 failed> <heading> <text>`: the AI recap the episode or season menu asked for. */
+    fun recapLine(state: Int, heading: String, body: String?): String =
+        "RECAP ${state.coerceIn(0, 2)} ${text(heading)} " +
+            (body?.trim()?.take(MAX_RECAP_CHARS)?.takeIf { it.isNotEmpty() }?.let(PhoneRemoteProtocol::encode) ?: "-")
+
+    private const val MAX_RECAP_CHARS = 6000
 
     private fun detail(value: String?): String = value?.trim()?.take(MAX_DETAIL_CHARS)?.takeIf { it.isNotEmpty() }
         ?.let(PhoneRemoteProtocol::encode) ?: "-"

@@ -72,6 +72,8 @@ import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.TextStyle
 import java.util.Locale
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 
 /*
  * fork:tonight - phase 1 of design-notes/tonight-picker.md: the launcher, Three Questions and
@@ -115,6 +117,11 @@ fun TonightHost(
     modifier: Modifier = Modifier,
 ) {
     remember { TonightSettingsRepository.ensureLoaded() }
+    // Trending titles carry TMDB's own id ("tmdb:111803"), which most metadata addons cannot open, so the details
+    // page said "Failed to load" (Knockout's White Lotus). Swap it for the IMDb id first, as Discover's posters do.
+    val openScope = rememberCoroutineScope()
+    val play: (String, String) -> Unit = { type, id -> openScope.launch { val (t, i) = tonightOpenableId(type, id); onPlay(t, i) } }
+    val openDetails: (String, String) -> Unit = { type, id -> openScope.launch { val (t, i) = tonightOpenableId(type, id); onOpenDetails(t, i) } }
     val settings by TonightSettingsRepository.state.collectAsStateWithLifecycle()
     val poolState by TonightPool.state.collectAsStateWithLifecycle()
     val library by LibraryRepository.uiState.collectAsStateWithLifecycle()
@@ -203,15 +210,42 @@ fun TonightHost(
         deal(pool, reshuffle = false)
     }
 
+    fun openMode(mode: TonightMode) {
+        when (mode) {
+            TonightMode.ThreeQuestions -> startQuestions()
+            TonightMode.ThreeCards -> openThreeCards()
+            else -> {
+                val next = when (mode) {
+                    TonightMode.CoinToss -> TonightView.CoinToss
+                    TonightMode.Knockout -> TonightView.Knockout
+                    TonightMode.ChannelFlick -> TonightView.Flick
+                    TonightMode.TheMap -> TonightView.Map
+                    TonightMode.EndsBy -> TonightView.EndsBy
+                    TonightMode.ThePile -> TonightView.Pile
+                    else -> null
+                } ?: return
+                TonightSettingsRepository.setLastMode(mode)
+                view = next
+            }
+        }
+    }
+
     // A pad's B and the phone remote's Back arrive as the app's GoBack, not as a key: while a mode is open, Tonight
     // takes them (the screen showing runs its own Back); on the launcher they go on to the app as before.
     com.nuvio.app.core.ui.TabBackHandler(enabled = true) { TonightBackBus.press() }
 
     // fork:phone-remote tonight - the phone mirrors the launcher, Three Questions and Three Cards; its taps run here.
+    // The other modes publish their own screens (MirrorOnPhone), so the host publishes nothing while one is open.
     val remoteOwner = remember { Any() }
     val loadingTitles = poolState.loading && poolState.titles.isEmpty()
     val remoteScreen = when (view) {
-        TonightView.Launcher -> RemoteTonightScreen(RemoteTonightScreen.LAUNCHER, mode = settings.lastMode.name, loading = loadingTitles)
+        TonightView.Launcher -> RemoteTonightScreen(
+            RemoteTonightScreen.LAUNCHER,
+            mode = settings.lastMode.name,
+            loading = loadingTitles,
+            // Every tile, in the TV's order: slot is the mode's name, flag says it is built (all are, Nov 11).
+            cards = Tiles.map { RemoteTonightCard(slot = it.mode.name, name = it.title, why = it.line, meta = "", poster = null, flag = true) },
+        )
         TonightView.Questions -> RemoteTonightScreen(
             view = RemoteTonightScreen.QUESTION,
             loading = loadingTitles || question == null,
@@ -241,7 +275,7 @@ fun TonightHost(
                 )
             },
         )
-        else -> RemoteTonightScreen(RemoteTonightScreen.OTHER, mode = view.name)
+        else -> null
     }
     val remoteHandler by rememberUpdatedState { action: RemoteTonightAction, number: Int ->
         when (action) {
@@ -254,13 +288,19 @@ fun TonightHost(
             RemoteTonightAction.Back -> {
                 if (view == TonightView.Questions) questionBack() else view = TonightView.Launcher
             }
-            RemoteTonightAction.Play -> if (view == TonightView.Cards) hand.getOrNull(number - 1)?.let { onPlay(it.title.type, it.title.id) }
-            RemoteTonightAction.Details -> if (view == TonightView.Cards) hand.getOrNull(number - 1)?.let { onOpenDetails(it.title.type, it.title.id) }
+            RemoteTonightAction.Play -> if (view == TonightView.Cards) hand.getOrNull(number - 1)?.let { play(it.title.type, it.title.id) }
+            RemoteTonightAction.Details -> if (view == TonightView.Cards) hand.getOrNull(number - 1)?.let { openDetails(it.title.type, it.title.id) }
             RemoteTonightAction.Reshuffle -> if (view == TonightView.Cards) reshuffle()
+            RemoteTonightAction.Mode -> Tiles.getOrNull(number - 1)?.let { openMode(it.mode) }
+            // Older phone apps only send the above; the TV's keys belong to the modes (MirrorOnPhone).
+            RemoteTonightAction.Up, RemoteTonightAction.Down, RemoteTonightAction.Ok, RemoteTonightAction.LetGo -> Unit
         }
         Unit
     }
-    LaunchedEffect(remoteScreen) { RemoteTonight.publish(remoteOwner, remoteScreen) { a, n -> remoteHandler(a, n) } }
+    LaunchedEffect(remoteScreen) {
+        if (remoteScreen != null) RemoteTonight.publish(remoteOwner, remoteScreen) { a, n -> remoteHandler(a, n) }
+        else RemoteTonight.clear(remoteOwner)
+    }
     DisposableEffect(Unit) { onDispose { RemoteTonight.clear(remoteOwner) } }
     // Out of questions (three asked, or nothing left to split): deal from what is left.
     LaunchedEffect(view, question, poolState.loading) {
@@ -286,37 +326,7 @@ fun TonightHost(
                 art = remember(pool, poolState.titles, clock.night, minutesUntilBed / 30) {
                     tonightTileArt(pool, poolState.titles, taste, clock.night.hashCode().toLong(), minutesUntilBed, System.currentTimeMillis())
                 },
-                onOpen = { mode ->
-                    when (mode) {
-                        TonightMode.ThreeQuestions -> startQuestions()
-                        TonightMode.ThreeCards -> openThreeCards()
-                        TonightMode.CoinToss -> {
-                            TonightSettingsRepository.setLastMode(TonightMode.CoinToss)
-                            view = TonightView.CoinToss
-                        }
-                        TonightMode.Knockout -> {
-                            TonightSettingsRepository.setLastMode(TonightMode.Knockout)
-                            view = TonightView.Knockout
-                        }
-                        TonightMode.ChannelFlick -> {
-                            TonightSettingsRepository.setLastMode(TonightMode.ChannelFlick)
-                            view = TonightView.Flick
-                        }
-                        TonightMode.TheMap -> {
-                            TonightSettingsRepository.setLastMode(TonightMode.TheMap)
-                            view = TonightView.Map
-                        }
-                        TonightMode.EndsBy -> {
-                            TonightSettingsRepository.setLastMode(TonightMode.EndsBy)
-                            view = TonightView.EndsBy
-                        }
-                        TonightMode.ThePile -> {
-                            TonightSettingsRepository.setLastMode(TonightMode.ThePile)
-                            view = TonightView.Pile
-                        }
-                        else -> Unit
-                    }
-                },
+                onOpen = ::openMode,
                 onBrowseAll = onClose,
             )
             TonightView.Questions -> TonightQuestions(
@@ -338,8 +348,8 @@ fun TonightHost(
                 clock = clock,
                 minutesUntilBed = minutesUntilBed,
                 loading = poolState.loading && poolState.titles.isEmpty(),
-                onPlay = { onPlay(it.type, it.id) },
-                onDetails = { onOpenDetails(it.type, it.id) },
+                onPlay = { play(it.type, it.id) },
+                onDetails = { openDetails(it.type, it.id) },
                 onBack = { view = TonightView.Launcher },
             )
             // Ends By and The Pile show everything (Ends By fades what runs past bedtime).
@@ -350,7 +360,7 @@ fun TonightHost(
                 settings = settings,
                 minutesUntilBed = minutesUntilBed,
                 loading = poolState.loading && poolState.titles.isEmpty(),
-                onPlay = { onPlay(it.type, it.id) },
+                onPlay = { play(it.type, it.id) },
                 onBack = { view = TonightView.Launcher },
             )
             TonightView.Pile -> TonightPileView(
@@ -358,7 +368,7 @@ fun TonightHost(
                 clock = clock,
                 minutesUntilBed = minutesUntilBed,
                 loading = poolState.loading && poolState.titles.isEmpty(),
-                onPlay = { onPlay(it.type, it.id) },
+                onPlay = { play(it.type, it.id) },
                 onBack = { view = TonightView.Launcher },
             )
             TonightView.Map -> TonightMapView(
@@ -368,7 +378,7 @@ fun TonightHost(
                 minutesUntilBed = minutesUntilBed,
                 bedtimeFilters = bedtimeFilters,
                 loading = poolState.loading && poolState.titles.isEmpty(),
-                onPlay = { onPlay(it.type, it.id) },
+                onPlay = { play(it.type, it.id) },
                 onBack = { view = TonightView.Launcher },
             )
             TonightView.Flick -> TonightFlickView(
@@ -377,7 +387,7 @@ fun TonightHost(
                 clock = clock,
                 minutesUntilBed = minutesUntilBed,
                 loading = poolState.loading && poolState.titles.isEmpty(),
-                onPlay = { onPlay(it.type, it.id) },
+                onPlay = { play(it.type, it.id) },
                 onBack = { view = TonightView.Launcher },
             )
             TonightView.Knockout -> TonightKnockoutView(
@@ -386,7 +396,7 @@ fun TonightHost(
                 clock = clock,
                 minutesUntilBed = minutesUntilBed,
                 loading = poolState.loading && poolState.titles.isEmpty(),
-                onPlay = { onPlay(it.type, it.id) },
+                onPlay = { play(it.type, it.id) },
                 onBack = { view = TonightView.Launcher },
             )
             TonightView.Cards -> TonightCards(
@@ -397,8 +407,8 @@ fun TonightHost(
                 loading = poolState.loading && poolState.titles.isEmpty(),
                 reshuffleLeft = reshuffleLeft,
                 onReshuffle = ::reshuffle,
-                onPlay = { card -> onPlay(card.title.type, card.title.id) },
-                onDetails = { card -> onOpenDetails(card.title.type, card.title.id) },
+                onPlay = { card -> play(card.title.type, card.title.id) },
+                onDetails = { card -> openDetails(card.title.type, card.title.id) },
                 onBack = { view = TonightView.Launcher },
             )
         }
@@ -408,6 +418,10 @@ fun TonightHost(
         if (view == TonightView.Cards && hand.isEmpty() && pool.isNotEmpty()) deal(pool, reshuffle = false)
     }
 }
+
+/** A title as the phone remote shows it (fork:phone-remote tonight). */
+internal fun TonightTitle.remoteCard(slot: String, why: String, clock: TonightClock, minutesUntilBed: Int, flag: Boolean = false): RemoteTonightCard =
+    RemoteTonightCard(slot = slot, name = name, why = why, meta = tonightMetaLine(clock, minutesUntilBed), poster = poster ?: backdrop, flag = flag)
 
 // ---- Keys --------------------------------------------------------------------------------------
 
@@ -419,17 +433,47 @@ internal enum class TonightKey { Left, Right, Up, Down, Ok, Back }
  * forwards here, to whichever Tonight screen is showing.
  */
 internal object TonightBackBus {
-    private val _presses = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 4)
-    val presses: kotlinx.coroutines.flow.SharedFlow<Unit> = _presses
-    fun press() {
-        _presses.tryEmit(Unit)
+    private val _presses = kotlinx.coroutines.flow.MutableSharedFlow<TonightKey>(extraBufferCapacity = 8)
+    val presses: kotlinx.coroutines.flow.SharedFlow<TonightKey> = _presses
+
+    /** Nov 11: the phone remote's mode buttons arrive here too, as the TV's own keys. */
+    fun press(key: TonightKey = TonightKey.Back) {
+        _presses.tryEmit(key)
     }
+}
+
+/**
+ * fork:phone-remote tonight - a mode screen mirrored on the phone (user, Nov 11: "all picker modes"). [screen] is what
+ * the phone shows; its taps go to [onAction] first (numbered rows, letting go), and anything it leaves (returns false
+ * for) becomes the TV's own key, so the phone does exactly what the remote's arrows, OK and Back would.
+ */
+@Composable
+internal fun MirrorOnPhone(screen: RemoteTonightScreen, onAction: (RemoteTonightAction, Int) -> Boolean = { _, _ -> false }) {
+    val owner = remember { Any() }
+    val latest by rememberUpdatedState(onAction)
+    LaunchedEffect(screen) {
+        RemoteTonight.publish(owner, screen) { action, number ->
+            if (!latest(action, number)) {
+                val key = when (action) {
+                    RemoteTonightAction.Left -> TonightKey.Left
+                    RemoteTonightAction.Right -> TonightKey.Right
+                    RemoteTonightAction.Up -> TonightKey.Up
+                    RemoteTonightAction.Down -> TonightKey.Down
+                    RemoteTonightAction.Ok, RemoteTonightAction.Play -> TonightKey.Ok
+                    RemoteTonightAction.Back -> TonightKey.Back
+                    else -> null
+                }
+                if (key != null) TonightBackBus.press(key)
+            }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { RemoteTonight.clear(owner) } }
 }
 
 @Composable
 internal fun Modifier.tonightKeys(passBack: Boolean = false, handle: (TonightKey) -> Boolean): Modifier {
     val latest by rememberUpdatedState(handle)
-    LaunchedEffect(Unit) { TonightBackBus.presses.collect { latest(TonightKey.Back) } }
+    LaunchedEffect(Unit) { TonightBackBus.presses.collect { latest(it) } }
     return onPreviewKeyEvent { event ->
         // Back acts when the key comes up: on the HTPC Esc's key-down never reached these screens (Nov 10), while
         // the rest of the app goes back on its key-up. Its key-down is still taken so nothing else acts on it too.
@@ -1277,3 +1321,12 @@ private fun DealtCard(
 }
 
 
+/** A title's id as the details page and the addons expect it: a `tmdb:` id becomes its IMDb id when TMDB knows one. */
+internal suspend fun tonightOpenableId(type: String, id: String): Pair<String, String> {
+    val tmdbId = id.takeIf { it.startsWith("tmdb:") }?.removePrefix("tmdb:")?.substringBefore(':')?.toIntOrNull()
+        ?: return type to id
+    val imdb = runCatching {
+        com.nuvio.app.features.tmdb.TmdbService.tmdbToImdb(tmdbId, if (type == "series") "tv" else "movie")
+    }.getOrNull()
+    return type to (imdb ?: id)
+}

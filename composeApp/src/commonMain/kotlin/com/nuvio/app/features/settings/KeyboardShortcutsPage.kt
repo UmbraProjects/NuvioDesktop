@@ -60,6 +60,25 @@ import com.nuvio.app.features.input.resetGamepadSettings
 import com.nuvio.app.features.input.setGamepadDeadZone
 import com.nuvio.app.features.input.setGamepadEnabled
 import com.nuvio.app.features.input.setGamepadRepeatIntervalMs
+import com.nuvio.app.features.input.GamepadButton
+import com.nuvio.app.features.input.gamepadBindingsVersion
+import com.nuvio.app.features.input.gamepadButtonTargetIds
+import com.nuvio.app.features.input.gamepadTargetChoices
+import com.nuvio.app.features.input.panelRingMouseState
+import com.nuvio.app.features.input.panelRingPadButtonChoices
+import com.nuvio.app.features.input.panelRingPadButtonState
+import com.nuvio.app.features.input.panelRingSizeState
+import com.nuvio.app.features.input.resetGamepadButton
+import com.nuvio.app.features.input.resetGamepadButtons
+import com.nuvio.app.features.input.setGamepadButtonTarget
+import com.nuvio.app.features.input.setPanelRingMouse
+import com.nuvio.app.features.input.setPanelRingPadButton
+import com.nuvio.app.features.input.setPanelRingSize
+import com.nuvio.app.features.panelring.PanelRingSize
+import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TextButton
+import com.nuvio.app.core.ui.NuvioDialogSurface
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.StringResource
@@ -169,6 +188,9 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
                 ),
         )
     }
+
+    // Near the top: one binding for every panel is what spares learning the per-panel keys below.
+    item(key = "keyboard-shortcuts-panel-ring") { PanelRingSection(isTablet = isTablet) }
 
     item(key = "keyboard-shortcuts-navigation") {
         LaunchedEffect(Unit) { ensureAppShortcutBindingsLoaded() }
@@ -344,8 +366,8 @@ private fun ShortcutsResetLabel(onClick: () -> Unit) {
  * not a separate input model here — every button is replayed as the keystroke listed beside it, so
  * this inventory and the keyboard inventory describe the same bindings.
  *
- * The mapping list is read-only: rebinding a button means rebinding the underlying shortcut in the
- * sections above, which moves both at once.
+ * Each button row opens a picker for what the button does while browsing and during playback. A
+ * button set to a shortcut follows that shortcut's key, so rebinding the key above still moves both.
  */
 @Composable
 private fun GamepadSection(isTablet: Boolean) {
@@ -355,7 +377,9 @@ private fun GamepadSection(isTablet: Boolean) {
     val deadZone by gamepadDeadZoneState().collectAsState()
     val repeatInterval by gamepadRepeatIntervalState().collectAsState()
     val mouseKeyboard by mouseKeyboardState().collectAsState()
-    val rows = remember { gamepadMappingRows() }
+    val bindingsVersion by gamepadBindingsVersion().collectAsState()
+    val rows = remember(bindingsVersion) { gamepadMappingRows() }
+    var rebindingButton by remember { mutableStateOf<GamepadButton?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s18)) {
         // Its own section rather than a Controller row: it works with no controller at all, and
@@ -418,6 +442,7 @@ private fun GamepadSection(isTablet: Boolean) {
             title = stringResource(Res.string.settings_shortcuts_controller_buttons),
             isTablet = isTablet,
             subtitle = stringResource(Res.string.settings_shortcuts_controller_buttons_note),
+            actions = { ShortcutsResetLabel(onClick = { resetGamepadButtons() }) },
         ) {
             SettingsGroup(isTablet = isTablet) {
                 rows.forEachIndexed { index, row ->
@@ -427,10 +452,129 @@ private fun GamepadSection(isTablet: Boolean) {
                     ShortcutRow(
                         shortcut = Shortcut(row.browsingLabel, key(row.button.displayName)),
                         isTablet = isTablet,
-                        description = stringResource(Res.string.settings_shortcuts_gamepad_in_player, row.playerLabel),
+                        description = stringResource(Res.string.settings_shortcuts_gamepad_in_player, row.playerLabel) +
+                            if (row.rebound) " · " + stringResource(Res.string.gamepad_rebind_changed) else "",
+                        onRebind = { rebindingButton = row.button },
                     )
                 }
             }
+        }
+    }
+    rebindingButton?.let { button ->
+        GamepadRebindDialog(button = button, isTablet = isTablet, onDismiss = { rebindingButton = null })
+    }
+}
+
+/**
+ * A pad button's two meanings, each picked from the list of everything a button can do: the
+ * keyboard's shortcuts, the fixed keys (directions, paging) and nothing. A pad has no key to press
+ * in a capture box, so this is a choice rather than "press the new button".
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GamepadRebindDialog(button: GamepadButton, isTablet: Boolean, onDismiss: () -> Unit) {
+    val tokens = MaterialTheme.nuvio
+    val version by gamepadBindingsVersion().collectAsState()
+    val browsingChoices = remember { gamepadTargetChoices(inPlayer = false) }
+    val playerChoices = remember { gamepadTargetChoices(inPlayer = true) }
+    val (browsingId, playerId) = remember(version, button) { gamepadButtonTargetIds(button) }
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        NuvioDialogSurface {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(tokens.spacing.dialogPadding),
+                verticalArrangement = Arrangement.spacedBy(tokens.spacing.listGap),
+            ) {
+                Text(
+                    text = stringResource(Res.string.gamepad_rebind_title, button.displayName),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = tokens.colors.textPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                SettingsSubtext(text = stringResource(Res.string.gamepad_rebind_hint), isTablet = isTablet)
+                SettingsDropdownChoiceRow(
+                    title = stringResource(Res.string.gamepad_rebind_browsing),
+                    description = null,
+                    options = browsingChoices.map { SettingsChoiceOption(it.id, it.label) },
+                    selectedValue = browsingId,
+                    isTablet = isTablet,
+                    flushContent = true,
+                    onSelected = { setGamepadButtonTarget(button, inPlayer = false, id = it) },
+                )
+                SettingsDropdownChoiceRow(
+                    title = stringResource(Res.string.gamepad_rebind_player),
+                    description = null,
+                    options = playerChoices.map { SettingsChoiceOption(it.id, it.label) },
+                    selectedValue = playerId,
+                    isTablet = isTablet,
+                    flushContent = true,
+                    onSelected = { setGamepadButtonTarget(button, inPlayer = true, id = it) },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(tokens.spacing.controlGap, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = { resetGamepadButton(button) }) {
+                        Text(text = stringResource(Res.string.shortcuts_rebind_reset_default), maxLines = 1)
+                    }
+                    TextButton(onClick = onDismiss) {
+                        Text(text = stringResource(Res.string.action_done), maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The panel ring: one key (R), a held pad button (LB) or the held middle mouse button opens a circle
+ * of every panel in the navigation; aim and let go to switch. The key itself is rebound in the
+ * Navigation list below, with the other shortcuts.
+ */
+@Composable
+private fun PanelRingSection(isTablet: Boolean) {
+    LaunchedEffect(Unit) { ensureGamepadSettingsLoaded() }
+    val padButton by panelRingPadButtonState().collectAsState()
+    val mouse by panelRingMouseState().collectAsState()
+    val size by panelRingSizeState().collectAsState()
+    SettingsSection(
+        title = stringResource(Res.string.panel_ring_settings_section),
+        isTablet = isTablet,
+        subtitle = stringResource(Res.string.panel_ring_settings_note),
+    ) {
+        SettingsGroup(isTablet = isTablet) {
+            if (gamepadSupported()) {
+                SettingsChoiceRow(
+                    title = stringResource(Res.string.panel_ring_pad_button),
+                    description = stringResource(Res.string.panel_ring_pad_button_description),
+                    options = listOf(SettingsChoiceOption<GamepadButton?>(null, stringResource(Res.string.panel_ring_off))) +
+                        panelRingPadButtonChoices().map { SettingsChoiceOption<GamepadButton?>(it, it.displayName) },
+                    selectedValue = padButton,
+                    isTablet = isTablet,
+                    onSelected = { setPanelRingPadButton(it) },
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+            }
+            SettingsSwitchRow(
+                title = stringResource(Res.string.panel_ring_mouse),
+                description = stringResource(Res.string.panel_ring_mouse_description),
+                checked = mouse,
+                isTablet = isTablet,
+                onCheckedChange = { setPanelRingMouse(it) },
+            )
+            SettingsGroupDivider(isTablet = isTablet)
+            SettingsChoiceRow(
+                title = stringResource(Res.string.panel_ring_size),
+                description = null,
+                options = listOf(
+                    SettingsChoiceOption(PanelRingSize.Small, stringResource(Res.string.panel_ring_size_small)),
+                    SettingsChoiceOption(PanelRingSize.Medium, stringResource(Res.string.panel_ring_size_medium)),
+                    SettingsChoiceOption(PanelRingSize.Large, stringResource(Res.string.panel_ring_size_large)),
+                ),
+                selectedValue = size,
+                isTablet = isTablet,
+                onSelected = { setPanelRingSize(it) },
+            )
         }
     }
 }

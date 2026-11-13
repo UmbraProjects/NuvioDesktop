@@ -112,6 +112,40 @@ class TmdbBrowseTest {
         assertEquals("60–90 min", browseRuntimeLabel(60, 90))
         assertEquals("Length", browseRuntimeLabel(null, null))
     }
+
+    private val heist = TmdbBrowseKeyword(10051, "heist")
+    private val timeTravel = TmdbBrowseKeyword(4379, "time travel")
+
+    @Test
+    fun `tags OR by default and AND when every tag must match`() {
+        assertEquals("10051|4379", params(TmdbBrowseQuery(keywords = listOf(heist, timeTravel)))["with_keywords"])
+        assertEquals("10051,4379", params(TmdbBrowseQuery(keywords = listOf(heist, timeTravel), allKeywords = true))["with_keywords"])
+        assertNull(params(TmdbBrowseQuery())["with_keywords"])
+    }
+
+    @Test
+    fun `only anime adds the anime keyword and every tag must match`() {
+        // TMDB cannot mix "," and "|": "210024,9715|9748" counted only the first group (2026-11-13).
+        assertEquals("210024", params(TmdbBrowseQuery(anime = TmdbBrowseAnime.Only))["with_keywords"])
+        assertEquals("210024,10051,4379", params(TmdbBrowseQuery(anime = TmdbBrowseAnime.Only, keywords = listOf(heist, timeTravel)))["with_keywords"])
+        assertNull(params(TmdbBrowseQuery(anime = TmdbBrowseAnime.Only))["without_keywords"])
+    }
+
+    @Test
+    fun `excluding anime leaves western animation in`() {
+        assertEquals("210024", params(TmdbBrowseQuery(anime = TmdbBrowseAnime.Exclude))["without_keywords"])
+        assertTrue(isLikelyAnime(listOf(16, 10759), "ja"))
+        assertFalse(isLikelyAnime(listOf(16, 35), "en"))
+        assertFalse(isLikelyAnime(listOf(18), "ja"))
+    }
+
+    @Test
+    fun `clearing filters keeps the anime choice`() {
+        val q = TmdbBrowseQuery(anime = TmdbBrowseAnime.Exclude, keywords = listOf(heist))
+        assertTrue(q.hasFilters)
+        assertEquals(TmdbBrowseAnime.Exclude, q.clearedFilters().anime)
+        assertFalse(q.clearedFilters().hasFilters)
+    }
 }
 
 class DiscoverTypeGroupTest {

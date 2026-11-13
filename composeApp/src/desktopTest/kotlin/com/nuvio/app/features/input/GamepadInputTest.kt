@@ -170,6 +170,9 @@ class GamepadInputTest {
                 AppShortcutAction.OpenSettings,
                 // On a music page the pad's Y (the trailer key) does this; elsewhere the player is a D-pad stop away.
                 AppShortcutAction.FocusMusicPlayer,
+                // The panel ring is not a button's tap: holding the ring button (LB by default,
+                // GamepadSettingsRepository.ringButton) opens it, and it reaches every tab above.
+                AppShortcutAction.OpenPanelRing,
             ),
             AppShortcutAction.entries.toSet() - boundApp,
             "app actions with no button",

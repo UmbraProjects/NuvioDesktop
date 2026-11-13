@@ -100,6 +100,22 @@ internal fun TonightMapView(
         lensY = (lensY + dy).coerceIn(0f, 1f)
     }
 
+    // fork:phone-remote tonight - the phone is a touchpad: its drags arrive as arrows and move the lens; it shows
+    // the title under the lens and the two beside it.
+    MirrorOnPhone(
+        com.nuvio.app.features.remote.RemoteTonightScreen(
+            view = com.nuvio.app.features.remote.RemoteTonightScreen.MAP,
+            loading = loading && spots.isEmpty(),
+            total = spots.size,
+            cards = (listOfNotNull(under) + ranked.drop(1).filter { it.distanceTo(lensX, lensY) <= LENS_RADIUS }.take(2))
+                .mapIndexed { i, spot -> spot.title.remoteCard(if (i == 0) "UNDER THE LENS" else "NEARBY", spot.readingLabel(), clock, minutesUntilBed) },
+            extra = under?.readingLabel(),
+            // Where the lens sits, in hundredths, so the phone can draw it.
+            number = (lensX * 100).toInt(),
+            countLeft = (lensY * 100).toInt(),
+        ),
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()

@@ -2,6 +2,7 @@ package com.nuvio.app.features.input
 
 import com.nuvio.app.features.player.desktop.DesktopHostOs
 import com.nuvio.app.core.i18n.localizedString
+import com.nuvio.app.features.panelring.PanelRingSize
 import kotlinx.coroutines.flow.StateFlow
 import nuvio.composeapp.generated.resources.*
 
@@ -32,13 +33,44 @@ actual fun mouseKeyboardState(): StateFlow<Boolean> = GamepadSettingsRepository.
 actual fun setMouseKeyboard(enabled: Boolean) = GamepadSettingsRepository.setMouseKeyboard(enabled)
 
 actual fun gamepadMappingRows(): List<GamepadMappingRow> = GamepadButton.entries.map { button ->
-    val binding = GamepadDefaults.binding(button)
+    val binding = GamepadSettingsRepository.binding(button)
     GamepadMappingRow(
         button = button,
         browsingLabel = describe(binding.browsing),
         playerLabel = describe(binding.player),
+        rebound = GamepadSettingsRepository.isRebound(button),
     )
 }
+
+actual fun gamepadBindingsVersion(): StateFlow<Int> = GamepadSettingsRepository.bindingsVersion
+
+actual fun gamepadTargetChoices(inPlayer: Boolean): List<GamepadTargetChoice> =
+    GamepadTargetCodec.options(inPlayer).mapNotNull { target ->
+        GamepadTargetCodec.encode(target)?.let { GamepadTargetChoice(it, describe(target)) }
+    }
+
+actual fun gamepadButtonTargetIds(button: GamepadButton): Pair<String, String> {
+    val binding = GamepadSettingsRepository.binding(button)
+    return (GamepadTargetCodec.encode(binding.browsing) ?: "") to (GamepadTargetCodec.encode(binding.player) ?: "")
+}
+
+actual fun setGamepadButtonTarget(button: GamepadButton, inPlayer: Boolean, id: String) {
+    val target = GamepadTargetCodec.decode(id) ?: return
+    GamepadSettingsRepository.setTarget(button, inPlayer, target)
+}
+
+actual fun resetGamepadButton(button: GamepadButton) = GamepadSettingsRepository.resetButton(button)
+actual fun resetGamepadButtons() = GamepadSettingsRepository.resetAllButtons()
+
+actual fun panelRingPadButtonState(): StateFlow<GamepadButton?> = GamepadSettingsRepository.ringButtonState
+actual fun setPanelRingPadButton(button: GamepadButton?) = GamepadSettingsRepository.setRingButton(button)
+actual fun panelRingPadButtonChoices(): List<GamepadButton> = GamepadSettingsRepository.RING_BUTTON_CHOICES
+
+actual fun panelRingSizeState(): StateFlow<PanelRingSize> = GamepadSettingsRepository.ringSizeState
+actual fun setPanelRingSize(size: PanelRingSize) = GamepadSettingsRepository.setRingSize(size)
+
+actual fun panelRingMouseState(): StateFlow<Boolean> = GamepadSettingsRepository.ringMouseState
+actual fun setPanelRingMouse(enabled: Boolean) = GamepadSettingsRepository.setRingMouse(enabled)
 
 /**
  * What a target does, in words. Deliberately no key names: the pad presses whatever key the action

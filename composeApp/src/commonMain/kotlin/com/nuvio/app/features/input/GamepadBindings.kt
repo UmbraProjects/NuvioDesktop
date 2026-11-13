@@ -44,7 +44,37 @@ data class GamepadMappingRow(
     val button: GamepadButton,
     val browsingLabel: String,
     val playerLabel: String,
+    /** True when the user changed this button from the default layout. */
+    val rebound: Boolean = false,
 )
 
-/** The current layout. Read-only — per-button rebinding is not part of this phase. */
+/** The current layout, rebinds included. Re-read it whenever [gamepadBindingsVersion] changes. */
 expect fun gamepadMappingRows(): List<GamepadMappingRow>
+
+/** Changes on every rebind or reset. */
+expect fun gamepadBindingsVersion(): StateFlow<Int>
+
+/** One thing a button can be set to, for the rebind picker. [id] is what is stored. */
+data class GamepadTargetChoice(val id: String, val label: String)
+
+/** Everything a button can do while browsing ([inPlayer] false) or during playback (true). */
+expect fun gamepadTargetChoices(inPlayer: Boolean): List<GamepadTargetChoice>
+
+/** The ids of what [button] does now, browsing first, then in the player. */
+expect fun gamepadButtonTargetIds(button: GamepadButton): Pair<String, String>
+
+expect fun setGamepadButtonTarget(button: GamepadButton, inPlayer: Boolean, id: String)
+expect fun resetGamepadButton(button: GamepadButton)
+expect fun resetGamepadButtons()
+
+/** The button held to open the panel ring, or null for none. */
+expect fun panelRingPadButtonState(): StateFlow<GamepadButton?>
+expect fun setPanelRingPadButton(button: GamepadButton?)
+expect fun panelRingPadButtonChoices(): List<GamepadButton>
+
+expect fun panelRingSizeState(): StateFlow<com.nuvio.app.features.panelring.PanelRingSize>
+expect fun setPanelRingSize(size: com.nuvio.app.features.panelring.PanelRingSize)
+
+/** Hold the middle mouse button to open the ring. */
+expect fun panelRingMouseState(): StateFlow<Boolean>
+expect fun setPanelRingMouse(enabled: Boolean)

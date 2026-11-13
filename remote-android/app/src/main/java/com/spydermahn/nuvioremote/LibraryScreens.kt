@@ -229,12 +229,19 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
     // A show opens its season list here (episodes play on the TV from it); a film opens its page on the TV.
     var showPicked by remember { mutableStateOf<LibraryTitle?>(null) }
     val pick: (LibraryTitle) -> Unit = { title ->
-        if (title.type == "series" || title.type == "anime" || title.type == "tv") {
+        if (title.isShow) {
             showPicked = title
         } else {
             viewModel.openTitle(title)
             onOpened()
         }
+    }
+    // A long press on a poster: the TV's poster menu (watched, library, playlist...), on the phone.
+    val holdTitle: (LibraryTitle) -> Unit = { title ->
+        viewModel.openMenu(
+            MenuTarget.title(title), title.name, listOfNotNull(if (title.isShow) "Show" else "Film", title.year).joinToString(" · "),
+            image = title.poster, imageFallback = title.posterFallback,
+        )
     }
     var query by rememberSaveable { mutableStateOf("") }
     var section by rememberSaveable { mutableStateOf(ALL) }
@@ -300,7 +307,12 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
             ) {
                 if (resumes.isNotEmpty()) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "continue") {
-                        ContinueRail(resumes) { resumePicked = it }
+                        ContinueRail(resumes, onHold = { item ->
+                            viewModel.openMenu(
+                                MenuTarget.resume(item), item.title, item.episode ?: "Continue watching",
+                                image = item.still ?: item.poster, imageFallback = item.poster, wide = true,
+                            )
+                        }) { resumePicked = it }
                     }
                 }
                 if (shown.isNotEmpty() || search == null) {
@@ -309,7 +321,7 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
                     }
                 }
                 items(shown, key = { it.key }) { title ->
-                    PosterCell(title) { pick(title) }
+                    PosterCell(title, onHold = { holdTitle(title) }) { pick(title) }
                 }
                 if (search != null) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "search-header") {
@@ -341,6 +353,21 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
                 viewModel.playEpisode(show, episode)
                 onOpened()
             },
+            onEpisodeHold = { episode ->
+                viewModel.openMenu(
+                    MenuTarget.episode(show, episode),
+                    listOfNotNull(episode.season?.let { s -> episode.episode?.let { "S$s E$it" } }, episode.title.takeIf { it.isNotBlank() })
+                        .joinToString(" · ").ifEmpty { "Episode" },
+                    show.name,
+                    image = episode.thumbnail, imageFallback = show.poster, wide = true,
+                )
+            },
+            onSeasonHold = { season ->
+                viewModel.openMenu(
+                    MenuTarget.season(show, season), if (season == 0) "Specials" else "Season $season", show.name,
+                    image = show.poster, imageFallback = show.posterFallback,
+                )
+            },
             onDetails = {
                 showPicked = null
                 viewModel.openTitle(show)
@@ -366,6 +393,25 @@ fun VideoLibraryScreen(state: UiState, viewModel: RemoteViewModel, onOpened: () 
             },
         )
     }
+
+    // The long-press sheets, over whatever is open (the show sheet included).
+    state.menu?.let { sheet ->
+        ActionSheet(
+            sheet = sheet,
+            onAction = { action ->
+                viewModel.menuAction(action)
+                if (action.code in MenuCode.OPENS_ON_TV) {
+                    showPicked = null
+                    onOpened()
+                }
+            },
+            onDismiss = viewModel::closeMenu,
+        )
+    }
+    state.playlistPick?.let { pick ->
+        PlaylistSheet(pick, onPick = { playlist, season -> viewModel.addToPlaylist(playlist, season) }, onDismiss = viewModel::closePlaylists)
+    }
+    state.recap?.let { recap -> RecapSheet(recap, onDismiss = viewModel::closeRecap) }
 }
 
 /**
@@ -377,6 +423,8 @@ private fun ShowSheet(
     show: LibraryTitle,
     episodes: ServerLine.Episodes?,
     onEpisode: (EpisodeInfo) -> Unit,
+    onEpisodeHold: (EpisodeInfo) -> Unit,
+    onSeasonHold: (Int) -> Unit,
     onDetails: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -422,10 +470,20 @@ private fun ShowSheet(
                     if (seasons.size > 1) {
                         LazyRow(Modifier.padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(seasons) { s ->
-                                GlassTag(if (s == 0) "Specials" else "Season $s", accent = s == season, onClick = { season = s })
+                                GlassTag(
+                                    if (s == 0) "Specials" else "Season $s",
+                                    accent = s == season,
+                                    onLongClick = { onSeasonHold(s) },
+                                    onClick = { season = s },
+                                )
                             }
                         }
                     }
+                    Text(
+                        if (seasons.size > 1) "Hold an episode or a season for more: watched, playlist, recap."
+                        else "Hold an episode for more: watched, playlist, recap.",
+                        color = g.textMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp),
+                    )
                     val shown = episodes.episodes.filter { (it.season ?: 1) == season }
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(shown, key = { it.videoId }) { episode ->
@@ -433,7 +491,7 @@ private fun ShowSheet(
                                 Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .clickable { onEpisode(episode) }
+                                    .tapOrHold(onHold = { onEpisodeHold(episode) }) { onEpisode(episode) }
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -474,13 +532,13 @@ private fun ShowSheet(
 
 /** Continue Watching: landscape cards with the progress under each, newest first. */
 @Composable
-private fun ContinueRail(resumes: List<ResumeItem>, onPick: (ResumeItem) -> Unit) {
+private fun ContinueRail(resumes: List<ResumeItem>, onHold: (ResumeItem) -> Unit, onPick: (ResumeItem) -> Unit) {
     val g = LocalGlass.current
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         SectionRow("Continue watching", countLabel(resumes.size, "title"))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(resumes, key = { it.key }) { item ->
-                Column(Modifier.size(width = 220.dp, height = 176.dp).clip(RoundedCornerShape(12.dp)).clickable { onPick(item) }) {
+                Column(Modifier.size(width = 220.dp, height = 176.dp).clip(RoundedCornerShape(12.dp)).tapOrHold(onHold = { onHold(item) }) { onPick(item) }) {
                     Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                         RemoteImage(
                             url = item.still ?: item.poster,
@@ -569,8 +627,8 @@ private fun formatClock(ms: Long): String {
 }
 
 @Composable
-private fun PosterCell(title: LibraryTitle, onClick: () -> Unit) {
-    Column(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick)) {
+private fun PosterCell(title: LibraryTitle, onHold: (() -> Unit)? = null, onClick: () -> Unit) {
+    Column(Modifier.clip(RoundedCornerShape(10.dp)).tapOrHold(onHold = onHold, onTap = onClick)) {
         Box {
             RemoteImage(
                 url = title.poster,

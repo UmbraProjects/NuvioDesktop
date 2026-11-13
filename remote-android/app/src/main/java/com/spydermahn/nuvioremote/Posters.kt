@@ -85,6 +85,9 @@ object Posters {
 @Composable
 fun RemoteImage(url: String?, fallback: String?, placeholder: String, modifier: Modifier = Modifier) {
     val bitmap by produceState(initialValue = url?.let(Posters::cached) ?: fallback?.let(Posters::cached), url, fallback) {
+        // The same slot can be handed a new poster (Tonight's Knockout swaps both titles in place): produceState keeps
+        // the old bitmap in `value` when its keys change, so start from the new address's cache, never the old one.
+        value = url?.let(Posters::cached) ?: fallback?.let(Posters::cached)
         if (value != null) return@produceState
         value = url?.let { Posters.load(it) } ?: fallback?.let { Posters.load(it) }
     }

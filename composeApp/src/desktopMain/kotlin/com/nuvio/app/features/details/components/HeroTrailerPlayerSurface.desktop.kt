@@ -42,6 +42,7 @@ private val detailHeroTrailerSurfaceLog = Logger.withTag("DetailHeroTrailerSurfa
 actual fun HeroTrailerPlayerSurface(
     sourceUrl: String,
     sourceAudioUrl: String?,
+    sourceHeaders: Map<String, String>,
     playWhenReady: Boolean,
     muted: Boolean,
     volume: Int,
@@ -191,7 +192,7 @@ actual fun HeroTrailerPlayerSurface(
         controller.attach(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl?.takeIf { it.isNotBlank() },
-            sourceHeaders = emptyMap(),
+            sourceHeaders = sourceHeaders, // fork:trailer-signed-in
             playWhenReady = playWhenReady,
             initialPositionMs = 0L,
             nvidiaRtxSuperResolutionEnabled = false,

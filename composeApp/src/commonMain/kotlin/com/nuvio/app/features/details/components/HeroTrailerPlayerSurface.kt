@@ -7,6 +7,8 @@ import androidx.compose.ui.Modifier
 expect fun HeroTrailerPlayerSurface(
     sourceUrl: String,
     sourceAudioUrl: String?,
+    // fork:trailer-signed-in - headers the media fetch must carry (TrailerPlaybackSource.headers); empty for the in-app extractor's streams.
+    sourceHeaders: Map<String, String> = emptyMap(),
     playWhenReady: Boolean,
     muted: Boolean,
     volume: Int,

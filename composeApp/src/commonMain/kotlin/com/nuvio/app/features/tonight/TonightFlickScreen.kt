@@ -89,6 +89,21 @@ internal fun TonightFlickView(
         if (channels.isNotEmpty()) index = (index + 1) % channels.size
     }
 
+    // fork:phone-remote tonight - ◀ never, OK play, ▲ save, ▶ next channel; up next as the other cards.
+    MirrorOnPhone(
+        com.nuvio.app.features.remote.RemoteTonightScreen(
+            view = com.nuvio.app.features.remote.RemoteTonightScreen.FLICK,
+            loading = loading && current == null,
+            number = index + 1,
+            total = channels.size,
+            cards = (0..3).mapNotNull { i ->
+                if (channels.isEmpty() || (i > 0 && channels.size <= i)) null
+                else channels[(index + i) % channels.size].remoteCard(if (i == 0) "CH ${index + 1}" else "UP NEXT", "", clock, minutesUntilBed)
+            },
+            extra = note ?: current?.flickOriginLine(),
+        ),
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()

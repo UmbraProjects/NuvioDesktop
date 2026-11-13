@@ -10,6 +10,19 @@ actual object TrailerPlaybackResolver {
         return extractor.extractPlaybackSource(youtubeUrl)
     }
 
+    // fork:trailer-signed-in - see the expect. The in-app extractor goes first, exactly as before; only a sign-in
+    // gate it cannot pass goes on to MusicResolver.openAgeGatedVideo, the YouTube tab's own second route.
+    actual suspend fun resolveTrailerFromYouTubeUrl(youtubeUrl: String): TrailerResolution {
+        val first = resolveFromYouTubeUrl(youtubeUrl)
+        if (first !is TrailerResolution.Unavailable || first.reason != TrailerUnavailableReason.AGE_RESTRICTED) return first
+        val videoId = TRAILER_VIDEO_ID.find(youtubeUrl)?.groupValues?.get(1) ?: return first
+        val signedIn = com.nuvio.app.features.music.MusicResolver.openAgeGatedVideo(videoId) ?: return first
+        co.touchlab.kermit.Logger.withTag("TrailerSignedIn").i { "$videoId: trailer opened signed in after YouTube asked for a sign-in" }
+        return TrailerResolution.Available(signedIn)
+    }
+
+    private val TRAILER_VIDEO_ID = Regex("(?:[?&]v=|youtu\\.be/|/embed/|/shorts/)([A-Za-z0-9_-]{11})")
+
     actual suspend fun resolveSingleUrlFromYouTubeUrl(youtubeUrl: String): String? {
         if (youtubeUrl.isBlank()) return null
         return extractor.extractSingleUrl(youtubeUrl)

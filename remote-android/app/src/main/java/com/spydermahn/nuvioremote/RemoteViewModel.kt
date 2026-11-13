@@ -63,6 +63,12 @@ data class UiState(
     /** Waking it: the packet went, and the app is waiting for it to come up. */
     val waking: Boolean = false,
     val music: MusicLibraryState = MusicLibraryState(),
+    /** The long-press sheet that is open, if any. */
+    val menu: MenuSheet? = null,
+    /** The playlist picker one of its rows opened. */
+    val playlistPick: ServerLine.Playlists? = null,
+    /** The AI recap one of its rows asked for (state 0 while it is written). */
+    val recap: ServerLine.Recap? = null,
     /** A short line about something just sent ("Opening Blade Runner on the TV"); clears itself. */
     val notice: String? = null,
     /** The TV's theme; the phone wears it. */
@@ -71,6 +77,21 @@ data class UiState(
     /** Dark mode: the phone black and dim, gestures anywhere (see DarkModeScreen). */
     val dark: Boolean = false,
     val darkLevel: DarkLevel = DarkLevel.Medium,
+)
+
+/**
+ * A long-press sheet: what was pressed ([heading], [detail], [image] shown straight away from what the phone knows) and
+ * the rows, once the PC has sent them ([loaded]). [doing] is the code of a row sent and not yet answered.
+ */
+data class MenuSheet(
+    val target: MenuTarget,
+    val heading: String,
+    val detail: String?,
+    val image: String?,
+    val imageFallback: String? = null,
+    val wide: Boolean = false,
+    val loaded: ServerLine.Menu? = null,
+    val doing: String? = null,
 )
 
 /** Where a library list stands. [problem] is set when the PC never answered (a Nuvio from before the library). */
@@ -445,6 +466,16 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                         }
                     }
                     is ServerLine.Opening -> notify("Opening ${line.what} on the TV")
+                    is ServerLine.Menu -> _state.update { state ->
+                        val open = state.menu
+                        if (open == null || open.target != line.target) state else state.copy(menu = open.copy(loaded = line))
+                    }
+                    is ServerLine.Done -> onMenuDone(line)
+                    is ServerLine.Playlists -> _state.update { it.copy(playlistPick = line, menu = null) }
+                    is ServerLine.Recap -> _state.update { state ->
+                        // A late answer for a recap the phone already closed is dropped.
+                        if (line.state != 0 && state.recap == null) state else state.copy(recap = line, menu = null)
+                    }
                     ServerLine.CantOpen -> notify("Nuvio couldn't open that.")
                     else -> Unit
                 }
@@ -705,6 +736,51 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     fun album(album: LibraryAlbum, action: AlbumAction) = sendOrReconnect { it.album(album.browseId, action) }
 
     fun artist(artist: LibraryArtistInfo, action: ArtistAction) = sendOrReconnect { it.artist(artist.id, action) }
+
+    // --- The long-press sheet on posters, Continue Watching cards, episodes and seasons ---
+
+    /** Opens the sheet for [target] at once (heading and picture from the phone) and asks the PC for its rows. */
+    fun openMenu(target: MenuTarget, heading: String, detail: String?, image: String?, imageFallback: String? = null, wide: Boolean = false) {
+        _state.update { it.copy(menu = MenuSheet(target, heading, detail, image, imageFallback, wide)) }
+        sendOrReconnect { it.menu(target) }
+    }
+
+    fun closeMenu() = _state.update { it.copy(menu = null) }
+
+    /**
+     * A row of the sheet. The playlist and recap rows open their own sheet when the PC answers; the rest close it, and
+     * the PC's DONE line says how it went.
+     */
+    fun menuAction(action: MenuAction) {
+        val sheet = _state.value.menu ?: return
+        when (action.code) {
+            MenuCode.PLAYLIST, MenuCode.PLAYLIST_SEASON -> _state.update { it.copy(menu = sheet.copy(doing = action.code)) }
+            MenuCode.RECAP -> _state.update { it.copy(menu = null, recap = ServerLine.Recap(0, sheet.heading, null)) }
+            else -> _state.update { it.copy(menu = null) }
+        }
+        sendOrReconnect { it.act(sheet.target, action.code) }
+    }
+
+    /** Adds what the picker was opened for to [playlistId] ([MenuCode.NEW_PLAYLIST] makes one); [season] 0 is every season. */
+    fun addToPlaylist(playlistId: String, season: Int = 0) {
+        val pick = _state.value.playlistPick ?: return
+        _state.update { it.copy(playlistPick = null) }
+        sendOrReconnect { it.act(pick.target, MenuCode.ADD_TO_PLAYLIST, listOf(playlistId, pick.scope, season.toString())) }
+    }
+
+    fun closePlaylists() = _state.update { it.copy(playlistPick = null) }
+
+    fun closeRecap() = _state.update { it.copy(recap = null) }
+
+    private fun onMenuDone(line: ServerLine.Done) {
+        _state.update { state -> state.copy(menu = state.menu?.takeIf { it.doing == null }) }
+        notify(line.message.ifBlank { if (line.ok) "Done" else "That didn't work on the TV" })
+        if (LibraryLines.REFRESH_LIBRARY in line.refresh) loadVideo(force = true)
+        if (LibraryLines.REFRESH_CONTINUE in line.refresh) loadContinue()
+        if (LibraryLines.REFRESH_EPISODES in line.refresh) {
+            _state.value.episodes?.let { open -> sendOrReconnect { it.episodes(open.type, open.id) } }
+        }
+    }
 
     private var noticeJob: Job? = null
 

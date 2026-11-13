@@ -293,4 +293,41 @@ class ThemeSongSearchTest {
         )
         assertEquals(listOf("shout"), institute.map { it.videoId })
     }
+
+    // Station 19 has only a title card, so YouTube's "intro" and "theme song" results (2026-11-13)
+    // were fan remakes set to other shows' themes and songs from single episodes. Friends played.
+    @Test
+    fun anotherShowsThemeAndEpisodeSongsAreNotTheTitlesTheme() {
+        val hits = listOf(
+            hit("friendsStyle", "Station 19 Intro [Friends Style]", channel = "BABS", seconds = 101, views = 23_940),
+            hit("friendsTheme", "station 19 intro (friends theme song)", channel = "greysvicley", seconds = 87, views = 5_202),
+            hit("firemanSam", "Station 19 - fireman sam theme song", channel = "The Irish", seconds = 70, views = 139),
+            hit("episodeSong", "Natalie Taylor - Wildfire (Audio) [STATION 19 - 1X04 - SOUNDTRACK]", seconds = 191, views = 95_634),
+            hit("episodeSong2", "Station 19 Soundtrack - \"Hero (I Will Survive)\" by Supergirl (1x01)", seconds = 169, views = 74_054),
+        )
+        assertTrue(rankThemeSongHits(hits, "Station 19", "2018").isEmpty())
+        assertTrue(rankThemeSongHits(hits, "Station 19", "2018", intro = true).isEmpty())
+    }
+
+    @Test
+    fun aThemeNamedAfterItsComposerOrFromTheTitleStillCounts() {
+        val ranked = rankThemeSongHits(
+            listOf(
+                hit("composer", "Hans Zimmer - Interstellar Main Theme", seconds = 240),
+                hit("from", "John Williams - Theme from Jurassic Park", seconds = 220),
+                hit("season", "South Park Season 1 (Episodes 1-5) Theme Song Intro", seconds = 60),
+            ),
+            title = "Interstellar",
+            year = null,
+        )
+        assertEquals(listOf("composer"), ranked.map { it.videoId })
+        assertEquals(
+            listOf("from"),
+            rankThemeSongHits(listOf(hit("from", "John Williams - Theme from Jurassic Park", seconds = 220)), "Jurassic Park", null).map { it.videoId },
+        )
+        assertEquals(
+            listOf("season"),
+            rankThemeSongHits(listOf(hit("season", "South Park Season 1 (Episodes 1-5) Theme Song Intro", seconds = 60)), "South Park", null, intro = true).map { it.videoId },
+        )
+    }
 }

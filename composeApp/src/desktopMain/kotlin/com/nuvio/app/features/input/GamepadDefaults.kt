@@ -24,6 +24,12 @@ internal object GamepadDefaults {
     private fun app(action: AppShortcutAction) = GamepadTarget.AppAction(action)
     private fun player(action: PlayerShortcutAction) = GamepadTarget.PlayerAction(action)
 
+    /** The right stick's down direction in the player; also offered to any button when rebinding. */
+    val shaderOrHdr = GamepadTarget.ShaderOrHdr(
+        shaderAction = PlayerShortcutAction.CycleAnime,
+        hdrAction = PlayerShortcutAction.CycleHdr,
+    )
+
     val bindings: Map<GamepadButton, GamepadBinding> = mapOf(
         // fork:voice-control - push-to-talk everywhere, the player included.
         GamepadButton.Mic to GamepadBinding(
@@ -129,10 +135,7 @@ internal object GamepadDefaults {
             // A game launcher is a reasonable thing to want from a controller, and nothing else on
             // the pad wanted this direction while browsing.
             browsing = app(AppShortcutAction.ToggleGameMode),
-            player = GamepadTarget.ShaderOrHdr(
-                shaderAction = PlayerShortcutAction.CycleAnime,
-                hdrAction = PlayerShortcutAction.CycleHdr,
-            ),
+            player = shaderOrHdr,
         ),
     )
 

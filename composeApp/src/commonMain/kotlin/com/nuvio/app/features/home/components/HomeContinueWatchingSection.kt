@@ -60,7 +60,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -999,6 +1003,51 @@ private fun PosterCardPreview() {
     }
 }
 
+/** The bar along a Continue Watching card's bottom edge (the Nuvio Tracker's `.art-bar`). */
+private val ContinueWatchingEdgeBarHeight = 5.dp
+
+/**
+ * Watch progress as a strip flush along the card's bottom edge, the style of the Nuvio Tracker
+ * site's Continue watching rail: a dark track with a faint lit top edge, and a white fill whose
+ * leading end is rounded. The card's own clip rounds it into the corners.
+ */
+@Composable
+private fun ContinueWatchingEdgeProgressBar(
+    progress: Float,
+    height: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val fraction = progress.coerceIn(0f, 1f)
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height),
+    ) {
+        val barHeight = height.toPx()
+        val top = size.height - barHeight
+        val fillWidth = size.width * fraction
+        drawRect(color = Color.Black.copy(alpha = 0.45f), topLeft = Offset(0f, top), size = Size(size.width, barHeight))
+        drawRect(color = Color.White.copy(alpha = 0.12f), topLeft = Offset(0f, top), size = Size(size.width, 1.dp.toPx()))
+        if (fillWidth <= 0f) return@Canvas
+        val radius = 3.dp.toPx().coerceAtMost(barHeight)
+        drawPath(
+            path = Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        left = 0f,
+                        top = top,
+                        right = fillWidth,
+                        bottom = size.height,
+                        topRightCornerRadius = CornerRadius(radius),
+                        bottomRightCornerRadius = CornerRadius(radius),
+                    ),
+                )
+            },
+            color = Color.White,
+        )
+    }
+}
+
 private data class ContinueWatchingLandscapeCardMetrics(
     val width: Dp,
     val cornerRadius: Dp,
@@ -1030,9 +1079,9 @@ private fun continueWatchingLandscapeCardMetrics(
             badgeInset = 6.dp,
             badgeHorizontalPadding = 6.dp,
             badgeVerticalPadding = 2.dp,
-            progressHorizontalPadding = 8.dp,
-            progressBottomPadding = 3.dp,
-            progressHeight = 3.dp,
+            progressHorizontalPadding = 0.dp,
+            progressBottomPadding = 0.dp,
+            progressHeight = 4.dp,
             titleTextSize = 12.sp,
             metaTextSize = 9.sp,
             badgeTextSize = 8.sp,
@@ -1045,9 +1094,9 @@ private fun continueWatchingLandscapeCardMetrics(
             badgeInset = 6.dp,
             badgeHorizontalPadding = 7.dp,
             badgeVerticalPadding = 3.dp,
-            progressHorizontalPadding = 8.dp,
-            progressBottomPadding = 3.dp,
-            progressHeight = 3.dp,
+            progressHorizontalPadding = 0.dp,
+            progressBottomPadding = 0.dp,
+            progressHeight = 4.dp,
             titleTextSize = 13.sp,
             metaTextSize = 10.sp,
             badgeTextSize = 9.sp,
@@ -1060,9 +1109,9 @@ private fun continueWatchingLandscapeCardMetrics(
             badgeInset = 7.dp,
             badgeHorizontalPadding = 7.dp,
             badgeVerticalPadding = 3.dp,
-            progressHorizontalPadding = 9.dp,
-            progressBottomPadding = 4.dp,
-            progressHeight = 3.dp,
+            progressHorizontalPadding = 0.dp,
+            progressBottomPadding = 0.dp,
+            progressHeight = ContinueWatchingEdgeBarHeight,
             titleTextSize = 14.sp,
             metaTextSize = 10.sp,
             badgeTextSize = 10.sp,
@@ -1237,31 +1286,16 @@ private fun ContinueWatchingCard(
             )
         }
         if (item.progressFraction > 0f) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(
-                        horizontal = cardMetrics.progressHorizontalPadding,
-                        vertical = cardMetrics.progressBottomPadding,
-                    )
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(999.dp))
-                    .height(cardMetrics.progressHeight)
-                    .background(Color.Black.copy(alpha = 0.30f)),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(item.progressFraction.coerceIn(0f, 1f))
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(MaterialTheme.nuvio.colors.accentFill),
-                )
-            }
+            ContinueWatchingEdgeProgressBar(
+                progress = item.progressFraction,
+                height = cardMetrics.progressHeight,
+                modifier = Modifier.align(Alignment.BottomStart),
+            )
         }
         ContinueWatchingSourceShortcutButton(
             shortcut = sourceShortcut,
             cornerBottomInset = if (item.progressFraction > 0f) {
-                cardMetrics.progressBottomPadding + cardMetrics.progressHeight + 6.dp
+                cardMetrics.progressHeight + 6.dp
             } else {
                 ContinueWatchingRemoveButtonInset
             },
@@ -1516,27 +1550,17 @@ private fun ContinueWatchingPosterCard(
                 }
             }
             if (item.progressFraction > 0f) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = 10.dp, vertical = 10.dp)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                ) {
-                    NuvioProgressBar(
-                        progress = item.progressFraction,
-                        modifier = Modifier.width(layout.posterCardWidth - 32.dp),
-                        height = layout.progressHeight,
-                        trackColor = MaterialTheme.colorScheme.surfaceTint.copy(alpha = 0.16f),
-                    )
-                }
+                ContinueWatchingEdgeProgressBar(
+                    progress = item.progressFraction,
+                    height = ContinueWatchingEdgeBarHeight,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
             ContinueWatchingSourceShortcutButton(
                 shortcut = sourceShortcut,
-                // Clears the progress pill: its 10dp inset, 6dp padding either side, and the bar.
+                // Clears the bar along the bottom edge.
                 cornerBottomInset = if (item.progressFraction > 0f) {
-                    10.dp + 12.dp + layout.progressHeight + 6.dp
+                    ContinueWatchingEdgeBarHeight + 6.dp
                 } else {
                     ContinueWatchingRemoveButtonInset
                 },

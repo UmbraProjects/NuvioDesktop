@@ -1878,6 +1878,22 @@ private fun MainAppContent(
             }
         }
     }
+    // The panel ring (features/panelring): a chosen slot goes to the tabs, then opens like a click
+    // on its bar entry. Not over the player, whose native surface the ring cannot draw above.
+    LaunchedEffect(navController) {
+        com.nuvio.app.features.panelring.PanelRingController.selections.collect { slot ->
+            if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) return@collect
+            navController.navigate(TabsRoute) {
+                popUpTo<TabsRoute> { inclusive = false }
+                launchSingleTop = true
+            }
+            when (slot) {
+                com.nuvio.app.features.panelring.PanelRingSlot.Settings -> latestRootTabClick.value(AppScreenTab.Settings)
+                is com.nuvio.app.features.panelring.PanelRingSlot.Nav ->
+                    com.nuvio.app.features.navbar.NavBarNavigation.request(slot.entry)
+            }
+        }
+    }
     // fork:voice-control - phase 4: carry out each understood command (VoiceCommandRouter decides what).
     val latestSubmitSearch = rememberUpdatedState<(String, String) -> Unit> { q, confident -> submitSearch(q, confident) }
     LaunchedEffect(navController) {
@@ -2130,7 +2146,11 @@ private fun MainAppContent(
         com.nuvio.app.features.playlist.PlaylistAddController.target.map { it != null }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = false)
     val playlistWindowOpen = openPlaylistId != null || playlistAddOpen
-    LaunchedEffect(selectedTab, currentBackStackEntry, gameModeActive, startupOverlayVisible, streamPickerOpen, playlistWindowOpen) {
+    // The hero trailer is a native surface that would paint over the panel ring.
+    val panelRingOpen by remember {
+        com.nuvio.app.features.panelring.PanelRingController.state.map { it != null }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = false)
+    LaunchedEffect(selectedTab, currentBackStackEntry, gameModeActive, startupOverlayVisible, streamPickerOpen, playlistWindowOpen, panelRingOpen) {
         val onTabsWithHomeStyleTab = (
             selectedTab == AppScreenTab.Home ||
                 selectedTab == AppScreenTab.Search ||
@@ -2143,7 +2163,7 @@ private fun MainAppContent(
         // that would paint straight over it — so the hero must count as "not home" while it is up.
         HomeHeroTrailerGate.setHomeActive(
             (onTabsWithHomeStyleTab || onFolderDetail) && !gameModeActive && startupOverlayVisible == null &&
-                !streamPickerOpen && !playlistWindowOpen,
+                !streamPickerOpen && !playlistWindowOpen && !panelRingOpen,
         )
     }
 
@@ -2861,11 +2881,36 @@ private fun MainAppContent(
                         PlayerHandoff.activeRoutes.first { it == 0 }
                     }
                 }
-                onPlay(
-                    play.type, play.videoId, play.parentMetaId, play.parentMetaType, play.title, play.logo, play.poster,
-                    play.background, play.seasonNumber, play.episodeNumber, play.episodeTitle, play.episodeThumbnail,
-                    play.pauseDescription, play.resumePositionMs,
-                )
+                if (play.mode == com.nuvio.app.features.remote.RemotePlayMode.Normal) {
+                    onPlay(
+                        play.type, play.videoId, play.parentMetaId, play.parentMetaType, play.title, play.logo, play.poster,
+                        play.background, play.seasonNumber, play.episodeNumber, play.episodeTitle, play.episodeThumbnail,
+                        play.pauseDescription, play.resumePositionMs,
+                    )
+                } else {
+                    // fork:phone-remote menus - the long-press menu's Start from beginning / Choose a source.
+                    val fromStart = play.mode == com.nuvio.app.features.remote.RemotePlayMode.FromStart
+                    launchPlaybackWithDownloadPreference(
+                        type = play.type,
+                        videoId = play.videoId,
+                        parentMetaId = play.parentMetaId,
+                        parentMetaType = play.parentMetaType,
+                        title = play.title,
+                        logo = play.logo,
+                        poster = play.poster,
+                        background = play.background,
+                        seasonNumber = play.seasonNumber,
+                        episodeNumber = play.episodeNumber,
+                        episodeTitle = play.episodeTitle,
+                        episodeThumbnail = play.episodeThumbnail,
+                        pauseDescription = play.pauseDescription,
+                        resumePositionMs = if (fromStart) null else play.resumePositionMs,
+                        resumeProgressFraction = null,
+                        useAlternateBehavior = false,
+                        startFromBeginning = fromStart,
+                        forceManualSelection = !fromStart,
+                    )
+                }
             }
         }
 
@@ -3286,7 +3331,8 @@ private fun MainAppContent(
         // fork:phone-remote continue watching - Resume on the TV from the phone: the same source again, from where it
         // stopped, as the card's last-link shortcut plays it. A player already open is closed first.
         LaunchedEffect(navController) {
-            com.nuvio.app.features.remote.RemotePlayerHub.resumes.collectLatest { item ->
+            com.nuvio.app.features.remote.RemotePlayerHub.resumes.collectLatest { request ->
+                val item = request.item
                 if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
                     PlayerHandoff.holdShield()
                     ResumePromptRepository.markPlayerExitedNormally()
@@ -3295,7 +3341,14 @@ private fun MainAppContent(
                         PlayerHandoff.activeRoutes.first { it == 0 }
                     }
                 }
-                openContinueWatching(item, useAlternateBehavior = false, startFromBeginning = false, forceReuseLastLink = true)
+                when (request.mode) {
+                    com.nuvio.app.features.remote.RemotePlayMode.Normal ->
+                        openContinueWatching(item, useAlternateBehavior = false, startFromBeginning = false, forceReuseLastLink = true)
+                    com.nuvio.app.features.remote.RemotePlayMode.FromStart ->
+                        openContinueWatching(item, useAlternateBehavior = false, startFromBeginning = true)
+                    com.nuvio.app.features.remote.RemotePlayMode.ChooseSource ->
+                        openContinueWatching(item, useAlternateBehavior = false, startFromBeginning = false, forceManualSelection = true)
+                }
             }
         }
 

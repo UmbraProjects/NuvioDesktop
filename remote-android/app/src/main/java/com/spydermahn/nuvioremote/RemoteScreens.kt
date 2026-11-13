@@ -119,6 +119,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlin.math.abs
+import android.text.format.DateFormat
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import java.util.Date
 
 private enum class Tab(val label: String) { Remote("Remote"), Watch("Watch"), Music("Music") }
 
@@ -375,22 +381,14 @@ private fun FilmBody(
     onAudio: () -> Unit,
 ) {
     // What is playing and its controls, with the keys pinned at the bottom. The pad is a tap away (the tag in the
-    // header): on a phone there was no room left for a usable one under all of this.
+    // header): on a phone there was no room left for a usable one under all of this. The space left between the
+    // volume and the keys is one fixed slot: the "Ends at" clock, with Skip and Next episode in a row of their own
+    // inside it, so nothing moves when they come and go.
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-            NowPlayingPanel(playing, cover, viewModel, Modifier.padding(top = 4.dp), compact = true)
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Tap: the next one. Hold: the list of every subtitle the file and the add-ons have.
-                StatTile("Subtitles", playing.subtitleTrack ?: "Tap for next · hold for list", Modifier.weight(1f), onLongClick = onSubtitles) {
-                    viewModel.press(RemoteKey.Subtitles)
-                }
-                StatTile("Audio", playing.audioTrack ?: "Tap for next · hold for list", Modifier.weight(1f), onLongClick = onAudio) {
-                    viewModel.press(RemoteKey.Audio)
-                }
-            }
-            Transport(playing, viewModel, Modifier.padding(top = 18.dp))
-            FilmExtras(playing, viewModel, Modifier.padding(top = 12.dp, bottom = 4.dp))
-        }
+        FilmTop(playing, cover, viewModel, onSubtitles, onAudio)
+        // Never scrolls: the card takes exactly what is left and its clock shrinks to fit (a show's top panel is a
+        // line taller than a film's).
+        FilmClockSlot(playing, viewModel, Modifier.weight(1f).fillMaxWidth().padding(top = 14.dp, bottom = 10.dp))
         BottomKeys {
             GlassKey(Icons.AutoMirrored.Rounded.Undo, "Back", size = 56.dp) { viewModel.press(RemoteKey.Back) }
             GlassKey(Icons.AutoMirrored.Rounded.List, "Sources", size = 56.dp) {
@@ -399,6 +397,146 @@ private fun FilmBody(
             }
             GlassKey(Icons.Rounded.DarkMode, "Dark", size = 56.dp) { viewModel.setDark(true) }
             GlassKey(Icons.Rounded.MoreHoriz, "More", size = 56.dp, onPress = onMore)
+        }
+    }
+}
+
+/** The film screen above the clock slot: now playing, the track tiles, the transport and the volume. */
+@Composable
+private fun FilmTop(
+    playing: NowPlaying,
+    cover: Bitmap?,
+    viewModel: RemoteViewModel,
+    onSubtitles: () -> Unit,
+    onAudio: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        NowPlayingPanel(playing, cover, viewModel, Modifier.padding(top = 4.dp), compact = true)
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Tap: the next one. Hold: the list of every subtitle the file and the add-ons have.
+            StatTile("Subtitles", playing.subtitleTrack ?: "Tap for next · hold for list", Modifier.weight(1f), onLongClick = onSubtitles) {
+                viewModel.press(RemoteKey.Subtitles)
+            }
+            StatTile("Audio", playing.audioTrack ?: "Tap for next · hold for list", Modifier.weight(1f), onLongClick = onAudio) {
+                viewModel.press(RemoteKey.Audio)
+            }
+        }
+        Transport(playing, viewModel, Modifier.padding(top = 18.dp))
+        FilmVolume(playing, viewModel, Modifier.padding(top = 12.dp))
+    }
+}
+
+/**
+ * The film screen's fixed slot: "Ends at 21:44" in big type (the end moves with the clock while paused, and follows
+ * the speed), and under it one row of fixed height that holds Skip intro / recap / credits and Next episode when
+ * the PC says they apply, otherwise a quiet line (paused, the sleep timer, the speed, the running time). The card
+ * is whatever height is left on the screen: tall enough, it stacks the clock over the row; on a show (a line taller
+ * top panel) it lays the clock on the left and the buttons on the right, so the time never shrinks to a sliver.
+ */
+@Composable
+private fun FilmClockSlot(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
+    val g = LocalGlass.current
+    val context = LocalContext.current
+    var tick by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(playing) {
+        // The minute only changes once a minute, but a seek or a speed change should show at once: tick each second
+        // while playing, every 15 s while paused (the end slides on with the clock).
+        while (true) {
+            tick = SystemClock.elapsedRealtime()
+            delay(if (playing.isPlaying) 1_000L else 15_000L)
+        }
+    }
+    val endsAt = remember(playing, tick) {
+        filmEndsAt(playing.positionAt(SystemClock.elapsedRealtime()), playing.durationMs, playing.speedPercent, System.currentTimeMillis())
+    }
+    val timeText = endsAt?.let { DateFormat.getTimeFormat(context).format(Date(it)) } ?: "–:––"
+    val quiet = buildList {
+        if (!playing.isPlaying) add("Paused")
+        if (playing.sleepMinutes > 0) add("Sleep in ${playing.sleepMinutes} min")
+        playing.speedPercent?.takeIf { it != 100 }?.let { add(speedLabel(it)) }
+        if (playing.hasTimeline) add("Runs ${runtimeWords(playing.durationMs)}")
+    }.joinToString(" · ")
+    val label = if (playing.isPlaying) "Ends at" else "Ends at · paused"
+    val labelColor = if (playing.isPlaying) null else g.textMuted
+    val hasActions = playing.skipLabel != null || playing.canNextEpisode
+    BoxWithConstraints(modifier.glass(RoundedCornerShape(24.dp)).padding(horizontal = 18.dp, vertical = 10.dp)) {
+        val room = maxHeight
+        if (room >= 132.dp) {
+            // Tall (most films): label, the big time sized to the room, then a fixed 52 dp row for the buttons or
+            // the quiet line.
+            val timeHeight = minOf(60.dp, room - 52.dp - 20.dp - 4.dp)
+            Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Box(Modifier.height(20.dp), contentAlignment = Alignment.Center) { GlassLabel(label, color = labelColor) }
+                ClockTime(timeText, timeHeight, Modifier.height(timeHeight))
+                Box(Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
+                    if (hasActions) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            FilmActions(playing, viewModel, Modifier.weight(1f), height = 52.dp)
+                        }
+                    } else {
+                        Text(quiet, color = g.textSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        } else {
+            // Short (a show's taller top panel): the clock on the left, a fixed column on the right holding Skip and
+            // Next episode stacked (or the quiet line), so the time keeps its size and place.
+            val timeHeight = minOf(52.dp, room - 20.dp)
+            Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                    Box(Modifier.height(20.dp), contentAlignment = Alignment.CenterStart) { GlassLabel(label, color = labelColor) }
+                    ClockTime(timeText, timeHeight, Modifier.fillMaxWidth().height(timeHeight).padding(end = 12.dp), alignment = Alignment.CenterStart)
+                }
+                Column(
+                    Modifier.width(156.dp).fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    if (hasActions) {
+                        val pill = if (playing.skipLabel != null && playing.canNextEpisode) minOf(44.dp, (room - 6.dp) / 2) else minOf(52.dp, room)
+                        FilmActions(playing, viewModel, Modifier.fillMaxWidth(), height = pill)
+                    } else {
+                        Text(quiet, color = g.textSecondary, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The big serif "Ends at" time, as tall as [height] allows and never wider than its space: it is measured first and
+ * shrunk to fit the width, so "00:16" is never cut to "00:1" when the card lays out sideways.
+ */
+@Composable
+private fun ClockTime(text: String, height: Dp, modifier: Modifier = Modifier, alignment: Alignment = Alignment.Center) {
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(modifier, contentAlignment = alignment) {
+        val base = with(density) { (height / 1.12f).toSp() }
+        val style = TextStyle(fontFamily = DisplaySerif, fontWeight = FontWeight.Bold, fontSize = base, lineHeight = base * 1.1f)
+        val natural = remember(text, base) { measurer.measure(text, style, softWrap = false, maxLines = 1).size.width }
+        val room = constraints.maxWidth
+        val fitted = if (natural > room && room > 0) base * (room.toFloat() / natural * 0.97f) else base
+        Text(
+            text,
+            style = style.copy(fontSize = fitted, lineHeight = fitted * 1.1f),
+            color = LocalGlass.current.text,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+/** Skip intro / recap / credits and Next episode, each only when the PC says it applies. */
+@Composable
+private fun FilmActions(playing: NowPlaying, viewModel: RemoteViewModel, each: Modifier, height: Dp) {
+    playing.skipLabel?.let { label ->
+        ActionPill(label, Icons.Rounded.SkipNext, accent = true, modifier = each, height = height) { viewModel.control("SKIP_INTRO") }
+    }
+    if (playing.canNextEpisode) {
+        ActionPill("Next episode", Icons.Rounded.SkipNext, accent = playing.skipLabel == null, modifier = each, height = height) {
+            viewModel.control("NEXT_EPISODE")
         }
     }
 }
@@ -882,26 +1020,11 @@ private fun Seek(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modi
     }
 }
 
-/**
- * Under the film's transport: a Skip button while an intro, recap or credits part plays, Next episode when there is
- * one, and the TV's volume as a slim slider. Each part only shows what the PC says it can do.
- */
+/** Under the film's transport: the TV's volume as a slim slider, when the PC says it has one. */
 @Composable
-private fun FilmExtras(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
+private fun FilmVolume(playing: NowPlaying, viewModel: RemoteViewModel, modifier: Modifier = Modifier) {
     val g = LocalGlass.current
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (playing.skipLabel != null || playing.canNextEpisode) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                playing.skipLabel?.let { label ->
-                    ActionPill(label, Icons.Rounded.SkipNext, accent = true, modifier = Modifier.weight(1f)) { viewModel.control("SKIP_INTRO") }
-                }
-                if (playing.canNextEpisode) {
-                    ActionPill("Next episode", Icons.Rounded.SkipNext, accent = playing.skipLabel == null, modifier = Modifier.weight(1f)) {
-                        viewModel.control("NEXT_EPISODE")
-                    }
-                }
-            }
-        }
+    Column(modifier.fillMaxWidth()) {
         playing.volume?.let { level ->
             val max = playing.volumeMax.coerceAtLeast(1)
             var dragging by remember { mutableStateOf<Int?>(null) }
@@ -965,12 +1088,12 @@ private fun SleepChips(playing: NowPlaying, viewModel: RemoteViewModel) {
 
 /** A wide button for one action ("Skip intro", "Next episode"). */
 @Composable
-private fun ActionPill(text: String, icon: ImageVector, accent: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun ActionPill(text: String, icon: ImageVector, accent: Boolean, modifier: Modifier = Modifier, height: Dp = 52.dp, onClick: () -> Unit) {
     val g = LocalGlass.current
     val shape = RoundedCornerShape(16.dp)
     Row(
         modifier
-            .height(52.dp)
+            .height(height)
             .then(if (accent) Modifier.glass(shape, fill = g.tint, edge = g.tintEdge) else Modifier.glass(shape))
             .pressable(onPress = onClick)
             .padding(horizontal = 14.dp),
@@ -1066,11 +1189,18 @@ private fun NavPanel(padMode: PadMode, viewModel: RemoteViewModel, modifier: Mod
  * thumb, so a long swipe walks along a row and a short flick moves one tile.
  */
 @Composable
-private fun Touchpad(onKey: (RemoteKey) -> Unit, compact: Boolean, modifier: Modifier = Modifier) {
+internal fun Touchpad(
+    onKey: (RemoteKey) -> Unit,
+    compact: Boolean,
+    modifier: Modifier = Modifier,
+    step: androidx.compose.ui.unit.Dp = STEP,
+    title: String = "Swipe to move",
+    hint: String? = null,
+) {
     val g = LocalGlass.current
     val haptics = LocalHapticFeedback.current
     val send by rememberUpdatedState(onKey)
-    val stepPx = with(LocalDensity.current) { STEP.toPx() }
+    val stepPx = with(LocalDensity.current) { step.toPx() }
     Box(
         modifier
             .pointerInput(Unit) {
@@ -1110,8 +1240,8 @@ private fun Touchpad(onKey: (RemoteKey) -> Unit, compact: Boolean, modifier: Mod
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (!compact) Icon(Icons.Rounded.OpenWith, contentDescription = null, tint = Color.White.copy(alpha = 0.28f), modifier = Modifier.size(48.dp))
-            Text("Swipe to move", color = Color(0xFFC9CDD2), fontSize = if (compact) 14.sp else 16.sp, fontWeight = FontWeight.SemiBold)
-            Text(if (compact) "For the player's menus · tap for OK" else "Tap for OK", color = g.textMuted, fontSize = 12.sp)
+            Text(title, color = Color(0xFFC9CDD2), fontSize = if (compact) 14.sp else 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(hint ?: if (compact) "For the player's menus · tap for OK" else "Tap for OK", color = g.textMuted, fontSize = 12.sp)
         }
     }
 }

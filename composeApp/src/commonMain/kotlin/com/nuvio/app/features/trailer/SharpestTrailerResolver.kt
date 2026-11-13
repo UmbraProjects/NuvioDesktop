@@ -102,7 +102,7 @@ internal object SharpestTrailerResolver {
      */
     private suspend fun resolveKey(key: String): TrailerPlaybackSource? {
         suspend fun once(): TrailerPlaybackSource? = resolveGate.withPermit {
-            runCatching { TrailerPlaybackResolver.resolveFromYouTubeUrl(youtubePlaybackUrlFor(key)).sourceOrNull() }
+            runCatching { TrailerPlaybackResolver.resolveTrailerFromYouTubeUrl(youtubePlaybackUrlFor(key)) /* fork:trailer-signed-in */.sourceOrNull() }
                 .onFailure { if (it is CancellationException) throw it }
                 .getOrNull()
         }

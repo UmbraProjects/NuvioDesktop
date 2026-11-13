@@ -116,6 +116,8 @@ internal val UNWANTED = setOf(
     "wwe", "tna", "aew", "entrance", "wrestling",
     // Battle and character cues from a film's score ("Gogeta vs Broly"), not its theme.
     "vs", "versus",
+    // A fan remake set to another show's music: "Station 19 Intro [Friends Style]" played Friends.
+    "style", "styled",
 )
 
 /**
@@ -167,6 +169,35 @@ private fun isSubtitleOfSomethingElse(rawTitle: String, titleTokens: List<String
     if (before.isEmpty() || indexOfPhrase(after, titleTokens) != 0) return false
     if (before.any { it in MUSIC_WORDS }) return false
     return before.any { it !in titleTokens }
+}
+
+/** An episode code ("1x04", "S01E04"): one episode's song or scene, not the show's theme. */
+private val EPISODE_CODE = Regex("""(?i)(?<![\p{L}\p{N}])(?:\d{1,2}x\d{1,3}|s\d{1,2}\s?e\d{1,3})(?![\p{L}\p{N}])""")
+
+/** Where an upload's title splits into parts: brackets and the separators uploaders put between names. */
+private val TITLE_PARTS = Regex("""[()\[\]{}|]|\s[-–—:/]\s|:\s""")
+
+/** Words that may stand before "theme" without naming some other title ("Main Title Theme", "Season 1 Theme"). */
+private val THEME_LEAD_WORDS = MUSIC_WORDS + ARTICLES + setOf(
+    "main", "official", "original", "tv", "show", "series", "full", "song", "new", "hd", "season", "seasons",
+    "end", "ending", "closing", "s", "and", "of", "with",
+)
+
+/**
+ * "station 19 intro (friends theme song)", "Station 19 - fireman sam theme song": the title is named,
+ * but the theme in the upload belongs to something else, named in its own part of the upload's title.
+ */
+private fun isAnotherTitlesTheme(rawTitle: String, titleTokens: List<String>, qualifierToken: String?): Boolean {
+    val parts = rawTitle.split(TITLE_PARTS).map { tokens(it) }.filter { it.isNotEmpty() }
+    if (parts.size < 2) return false
+    return parts.any { part ->
+        val at = part.indexOf("theme")
+        if (at <= 0 || part.getOrNull(at + 1) == "from") return@any false
+        if (indexOfPhrase(part.filterNot { it in ARTICLES }, titleTokens) >= 0) return@any false
+        part.subList(0, at).any { word ->
+            word !in THEME_LEAD_WORDS && word !in titleTokens && word != qualifierToken && !word.all(Char::isDigit)
+        }
+    }
 }
 
 /** Weighted: how much a word says "this is the real theme" ([intro]: "the opening as aired"). */
@@ -224,6 +255,8 @@ internal fun rankThemeSongHits(
             if (!inTitle && titleTokens.any { it !in channelWords }) return@mapNotNull null
             if (!inTitle && words.none { it in STRONG_MUSIC_WORDS }) return@mapNotNull null
             if (isSubtitleOfSomethingElse(hit.title, titleTokens)) return@mapNotNull null
+            if (isAnotherTitlesTheme(hit.title, titleTokens, qualifierToken)) return@mapNotNull null
+            if (EPISODE_CODE.containsMatchIn(hit.title) && !EPISODE_CODE.containsMatchIn(name)) return@mapNotNull null
             // A word that is part of the film's own name ("The King's Speech", "The Hours") is not a red flag.
             if (words.any { it in UNWANTED && it !in titleTokens }) return@mapNotNull null
             if (words.none { it in MUSIC_WORDS }) return@mapNotNull null

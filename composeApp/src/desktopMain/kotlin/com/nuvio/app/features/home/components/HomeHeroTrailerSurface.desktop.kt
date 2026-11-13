@@ -49,6 +49,7 @@ private val trailerSurfaceLog = Logger.withTag("HomeHeroTrailerSurface")
 actual fun HomeHeroTrailerSurface(
     sourceUrl: String,
     sourceAudioUrl: String?,
+    sourceHeaders: Map<String, String>,
     playWhenReady: Boolean,
     muted: Boolean,
     volume: Int,
@@ -231,7 +232,7 @@ actual fun HomeHeroTrailerSurface(
         controller.attach(
             sourceUrl = sourceUrl,
             sourceAudioUrl = sourceAudioUrl?.takeIf { it.isNotBlank() },
-            sourceHeaders = emptyMap(),
+            sourceHeaders = sourceHeaders, // fork:trailer-signed-in
             playWhenReady = playWhenReady,
             initialPositionMs = 0L,
             // Hero trailers are passive background video; never spend RTX VSR on them.

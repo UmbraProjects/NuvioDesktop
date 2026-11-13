@@ -210,6 +210,7 @@ internal fun desktopSettingsSidebarSubItems(
             emptyList()
         }
         SettingsPage.KeyboardShortcuts -> listOf(
+            section(SettingsPage.KeyboardShortcuts, Res.string.panel_ring_settings_section),
             section(SettingsPage.KeyboardShortcuts, Res.string.settings_shortcuts_navigation),
             // Literal titles, matching KeyboardShortcutsPage's own.
             sectionTitled(SettingsPage.KeyboardShortcuts, "Player · Playback"),

@@ -41,6 +41,17 @@ object HomeHeroTrailerManualTrigger {
     }
 
     /**
+     * Whether a hero trailer has a frame on screen (not just requested). The ambient wash reads it
+     * to go dark around the trailer, as the details page does ("lights out"); see HeroAmbientBackdrop.
+     */
+    private val _onScreen = MutableStateFlow(false)
+    val onScreen: StateFlow<Boolean> = _onScreen.asStateFlow()
+
+    fun setOnScreen(onScreen: Boolean) {
+        _onScreen.value = onScreen
+    }
+
+    /**
      * Whether any hero is currently willing to play a trailer for a title it is not itself showing.
      * The hover preview's trailer button reads this: everywhere else the request would be accepted
      * by nobody, and the button would be one that visibly does nothing.

@@ -471,6 +471,7 @@ fun PrerollGate(
             HomeHeroTrailerSurface(
                 sourceUrl = activeTrailer.source.videoUrl,
                 sourceAudioUrl = activeTrailer.source.audioUrl,
+                sourceHeaders = activeTrailer.source.headers, // fork:trailer-signed-in
                 playWhenReady = true,
                 // Ignored in pre-show mode: it always plays unmuted at one fixed level.
                 muted = false,

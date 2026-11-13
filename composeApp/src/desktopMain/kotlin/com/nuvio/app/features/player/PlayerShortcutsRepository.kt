@@ -178,6 +178,8 @@ object AppShortcutsRepository {
         AppShortcutAction.DismissOverlay to KeyEvent.VK_ESCAPE,
         // fork:voice-control - free in the app and in the player (K is the player's alternate play/pause).
         AppShortcutAction.VoiceCommand to KeyEvent.VK_N,
+        // R for Ring: the panel ring (features/panelring). The player's R (speed toggle) is a separate set of keys.
+        AppShortcutAction.OpenPanelRing to KeyEvent.VK_R,
     )
     private val store = DesktopStorage.store("nuvio_app_shortcuts")
     @Volatile private var bindings: Map<AppShortcutAction, Int> = defaults

@@ -2,6 +2,7 @@ package com.nuvio.app.features.discover
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Business
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.FilterAltOff
@@ -9,6 +10,7 @@ import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.TheaterComedy
@@ -260,6 +262,24 @@ private fun TmdbFilterMenus(state: DiscoverUiState, onMenuOpenChange: (Boolean) 
         )
     }
 
+    val animeLabel = when (q.anime) {
+        TmdbBrowseAnime.Include -> stringResource(Res.string.browse_filter_anime_included)
+        TmdbBrowseAnime.Only -> stringResource(Res.string.browse_filter_anime_only)
+        TmdbBrowseAnime.Exclude -> stringResource(Res.string.browse_filter_anime_excluded)
+    }
+    // One press steps through included, only, excluded.
+    BrowseFilterIconAction(Icons.Rounded.AutoAwesome, animeLabel, on = q.anime != TmdbBrowseAnime.Include) {
+        update {
+            it.copy(
+                anime = when (it.anime) {
+                    TmdbBrowseAnime.Include -> TmdbBrowseAnime.Only
+                    TmdbBrowseAnime.Only -> TmdbBrowseAnime.Exclude
+                    TmdbBrowseAnime.Exclude -> TmdbBrowseAnime.Include
+                },
+            )
+        }
+    }
+
     if (opts.providers.isNotEmpty()) {
         val providerNames = q.providers.mapNotNull { id -> opts.providers.firstOrNull { it.id == id }?.name }
         BrowseFilterMenu(icon = Icons.Rounded.LiveTv, label = browseFilterSummary("Streaming", providerNames), on = q.providers.isNotEmpty(), onOpenChange = onMenuOpenChange) {
@@ -299,6 +319,24 @@ private fun TmdbFilterMenus(state: DiscoverUiState, onMenuOpenChange: (Boolean) 
         }
         BrowseStudioPicker(onPick = { studio ->
             update { it.copy(companies = (it.companies + TmdbBrowseCompany(studio.id, studio.name)).distinctBy { c -> c.id }.take(12)) }
+        })
+    }
+
+    BrowseFilterMenu(icon = Icons.Rounded.Sell, label = browseFilterSummary("Tags", q.keywords.map { it.name }), on = q.keywords.isNotEmpty(), onOpenChange = onMenuOpenChange) {
+        if (q.anime == TmdbBrowseAnime.Only) {
+            BrowseMenuNote(stringResource(Res.string.browse_filter_tags_anime_note))
+        } else {
+            BrowseMenuCheck(on = q.allKeywords, onClick = { update { it.copy(allKeywords = !it.allKeywords) } }) {
+                Text(stringResource(Res.string.browse_filter_must_match_every_tag))
+            }
+        }
+        q.keywords.forEach { keyword ->
+            BrowseMenuCheck(on = true, onClick = { update { it.copy(keywords = it.keywords.filterNot { k -> k.id == keyword.id }) } }) {
+                Text(keyword.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        BrowseKeywordPicker(onPick = { keyword ->
+            update { it.copy(keywords = (it.keywords + keyword).distinctBy { k -> k.id }.take(12)) }
         })
     }
 

@@ -39,6 +39,18 @@ enum class TmdbBrowseStatus { Any, InCinemas, HomeRelease, Returning, Ended, Upc
 @Serializable
 data class TmdbBrowseCompany(val id: Int, val name: String)
 
+/** A TMDB keyword ("tag"): "time travel", "heist", "based on novel or book". */
+@Serializable
+data class TmdbBrowseKeyword(val id: Int, val name: String)
+
+/** Whether anime is mixed in like anything else, the only thing shown, or left out. */
+@Serializable
+enum class TmdbBrowseAnime { Include, Only, Exclude }
+
+/** TMDB's "anime" keyword; how anime is told apart from other animation. */
+internal const val TMDB_ANIME_KEYWORD = 210024
+internal const val TMDB_ANIMATION_GENRE = 16
+
 @Serializable
 data class TmdbBrowseQuery(
     val media: TmdbBrowseMedia = TmdbBrowseMedia.Movie,
@@ -59,12 +71,37 @@ data class TmdbBrowseQuery(
     val providers: List<Int> = emptyList(),
     val releasedWithinDays: Int? = null,
     val withoutGenres: List<Int> = emptyList(),
+    val keywords: List<TmdbBrowseKeyword> = emptyList(),
+    /** Every keyword must match rather than any; forced on with [TmdbBrowseAnime.Only], see [tmdbBrowseParams]. */
+    val allKeywords: Boolean = false,
+    /** A standing choice like the sort, so "Clear filters" keeps it. */
+    val anime: TmdbBrowseAnime = TmdbBrowseAnime.Include,
 ) {
-    /** Any filter beyond the sort and the media type — what "Clear filters" resets. */
+    /** Any filter beyond the sort, the media type and the anime choice — what "Clear filters" resets. */
     val hasFilters: Boolean
-        get() = this != TmdbBrowseQuery(media = media, sort = sort)
+        get() = this != clearedFilters()
 
-    fun clearedFilters(): TmdbBrowseQuery = TmdbBrowseQuery(media = media, sort = sort)
+    fun clearedFilters(): TmdbBrowseQuery = TmdbBrowseQuery(media = media, sort = sort, anime = anime)
+}
+
+/**
+ * Japanese animation: what [TmdbBrowseAnime.Exclude] drops from a page on top of TMDB's
+ * `without_keywords`, because the anime keyword is missing from plenty of anime.
+ */
+internal fun isLikelyAnime(genreIds: List<Int>, originalLanguage: String?): Boolean =
+    TMDB_ANIMATION_GENRE in genreIds && originalLanguage == "ja"
+
+/**
+ * `with_keywords` for [query]. TMDB reads a comma list (all) or a pipe list (any), never a mix
+ * ("210024,9715|9748" counts only the first group), so with Only anime every keyword must match.
+ */
+internal fun tmdbBrowseKeywordParam(query: TmdbBrowseQuery): String? {
+    val ids = query.keywords.map { it.id }
+    return when {
+        query.anime == TmdbBrowseAnime.Only -> (listOf(TMDB_ANIME_KEYWORD) + ids).distinct().joinToString(",")
+        ids.isEmpty() -> null
+        else -> ids.joinToString(if (query.allKeywords) "," else "|")
+    }
 }
 
 data class TmdbBrowseGenre(val id: Int, val name: String)
@@ -123,6 +160,8 @@ internal fun tmdbBrowseParams(
     }
     if (query.genres.isNotEmpty()) p["with_genres"] = query.genres.joinToString(if (query.allGenres) "," else "|")
     if (query.withoutGenres.isNotEmpty()) p["without_genres"] = query.withoutGenres.joinToString(",")
+    tmdbBrowseKeywordParam(query)?.let { p["with_keywords"] = it }
+    if (query.anime == TmdbBrowseAnime.Exclude) p["without_keywords"] = TMDB_ANIME_KEYWORD.toString()
     query.yearFrom?.let { p["$date.gte"] = "$it-01-01" }
     query.yearTo?.let { p["$date.lte"] = "$it-12-31" }
     query.minRating?.let { p["vote_average.gte"] = it.formatNumber() }
@@ -276,6 +315,18 @@ object TmdbBrowse {
         return n
     }
 
+    /** Keywords by name, TMDB's own order (the closest match first), for the Tags menu. */
+    suspend fun searchKeywords(query: String): List<TmdbBrowseKeyword> {
+        val trimmed = query.trim()
+        if (trimmed.length < 2) return emptyList()
+        val encoded = URLEncoder.encode(trimmed, Charsets.UTF_8).replace("+", "%20")
+        val res = get<TmdbKeywordPageResponse>("search/keyword", mapOf("query" to encoded, "page" to "1"))
+            ?: return emptyList()
+        return res.results.filter { it.id > 0 && !it.name.isNullOrBlank() }
+            .take(8)
+            .map { TmdbBrowseKeyword(it.id, it.name!!) }
+    }
+
     suspend fun searchStudios(query: String): List<TmdbBrowseStudio> {
         val trimmed = query.trim()
         if (trimmed.length < 2) return emptyList()
@@ -306,6 +357,7 @@ object TmdbBrowse {
         val seen = HashSet<Int>()
         val items = results.flatMap { it?.results.orEmpty() }
             .filter { it.id > 0 && seen.add(it.id) }
+            .filter { query.anime != TmdbBrowseAnime.Exclude || !isLikelyAnime(it.genreIds, it.originalLanguage) }
             .map { it.toMetaPreview(media) }
         val totalPages = results.firstOrNull()?.totalPages ?: 0
         val last = page + pages - 1
@@ -404,6 +456,7 @@ object TmdbBrowse {
                 !(if (query.allGenres) query.genres.all { it in g } else query.genres.any { it in g })
             ) return@filter false
             if (query.withoutGenres.any { it in g }) return@filter false
+            if (query.anime == TmdbBrowseAnime.Exclude && isLikelyAnime(g, r.originalLanguage)) return@filter false
             if (query.language != null && r.originalLanguage != query.language) return@filter false
             val d = dateOf(r)
             val year = d.take(4).toIntOrNull()
@@ -418,7 +471,9 @@ object TmdbBrowse {
             true
         }
 
+        // Trending entries carry no keywords, so tags and the anime choice are matched remotely.
         val remote = query.providers.isNotEmpty() || query.companies.isNotEmpty() ||
+            query.keywords.isNotEmpty() || query.anime != TmdbBrowseAnime.Include ||
             (tv && query.networks.isNotEmpty()) || (!tv && query.certification != null) ||
             query.runtimeMin != null || query.runtimeMax != null ||
             query.status in setOf(TmdbBrowseStatus.InCinemas, TmdbBrowseStatus.HomeRelease, TmdbBrowseStatus.Returning, TmdbBrowseStatus.Ended)
@@ -515,6 +570,12 @@ private data class TmdbWatchProvider(
     @SerialName("logo_path") val logoPath: String? = null,
     @SerialName("display_priorities") val displayPriorities: Map<String, Int> = emptyMap(),
 )
+
+@Serializable
+private data class TmdbKeywordPageResponse(val results: List<TmdbKeywordHit> = emptyList())
+
+@Serializable
+private data class TmdbKeywordHit(val id: Int = 0, val name: String? = null)
 
 @Serializable
 private data class TmdbCompanyPageResponse(val results: List<TmdbCompanyHit> = emptyList())

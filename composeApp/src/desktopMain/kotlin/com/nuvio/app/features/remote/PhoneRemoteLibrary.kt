@@ -224,12 +224,12 @@ internal object PhoneRemoteLibrary {
 
     private val metas = java.util.concurrent.ConcurrentHashMap<String, com.nuvio.app.features.details.MetaDetails>()
 
-    private suspend fun meta(type: String, id: String): com.nuvio.app.features.details.MetaDetails? =
+    internal suspend fun meta(type: String, id: String): com.nuvio.app.features.details.MetaDetails? =
         metas["$type:$id"] ?: runCatching { com.nuvio.app.features.details.MetaDetailsRepository.fetch(type, id) }.getOrNull()
             ?.also { metas["$type:$id"] = it }
 
     /** The id the details page plays [video] by (the same steps as its episode click). */
-    private fun playbackId(meta: com.nuvio.app.features.details.MetaDetails, video: com.nuvio.app.features.details.MetaVideo): String {
+    internal fun playbackId(meta: com.nuvio.app.features.details.MetaDetails, video: com.nuvio.app.features.details.MetaVideo): String {
         val id = com.nuvio.app.features.watchprogress.buildPlaybackVideoId(
             parentMetaId = meta.id,
             seasonNumber = video.effectiveSeasonNumber(),
@@ -243,12 +243,19 @@ internal object PhoneRemoteLibrary {
         mainScope.launch {
             val meta = withTimeoutOrNull(20_000L) { meta(type, id) }
             WatchProgressRepository.ensureLoaded()
+            WatchedRepository.ensureLoaded()
             val progress = WatchProgressRepository.uiState.value.byVideoId
+            val watchedKeys = WatchedRepository.uiState.value.watchedKeys
             val episodes = meta?.videos.orEmpty()
                 .filter { (it.season ?: 1) >= 0 }
                 .map { video ->
                     val playId = playbackId(meta!!, video)
                     val saved = progress[playId]
+                    // fork:phone-remote menus - an episode marked watched (no progress kept) reads as watched too, so a
+                    // Mark as watched from the phone's long-press menu shows in the list.
+                    val marked = com.nuvio.app.features.watching.application.WatchingState.isEpisodeWatched(
+                        watchedKeys = watchedKeys, metaType = meta.type, metaId = meta.id, episode = video,
+                    )
                     RemoteEpisode(
                         season = video.effectiveSeasonNumber(),
                         episode = video.effectiveEpisodeNumber(),
@@ -257,8 +264,8 @@ internal object PhoneRemoteLibrary {
                         thumbnail = video.thumbnail,
                         released = video.released,
                         progressPermille = when {
+                            saved?.isEffectivelyCompleted == true || marked -> 1000
                             saved == null -> 0
-                            saved.isEffectivelyCompleted -> 1000
                             else -> (saved.progressFraction * 1000f).toInt()
                         },
                     )

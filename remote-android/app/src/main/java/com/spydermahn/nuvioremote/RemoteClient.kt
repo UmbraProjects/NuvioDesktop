@@ -123,6 +123,24 @@ sealed interface ServerLine {
     data class Wake(val macs: List<String>, val broadcasts: List<String>) : ServerLine
     /** What Nuvio's search found for [query] in the addons' catalogs, so far while [loading]. */
     data class SearchResults(val loading: Boolean, val query: String, val titles: List<LibraryTitle>) : ServerLine
+
+    /** The long-press sheet for [target], worded by the PC. An empty [actions] means the PC could not find it. */
+    data class Menu(val target: MenuTarget, val heading: String, val detail: String?, val actions: List<MenuAction>) : ServerLine
+
+    /** A sheet row was done (or not); [refresh] names what to ask the PC for again (library, continue, episodes). */
+    data class Done(val ok: Boolean, val message: String, val refresh: Set<String>) : ServerLine
+
+    /** The playlist picker: [seasons] to choose from when a whole show is added from its poster. */
+    data class Playlists(
+        val target: MenuTarget,
+        val scope: String,
+        val label: String,
+        val seasons: List<Int>,
+        val playlists: List<PlaylistOption>,
+    ) : ServerLine
+
+    /** An AI recap: [state] 0 while it is written, 1 ready, 2 failed ([text] then says why). */
+    data class Recap(val state: Int, val heading: String, val text: String?) : ServerLine
     data object Other : ServerLine
 
     companion object {
@@ -145,6 +163,10 @@ sealed interface ServerLine {
                 "AUDIO" -> LibraryLines.parseAudio(line) ?: Other
                 "LYRICS" -> LibraryLines.parseLyrics(line) ?: Other
                 "ALBUM_TRACKS" -> LibraryLines.parseAlbumTracks(line) ?: Other
+                "MENU" -> LibraryLines.parseMenu(line) ?: Other
+                "DONE" -> LibraryLines.parseDone(line) ?: Other
+                "PLAYLISTS" -> LibraryLines.parsePlaylists(line) ?: Other
+                "RECAP" -> LibraryLines.parseRecap(line) ?: Other
                 "WAKE" -> Wake(
                     macs = parts.getOrNull(1)?.takeUnless { it == "-" }?.split(',')?.filter { WakeOnLan.macBytes(it) != null }.orEmpty(),
                     broadcasts = parts.getOrNull(2)?.takeUnless { it == "-" }?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
@@ -337,6 +359,13 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
     /** Plays an episode as the TV's details page does (its sources, then the player). The PC answers OPENING or CANT_OPEN. */
     fun playEpisode(type: String, id: String, videoId: String) =
         send("PLAY_EPISODE ${RemoteProtocol.encode(type)} ${RemoteProtocol.encode(id)} ${RemoteProtocol.encode(videoId)}")
+
+    /** A long press; the sheet comes back as [ServerLine.Menu]. */
+    fun menu(target: MenuTarget) = send("MENU ${target.wire()}")
+
+    /** A row of that sheet; answers come back as [ServerLine.Done], [ServerLine.Playlists] or [ServerLine.Recap]. */
+    fun act(target: MenuTarget, code: String, args: List<String> = emptyList()) =
+        send((listOf("DO ${target.wire()} $code") + args.map { RemoteProtocol.encode(it).ifEmpty { "-" } }).joinToString(" "))
 
     /** The music queue; the answer comes back as [ServerLine.Queue]. */
     fun requestQueue() = send("QUEUE")

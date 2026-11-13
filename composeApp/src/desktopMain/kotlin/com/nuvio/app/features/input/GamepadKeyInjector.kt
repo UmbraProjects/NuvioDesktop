@@ -78,6 +78,9 @@ internal object GamepadKeyInjector {
      * is a global device: without that check the controller would keep driving Nuvio from inside
      * whatever application the user actually switched to.
      */
+    /** True while a Nuvio window is the one in front. */
+    fun appFocused(): Boolean = focusTarget() != null
+
     private fun focusTarget(): Component? {
         val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
         val window = focusManager.focusedWindow ?: return null

@@ -43,6 +43,10 @@ import java.nio.charset.StandardCharsets
  * phone: SEEK <ms> | VOLUME <0..volumeMax>
  * pc:    TONIGHT 0 | TONIGHT 1 <view> ...    the Tonight picker on screen (PhoneRemoteLibraryLines.tonightLine), on change
  * phone: TONIGHT_DO <action> [n]        a tap on the phone's mirror of it (RemoteTonightAction)
+ * phone: MENU <kind> <type> <id> <ref>  a long press on a poster, card, episode or season (PhoneRemoteActions)
+ * pc:    MENU ... <heading> <detail> <actions>   the sheet to show (PhoneRemoteLibraryLines.menuLine)
+ * phone: DO <kind> <type> <id> <ref> <code> [<arg>...]   a row of it chosen
+ * pc:    DONE <ok> <message> <refresh> | PLAYLISTS ... | RECAP <state> <heading> <text>
  * phone: OPEN <url>                     a link from the phone's share menu
  * pc:    OPENING <what> | CANT_OPEN     (only for OPEN)
  * ```
@@ -121,6 +125,19 @@ internal object PhoneRemoteProtocol {
 
     fun discoveryReply(tcpPort: Int, name: String) = "NUVIO_REMOTE $VERSION $tcpPort ${encode(name)}"
 
+    private val MENU_CODE = Regex("[a-z_]{1,32}")
+
+    /** `<kind> <type> <id> <ref>` after MENU or DO; ref is `-` for a poster. */
+    private fun menuTarget(parts: List<String>): RemoteMenuTarget? {
+        if (parts.size < 5) return null
+        val kind = RemoteMenuKind.fromWire(parts[1]) ?: return null
+        val type = decode(parts[2]).takeIf { it.isNotBlank() && it != "-" } ?: return null
+        val id = decode(parts[3]).takeIf { it.isNotBlank() && it != "-" } ?: return null
+        val ref = parts[4].takeUnless { it == "-" || it.isBlank() }?.let(::decode)
+        if (kind != RemoteMenuKind.Title && ref == null) return null
+        return RemoteMenuTarget(kind, type, id, ref)
+    }
+
     /** Parses one line from the phone. Null for anything malformed or unknown. */
     fun parse(line: String): RemoteMessage? {
         val parts = line.trim().split(' ')
@@ -190,6 +207,13 @@ internal object PhoneRemoteProtocol {
             "TONIGHT_DO" -> parts.getOrNull(1)?.let(com.nuvio.app.features.remote.RemoteTonightAction::fromWire)?.let { action ->
                 RemoteMessage.TonightDo(action, parts.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 99) ?: 0)
             }
+            // fork:phone-remote menus: a long press, and a row of its sheet.
+            "MENU" -> menuTarget(parts)?.let { RemoteMessage.Menu(it) }
+            "DO" -> menuTarget(parts)?.let { target ->
+                parts.getOrNull(5)?.takeIf { MENU_CODE.matches(it) }?.let { code ->
+                    RemoteMessage.Do(target, code, parts.drop(6).take(3).map { decode(it) }.map { if (it == "-") "" else it })
+                }
+            }
             "RESUME" -> if (parts.size >= 3) {
                 RemoteMessage.Resume(parentId = decode(parts[1]), videoId = decode(parts[2]))
                     .takeIf { it.parentId.isNotBlank() && it.videoId.isNotBlank() }
@@ -230,6 +254,8 @@ internal sealed interface RemoteMessage {
     data class PlayTrack(val browseId: String, val index: Int) : RemoteMessage
     data class Control(val action: ControlAction, val value: Int) : RemoteMessage
     data class TonightDo(val action: com.nuvio.app.features.remote.RemoteTonightAction, val number: Int) : RemoteMessage
+    data class Menu(val target: RemoteMenuTarget) : RemoteMessage
+    data class Do(val target: RemoteMenuTarget, val code: String, val args: List<String>) : RemoteMessage
 }
 
 /** The film and music extras the phone can ask for. [value] is the speed in percent, the sleep minutes (0 off), 0/1, or the repeat mode. */

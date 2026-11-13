@@ -247,6 +247,9 @@ internal object PhoneRemote {
         override fun onLyrics(reply: (String) -> Unit) = PhoneRemoteMusic.lyrics(reply)
         override fun onEpisodes(type: String, id: String, reply: (String) -> Unit) = PhoneRemoteLibrary.episodes(type, id, reply)
         override fun onPlayEpisode(type: String, id: String, videoId: String): String? = PhoneRemoteLibrary.playEpisode(type, id, videoId)
+        override fun onMenu(target: RemoteMenuTarget, reply: (String) -> Unit) = PhoneRemoteActions.menu(target, reply)
+        override fun onMenuAction(target: RemoteMenuTarget, code: String, args: List<String>, reply: (String) -> Unit) =
+            PhoneRemoteActions.act(target, code, args, reply)
         override fun onAlbumTracks(browseId: String, reply: (String) -> Unit) = PhoneRemoteMusic.albumTracks(browseId, reply)
         override fun onPlayTrack(browseId: String, index: Int): String? = PhoneRemoteMusic.playTrack(browseId, index)
         override fun onTonight(action: RemoteTonightAction, number: Int) {

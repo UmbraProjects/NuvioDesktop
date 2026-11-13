@@ -635,6 +635,38 @@ fun BrowseYearsEditor(
     }
 }
 
+/** A tag by name: TMDB's keyword search, as [BrowseStudioPicker] finds a studio. */
+@Composable
+fun BrowseKeywordPicker(onPick: (TmdbBrowseKeyword) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    var hits by remember { mutableStateOf<List<TmdbBrowseKeyword>>(emptyList()) }
+    LaunchedEffect(query) {
+        if (query.trim().length < 2) {
+            hits = emptyList()
+            return@LaunchedEffect
+        }
+        delay(300)
+        hits = runCatching { TmdbBrowse.searchKeywords(query) }.getOrDefault(emptyList())
+    }
+    Column(modifier = Modifier.width(300.dp).padding(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        NuvioTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = stringResource(Res.string.browse_filter_find_a_tag),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+        )
+        hits.forEach { keyword ->
+            BrowseMenuCheck(on = false, onClick = {
+                onPick(keyword)
+                query = ""
+                hits = emptyList()
+            }) {
+                Text(keyword.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
 /** A studio by name: TMDB's company search, ranked by catalogue size (the tracker's lookup). */
 @Composable
 fun BrowseStudioPicker(onPick: (TmdbBrowseStudio) -> Unit) {

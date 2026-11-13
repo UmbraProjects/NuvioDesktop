@@ -95,6 +95,7 @@ internal fun TonightTrailerFrame(
                 HeroTrailerPlayerSurface(
                     sourceUrl = current.videoUrl,
                     sourceAudioUrl = current.audioUrl,
+                    sourceHeaders = current.headers, // fork:trailer-signed-in
                     playWhenReady = true,
                     muted = false,
                     volume = volume,

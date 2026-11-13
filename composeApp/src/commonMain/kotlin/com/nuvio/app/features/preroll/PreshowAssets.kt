@@ -110,7 +110,7 @@ object PreshowAssets {
         for (clip in candidates) {
             val source = withTimeoutOrNull(YOUTUBE_RESOLVE_TIMEOUT_MS) {
                 kotlinx.coroutines.withContext(PRESHOW_CALLER) {
-                    TrailerPlaybackResolver.resolveFromYouTubeUrl("https://www.youtube.com/watch?v=${clip.videoId}").sourceOrNull()
+                    TrailerPlaybackResolver.resolveTrailerFromYouTubeUrl("https://www.youtube.com/watch?v=${clip.videoId}") /* fork:trailer-signed-in */.sourceOrNull()
                 }
             }
             if (source != null) {

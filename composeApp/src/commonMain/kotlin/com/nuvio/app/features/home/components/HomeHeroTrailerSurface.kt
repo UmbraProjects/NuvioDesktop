@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.Color
 expect fun HomeHeroTrailerSurface(
     sourceUrl: String,
     sourceAudioUrl: String?,
+    // fork:trailer-signed-in - headers the media fetch must carry (TrailerPlaybackSource.headers); empty for the in-app extractor's streams.
+    sourceHeaders: Map<String, String> = emptyMap(),
     playWhenReady: Boolean,
     muted: Boolean,
     volume: Int,

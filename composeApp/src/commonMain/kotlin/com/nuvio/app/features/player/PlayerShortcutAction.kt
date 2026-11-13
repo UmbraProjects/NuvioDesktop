@@ -72,4 +72,5 @@ enum class AppShortcutAction(val id: String, val displayNameRes: StringResource)
     GoBack("go_back", Res.string.shortcut_app_go_back),
     DismissOverlay("dismiss_overlay", Res.string.shortcut_app_dismiss_overlay),
     VoiceCommand("voice_command", Res.string.shortcut_app_voice_command), // fork:voice-control
+    OpenPanelRing("open_panel_ring", Res.string.shortcut_app_open_panel_ring),
 }

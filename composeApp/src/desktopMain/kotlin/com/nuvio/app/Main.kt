@@ -921,6 +921,8 @@ fun main(args: Array<String>) {
                     window,
                     exitDesktopApplication,
                 )
+                // The panel ring's keys first: while it is open it owns the keyboard, Escape included.
+                val uninstallPanelRing = com.nuvio.app.features.panelring.PanelRingInput.install()
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(backNavigationDispatcher)
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(heldKeyReleaseDispatcher)
                 com.nuvio.app.core.ui.KeyLayers.onFocusSettled = { heldKeyReleaseDispatcher.swallowHeldReleases() }
@@ -936,6 +938,7 @@ fun main(args: Array<String>) {
                 )
                 onDispose {
                     uninstallScreensaver()
+                    uninstallPanelRing()
                     GamepadInput.stop()
                     PhoneRemote.stop()
                     DesktopNavigationGestureBridge.setHorizontalScrollModifierActive(false)
@@ -1123,6 +1126,8 @@ fun main(args: Array<String>) {
                                     toggleDesktopAppFullscreen(window)
                                     true
                                 }
+                                AppShortcutAction.OpenPanelRing ->
+                                    com.nuvio.app.features.panelring.PanelRingInput.openFromKeyboard()
                                 AppShortcutAction.FocusMusicPlayer ->
                                     com.nuvio.app.features.music.MusicKeyboard.togglePlayerFocus()
                                 // Home takes the trailer key itself; reaching here on a music page it has no trailer to
@@ -1198,6 +1203,8 @@ fun main(args: Array<String>) {
                     }
                     // Above the app so it covers whatever screen owns the focused field, and hosted
                     // here rather than inside App() because it is desktop-only.
+                    // Over the app and under the on-screen keyboard: the panel ring (R, hold LB, hold the middle button).
+                    com.nuvio.app.features.panelring.PanelRingOverlay(window)
                     com.nuvio.app.features.input.OnScreenKeyboardOverlay()
                     com.nuvio.app.core.ui.FrameCadenceTelemetry()
                     com.nuvio.app.core.ui.FrameBudgetTelemetry()

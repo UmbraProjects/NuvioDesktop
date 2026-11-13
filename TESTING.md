@@ -174,9 +174,58 @@ Needs this Nuvio and the new NuvioRemote app together.
 - [ ] Tapping an answer answers it on the TV; "Either is fine" and "Back a question" do what Down and Back do on the TV; the buttons never move between questions
 - [ ] After the questions, the three cards show on the phone with their posters, SAFE / NEW TO YOU / WILDCARD, the reason and "ends 23:06"; tapping a card plays it on the TV, Details opens its page
 - [ ] Reshuffle on the phone deals three new cards once, then says "No reshuffles left"
-- [ ] Opening Knockout, Coin Toss or another mode on the TV makes the phone say it is on the TV, with Back to the start; the header tag swaps to the pad and back
+- [ ] The header tag swaps the Tonight mirror for the pad and back (Nov 11: the modes are mirrored too, see below)
 - [ ] Choosing something with the TV remote while the phone is open keeps the phone in step
 - [ ] Once a title starts playing, the phone switches to the film screen as usual
+
+### Phone remote: every Tonight mode on the phone (Nov 11)
+
+Needs this Nuvio and the new NuvioRemote app together.
+
+- [ ] The phone's Tonight launcher lists all eight ways to choose in the TV's order (the one used last marked LAST TIME); tapping any of them opens it on the TV and on the phone
+- [ ] Coin Toss: the phone shows the picked title and "Plays by itself in 7 s" counting down; Not this tosses again on the TV, Play now plays, Hold stops the clock (and Start the clock restarts it), Its page opens the page; the last three noes and the lean show under the buttons
+- [ ] Knockout: the phone shows "Round 1 of 3" and the two titles; tapping one keeps it on the TV; Undo undoes the last pick (and on the first match goes back to the launcher); "A 20 second taste of each" plays the tastes on the TV and the phone says which; the winner shows with its countdown and Play now
+  - [ ] **BROKEN** (2026-11-11): after a pick the names changed but the posters stayed the old ones
+  - [ ] Re-check: after each pick both posters on the phone change with the names (and the same for Three Cards' reshuffle and Coin Toss' next title)
+- [ ] Channel Flick: the phone shows the channel playing, "CH 3 of 40", and the next three; Never show me this, Play it, Save for later and Next channel do what Left, OK, Up and Right do on the TV; the note ("… saved for later") shows on the phone too
+- [ ] Ends By: the phone shows "Bed at 23:30" with −15 and +15 (they move bedtime on the TV too) and the list, the ones past bed faded; tapping a title plays it
+- [ ] The Pile: tapping a title plays it; Let go asks "Let go for good?" and a second tap takes it off the pile on the TV
+- [ ] The Map: dragging on the phone's touchpad moves the lens on the TV; the title under the lens (and what is nearby) shows above the pad, a small square shows where the lens is, a tap plays the title under the lens
+- [ ] Back on the phone does what Back does on the TV in every mode, and the buttons never move as titles change
+- [ ] With an older phone app, the modes still show "… is on the TV" and the two-button launcher still works
+
+### Phone remote: long-press menus on the Watch tab (Nov 11)
+
+Needs this Nuvio and the new NuvioRemote app together. Hold anything for about half a second.
+
+- [ ] Holding a library poster buzzes and opens a glass sheet with its poster and name straight away; the rows fill in a moment later without anything jumping
+- [ ] A film's sheet: Mark as watched / unwatched, Add to or Remove from library, Choose a source on the TV, Add to a playlist, Not interested, Details on the TV (plus Start from the beginning when it is half-watched, Add to all libraries with Trakt or another library connected, and Start a rewatch with Simkl rewatches on and the film watched)
+- [ ] Mark as watched on a poster: the phone says so, the green tick appears on the poster, and the TV's Library shows it watched (and Trakt/Simkl get it as they do from the TV)
+- [ ] Mark as watched on a show's poster marks every released episode (the TV's toast says how many); Mark as unwatched clears them
+- [ ] Remove from library takes the poster off the phone's list and the TV's Library; Add to library on a search result adds it
+- [ ] Holding a Continue watching card: Resume, Start from the beginning, Choose a source, Mark episode (or film) as watched, Add to a playlist, Details, Remove from Continue watching; Remove takes the card off the phone and the TV
+- [ ] Start from the beginning plays it from 0:00 on the TV; Choose a source opens the TV's source list (and the phone's Sources cards)
+- [ ] In a show's season list, holding an episode: Mark as watched, Mark earlier episodes as watched, Mark Season N as watched, Choose a source, Recap the story so far (with AI recaps on), Add episode / Add Season N to a playlist; the episode list ticks over without closing the show sheet
+- [ ] Holding a season tag (shows with more than one season): Mark Season N as watched, Mark earlier seasons as watched, Recap before Season N, Add Season N to a playlist, Details
+- [ ] Add to a playlist opens a picker on the phone with the TV's playlists and New playlist; adding says "Added ... to <playlist>" and the TV's playlist has it. A whole show from its poster offers Every season or one season first
+- [ ] Recap shows "Writing the recap…" then the recap text on the phone (scrolls if long); with recaps off it says so
+- [ ] Not interested on a poster: the title no longer appears in Discover on the TV
+- [ ] Demo TV: holding a poster, card, episode or season opens the sheet; marking an episode watched ticks it; the playlist picker and the pretend recap appear
+
+### Phone remote: the "Ends at" clock on the film screen (Nov 11)
+
+Needs the new NuvioRemote app (no change on the PC).
+
+- [ ] Playing a film: the gap between the volume slider and Back / Sources / Dark / More is now a glass card with "ENDS AT" and the finishing time in big type (in your phone's 12 or 24 hour format), and the film's length ("Runs 1h 50m") under it
+- [ ] The time is right: it matches the clock plus the time left on the seek bar, and jumps at once when you seek or skip 10 s
+- [ ] Pause: the label reads "Ends at · paused" and the time creeps forward with the clock (it is when it would end if you played now)
+- [ ] Speed 1.5x (More sheet): the finishing time comes forward and "1.5x" shows on the line under it; the sleep timer shows "Sleep in N min" there too
+- [ ] On a show, Next episode sits in the card's bottom row; during an intro, recap or credits Skip appears beside it. The big time does not move when they come and go
+- [ ] Nothing on the film screen scrolls on your phone; the card fills the gap with no blank space under it
+- [ ] **BROKEN** (2026-11-11): on a show the screen scrolled and the card was cut off under the keys
+  - [ ] **BROKEN** Re-check (2026-11-11): no scroll, but the time was tiny and Next episode filled the card: on a show (taller top panel) nothing scrolls; the card shrinks to fit and its big time gets smaller, with Next episode fully visible inside it
+  - [~] Re-check: on a show the card lays out sideways: "ENDS AT" and a big time on the left, Next episode on the right (Skip stacked above it during an intro or credits); nothing scrolls, and the time keeps its size when Skip comes and goes (2026-11-11): works, but the time was cut off ("00:1" for 00:16)
+    - [ ] Re-check: the whole time shows on a show (try a late one like 00:16 and a wide one like 23:58); it shrinks a little if it has to, never cut off
 
 ## Music playback
 
@@ -377,6 +426,8 @@ Every mode below has a "← Back" button in a strip under its content (hint line
 - [ ] Back undoes the last pick (Back with nothing picked goes to the launcher)
 - [ ] The winner shows with a five-second ring and then plays; OK plays at once, Back reopens the final
 - [ ] Clicking a poster with the mouse keeps it in Knockout
+- [ ] **BROKEN** (2026-11-11): the winner (The White Lotus) opened "Failed to load: could not load details from any addon", though it opens fine from Home
+  - [ ] Re-check: a trending winner (one not in your library) plays; the same for Three Cards, Coin Toss, Channel Flick, Ends By and The Map, and for Down = details
 
 ### Tonight picker: Channel Flick and trailer tastes (phase 3, Nov 10)
 
