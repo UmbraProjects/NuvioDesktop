@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.rememberUpdatedState
 import co.touchlab.kermit.Logger
@@ -95,15 +96,23 @@ fun KeptAliveLayer(
 ) {
     val focusManager = LocalFocusManager.current
     var layerHasFocus by remember { mutableStateOf(false) }
+    val currentlyVisible by rememberUpdatedState(visible)
     LaunchedEffect(visible) {
         // The covering screen usually takes focus itself in the same frame; only let go when it
         // has not, so its own request is never undone.
         if (!visible && layerHasFocus) {
-            KeyRouteLog.note("a covered screen let go of focus")
-            focusManager.clearFocus(force = true)
+            // Focus changes are reported at the end of the frame, so `layerHasFocus` can still be true here
+            // after the covering screen has already taken focus in this same frame; clearing then threw away
+            // the new screen's focus and left the keyboard on nothing (Catalog opened by key, 2026-11-13).
+            // Wait for the reports, then let go only if the focus really is still in here.
+            withFrameNanos { }
+            withFrameNanos { }
+            if (layerHasFocus && !currentlyVisible) {
+                KeyRouteLog.note("a covered screen let go of focus")
+                focusManager.clearFocus(force = true)
+            }
         }
     }
-    val currentlyVisible by rememberUpdatedState(visible)
     Box(
         modifier = modifier
             // Arrow-key focus search would otherwise find controls on the covered screen (it is placed off to the

@@ -186,6 +186,17 @@ button:disabled {
   outline: none;
 }
 
+/* The control the keyboard or pad is on (control navigation in controls.js). A ring only: nothing moves or resizes. */
+.kbd-nav-focus {
+  outline: 2px solid var(--theme-focus) !important;
+  outline-offset: 3px;
+}
+
+#timeline.kbd-nav-focus {
+  outline-offset: 8px;
+  border-radius: 6px;
+}
+
 /* Native-feeling cascading player menu. It is rendered in the controls WebView so every
  * command follows the same bridge path as the visible controls and keyboard shortcuts. */
 .context-menu {

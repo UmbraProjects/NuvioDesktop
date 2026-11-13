@@ -1,5 +1,8 @@
 package com.nuvio.app.features.music
 
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import com.nuvio.app.features.player.AppShortcutAction
+import com.nuvio.app.features.player.appShortcutMatches
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.KeyboardInputMode
@@ -574,6 +577,7 @@ internal fun MorePanel(
     ) {
         // The popup has its own composition, so the focus request has to run in here, once the first row exists.
         LaunchedEffect(Unit) { first.requestFocusLogged() }
+        com.nuvio.app.core.ui.KeyRouteLayer("music player panel")
         val shape = RoundedCornerShape(24.dp)
         Column(
             modifier = Modifier
@@ -583,6 +587,15 @@ internal fun MorePanel(
                 .background(NuvioGlass.night(colors.background, colors.accent))
                 .ditheredBackground(NuvioGlass.Fill, shape)
                 .border(BorderStroke(1.dp, NuvioGlass.EdgeColor), shape)
+                // Back closes the panel: Escape, Backspace or the Back shortcut (a pad's B, which is not Escape while
+                // browsing). The popup holds the keyboard, so without this B did nothing and the panel stayed up.
+                .onPreviewKeyEvent { event ->
+                    val back = event.key == Key.Escape || event.key == Key.Backspace ||
+                        appShortcutMatches(AppShortcutAction.GoBack, event)
+                    if (!back) return@onPreviewKeyEvent false
+                    if (event.type == KeyEventType.KeyDown) onDismiss()
+                    true
+                }
                 .padding(8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {

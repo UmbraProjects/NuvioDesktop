@@ -859,7 +859,7 @@ fun main(args: Array<String>) {
                                 com.nuvio.app.core.ui.KeyRouteLog.keyPressed(KeyEvent.getKeyText(keyCode))
                                 java.awt.EventQueue.invokeLater {
                                     val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
-                                    val owner = focusManager.focusOwner?.javaClass?.simpleName
+                                    val owner = focusManager.focusOwner?.javaClass?.name?.substringAfterLast('.')
                                         ?: if (focusManager.focusedWindow == null) "another app" else "no component"
                                     com.nuvio.app.core.ui.KeyRouteLog.settle(owner)
                                 }

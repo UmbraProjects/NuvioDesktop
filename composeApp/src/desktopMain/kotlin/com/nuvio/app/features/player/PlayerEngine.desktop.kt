@@ -602,6 +602,15 @@ private fun NativePlayerSurface(
                 event.consume()
                 return@KeyEventDispatcher true
             }
+            // Enter (the select key), when no player action is bound to it: onto the on-screen controls, which the
+            // arrows then walk. Until now the controls could only be reached with the mouse.
+            if (event.keyCode == AppShortcutsRepository.keyCode(AppShortcutAction.SelectFocused) &&
+                PlayerShortcutsRepository.actionForKeyCode(event.keyCode) == null
+            ) {
+                controller.openKeyboardPanel("controls")
+                event.consume()
+                return@KeyEventDispatcher true
+            }
             // Rebindable actions, resolved against the user's current bindings.
             val action = PlayerShortcutsRepository.actionForKeyCode(event.keyCode)
                 ?: return@KeyEventDispatcher false

@@ -1,5 +1,11 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.node.requireLayoutCoordinates
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -38,6 +44,15 @@ object KeyRouteLog {
     private var lastKeyAtMs = 0L
     private var handledSinceProblem = 0
 
+    /** Popups and dialogs that are open: they hold the keyboard in a layer of their own (see [KeyRouteLayer]). */
+    private val layers = ArrayList<String>()
+
+    /** Reads where the focused control is in the window, set by [keyRouteOuter]; the only name a control has. */
+    internal var focusPlace: (() -> String?)? = null
+
+    internal fun layerOpened(name: String) { layers += name }
+    internal fun layerClosed(name: String) { layers.remove(name) }
+
     /** A navigation key went down, before anything has handled it. The caller follows with [settle], posted. */
     fun keyPressed(name: String) {
         if (pendingKey != null) settle("(next key arrived first)")
@@ -55,9 +70,14 @@ object KeyRouteLog {
         lastKeyAtMs = System.currentTimeMillis()
         val screen = PerfTelemetry.visibleScreen
         val typing = TextInputFocusTracker.active.value
-        val state = "compose focus=${if (composeHasFocus) "held" else "NONE"}, window focus=$windowFocus" +
+        val place = runCatching { focusPlace?.invoke() }.getOrNull()
+        val state = "compose focus=${if (composeHasFocus) "held" else "NONE"}" +
+            (place?.let { ", on the control at $it" } ?: "") + ", window focus=$windowFocus" +
             (if (typing) ", in a text field" else "")
+        val layer = layers.lastOrNull()
         when {
+            // A popup or dialog is a layer of its own: its keys never pass the window's root, and that is expected.
+            !reachedCompose && layer != null -> log.d { "$key went to the open $layer on $screen" }
             !reachedCompose -> {
                 log.w { "$key NOT DELIVERED on $screen: $state (after $handledSinceProblem handled)" }
                 handledSinceProblem = 0
@@ -111,8 +131,30 @@ fun FocusRequester.requestFocusLogged(): Boolean {
     return moved
 }
 
+/** Marks a popup or dialog as open while it is composed, so its keys are not logged as lost. Call inside its content. */
+@Composable
+fun KeyRouteLayer(name: String) {
+    DisposableEffect(name) {
+        KeyRouteLog.layerOpened(name)
+        onDispose { KeyRouteLog.layerClosed(name) }
+    }
+}
+
 /** On the window's content root, outside its own key handler: sees keys first, and last when nothing took them. */
-fun Modifier.keyRouteOuter(): Modifier = this
+@Composable
+fun Modifier.keyRouteOuter(): Modifier {
+    val focusManager = LocalFocusManager.current
+    SideEffect {
+        KeyRouteLog.focusPlace = {
+            focusManager.focusedControl()?.takeIf { it.node.isAttached }?.requireLayoutCoordinates()
+                ?.takeIf { it.isAttached }?.boundsInWindow()
+                ?.let { "${it.left.toInt()},${it.top.toInt()} ${it.width.toInt()}x${it.height.toInt()}" }
+        }
+    }
+    return keyRouteOuterKeys()
+}
+
+private fun Modifier.keyRouteOuterKeys(): Modifier = this
     .onFocusChanged { KeyRouteLog.composeFocus(it.hasFocus) }
     .onPreviewKeyEvent { event ->
         if (event.type == KeyEventType.KeyDown) KeyRouteLog.sawPreview()

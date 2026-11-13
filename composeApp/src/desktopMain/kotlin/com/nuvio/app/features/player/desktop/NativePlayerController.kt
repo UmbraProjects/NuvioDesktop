@@ -1392,7 +1392,8 @@ internal class NativePlayerController(
     }
 
     fun openKeyboardPanel(panel: String) {
-        if (panel != "sources" && panel != "episodes" && panel != "iptvChannels") return
+        // "controls": the HUD's own control navigation (Enter, then the arrows; see controls.js).
+        if (panel != "sources" && panel != "episodes" && panel != "iptvChannels" && panel != "controls") return
         val current = handle.takeIf { it != 0L } ?: return
         keyboardPanelOpen = true
         NativePlayerBridge.runJavaScript(

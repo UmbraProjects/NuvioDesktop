@@ -192,7 +192,12 @@ object CatalogRepository {
                     is CatalogTarget.DiscoverRow,
                     -> error(getString(Res.string.catalog_load_failed))
                 }.withUnreleasedFilter(request.hideUnreleasedContent)
-                    .withWatchedFilter(request.hideWatchedContent)
+                    // A search row's "see all" shows what the search found: the row itself keeps watched titles,
+                    // so hiding them here opened an empty page for a search whose only hit was already watched.
+                    .withWatchedFilter(
+                        request.hideWatchedContent &&
+                            (request.target as? CatalogTarget.Addon)?.searchQuery.isNullOrBlank(),
+                    )
             }.fold(
                 onSuccess = { page ->
                     if (activeRequest != request) return@fold

@@ -63,6 +63,9 @@ internal object MusicKeyboard {
     }
 
     /** Whether a music page (the tab, an album, an artist, the full player) is showing. */
+    /** Whether focus is in the player (bar, dock or card) right now. */
+    fun playerHasFocus(): Boolean = roots.any { it.isPlayer && it.hasFocus }
+
     fun pageShowing(): Boolean = roots.any { it.takesFocus && !it.covered && !it.isPlayer }
 
     /**

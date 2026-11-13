@@ -309,7 +309,13 @@ internal fun ArtistStage(
         // control into view) carries on to the screen it was heading for.
         var settledOnPanels by remember(artist.id) { mutableStateOf(returnToPanels) }
         var lastInnerUp by remember(artist.id) { mutableStateOf<kotlin.time.TimeMark?>(null) }
+        // Where a move in progress is going, until it gets there. A move that is cut short (focus going up into the hero
+        // also scrolls its control into view, which cancels the animation) must carry on to the same screen: reading the
+        // direction off `settledOnPanels`, which goTo has already flipped, sent the page straight back down, so Up from the
+        // panels with the keyboard never reached the hero (2026-11-13).
+        var heading by remember(artist.id) { mutableStateOf<Boolean?>(null) }
         fun goTo(panels: Boolean) {
+            heading = panels
             settledOnPanels = panels
             scope.launch { scroll.animateScrollTo(if (panels) scroll.maxValue else 0) }
         }
@@ -320,9 +326,9 @@ internal fun ArtistStage(
                 val at = scroll.value
                 when {
                     max <= 0 -> Unit
-                    at <= 0 -> settledOnPanels = false
-                    at >= max -> settledOnPanels = true
-                    else -> goTo(!settledOnPanels)
+                    at <= 0 -> { settledOnPanels = false; heading = null }
+                    at >= max -> { settledOnPanels = true; heading = null }
+                    else -> goTo(heading ?: !settledOnPanels)
                 }
             }
         }

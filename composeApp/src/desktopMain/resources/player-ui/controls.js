@@ -2922,7 +2922,8 @@ const openPlayerModal = modal => {
     closePlayerModal(false);
     return;
   }
-  if (keyboardPanelMode && modal !== keyboardPanelMode) {
+  // "controls" (the control navigation) stays on across a panel it opened: the arrows then walk the panel.
+  if (keyboardPanelMode && keyboardPanelMode !== "controls" && modal !== keyboardPanelMode) {
     keyboardPanelMode = "";
     send("keyboardPanelClosed", 0);
   }
@@ -6500,7 +6501,7 @@ const renderChrome = () => {
   root.classList.toggle("locked-visible", Boolean(state.isLocked && state.lockedOverlayVisible));
   // Playback failures are a compact notification now. Keep the normal chrome and cursor visible
   // so Back remains immediately available instead of turning the error into a modal takeover.
-  const isChromeHidden = Boolean(!pictureInPictureActive && !showError && (!activeModal && !contextMenuOpen && !colorGradePanelOpen && !actionOverflowOpen && !playlistPeekOpen && !state.controlsVisible && !(state.isLocked && state.lockedOverlayVisible)));
+  const isChromeHidden = Boolean(!pictureInPictureActive && !showError && (!activeModal && !contextMenuOpen && !colorGradePanelOpen && !actionOverflowOpen && !playlistPeekOpen && !state.controlsVisible && keyboardPanelMode !== "controls" && !(state.isLocked && state.lockedOverlayVisible)));
   root.classList.toggle("chrome-hidden", isChromeHidden);
   if (isChromeHidden || activeModal) hideControlTooltip();
   // Never hide the cursor in hero-trailer mode — it's a background surface, not the
@@ -8024,7 +8025,231 @@ episodeReloadButton.addEventListener("click", event => {
   send("reloadEpisodeStreams", 0);
 });
 
+// ---- Control navigation with the keyboard or a pad --------------------------------------------
+// Enter puts a focus ring on the play button; the arrows then move it to the nearest control that
+// way (by where the controls are on screen, so it follows any layout), Enter presses it and Escape
+// leaves. A panel opened this way is walked the same way. It is a keyboard panel mode ("controls")
+// so the keys arrive whether the app or this overlay holds the keyboard. Space stays play / pause.
+const BarNavIdleMs = 8000;
+let barNavElement = null;
+let barNavReturnElement = null;
+let barNavScopeKey = "";
+let barNavIdleTimer = 0;
+
+const barNavScope = () => {
+  if (contextMenuOpen) return document.getElementById("contextMenu") || root;
+  if (colorGradePanelOpen) return document.getElementById("colorGradePanel") || root;
+  if (activeModal && modalByName[activeModal]) return modalByName[activeModal];
+  return root;
+};
+const barNavScopeName = () =>
+  contextMenuOpen ? "menu" : colorGradePanelOpen ? "grade" : (activeModal || "");
+
+const barNavUsable = (element, scope) => {
+  if (!element || !element.isConnected || element.disabled || element.hidden) return false;
+  if (element.closest("[hidden], [aria-hidden='true'], [inert]")) return false;
+  // On the bare player, nothing inside a panel or menu that happens to be in the document.
+  if (scope === root && element.closest(".modal-layer, .context-menu, .grade-panel")) return false;
+  // Nor the volume slider: Left and Right would be caught adjusting it, and Up / Down already set the volume.
+  if (scope === root && element.matches("input[type='range']")) return false;
+  const rect = element.getBoundingClientRect();
+  // The timeline is one stop; its own slider inside it is not a second one.
+  if (element.id !== "timeline" && element.closest("#timeline")) return false;
+  if (rect.width < 4 || rect.height < 2) return false;
+  const style = getComputedStyle(element);
+  if (style.visibility === "hidden" || style.display === "none" || style.pointerEvents === "none") return false;
+  if (Number(style.opacity) < 0.05) return false;
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const onScreen = x >= 0 && y >= 0 && x <= window.innerWidth && y <= window.innerHeight;
+  // A row scrolled out of a panel's list is still reachable; anything else must be on screen and on top.
+  if (!onScreen) return scope !== root;
+  const hit = document.elementFromPoint(x, y);
+  return !hit || hit === element || element.contains(hit) || hit.contains(element);
+};
+
+const barNavCandidates = scope =>
+  Array.from(scope.querySelectorAll("button, [tabindex='0'], input[type='range'], [role='menuitem'], #timeline"))
+    .filter(element => barNavUsable(element, scope));
+
+const setBarNavFocus = element => {
+  if (barNavElement && barNavElement !== element) barNavElement.classList.remove("kbd-nav-focus");
+  barNavElement = element || null;
+  if (barNavElement) {
+    barNavElement.classList.add("kbd-nav-focus");
+    if (barNavScope() !== root) barNavElement.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+};
+
+const barNavDefault = (scope, list) => {
+  if (scope === root) {
+    const play = document.getElementById("toggle");
+    if (play && list.includes(play)) return play;
+  }
+  return list.find(element =>
+    element.classList.contains("selected") ||
+    element.getAttribute("aria-selected") === "true" ||
+    element.getAttribute("aria-checked") === "true") || list[0] || null;
+};
+
+// Keeps the ring in the layer that is on top: into a panel when one opens, back onto the button
+// that opened it when it closes.
+const syncBarNavScope = () => {
+  if (keyboardPanelMode !== "controls") return;
+  const name = barNavScopeName();
+  const scope = barNavScope();
+  if (name !== barNavScopeKey) {
+    const opening = Boolean(name);
+    if (opening && !barNavScopeKey) barNavReturnElement = barNavElement;
+    barNavScopeKey = name;
+    const list = barNavCandidates(scope);
+    const back = !opening && barNavReturnElement && list.includes(barNavReturnElement) ? barNavReturnElement : null;
+    setBarNavFocus(back || barNavDefault(scope, list));
+    return;
+  }
+  if (!barNavElement || !barNavUsable(barNavElement, scope)) {
+    setBarNavFocus(barNavDefault(scope, barNavCandidates(scope)));
+  }
+};
+
+const exitBarNav = () => {
+  if (keyboardPanelMode !== "controls") return;
+  keyboardPanelMode = "";
+  clearTimeout(barNavIdleTimer);
+  setBarNavFocus(null);
+  barNavReturnElement = null;
+  barNavScopeKey = "";
+  send("keyboardPanelClosed", 0);
+  renderChrome();
+};
+
+// Left alone on the bare player, the ring goes and the controls hide again as they normally would.
+const touchBarNav = () => {
+  clearTimeout(barNavIdleTimer);
+  barNavIdleTimer = setTimeout(() => {
+    if (keyboardPanelMode !== "controls") return;
+    if (barNavScopeName() || actionOverflowOpen) touchBarNav();
+    else exitBarNav();
+  }, BarNavIdleMs);
+};
+
+const enterBarNav = () => {
+  if (state.isLocked || state.postShowInput || playbackErrorText() || isHeroTrailerSurface || state.heroTrailerMode) {
+    send("keyboardPanelClosed", 0);
+    return;
+  }
+  keyboardPanelMode = "controls";
+  send("keyboardPanelOpened", 0);
+  barNavScopeKey = barNavScopeName();
+  renderChrome();
+  // The controls fade in over a frame or two; pick the control once they can be hit.
+  setBarNavFocus(null);
+  requestAnimationFrame(() => requestAnimationFrame(syncBarNavScope));
+  // And on a timer: animation frames stop while the overlay is not being drawn.
+  setTimeout(syncBarNavScope, 150);
+  touchBarNav();
+};
+
+const barNavNext = (current, code, list) => {
+  const a = current.getBoundingClientRect();
+  const ax = a.left + a.width / 2;
+  const ay = a.top + a.height / 2;
+  const horizontal = code === "ArrowLeft" || code === "ArrowRight";
+  const sign = code === "ArrowRight" || code === "ArrowDown" ? 1 : -1;
+  let best = null;
+  let bestScore = Infinity;
+  list.forEach(element => {
+    if (element === current) return;
+    const b = element.getBoundingClientRect();
+    const dx = b.left + b.width / 2 - ax;
+    const dy = b.top + b.height / 2 - ay;
+    // Edge to edge that way, so a wide control (the timeline) is "above" the buttons under its whole length.
+    const along = horizontal
+      ? (sign > 0 ? b.left - a.right : a.left - b.right)
+      : (sign > 0 ? b.top - a.bottom : a.top - b.bottom);
+    if (along < -2 || (horizontal ? dx * sign : dy * sign) <= 0) return;
+    const overlaps = horizontal ? (b.top < a.bottom && b.bottom > a.top) : (b.left < a.right && b.right > a.left);
+    const across = Math.abs(horizontal ? dy : dx);
+    // Off to the side counts only when it is roughly that way, not a control across the screen.
+    if (!overlaps && across > Math.max(0, along) * 2 + 60) return;
+    // A control in line that way always wins over one that is off to the side, however near the latter is.
+    const score = Math.max(0, along) + across * (overlaps ? 0.25 : 3) + (overlaps ? 0 : 100000);
+    if (score < bestScore) {
+      bestScore = score;
+      best = element;
+    }
+  });
+  return best;
+};
+
+const pressBarNavElement = element => {
+  const command = element.dataset ? element.dataset.command : "";
+  // These panels have their own keyboard mode (rows chosen with the arrows): hand over to it.
+  if (command === "sources" || command === "episodes" || command === "iptvChannels") {
+    window.nuvioOpenKeyboardPanel(command);
+    return;
+  }
+  if (element.id === "timeline") return;
+  element.click();
+  // A panel or menu it opened is drawn a moment later; move the ring into it then.
+  setTimeout(syncBarNavScope, 80);
+};
+
+const handleBarNavKey = code => {
+  touchBarNav();
+  if (code === "Escape") {
+    if (contextMenuOpen) closeContextMenu();
+    else if (colorGradePanelOpen) setColorGradePanelOpen(false);
+    else if (activeModal) closePlayerModal(true);
+    else if (actionOverflowOpen) setActionOverflowOpen(false);
+    else {
+      exitBarNav();
+      return;
+    }
+    syncBarNavScope();
+    return;
+  }
+  syncBarNavScope();
+  const current = barNavElement;
+  if (!current) return;
+  if (code === "Enter") {
+    pressBarNavElement(current);
+    return;
+  }
+  const horizontal = code === "ArrowLeft" || code === "ArrowRight";
+  if (horizontal && current.id === "timeline") {
+    const button = document.querySelector(
+      `.seek-control[data-command="${code === "ArrowLeft" ? "seekBack" : "seekForward"}"]`);
+    if (button) button.click();
+    return;
+  }
+  if (horizontal && current.matches("input[type='range']")) {
+    if (code === "ArrowLeft") current.stepDown();
+    else current.stepUp();
+    current.dispatchEvent(new Event("input", { bubbles: true }));
+    current.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  const next = barNavNext(current, code, barNavCandidates(barNavScope()));
+  if (next) setBarNavFocus(next);
+};
+
+// The mouse takes over: the ring goes (a real click never fires for the presses made above).
+document.addEventListener("mousedown", () => exitBarNav(), true);
+
 window.nuvioOpenKeyboardPanel = panel => {
+  if (panel === "controls") {
+    if (keyboardPanelMode === "controls") handleBarNavKey("Enter");
+    else if (!keyboardPanelMode) enterBarNav();
+    return;
+  }
+  if (keyboardPanelMode === "controls") {
+    // One of the panels with its own keyboard mode takes over from here.
+    clearTimeout(barNavIdleTimer);
+    setBarNavFocus(null);
+    barNavReturnElement = null;
+    barNavScopeKey = "";
+  }
   if (panel === "iptvChannels") {
     openIptvPanel(true);
     return;
@@ -8059,6 +8284,10 @@ window.nuvioOpenKeyboardPanel = panel => {
 
 window.nuvioHandleKeyboardPanelKey = code => {
   if (!keyboardPanelMode) return;
+  if (keyboardPanelMode === "controls") {
+    handleBarNavKey(code);
+    return;
+  }
   if (code === "Escape") {
     closePlayerModal(true);
     return;
@@ -9134,6 +9363,11 @@ document.addEventListener("keydown", event => {
     send("back", 0);
     return;
   }
+  if (event.key === "Escape" && keyboardPanelMode === "controls") {
+    event.preventDefault();
+    handleBarNavKey("Escape");
+    return;
+  }
   if (event.key === "Escape" && activeModal) {
     event.preventDefault();
     closePlayerModal(true);
@@ -9175,6 +9409,13 @@ document.addEventListener("keydown", event => {
     return;
   }
   const command = shortcutCommandForEvent(event);
+  // Enter with no binding of its own starts the control navigation (see handleBarNavKey).
+  if (!command && (event.code === "Enter" || event.code === "NumpadEnter") &&
+      !event.ctrlKey && !event.altKey && !event.metaKey && !event.repeat) {
+    event.preventDefault();
+    window.nuvioOpenKeyboardPanel("controls");
+    return;
+  }
   // Live TV: a digit with no binding of its own starts or extends a channel number.
   const digitMatch = /^(?:Digit|Numpad)([0-9])$/.exec(event.code);
   if (state.iptv && !command && digitMatch && !event.ctrlKey && !event.altKey && !event.metaKey) {

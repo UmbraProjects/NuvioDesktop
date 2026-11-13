@@ -207,6 +207,7 @@ internal fun NuvioContextMenu(
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
+        KeyRouteLayer("context menu")
         NuvioGlassMenuSurface(
             modifier = Modifier
                 .widthIn(min = ContextMenuMinWidth, max = ContextMenuMaxWidth)

@@ -95,6 +95,7 @@ fun NuvioModalDialog(
         // like the episode grid into an unreadable column.
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        KeyRouteLayer("dialog")
         NuvioDialogSurface(modifier = modifier.widthIn(max = maxWidth), shape = shape) {
           Column {
             Column(
@@ -163,6 +164,7 @@ fun NuvioAlertDialog(
         onDismissRequest = onDismissRequest,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        KeyRouteLayer("alert dialog")
         NuvioDialogSurface(modifier = modifier.widthIn(max = maxWidth), shape = shape) {
             // A dialog is its own window: the arrows (and a pad's D-pad) move between its controls and buttons, which
             // desktop Compose leaves to Tab otherwise.

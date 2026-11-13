@@ -1,5 +1,8 @@
 package com.nuvio.app.features.discover
 
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.smoothBorder
@@ -150,6 +153,19 @@ fun BrowseFilterStrip(
                     Modifier
                         .focusRequester(stripFocus.requester)
                         .onFocusChanged { stripFocus.onFocusChanged(it.hasFocus) }
+                        // Left and Right stop at the bar's ends. Unbounded, Right past the last filter moved
+                        // focus to whatever lay that way outside the page (the top bar), where no arrow is
+                        // handled, and navigation was lost until another tab was opened (2026-11-13).
+                        .focusProperties {
+                            onExit = {
+                                if (requestedFocusDirection == FocusDirection.Left ||
+                                    requestedFocusDirection == FocusDirection.Right
+                                ) {
+                                    cancelFocusChange()
+                                }
+                            }
+                        }
+                        .focusGroup()
                 } else {
                     Modifier
                 },
@@ -262,6 +278,7 @@ fun BrowseFilterMenu(
                 onDismissRequest = { setOpenAt(null) },
                 properties = PopupProperties(focusable = true),
             ) {
+                com.nuvio.app.core.ui.KeyRouteLayer("filter menu")
                 CompositionLocalProvider(LocalBrowseMenuKeyboardOpened provides openedByKeyboard) {
                     BrowseFilterMenuSurface(maxHeight = maxHeight) {
                         content { setOpenAt(null) }

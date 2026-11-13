@@ -74,9 +74,13 @@ internal fun TonightControls(
     }
 }
 
-/** The way back to the launcher on a mode screen, for the mouse (Back on the remote does the same). */
+/**
+ * The way back to the launcher on a mode screen, for the mouse (Back on the remote does the same). It names its key:
+ * the old "← Back" read as the Left arrow, which on several modes does something else (Channel Flick's "never show
+ * me this"), and on those the pill cannot be reached with the arrows at all.
+ */
 @Composable
-internal fun TonightBackPill(onBack: () -> Unit, selected: Boolean = false, text: String = "← Back") {
+internal fun TonightBackPill(onBack: () -> Unit, selected: Boolean = false, text: String = "Esc  Back") {
     GlassPill(text = text, selected = selected, accent = MaterialTheme.nuvio.colors.accent, onClick = onBack, pill = true)
 }
 
