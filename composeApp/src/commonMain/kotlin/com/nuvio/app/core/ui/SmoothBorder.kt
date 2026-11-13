@@ -7,10 +7,14 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -71,3 +75,27 @@ fun Modifier.smoothBorder(width: Dp, brush: Brush, shape: Shape): Modifier = dra
         drawPath(path, brush, style = stroke)
     }
 }
+
+/**
+ * A rounded [clip] with anti-aliased corners (fork:tonight, Nov 12: the Tonight tiles' corners were stair-stepped).
+ * The content is drawn into its own layer and the corners outside the rounded rectangle are then erased with an
+ * anti-aliased path, rather than cut by the desktop's hard-edged clip. Use in place of `.clip(RoundedCornerShape(r))`
+ * on a picture whose corners show; it costs an offscreen layer, so not on every item of a long list.
+ */
+fun Modifier.smoothRoundClip(cornerRadius: Dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithCache {
+        val r = cornerRadius.toPx()
+        // The erased rectangle reaches past the bounds: under a scale (a chosen Tonight poster grows 4%) its edge
+        // lands between pixels, is only partly erased there, and leaves a square hairline round the rounded picture.
+        val past = 4f
+        val corners = Path().apply {
+            fillType = PathFillType.EvenOdd
+            addRect(androidx.compose.ui.geometry.Rect(-past, -past, size.width + past, size.height + past))
+            addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(r)))
+        }
+        onDrawWithContent {
+            drawContent()
+            drawPath(corners, Color.Black, blendMode = BlendMode.DstOut)
+        }
+    }

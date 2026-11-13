@@ -321,10 +321,49 @@ Turn it on in Settings > Random Play > Tonight picker > "Open on Tonight".
 
 - [ ] A "What to watch" button (sparkle icon) sits beside Search in the top bar and the sidebar; it opens the Tonight launcher over Home, Library or Discover (from Music or Live TV it goes to Home first)
 - [ ] Every Tonight screen has an ✕ in the top-right corner; clicking it closes Tonight and the rows behind come straight back
+  - Nov 12: the ✕ is gone (user: "Just browse everything" is the way out); nothing to check here now
 - [ ] Back on the launcher closes Tonight (Back inside a mode still steps back first)
 - [ ] With "Open on Tonight" off, Nuvio opens on Home; with it on, Nuvio opens on Tonight once at start, and after closing it stays closed until the button is pressed
 - [ ] The button can be moved in Settings > Appearance > Navigation order ("What to watch")
 - [ ] Phone remote: a "What to watch?" button above the pad on the Remote tab opens Tonight on the TV, and the phone switches to the Tonight mirror
+
+### Tonight picker: the launcher redesign with backdrops (Nov 12)
+
+- [ ] Each of the eight launcher tiles shows a film or show backdrop, no icons, with the mode's name, its line and an arrow at the bottom left and LAST TIME at the top left; the eight backdrops are all different titles
+- [ ] The backdrops fit the mode: The Pile shows something in your library you have never started, Ends By something that ends before bed
+- [ ] The chosen tile glows all round (no bright border) in its own backdrop's colour: a green backdrop glows green; the glow fades as you move between tiles and lies over the gaps, not under the next tile
+- [ ] The screen behind is a colour wash (no picture) of the chosen tile's backdrop colours, easing from one to the next; the header text stays readable over any colour; nothing on the screen moves or changes size
+- [ ] Tonight fills the whole screen from the very top (no strip left empty for the top bar), and there is no ✕ on any Tonight screen
+- [ ] The header reads "How shall we choose tonight?" ("tonight?" tinted) over "A little inspiration goes a long way.", with the day and time above it
+- [ ] Before the titles have loaded (first open after start) the tiles are plain glass and fill in with backdrops when they arrive
+- [ ] Under the key hint is a thin separator, and "Just browse everything →" (a rounded pill) sits straight beneath it rather than at the foot of the screen; Down from the tiles reaches it and OK closes Tonight
+- [ ] The tiles' rounded corners are smooth, not stair-stepped, on every tile (with and without a picture)
+
+### Tonight picker: the modes redesigned (Nov 12)
+
+Every mode below has a "← Back" button in a strip under its content (hint line, separator, buttons), as the launcher does.
+
+- [ ] Three Questions: the background is a colour wash; hovering an answer glows it in its colour (amber left, teal right) and shifts the wash toward what that answer would leave
+- [ ] Three Questions: the two answer boxes mirror each other: "◀ LEFT" top left and "RIGHT ▶" top right, the left box's answer right-aligned and the right box's left-aligned; "Exciting" fits in its box
+- [ ] Three Cards: the cards sit higher, the chosen card glows in its poster's colour (no accent border) and the background takes its colours
+- [ ] Three Cards: Back, Its page and Reshuffle sit in a row under the cards; Down from a card reaches them (on Its page), Left/Right move along them, Up goes back to the card, OK presses one
+- [ ] Knockout: the bracket on the left is small posters, eight down the first column, then four, two and the winner; the pair in play glows, losers fade back, unplayed slots are empty glass
+- [ ] Knockout: the background mixes the two posters' colours; hovering a poster glows it; Undo last pick and Taste each work from the buttons
+- [ ] Ends By: the rows fill the page down to the buttons (more than six on a big screen), the mouse wheel moves up and down the list, and the last hour label and BED are never cut off at the right
+- [ ] Ends By: the chosen row glows in its title's colour and the background takes its colours; Bed earlier / Bed later / Play it buttons work
+- [ ] Channel Flick: a "← Back" button sits at the left of the buttons and returns to the launcher
+- [ ] Coin Toss: the poster and its panel are centred as one block, the poster glows, the background takes its colours, and the buttons (with Back) are in the strip below
+- [ ] The Pile: a centred 3 x 3 grid of posters, each with its name and how long it has waited underneath; arrows and the wheel move (a row at a time with the wheel); the chosen poster glows and the background takes its colours
+- [ ] Three Cards: the chosen card's glow hugs its rounded corners, with no faint square line round the poster at the corners
+- [ ] Three Cards: SAFE / NEW TO YOU / WILD CARD are headings above each poster (brighter on the chosen one), not printed on the picture; the row of cards and the buttons below do not move
+- [ ] Knockout: the bracket's posters have no glow; the pair in play has a thin edge in its own colour instead, and neighbouring posters never overlap
+- [ ] Three Cards: moving from one card to the next, the old card's bloom fades all round, with no green or blue arcs left at its corners
+- [ ] Three Cards: the button under the cards reads "Detail page" (Coin Toss's hint says "▼ opens the detail page")
+- [ ] Knockout: the heading and its line sit where Three Cards' do, the two posters and "vs" are centred on the screen at the same height as Three Cards' cards, the buttons sit straight under them, and the bracket fills the left without touching the posters
+- [ ] Settings > Random Play > Tonight picker: "Cards pick from the top" slides from 1 to 20 (5 to start); at 1 the same three cards come up every visit, at 15 or more they change from night to night
+- [ ] Settings > Random Play > Tonight picker: turning on "Add Top picks for you", "Add Because you watched" and "Add More like your favourites" brings those Discover titles into Three Cards (a New to you card can say "Because you watched ..." or "A top pick for you"); all three are off to start
+- [ ] With a Discover source on, Channel Flick shows the Discover reason ("BECAUSE YOU WATCHED ...") over those titles; Settings search finds the new rows by "top picks" and "pick from"
+- [ ] The Pile: a small panel at the top right shows the chosen title's wait, name, length and genres; Down from the bottom row reaches Back / Finally watch it / Let it go, and Let it go needs pressing twice
 
 ### Tonight picker: Coin Toss and Knockout (phase 2, Nov 10)
 

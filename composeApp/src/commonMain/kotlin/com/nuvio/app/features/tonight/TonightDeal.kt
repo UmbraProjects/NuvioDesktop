@@ -8,20 +8,21 @@ import kotlin.random.Random
  * Wildcard = outside your usual taste. One reshuffle a night deals three others.
  */
 
-private const val PICK_FROM_TOP = 5
-
 /**
  * Deals up to three cards from [pool], never one of [exclude] (keys of cards already dealt
  * tonight). [seed] makes a deal repeatable: the same seed and pool give the same cards.
- * Fewer than three come back only when the pool has fewer than three titles left.
+ * Each card is drawn at random from the best [pickFrom] of its kind (Settings, 1 to 20; 5 by
+ * default). Fewer than three come back only when the pool has fewer than three titles left.
  */
 fun tonightDeal(
     pool: List<TonightTitle>,
     taste: TonightTaste,
     seed: Long,
     exclude: Set<String> = emptySet(),
+    pickFrom: Int = TONIGHT_PICK_FROM_TOP_DEFAULT,
 ): List<TonightCard> {
     val random = Random(seed)
+    val topCount = pickFrom.coerceAtLeast(1)
     val candidates = pool.filter { it.key !in exclude }.distinctBy { it.key }
     if (candidates.isEmpty()) return emptyList()
     val taken = linkedSetOf<String>()
@@ -36,7 +37,7 @@ fun tonightDeal(
         if (open.isEmpty()) return null
         // Prefer a genre not on the table yet, so the three read as three different evenings.
         val varied = open.filter { it.freshGenre() }.ifEmpty { open }
-        val top = varied.sortedByDescending(score).take(PICK_FROM_TOP)
+        val top = varied.sortedByDescending(score).take(topCount)
         return top[random.nextInt(top.size)]
     }
 
@@ -87,7 +88,9 @@ private fun safeWhy(t: TonightTitle): String = when {
 }
 
 private fun newWhy(t: TonightTitle, taste: TonightTaste): String =
-    taste.topGenre(t)?.let { "New to you, and you like ${it.lowercase()}" } ?: "New to you"
+    t.recommendedBy
+        ?: taste.topGenre(t)?.let { "New to you, and you like ${it.lowercase()}" }
+        ?: "New to you"
 
 private fun fillerWhy(slot: TonightSlot, t: TonightTitle, taste: TonightTaste): String = when (slot) {
     TonightSlot.Safe -> safeWhy(t)

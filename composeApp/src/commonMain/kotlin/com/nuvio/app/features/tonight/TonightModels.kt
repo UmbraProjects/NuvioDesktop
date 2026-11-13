@@ -10,7 +10,7 @@ package com.nuvio.app.features.tonight
 enum class TonightKind { Film, Show }
 
 /** Where a title in the pool came from. One title can come from several places. */
-enum class TonightOrigin { Library, ContinueWatching, Trending }
+enum class TonightOrigin { Library, ContinueWatching, Trending, Recommended }
 
 /**
  * One title the picker can offer. [runtimeMinutes] is the whole film, or one episode for a show;
@@ -37,6 +37,8 @@ data class TonightTitle(
     val resumeMinutesLeft: Int? = null,
     val addedAtEpochMs: Long? = null,
     val tmdbId: Int? = null,
+    /** For a [TonightOrigin.Recommended] title, why Discover suggested it ("Because you watched Fargo"). */
+    val recommendedBy: String? = null,
 ) {
     val key: String get() = tonightKey(type, id)
 }

@@ -5127,4 +5127,10 @@
     <string name="tonight_bedtime_description">Films that would end after this are left out; shows offer the episodes that fit.</string>
     <string name="tonight_map_ai">Let the AI refine The Map</string>
     <string name="tonight_map_ai_description">While The Map is open, your AI provider reads each title&apos;s tone (a dark comedy is not light) and moves it along Light to Heavy. Twelve titles to a request, at most 25 requests a day; each answer is kept. Uses your AI key from Discover.</string>
+    <string name="tonight_pick_from_top">Cards pick from the top</string>
+    <string name="tonight_pick_from_top_description">Each of the three cards is chosen at random from this many of its best matches. Higher gives more variety from night to night; lower keeps to the strongest picks.</string>
+    <string name="tonight_source_top_picks">Add Top picks for you</string>
+    <string name="tonight_source_because">Add Because you watched</string>
+    <string name="tonight_source_favourites">Add More like your favourites</string>
+    <string name="tonight_source_description">Titles from this Discover row join what the picker chooses from (up to 15 a row). The row must be turned on in Discover&apos;s settings.</string>
 </resources>

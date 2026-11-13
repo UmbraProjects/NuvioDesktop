@@ -171,6 +171,8 @@ internal fun TonightFlickView(
                 }
                 Spacer(Modifier.height(14.dp))
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    // The way back for the mouse now that the ✕ is gone (Back on the remote does the same).
+                    TonightBackPill(onBack = onBack)
                     GlassPill("◀ Never show me this", selected = false, accent = accent, onClick = ::never, enabled = current != null)
                     GlassPill("OK That one, play it", selected = true, accent = accent, onClick = { current?.let(onPlay) }, enabled = current != null)
                     GlassPill("▲ Save for later", selected = false, accent = accent, onClick = ::save, enabled = current != null)

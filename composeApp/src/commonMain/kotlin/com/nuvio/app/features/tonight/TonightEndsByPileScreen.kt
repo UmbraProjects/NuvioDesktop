@@ -4,6 +4,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.zIndex
+import com.nuvio.app.core.ui.smoothRoundClip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -52,22 +60,19 @@ import kotlin.math.absoluteValue
 
 /*
  * fork:tonight - phase 4 of design-notes/tonight-picker.md: Ends By and The Pile. Fixed row and
- * spine sizes, a fixed window of rows (the list scrolls by moving the window, never by resizing).
+ * poster sizes (set by the screen), a window of rows or a 3 x 3 grid that scrolls by moving the window.
  */
 
-private const val ENDS_BY_VISIBLE_ROWS = 6
 private val EndsByRowHeight = 64.dp
 private val EndsByLabelWidth = 280.dp
-
-private val SpineColors = listOf(
-    Color(0xFF3A5A7A), Color(0xFF7A4F5C), Color(0xFF3F7D6E), Color(0xFFA8743A),
-    Color(0xFF5A6470), Color(0xFF4A3A2A), Color(0xFF2A3A5A), Color(0xFF5A3A5A),
-)
 
 private fun windowStart(selected: Int, size: Int, visible: Int): Int =
     (selected - visible / 2).coerceIn(0, (size - visible).coerceAtLeast(0))
 
 // ---- Ends By -----------------------------------------------------------------------------------
+
+/** Room kept clear at the right of the timeline so its last hour label and BED are never cut off. */
+private val EndsByTrackEndGap = 40.dp
 
 @Composable
 internal fun TonightEndsByView(
@@ -87,8 +92,11 @@ internal fun TonightEndsByView(
     val focus = rememberScreenFocus(Unit)
     val (axisStart, axisEnd) = tonightEndsByAxis(clock.minuteOfDay, minutesUntilBed)
     val span = (axisEnd - axisStart).toFloat()
-    val first = windowStart(selected, rows.size, ENDS_BY_VISIBLE_ROWS)
+    val chosen = rows.getOrNull(selected)?.title
+    val glow = rememberGlowOf(chosen?.let { it.backdrop ?: it.poster }, lerp(accent, Color.White, 0.2f))
 
+    Box(modifier = Modifier.fillMaxSize()) {
+    TonightAmbientWash(rememberColoursOf(chosen?.let { it.backdrop ?: it.poster }))
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -117,14 +125,23 @@ internal fun TonightEndsByView(
                 },
                 color = Color.White, fontSize = 46.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f),
             )
-            Text("◀ ▶ moves bedtime · best fit first", color = TextDim, fontSize = 15.sp)
+            Text("best fit first", color = TextDim, fontSize = 15.sp)
         }
         Spacer(Modifier.height(20.dp))
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            val trackWidth = maxWidth - EndsByLabelWidth
+        // The rows fill the page (user, Nov 12: it stopped after six), and the wheel runs down them.
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .wheelSteps { step -> selected = (selected + step).coerceIn(0, rows.lastIndex.coerceAtLeast(0)) },
+        ) {
+            val trackWidth = maxWidth - EndsByLabelWidth - EndsByTrackEndGap
             fun xOf(minuteOfDay: Int) = EndsByLabelWidth + trackWidth * ((minuteOfDay - axisStart) / span).coerceIn(0f, 1f)
             val rowsTop = 36.dp
-            val rowsHeight = EndsByRowHeight * ENDS_BY_VISIBLE_ROWS
+            val footer = 32.dp
+            val visible = ((maxHeight - rowsTop - footer) / EndsByRowHeight).toInt().coerceAtLeast(1)
+            val rowsHeight = EndsByRowHeight * visible
+            val first = windowStart(selected, rows.size, visible)
 
             // Hour ticks along the top.
             var hour = axisStart
@@ -149,9 +166,10 @@ internal fun TonightEndsByView(
                     modifier = Modifier.fillMaxWidth().offset(y = rowsTop + 120.dp),
                 )
             }
-            for (slot in 0 until ENDS_BY_VISIBLE_ROWS) {
-                val row = rows.getOrNull(first + slot) ?: continue
-                val isSelected = first + slot == selected
+            for (slot in 0 until visible) {
+                val index = first + slot
+                val row = rows.getOrNull(index) ?: continue
+                val isSelected = index == selected
                 val y = rowsTop + EndsByRowHeight * slot
                 val shape = RoundedCornerShape(14.dp)
                 Box(
@@ -159,65 +177,89 @@ internal fun TonightEndsByView(
                         .offset(y = y)
                         .fillMaxWidth()
                         .height(EndsByRowHeight - 8.dp)
-                        .graphicsLayer { alpha = if (row.fits) 1f else 0.45f }
-                        .clip(shape)
-                        .then(if (isSelected) Modifier.background(Color.White.copy(alpha = 0.05f)).smoothBorder(2.dp, accent, shape) else Modifier)
-                        .clickable { selected = first + slot; onPlay(row.title) },
+                        .zIndex(if (isSelected) 1f else 0f),
                 ) {
-                    Column(modifier = Modifier.width(EndsByLabelWidth).fillMaxHeight().padding(start = 14.dp), verticalArrangement = Arrangement.Center) {
-                        Text(row.title.name, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            when (row.title.kind) {
-                                TonightKind.Film -> "Film · ${lengthLabel(row.blockMinutes.sum())}" + if (row.title.resumeMinutesLeft != null) " left" else ""
-                                TonightKind.Show -> "Series · " + (row.title.nextEpisodeLabel?.let { "next: $it" } ?: "${row.blockMinutes.first()} min eps")
-                            },
-                            color = TextFaint, fontSize = 13.sp, maxLines = 1,
-                        )
-                    }
-                    var start = clock.minuteOfDay
-                    row.blockMinutes.forEachIndexed { i, minutes ->
-                        val pastBed = row.title.kind == TonightKind.Show && i >= row.episodesBeforeBed
-                        val left = xOf(start)
-                        val width = (xOf(start + minutes) - left - 4.dp).coerceAtLeast(6.dp)
-                        val isLast = i == row.blockMinutes.lastIndex || (row.title.kind == TonightKind.Show && i == row.episodesBeforeBed - 1)
-                        Box(
-                            modifier = Modifier
-                                .offset(x = left, y = 8.dp)
-                                .width(width)
-                                .height(40.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(
-                                    when {
-                                        pastBed -> Color.White.copy(alpha = 0.08f)
-                                        row.title.kind == TonightKind.Show -> Color(0xFF6FD3C9).copy(alpha = 0.35f)
-                                        else -> accent.copy(alpha = if (isSelected) 0.6f else 0.35f)
-                                    },
-                                ),
-                            contentAlignment = Alignment.CenterEnd,
-                        ) {
-                            if (isLast && !pastBed) {
-                                Text(
-                                    row.endLabel(clock.minuteOfDay), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1, modifier = Modifier.padding(end = 10.dp),
-                                )
-                            }
+                    // Chosen, the row glows in its title's colour instead of the accent border.
+                    AmbientGlow(lit = isSelected, colour = glow, cornerRadius = 14.dp, spread = 4.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer { alpha = if (row.fits) 1f else 0.45f }
+                            .smoothRoundClip(14.dp)
+                            .then(if (isSelected) Modifier.background(Ground).background(Color.White.copy(alpha = 0.05f)) else Modifier)
+                            .clickable { selected = index; onPlay(row.title) },
+                    ) {
+                        Column(modifier = Modifier.width(EndsByLabelWidth).fillMaxHeight().padding(start = 14.dp), verticalArrangement = Arrangement.Center) {
+                            Text(row.title.name, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                when (row.title.kind) {
+                                    TonightKind.Film -> "Film · ${lengthLabel(row.blockMinutes.sum())}" + if (row.title.resumeMinutesLeft != null) " left" else ""
+                                    TonightKind.Show -> "Series · " + (row.title.nextEpisodeLabel?.let { "next: $it" } ?: "${row.blockMinutes.first()} min eps")
+                                },
+                                color = TextFaint, fontSize = 13.sp, maxLines = 1,
+                            )
                         }
-                        start += minutes
+                        var start = clock.minuteOfDay
+                        row.blockMinutes.forEachIndexed { i, minutes ->
+                            val pastBed = row.title.kind == TonightKind.Show && i >= row.episodesBeforeBed
+                            val left = xOf(start)
+                            val width = (xOf(start + minutes) - left - 4.dp).coerceAtLeast(6.dp)
+                            val isLast = i == row.blockMinutes.lastIndex || (row.title.kind == TonightKind.Show && i == row.episodesBeforeBed - 1)
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = left, y = 8.dp)
+                                    .width(width)
+                                    .height(40.dp)
+                                    .smoothRoundClip(10.dp)
+                                    .background(
+                                        when {
+                                            pastBed -> Color.White.copy(alpha = 0.08f)
+                                            row.title.kind == TonightKind.Show -> Color(0xFF6FD3C9).copy(alpha = 0.35f)
+                                            else -> accent.copy(alpha = if (isSelected) 0.6f else 0.35f)
+                                        },
+                                    ),
+                                contentAlignment = Alignment.CenterEnd,
+                            ) {
+                                if (isLast && !pastBed) {
+                                    Text(
+                                        row.endLabel(clock.minuteOfDay), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1, modifier = Modifier.padding(end = 10.dp),
+                                    )
+                                }
+                            }
+                            start += minutes
+                        }
                     }
                 }
             }
             Text(
-                if (rows.isEmpty()) "" else "${selected + 1} of ${rows.size} · ▲▼ choose · OK plays · faded rows run past bedtime",
+                if (rows.isEmpty()) "" else "${selected + 1} of ${rows.size} · faded rows run past bedtime",
                 color = TextFaint, fontSize = 14.sp,
-                modifier = Modifier.offset(y = rowsTop + rowsHeight + 12.dp).height(20.dp),
+                modifier = Modifier.offset(y = rowsTop + rowsHeight + 8.dp).height(20.dp),
             )
         }
+        TonightControls(hint = "▲▼ or the wheel choose · OK plays · ◀ ▶ moves bedtime") {
+            TonightBackPill(onBack = onBack)
+            GlassPill("◀ Bed earlier", selected = false, accent = accent, pill = true, onClick = { TonightSettingsRepository.nudgeBedtime(-1) })
+            GlassPill("Bed later ▶", selected = false, accent = accent, pill = true, onClick = { TonightSettingsRepository.nudgeBedtime(1) })
+            GlassPill("OK Play it", selected = true, accent = accent, enabled = chosen != null, pill = true, onClick = { chosen?.let(onPlay) })
+        }
+    }
     }
 }
 
 // ---- The Pile ----------------------------------------------------------------------------------
 
-private const val PILE_VISIBLE = 9
+private const val PILE_COLUMNS = 3
+private const val PILE_ROWS = 3
+private val PileGap = 22.dp
+/** Under each poster: its name (22) and how long it has waited (20), with a 10 gap above. */
+private val PileInfoHeight = 52.dp
+
+// The controls under the grid, after the nine posters' indexes.
+private const val PILE_SEL_BACK = -1
+private const val PILE_SEL_PLAY = -2
+private const val PILE_SEL_LET_GO = -3
 
 @Composable
 internal fun TonightPileView(
@@ -232,12 +274,15 @@ internal fun TonightPileView(
     val letGo = remember { mutableStateListOf<String>() }
     val now = remember { System.currentTimeMillis() }
     val pile = remember(titles, letGo.size) { tonightPile(titles, now).filter { it.title.key !in letGo } }
+    // The poster chosen; the controls act on it while the cursor is on them.
     var selected by remember { mutableIntStateOf(0) }
     if (selected > pile.lastIndex) selected = pile.lastIndex.coerceAtLeast(0)
+    var onControl by remember { mutableStateOf<Int?>(null) }
     var confirming by remember(selected) { mutableStateOf(false) }
     val focus = rememberScreenFocus(Unit)
     val current = pile.getOrNull(selected)
-    val first = windowStart(selected, pile.size, PILE_VISIBLE)
+    val totalRows = (pile.size + PILE_COLUMNS - 1) / PILE_COLUMNS
+    val firstRow = windowStart(selected / PILE_COLUMNS, totalRows, PILE_ROWS)
 
     fun letItGo() {
         val item = current ?: return
@@ -251,18 +296,44 @@ internal fun TonightPileView(
         confirming = false
     }
 
+    fun move(by: Int) {
+        if (pile.isEmpty()) return
+        selected = (selected + by).coerceIn(0, pile.lastIndex)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+    TonightAmbientWash(rememberColoursOf(current?.title?.let { it.poster ?: it.backdrop }))
     Column(
         modifier = Modifier
             .fillMaxSize()
             .focusRequester(focus)
             .focusable()
             .tonightKeys { key ->
+                val control = onControl
+                if (control != null) {
+                    when (key) {
+                        TonightKey.Left -> onControl = (control + 1).coerceAtMost(PILE_SEL_BACK)
+                        TonightKey.Right -> onControl = (control - 1).coerceAtLeast(PILE_SEL_LET_GO)
+                        TonightKey.Up -> { onControl = null; confirming = false }
+                        TonightKey.Ok -> when (control) {
+                            PILE_SEL_BACK -> onBack()
+                            PILE_SEL_PLAY -> current?.let { onPlay(it.title) }
+                            else -> letItGo()
+                        }
+                        TonightKey.Back -> if (confirming) confirming = false else onBack()
+                        TonightKey.Down -> Unit
+                    }
+                    return@tonightKeys true
+                }
+                val col = selected % PILE_COLUMNS
                 when (key) {
-                    TonightKey.Up -> if (selected > 0) selected -= 1
-                    TonightKey.Down -> if (selected < pile.lastIndex) selected += 1
+                    TonightKey.Left -> if (col > 0) move(-1)
+                    TonightKey.Right -> if (col < PILE_COLUMNS - 1 && selected < pile.lastIndex) move(1)
+                    TonightKey.Up -> if (selected >= PILE_COLUMNS) move(-PILE_COLUMNS)
+                    TonightKey.Down -> if (selected + PILE_COLUMNS <= pile.lastIndex) move(PILE_COLUMNS)
+                        else if (selected / PILE_COLUMNS < totalRows - 1) move(pile.lastIndex - selected)
+                        else onControl = PILE_SEL_PLAY
                     TonightKey.Ok -> current?.let { onPlay(it.title) }
-                    TonightKey.Left -> letItGo()
-                    TonightKey.Right -> confirming = false
                     TonightKey.Back -> if (confirming) confirming = false else onBack()
                 }
                 true
@@ -273,125 +344,134 @@ internal fun TonightPileView(
             if (pile.isEmpty()) "THE PILE" else "THE PILE · ${pile.size} THING${if (pile.size == 1) "" else "S"} YOU MEANT TO WATCH",
             color = TextDim, fontSize = 15.sp, letterSpacing = 2.sp, modifier = Modifier.height(24.dp),
         )
-        Spacer(Modifier.height(24.dp))
-        Row(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            Column(modifier = Modifier.width(720.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (pile.isEmpty()) {
-                    Text(
-                        if (loading) "Still gathering tonight's titles…" else "Nothing on the pile: everything you added has been started.",
-                        color = TextDim, fontSize = 22.sp, modifier = Modifier.padding(top = 120.dp),
-                    )
-                }
-                for (slot in 0 until PILE_VISIBLE) {
-                    val item = pile.getOrNull(first + slot)
-                    if (item == null) {
-                        Spacer(Modifier.height(56.dp))
-                        continue
+        Spacer(Modifier.height(16.dp))
+        // A centred 3 x 3 of posters (user, Nov 12), each with its name and wait under it; the chosen one's details
+        // in a small panel at the top right. The wheel moves a row at a time.
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .wheelSteps { step -> onControl = null; move(step * PILE_COLUMNS) },
+        ) {
+            val posterHeight = ((maxHeight - PileInfoHeight * PILE_ROWS - PileGap * (PILE_ROWS - 1)) / PILE_ROWS).coerceAtLeast(120.dp)
+            val posterWidth = posterHeight * 2f / 3f
+            if (pile.isEmpty()) {
+                Text(
+                    if (loading) "Still gathering tonight's titles…" else "Nothing on the pile: everything you added has been started.",
+                    color = TextDim, fontSize = 22.sp, textAlign = TextAlign.Center,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            } else {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    verticalArrangement = Arrangement.spacedBy(PileGap),
+                ) {
+                    for (r in 0 until PILE_ROWS) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(PileGap)) {
+                            for (c in 0 until PILE_COLUMNS) {
+                                val index = (firstRow + r) * PILE_COLUMNS + c
+                                PileCell(
+                                    item = pile.getOrNull(index),
+                                    width = posterWidth,
+                                    height = posterHeight,
+                                    selected = index == selected && onControl == null,
+                                    onHover = { selected = index; onControl = null },
+                                    onClick = { pile.getOrNull(index)?.let { onPlay(it.title) } },
+                                )
+                            }
+                        }
                     }
-                    Spine(
-                        item = item,
-                        selected = first + slot == selected,
-                        accent = accent,
-                        onClick = { selected = first + slot },
-                    )
                 }
             }
-            Spacer(Modifier.weight(1f))
-            PilePanel(current, clock, minutesUntilBed, confirming, accent, onPlay = { current?.let { onPlay(it.title) } }, onLetGo = ::letItGo)
+            PilePanel(current, clock, minutesUntilBed, accent, modifier = Modifier.align(Alignment.TopEnd))
         }
+        TonightControls(
+            hint = if (confirming) "OK again lets it go for good · Back keeps it"
+            else "◀ ▶ ▲ ▼ or the wheel choose · OK finally watch it · ▼ to these buttons",
+            hintColor = if (confirming) accent else TextFaint,
+        ) {
+            TonightBackPill(onBack = onBack, selected = onControl == PILE_SEL_BACK)
+            GlassPill("OK Finally watch it", selected = onControl == PILE_SEL_PLAY, accent = accent, enabled = current != null, pill = true, onClick = { current?.let { onPlay(it.title) } })
+            GlassPill(
+                if (confirming) "Again to let it go for good" else "Let it go · off the pile for good",
+                selected = onControl == PILE_SEL_LET_GO || confirming, accent = accent, enabled = current != null, pill = true,
+                onClick = ::letItGo,
+            )
+        }
+    }
+    }
+}
+
+/** One poster on the pile with its name and wait beneath. An empty slot keeps its place, drawn as nothing. */
+@Composable
+private fun PileCell(item: PileItem?, width: Dp, height: Dp, selected: Boolean, onHover: () -> Unit, onClick: () -> Unit) {
+    val accent = MaterialTheme.nuvio.colors.accent
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
+    LaunchedEffect(hovered) { if (hovered && item != null) onHover() }
+    val art = item?.title?.let { it.poster ?: it.backdrop }
+    val glow = rememberGlowOf(art, lerp(accent, Color.White, 0.2f))
+    val shape = RoundedCornerShape(16.dp)
+    Column(modifier = Modifier.width(width).zIndex(if (selected) 1f else 0f)) {
+        Box(modifier = Modifier.size(width = width, height = height)) {
+            if (item != null) {
+                AmbientGlow(lit = selected, colour = glow, cornerRadius = 16.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // The longer it has waited, the further it fades back (the old spines' dust).
+                        .graphicsLayer { alpha = if (selected) 1f else 1f - item.dust * 0.45f }
+                        .smoothRoundClip(16.dp)
+                        .background(Ground)
+                        .background(GlassFill)
+                        .hoverable(hover)
+                        .clickable(onClick = onClick),
+                ) {
+                    if (art != null) {
+                        NuvioAsyncImage(model = art, contentDescription = item.title.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    } else {
+                        Text(
+                            item.title.name, color = TextDim, fontSize = 16.sp, textAlign = TextAlign.Center,
+                            modifier = Modifier.align(Alignment.Center).padding(12.dp),
+                        )
+                    }
+                    if (!selected) Box(Modifier.fillMaxSize().smoothBorder(1.dp, GlassEdge, shape))
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
         Text(
-            "▲▼ run down the spines · OK finally watch it · ◀ let it go (press twice)",
-            color = TextFaint, fontSize = 14.sp, modifier = Modifier.fillMaxWidth().height(20.dp),
+            item?.title?.name.orEmpty(), color = if (selected) Color.White else Color(0xFFCFCCC3), fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(22.dp),
+        )
+        Text(
+            item?.let { pileAgeLabel(it.waitedDays) }.orEmpty(), color = TextFaint, fontSize = 13.sp,
+            maxLines = 1, modifier = Modifier.height(20.dp),
         )
     }
 }
 
+/** The chosen title's details, small, at the top right. */
 @Composable
-private fun Spine(item: PileItem, selected: Boolean, accent: Color, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(6.dp)
-    val hash = item.title.key.hashCode()
-    // A slightly uneven stack: each spine sits a few dp left or right, the chosen one pulled out.
-    val nudge = ((hash.absoluteValue % 5) * 3).dp
-    val color = SpineColors[hash.absoluteValue % SpineColors.size]
-    Box(
-        modifier = Modifier
-            .offset(x = if (selected) 64.dp else nudge)
-            .width(620.dp)
-            .height(50.dp)
-            .graphicsLayer { alpha = if (selected) 1f else 1f - item.dust * 0.6f }
-            .clip(shape)
-            .background(color)
-            .smoothBorder(if (selected) 2.dp else 1.dp, if (selected) accent else Color.White.copy(alpha = 0.14f), shape)
-            .clickable(onClick = onClick),
-    ) {
-        if (item.dust > 0f && !selected) {
-            Canvas(Modifier.fillMaxSize()) {
-                val step = 7.dp.toPx()
-                var y = step / 2
-                while (y < size.height) {
-                    var x = step / 2
-                    while (x < size.width) {
-                        drawCircle(Color(0xFFDCD2BE).copy(alpha = 0.35f * item.dust), radius = 1.dp.toPx(), center = Offset(x, y))
-                        x += step
-                    }
-                    y += step
-                }
-            }
-        }
-        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(item.title.name, color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text(pileAgeLabel(item.waitedDays), color = Color(0xFFCFCCC3), fontSize = 13.sp, maxLines = 1, modifier = Modifier.padding(start = 12.dp))
-        }
-    }
-}
-
-@Composable
-private fun PilePanel(
-    item: PileItem?,
-    clock: TonightClock,
-    minutesUntilBed: Int,
-    confirming: Boolean,
-    accent: Color,
-    onPlay: () -> Unit,
-    onLetGo: () -> Unit,
-) {
-    val shape = RoundedCornerShape(20.dp)
+private fun PilePanel(item: PileItem?, clock: TonightClock, minutesUntilBed: Int, accent: Color, modifier: Modifier) {
+    val shape = RoundedCornerShape(18.dp)
     Column(
-        modifier = Modifier
-            .width(440.dp)
-            .fillMaxHeight()
-            .clip(shape)
+        modifier = modifier
+            .width(380.dp)
+            .height(150.dp)
+            .smoothRoundClip(18.dp)
             .background(GlassFill)
             .smoothBorder(1.dp, GlassEdge, shape)
-            .padding(28.dp),
+            .padding(horizontal = 22.dp, vertical = 18.dp),
     ) {
         if (item == null) return@Column
         Text(
             if (item.waitedDays == 0) "ADDED TODAY" else "WAITING ${item.waitedDays} DAY${if (item.waitedDays == 1) "" else "S"}",
             color = accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.8.sp, modifier = Modifier.height(20.dp),
         )
-        Spacer(Modifier.height(14.dp))
-        Row(modifier = Modifier.height(180.dp)) {
-            Box(Modifier.size(width = 120.dp, height = 180.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.05f))) {
-                val art = item.title.poster ?: item.title.backdrop
-                if (art != null) {
-                    NuvioAsyncImage(model = art, contentDescription = item.title.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                }
-            }
-            Spacer(Modifier.width(18.dp))
-            Column {
-                Text(item.title.name, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 3, overflow = TextOverflow.Ellipsis, lineHeight = 32.sp)
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        Text(item.title.tonightMetaLine(clock, minutesUntilBed), color = Color(0xFFCFCCC3), fontSize = 16.sp, maxLines = 1, modifier = Modifier.height(24.dp))
-        Text(item.title.genres.take(3).joinToString(" · "), color = TextDim, fontSize = 15.sp, maxLines = 1, modifier = Modifier.height(22.dp))
-        Spacer(Modifier.weight(1f))
-        GlassPill("OK · Finally watch it", selected = true, accent = accent, onClick = onPlay)
-        Spacer(Modifier.height(10.dp))
-        GlassPill(
-            if (confirming) "◀ again to let it go for good" else "◀ Let it go · off the pile for good",
-            selected = confirming, accent = accent, onClick = onLetGo,
-        )
+        Spacer(Modifier.height(8.dp))
+        Text(item.title.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(32.dp))
+        Text(item.title.tonightMetaLine(clock, minutesUntilBed), color = Color(0xFFCFCCC3), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(22.dp))
+        Text(item.title.genres.take(3).joinToString(" · "), color = TextDim, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(20.dp))
     }
 }

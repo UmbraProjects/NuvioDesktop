@@ -6498,7 +6498,6 @@ private fun AppTabHost(
 
         if (tonightShowing) { // fork:tonight
             com.nuvio.app.features.tonight.TonightHost(
-                topPadding = topChromePadding ?: 0.dp,
                 onPlay = onTonightPlay,
                 onOpenDetails = onTonightDetails,
                 onClose = { com.nuvio.app.features.tonight.TonightController.close() },

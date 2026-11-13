@@ -4,6 +4,15 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.zIndex
+import com.nuvio.app.core.ui.smoothRoundClip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,7 +85,10 @@ internal fun TonightTitle.tonightMetaLine(clock: TonightClock, minutesUntilBed: 
     return parts.joinToString(" · ")
 }
 
-/** A poster in a fixed box, with an optional tag in the corner and the name along the bottom. */
+/**
+ * A poster in a fixed box, with an optional tag in the corner and the name along the bottom. Lit (chosen, or under
+ * the mouse when it can be clicked), it glows in its own colours instead of taking an accent border.
+ */
 @Composable
 internal fun TonightPoster(
     title: TonightTitle?,
@@ -91,46 +103,55 @@ internal fun TonightPoster(
 ) {
     val accent = MaterialTheme.nuvio.colors.accent
     val shape = RoundedCornerShape(20.dp)
-    Box(
-        modifier = Modifier
-            .size(width = width, height = height)
-            .clip(shape)
-            .background(GlassFill)
-            .smoothBorder(if (selected) 2.dp else 1.dp, if (selected) accent else GlassEdge, shape)
-            .then(if (onClick != null && title != null) Modifier.clickable(onClick = onClick) else Modifier),
-    ) {
-        if (title == null) {
-            Text(
-                emptyText, color = TextDim, fontSize = 18.sp, textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.Center).padding(24.dp),
-            )
-            return@Box
-        }
-        val art = title.poster ?: title.backdrop
-        if (art != null) {
-            NuvioAsyncImage(model = art, contentDescription = title.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        }
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
+    val art = title?.let { it.poster ?: it.backdrop }
+    val lit = title != null && (selected || (hovered && onClick != null))
+    val glow = rememberGlowOf(art, lerp(accent, Color.White, 0.2f))
+    Box(modifier = Modifier.size(width = width, height = height).zIndex(if (lit) 1f else 0f)) {
+        AmbientGlow(lit = lit, colour = glow, cornerRadius = 20.dp)
         Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.35f),
-                    0.3f to Color.Transparent,
-                    0.55f to Color.Transparent,
-                    1f to Color.Black.copy(alpha = 0.9f),
-                ),
-            ),
-        )
-        if (tag != null) {
-            Text(
-                tag, color = tagColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.8.sp,
-                modifier = Modifier.align(if (tagAtEnd) Alignment.TopEnd else Alignment.TopStart).padding(18.dp),
-            )
+            modifier = Modifier
+                .fillMaxSize()
+                .smoothRoundClip(20.dp)
+                .background(Ground)
+                .background(GlassFill)
+                .hoverable(hover)
+                .then(if (onClick != null && title != null) Modifier.clickable(onClick = onClick) else Modifier),
+        ) {
+            if (title == null) {
+                Text(
+                    emptyText, color = TextDim, fontSize = 18.sp, textAlign = TextAlign.Center,
+                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                )
+            } else {
+                if (art != null) {
+                    NuvioAsyncImage(model = art, contentDescription = title.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                }
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.35f),
+                            0.3f to Color.Transparent,
+                            0.55f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = 0.9f),
+                        ),
+                    ),
+                )
+                if (tag != null) {
+                    Text(
+                        tag, color = tagColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.8.sp,
+                        modifier = Modifier.align(if (tagAtEnd) Alignment.TopEnd else Alignment.TopStart).padding(18.dp),
+                    )
+                }
+                Text(
+                    title.name, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 34.sp,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(22.dp),
+                )
+            }
+            if (!lit) Box(Modifier.fillMaxSize().smoothBorder(1.dp, GlassEdge, shape))
         }
-        Text(
-            title.name, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.SemiBold,
-            maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 34.sp,
-            modifier = Modifier.align(Alignment.BottomStart).padding(22.dp),
-        )
     }
 }
 
@@ -191,6 +212,8 @@ internal fun TonightCoinTossView(
         vetoes += TonightVeto(title, tonightVetoTrait(title, pool))
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
+    TonightAmbientWash(rememberColoursOf(current?.let { it.poster ?: it.backdrop }))
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -210,17 +233,22 @@ internal fun TonightCoinTossView(
             .padding(horizontal = Side, vertical = 36.dp),
     ) {
         Text("COIN TOSS · TOSS ${vetoes.size + 1}", color = TextDim, fontSize = 15.sp, letterSpacing = 2.sp, modifier = Modifier.height(24.dp))
-        Spacer(Modifier.height(24.dp))
-        Row(modifier = Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.height(36.dp))
+        // Centred as one block (user, Nov 12: aligned like the other pages), its buttons in the shared strip below.
+        Row(
+            modifier = Modifier.fillMaxWidth().height(530.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             TonightPoster(
                 title = current,
                 width = 360.dp,
                 height = 530.dp,
-                selected = false,
+                selected = true,
                 emptyText = if (loading) "Still gathering tonight's titles…" else "That's everything that fits tonight.",
             )
             Spacer(Modifier.width(64.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.width(620.dp)) {
                 Text("NUVIO PICKED THIS FOR YOU", color = accent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
                 Spacer(Modifier.height(10.dp))
                 Text(
@@ -231,7 +259,7 @@ internal fun TonightCoinTossView(
                     current?.tonightMetaLine(clock, minutesUntilBed).orEmpty(),
                     color = TextDim, fontSize = 18.sp, maxLines = 1, modifier = Modifier.height(26.dp),
                 )
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(28.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CountdownRing(secondsLeft = if (current == null) 0 else secondsLeft, total = TONIGHT_COIN_SECONDS, size = 150.dp, paused = paused || current == null)
                     Spacer(Modifier.width(30.dp))
@@ -242,21 +270,18 @@ internal fun TonightCoinTossView(
                         modifier = Modifier.width(380.dp).height(84.dp),
                     )
                 }
-                Spacer(Modifier.height(30.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    GlassPill("◀ Not this, toss again", selected = false, accent = accent, onClick = ::veto, enabled = current != null)
-                    GlassPill("OK Play now", selected = true, accent = accent, onClick = { current?.let(onPlay) }, enabled = current != null)
-                    GlassPill(if (paused) "▲ Start the clock" else "▲ Hold", selected = false, accent = accent, onClick = { paused = !paused }, enabled = current != null)
-                }
                 Spacer(Modifier.height(36.dp))
                 VetoPanel(vetoes)
             }
         }
-        Text(
-            "▼ opens its page · Back returns to the launcher",
-            color = TextFaint, fontSize = 15.sp, textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().height(22.dp),
-        )
+        TonightControls(hint = "◀ toss again · OK plays · ▲ holds · ▼ opens the detail page · Back returns to the launcher") {
+            TonightBackPill(onBack = onBack)
+            GlassPill("◀ Not this, toss again", selected = false, accent = accent, onClick = ::veto, enabled = current != null, pill = true)
+            GlassPill("OK Play now", selected = true, accent = accent, onClick = { current?.let(onPlay) }, enabled = current != null, pill = true)
+            GlassPill(if (paused) "▲ Start the clock" else "▲ Hold", selected = false, accent = accent, onClick = { paused = !paused }, enabled = current != null, pill = true)
+        }
+        Spacer(Modifier.weight(1f))
+    }
     }
 }
 
@@ -267,7 +292,7 @@ private fun VetoPanel(vetoes: List<TonightVeto>) {
         modifier = Modifier
             .width(620.dp)
             .height(112.dp)
-            .clip(shape)
+            .smoothRoundClip(16.dp)
             .background(Color.White.copy(alpha = 0.05f))
             .smoothBorder(1.dp, Color.White.copy(alpha = 0.12f), shape)
             .padding(horizontal = 20.dp, vertical = 16.dp),
@@ -285,7 +310,6 @@ private fun VetoPanel(vetoes: List<TonightVeto>) {
                             .padding(end = 8.dp)
                             .width(150.dp)
                             .height(30.dp)
-                            .clip(RoundedCornerShape(999.dp))
                             .smoothBorder(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(999.dp)),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -326,6 +350,7 @@ internal fun TonightKnockoutView(
     // Phase 3: Down plays a 20 s taste of each side of the match, left then right.
     var tasting by remember(bracket.winners.size) { mutableStateOf<Int?>(null) }
     val focus = rememberScreenFocus(Unit)
+    val match = bracket.currentMatch
 
     LaunchedEffect(champion?.key) {
         val winner = champion ?: return@LaunchedEffect
@@ -336,7 +361,32 @@ internal fun TonightKnockoutView(
         onPlay(winner)
     }
 
-    Column(
+    fun taste() {
+        if (champion != null || bracket.currentMatch == null) return
+        tasting = when (tasting) {
+            null -> 0
+            0 -> 1
+            else -> null
+        }
+    }
+
+    // The wash: the winner's colours, or the match's two, the right poster's lighting the top right and the left's
+    // the lower left, so the room is split between them.
+    val leftColours = rememberColoursOf(match?.first?.let { it.poster ?: it.backdrop })
+    val rightColours = rememberColoursOf(match?.second?.let { it.poster ?: it.backdrop })
+    val championColours = rememberColoursOf(champion?.let { it.poster ?: it.backdrop })
+    val wash = championColours ?: listOfNotNull(
+        rightColours?.firstOrNull() ?: leftColours?.firstOrNull(),
+        leftColours?.firstOrNull(),
+        rightColours?.getOrNull(1),
+    ).takeIf { it.isNotEmpty() }
+
+    // Laid out like Three Cards and Three Questions (user, Nov 12: one system): the heading and its line at the top
+    // left, the match centred on the screen in the same band as the dealt cards, the strip of buttons straight under
+    // it, and the bracket in the free space on the left, beside rather than in the middle's way.
+    Box(modifier = Modifier.fillMaxSize()) {
+    TonightAmbientWash(wash)
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .focusRequester(focus)
@@ -351,34 +401,51 @@ internal fun TonightKnockoutView(
                         bracket.winners.isEmpty() -> onBack()
                         else -> bracket = bracket.undo()
                     }
-                    TonightKey.Down -> if (champion == null && bracket.currentMatch != null) {
-                        tasting = when (tasting) {
-                            null -> 0
-                            0 -> 1
-                            else -> null
-                        }
-                    }
+                    TonightKey.Down -> taste()
                     TonightKey.Up -> Unit
                 }
                 true
             }
             .padding(horizontal = Side, vertical = 36.dp),
     ) {
-        val match = bracket.currentMatch
-        Text(
-            when {
-                champion != null -> "KNOCKOUT · TONIGHT'S WINNER"
-                bracket.entrants.size < 2 -> "KNOCKOUT"
-                bracket.roundNumber == bracket.roundCount -> "KNOCKOUT · THE FINAL"
-                else -> "KNOCKOUT · ROUND ${bracket.roundNumber} OF ${bracket.roundCount}"
-            },
-            color = TextDim, fontSize = 15.sp, letterSpacing = 2.sp, modifier = Modifier.height(24.dp),
-        )
-        Spacer(Modifier.height(24.dp))
-        Row(modifier = Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            BracketPanel(bracket)
-            Spacer(Modifier.width(48.dp))
-            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+        if (bracket.entrants.size >= 2) {
+            // The posters fill the left from under the heading to the bottom (eight down the first column at most),
+            // and never reach into the centre band.
+            val rows = bracket.entrants.size
+            val columns = bracket.roundCount + 1
+            val bracketHeight = maxHeight - KnockoutHeaderHeight - KnockoutHeaderGap
+            val sideRoom = (maxWidth - KnockoutCentreWidth) / 2 - 40.dp
+            val byHeight = (bracketHeight - BracketPadding * 2 - BracketGap * (rows - 1)) / rows
+            val byWidth = (sideRoom - BracketPadding * 2 - 22.dp * (columns - 1)) / columns * 1.5f
+            val thumbHeight = minOf(byHeight, byWidth).coerceIn(36.dp, 120.dp)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = KnockoutHeaderHeight + KnockoutHeaderGap)
+                    .height(bracketHeight),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                BracketPanel(bracket, thumbHeight * 2f / 3f, thumbHeight)
+            }
+        }
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxWidth().height(KnockoutHeaderHeight)) {
+                Text(
+                    when {
+                        champion != null -> "KNOCKOUT · TONIGHT'S WINNER"
+                        bracket.entrants.size < 2 -> "KNOCKOUT"
+                        bracket.roundNumber == bracket.roundCount -> "KNOCKOUT · THE FINAL"
+                        else -> "KNOCKOUT · ROUND ${bracket.roundNumber} OF ${bracket.roundCount}"
+                    },
+                    color = TextDim, fontSize = 15.sp, letterSpacing = 2.sp,
+                )
+                Text(
+                    if (champion != null) "The last one standing plays" else "Keep one of each pair; the last one standing plays",
+                    color = TextFaint, fontSize = 16.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp),
+                )
+            }
+            Spacer(Modifier.height(KnockoutHeaderGap))
+            Box(modifier = Modifier.fillMaxWidth().height(KnockoutAreaHeight), contentAlignment = Alignment.Center) {
                 when {
                     bracket.entrants.size < 2 -> Text(
                         if (loading) "Still gathering tonight's titles…" else "Knockout needs at least two titles that fit tonight.",
@@ -424,76 +491,107 @@ internal fun TonightKnockoutView(
                         }
                         Text("vs", color = TextFaint, fontSize = 40.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 28.dp))
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            TonightPoster(match.second, 330.dp, 470.dp, selected = false, tag = "KEEP ▶", tagAtEnd = true, onClick = { bracket = bracket.keep(left = false) })
+                            TonightPoster(match.second, 330.dp, 470.dp, selected = false, tag = "KEEP ▶", tagColor = accent, tagAtEnd = true, onClick = { bracket = bracket.keep(left = false) })
                             Text(match.second.tonightMetaLine(clock, minutesUntilBed), color = TextDim, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.width(330.dp).padding(top = 14.dp).height(22.dp))
                         }
                     }
                 }
             }
+            TonightControls(
+                hint = if (champion != null) "OK plays now · Back undoes the final"
+                else if (tasting != null) "◀ ▶ keep one · ▼ next taste · Back stops the tastes"
+                else "◀ ▶ keep one · ▼ a 20 second taste of each · Back undoes the last pick",
+            ) {
+                TonightBackPill(onBack = onBack)
+                GlassPill("Undo last pick", selected = false, accent = accent, enabled = bracket.winners.isNotEmpty(), pill = true, onClick = { tasting = null; bracket = bracket.undo() })
+                if (champion != null) {
+                    GlassPill("OK Play now", selected = true, accent = accent, pill = true, onClick = { onPlay(champion) })
+                } else {
+                    GlassPill(if (tasting == null) "▼ Taste each" else "▼ Next taste", selected = false, accent = accent, enabled = match != null, pill = true, onClick = ::taste)
+                }
+            }
+            Spacer(Modifier.weight(1f))
         }
-        Text(
-            if (champion != null) "OK plays now · Back undoes the final"
-            else if (tasting != null) "◀ ▶ keep one · ▼ next taste · Back stops the tastes"
-            else "◀ ▶ keep one · ▼ a 20 second taste of each · Back undoes the last pick",
-            color = TextFaint, fontSize = 15.sp, textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().height(22.dp),
-        )
+    }
+    }
+}
+
+/** Three Cards' frame, so the two pages line up: a 56 high heading, a 36 gap, and a 520 high band for the match. */
+private val KnockoutHeaderHeight = 56.dp
+private val KnockoutHeaderGap = 36.dp
+private val KnockoutAreaHeight = 520.dp
+/** The widest thing in the centre band (a taste's frame), which the bracket stays clear of. */
+private val KnockoutCentreWidth = 800.dp
+
+private val BracketPadding = 18.dp
+private val BracketGap = 8.dp
+
+/**
+ * The bracket as small posters (user, Nov 12: in place of the name boxes): one column per round and one for the
+ * winner, each slot centred between the two that feed it. The pair in play glows, a title that lost fades back, and
+ * a match not yet played is an empty glass slot. Sizes come from the screen, never from what is in the slots.
+ */
+@Composable
+private fun BracketPanel(bracket: TonightBracket, thumbWidth: Dp, thumbHeight: Dp) {
+    val shape = RoundedCornerShape(20.dp)
+    val match = bracket.currentMatch
+    val columns = bracket.roundCount + 1
+    Row(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(thumbWidth * columns + 22.dp * (columns - 1) + BracketPadding * 2)
+            .smoothRoundClip(20.dp)
+            .background(Color.White.copy(alpha = 0.04f))
+            .smoothBorder(1.dp, Color.White.copy(alpha = 0.10f), shape)
+            .padding(BracketPadding),
+        horizontalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        for (columnIndex in 0 until columns) {
+            val column = bracket.column(columnIndex)
+            val next = bracket.column(columnIndex + 1)
+            Column(
+                modifier = Modifier.width(thumbWidth).fillMaxHeight(),
+                verticalArrangement = Arrangement.SpaceAround,
+            ) {
+                column.forEachIndexed { i, title ->
+                    val inPlay = title != null && match != null && columnIndex == bracket.roundNumber - 1 &&
+                        (title.key == match.first.key || title.key == match.second.key)
+                    val decided = next.getOrNull(i / 2)
+                    val out = title != null && decided != null && decided.key != title.key
+                    val isChampion = columnIndex == columns - 1 && title != null
+                    BracketThumb(title, thumbWidth, thumbHeight, lit = inPlay || isChampion, out = out)
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun BracketPanel(bracket: TonightBracket) {
+private fun BracketThumb(title: TonightTitle?, width: Dp, height: Dp, lit: Boolean, out: Boolean) {
     val accent = MaterialTheme.nuvio.colors.accent
-    val shape = RoundedCornerShape(20.dp)
-    val match = bracket.currentMatch
-    Row(
-        modifier = Modifier
-            .width(400.dp)
-            .height(540.dp)
-            .clip(shape)
-            .background(Color.White.copy(alpha = 0.04f))
-            .smoothBorder(1.dp, Color.White.copy(alpha = 0.10f), shape)
-            .padding(18.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        // One fixed column per round; slots are spread evenly down the panel, so later rounds sit
-        // between the matches that feed them.
-        for (columnIndex in 0 until bracket.roundCount.coerceAtLeast(1)) {
-            val column = bracket.column(columnIndex)
-            val previous = if (columnIndex + 1 <= bracket.roundCount) bracket.column(columnIndex + 1) else emptyList()
-            Column(
-                modifier = Modifier.weight(1f).fillMaxSize(),
-                verticalArrangement = Arrangement.SpaceAround,
-            ) {
-                column.forEachIndexed { i, title ->
-                    val inPlay = title != null && match != null && (title.key == match.first.key || title.key == match.second.key) &&
-                        columnIndex == bracket.roundNumber - 1
-                    // A title that lost its match is struck through.
-                    val decidedWinner = previous.getOrNull(i / 2)
-                    val out = title != null && decidedWinner != null && decidedWinner.key != title.key
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(30.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (out) Color.Transparent else Color.White.copy(alpha = 0.06f))
-                            .smoothBorder(1.dp, if (inPlay) accent else Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 8.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Text(
-                            title?.name ?: "",
-                            color = when {
-                                out -> Color(0xFF6D6A63)
-                                inPlay -> Color.White
-                                else -> Color(0xFFCFCCC3)
-                            },
-                            fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            textDecoration = if (out) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
-                        )
-                    }
-                }
+    val art = title?.let { it.poster ?: it.backdrop }
+    val glow = rememberGlowOf(art, lerp(accent, Color.White, 0.2f))
+    val shape = RoundedCornerShape(10.dp)
+    // No bloom here (user, Nov 12): the thumbs sit too close and the halos ran into each other. The pair in play
+    // gets an edge in its own colour, drawn inside the thumb so it never reaches a neighbour.
+    Box(modifier = Modifier.size(width = width, height = height)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = if (out) 0.28f else 1f }
+                .smoothRoundClip(10.dp)
+                .background(Ground)
+                .background(GlassFill),
+        ) {
+            if (art != null) {
+                NuvioAsyncImage(model = art, contentDescription = title.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else if (title != null) {
+                Text(
+                    title.name, color = TextDim, fontSize = 11.sp, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).padding(4.dp),
+                )
             }
+            Box(Modifier.fillMaxSize().smoothBorder(if (lit) 2.dp else 1.dp, if (lit) glow else GlassEdge, shape))
         }
     }
 }

@@ -46,7 +46,7 @@ The Movies & TV tab opens on a **Tonight launcher**:
 ## More decisions (user, Nov 10, planning)
 
 - **Entry** (changed Nov 10 evening, after the first try on the TV: "once I'm in Tonight I cannot return to normal Nuvio"): a **What to watch** button beside Search in the top bar and sidebar (`NavBarEntry.Tonight`) opens Tonight over Home, Library or Discover; an **✕** on every Tonight screen and Back on the launcher close it (`TonightController`). "Open on Tonight" stays as an option (off by default) and only opens it once at start. The phone remote has a big "What to watch?" button on the Remote tab (`TONIGHT_DO open`).
-- **Pool**: the user's library and watchlist, Continue watching / Next up, and trending / new releases. **Not** the Home or Discover catalog rows.
+- **Pool**: the user's library and watchlist, Continue watching / Next up, and trending / new releases. **Not** the Home rows or Discover's catalog rows; Discover's Top picks, Because you watched and More like your favourites rows can be added from Settings (Nov 12, off by default, up to 15 a row).
 - **Never show / Let it go** share Discover's existing "Not interested" list (`discover/DiscoverNotInterestedStorage.kt`): one list across the app, with undo in Settings.
 - **Three Questions**: the first question is always **"Film or show?"**; the other two are picked from a set and vary night to night.
 - **Three Cards**: **Safe** = like what you finish; **New to you** = unseen but inside your taste; **Wildcard** = outside your usual taste.

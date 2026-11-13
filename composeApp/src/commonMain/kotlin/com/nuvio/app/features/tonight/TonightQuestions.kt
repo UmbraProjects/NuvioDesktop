@@ -62,7 +62,7 @@ fun tonightRotatingQuestions(recentFromYear: Int): List<TonightQuestion> = listO
         id = "cosy_edge",
         prompt = "Cosy, or on the edge of your seat?",
         left = TonightAnswer("Cosy", "Warm, funny, gentle") { it.isCosy() && !it.isEdgy() },
-        right = TonightAnswer("Edge of your seat", "Tension, mystery, action") { it.isEdgy() },
+        right = TonightAnswer("Exciting", "Tension, mystery, action") { it.isEdgy() },
     ),
 )
 

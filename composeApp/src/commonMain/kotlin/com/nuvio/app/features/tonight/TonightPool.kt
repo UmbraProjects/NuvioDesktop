@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.parseRuntimeMinutes
 import com.nuvio.app.features.discover.DiscoverNotInterestedStorage
+import com.nuvio.app.features.discover.DiscoverRecommendationsRepository
 import com.nuvio.app.features.discover.TmdbBrowse
 import com.nuvio.app.features.discover.TmdbBrowseMedia
 import com.nuvio.app.features.discover.TmdbBrowseQuery
@@ -26,15 +27,18 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /*
  * fork:tonight - gathers the titles the picker draws from (user, Nov 10): the library and
- * watchlist, Continue watching / Next up, and trending films and shows. Not the Home or Discover
- * rows. Titles the user marked "Not interested" (shared with Discover) are left out.
+ * watchlist, Continue watching / Next up, and trending films and shows; plus, when turned on in
+ * Settings (user, Nov 12), Discover's Top picks, Because you watched and More like your favourites
+ * rows. Not the Home rows. Titles the user marked "Not interested" (shared with Discover) are left out.
  */
 
 data class TonightPoolState(
@@ -52,7 +56,10 @@ object TonightPool {
 
     private const val REFRESH_AFTER_MS = 10 * 60_000L
     private const val TRENDING_PER_KIND = 20
-    private const val ENRICH_MAX = 60
+    private const val ENRICH_MAX = 90
+    private const val DISCOVER_WAIT_MS = 20_000L
+    private const val RECOMMENDED_PER_ROW = 15
+    private const val RECOMMENDED_MAX = 80
     private const val ENRICH_PARALLEL = 4
 
     /** Builds the pool, or rebuilds it once it is ten minutes old. Safe to call on every visit. */
@@ -73,6 +80,11 @@ object TonightPool {
     /** Runs [block] off the screen's lifetime (a cache to drop after the screen moved on). */
     internal fun background(block: suspend () -> Unit) {
         scope.launch { runCatching { block() } }
+    }
+
+    /** Gathers again on the next visit (a source was turned on or off). */
+    fun markStale() {
+        _state.value = _state.value.copy(loadedAtEpochMs = 0L)
     }
 
     /** Drops a title the user said they never want to see (it is already in Not interested). */
@@ -107,6 +119,8 @@ object TonightPool {
         continuing.forEach { add(it.toTonightTitle()) }
         LibraryRepository.uiState.value.items.forEach { add(it.toTonightTitle(isWatched(it.type, it.id))) }
         trending().forEach { add(it) }
+        TonightSettingsRepository.ensureLoaded()
+        recommended(TonightSettingsRepository.state.value.discoverSources).forEach { add(it) }
 
         val notInterested = runCatching { DiscoverNotInterestedStorage.load() }.getOrDefault(emptySet())
         val kept = merged.values.filter { it.key !in notInterested && it.type in setOf("movie", "series") }
@@ -124,6 +138,34 @@ object TonightPool {
                     .getOrDefault(emptyList())
             }
         }.awaitAll().flatten()
+    }
+
+    /**
+     * Titles from the Discover rows the user chose in Settings (Top picks, Because you watched, More like your
+     * favourites). Discover keeps its rows for a while, so this is usually instant; a cold build can take half a
+     * minute, so it waits a little and then takes whatever is there (the next gathering picks up the rest). A row
+     * turned off in Discover's own settings is simply not there.
+     */
+    private suspend fun recommended(sources: Set<TonightDiscoverSource>): List<TonightTitle> {
+        if (sources.isEmpty()) return emptyList()
+        val byFamily = sources.associateBy { it.family.entryId }
+        DiscoverRecommendationsRepository.refresh()
+        val discover = DiscoverRecommendationsRepository.uiState
+        val state = withTimeoutOrNull(DISCOVER_WAIT_MS) {
+            discover.first { it.hasLoadedOnce && !it.isLoading && it.rows.none { row -> row.isPlaceholder && row.entryId in byFamily } }
+        } ?: discover.value
+        val titles = state.rows
+            .filter { !it.isPlaceholder && it.entryId in byFamily }
+            .flatMap { row ->
+                val why = byFamily.getValue(row.entryId).why(row.title)
+                row.items.take(RECOMMENDED_PER_ROW).map {
+                    it.toTonightTitle(TonightOrigin.Recommended).copy(recommendedBy = why)
+                }
+            }
+            .distinctBy { it.key }
+            .take(RECOMMENDED_MAX)
+        log.i { "Tonight: ${titles.size} from Discover (${sources.joinToString { it.name }})" }
+        return titles
     }
 
     /** Fills in genres and length the sources left out, through the cached lightweight meta. */
@@ -176,6 +218,7 @@ private fun TonightTitle.mergedWith(other: TonightTitle): TonightTitle = copy(
     resumeMinutesLeft = resumeMinutesLeft ?: other.resumeMinutesLeft,
     addedAtEpochMs = addedAtEpochMs ?: other.addedAtEpochMs,
     tmdbId = tmdbId ?: other.tmdbId,
+    recommendedBy = recommendedBy ?: other.recommendedBy,
 )
 
 private fun WatchProgressEntry.toTonightTitle(): TonightTitle {
@@ -215,7 +258,7 @@ private fun LibraryItem.toTonightTitle(watched: Boolean): TonightTitle = Tonight
     tmdbId = tmdbId,
 )
 
-private fun MetaPreview.toTonightTitle(): TonightTitle = TonightTitle(
+private fun MetaPreview.toTonightTitle(origin: TonightOrigin = TonightOrigin.Trending): TonightTitle = TonightTitle(
     type = type.lowercase(),
     id = id,
     name = name,
@@ -226,6 +269,6 @@ private fun MetaPreview.toTonightTitle(): TonightTitle = TonightTitle(
     genres = genres,
     runtimeMinutes = runtime?.let(::parseRuntimeMinutes),
     rating = imdbRating?.toDoubleOrNull(),
-    origins = setOf(TonightOrigin.Trending),
+    origins = setOf(origin),
     tmdbId = id.removePrefix("tmdb:").toIntOrNull(),
 )

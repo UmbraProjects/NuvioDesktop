@@ -26,6 +26,7 @@ fun TonightTitle.flickOriginLine(): String = when {
     started -> "YOU'RE PART WAY THROUGH"
     watched -> "SEEN BEFORE"
     TonightOrigin.Library in origins -> "FROM YOUR LIBRARY"
+    TonightOrigin.Recommended in origins && recommendedBy != null -> recommendedBy.uppercase()
     TonightOrigin.Trending in origins -> "TRENDING THIS WEEK"
     else -> ""
 }

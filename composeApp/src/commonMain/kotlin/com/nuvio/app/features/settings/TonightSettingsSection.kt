@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import com.nuvio.app.features.discover.DiscoverAiSettingsRepository
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.tonight.TonightDiscoverSource
+import com.nuvio.app.features.tonight.TonightPickFromTopRange
 import com.nuvio.app.features.tonight.TonightSettingsRepository
 import com.nuvio.app.features.tonight.clockLabel
 import nuvio.composeapp.generated.resources.*
@@ -45,6 +47,33 @@ internal fun LazyListScope.tonightSettingsContent(isTablet: Boolean) {
                     isTablet = isTablet,
                     onValueChange = TonightSettingsRepository::setBedtime,
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSliderRow(
+                    title = stringResource(Res.string.tonight_pick_from_top),
+                    description = stringResource(Res.string.tonight_pick_from_top_description),
+                    value = settings.pickFromTop,
+                    valueText = settings.pickFromTop.toString(),
+                    valueRange = TonightPickFromTopRange,
+                    step = 1,
+                    isTablet = isTablet,
+                    onValueChange = TonightSettingsRepository::setPickFromTop,
+                )
+                for (source in TonightDiscoverSource.entries) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(
+                            when (source) {
+                                TonightDiscoverSource.TopPicks -> Res.string.tonight_source_top_picks
+                                TonightDiscoverSource.BecauseYouWatched -> Res.string.tonight_source_because
+                                TonightDiscoverSource.Favourites -> Res.string.tonight_source_favourites
+                            },
+                        ),
+                        description = stringResource(Res.string.tonight_source_description),
+                        checked = source in settings.discoverSources,
+                        isTablet = isTablet,
+                        onCheckedChange = { on -> TonightSettingsRepository.setDiscoverSource(source, on) },
+                    )
+                }
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = stringResource(Res.string.tonight_map_ai),

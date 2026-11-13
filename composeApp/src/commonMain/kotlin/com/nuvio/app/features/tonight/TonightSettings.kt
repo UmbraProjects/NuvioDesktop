@@ -1,5 +1,6 @@
 package com.nuvio.app.features.tonight
 
+import com.nuvio.app.features.discover.DiscoverRowFamily
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +22,29 @@ data class TonightSettings(
     val reshuffleUsedNight: String? = null,
     /** The Map: let the user's AI provider refine each title's Light/Heavy place (off by default, needs consent). */
     val mapAiEnabled: Boolean = false,
+    /** Discover rows whose titles join the pool (user, Nov 12; all off by default). */
+    val discoverSources: Set<TonightDiscoverSource> = emptySet(),
+    /** Three Cards picks each card at random from this many of its best matches (user, Nov 12: was fixed at 5). */
+    val pickFromTop: Int = TONIGHT_PICK_FROM_TOP_DEFAULT,
 )
+
+const val TONIGHT_PICK_FROM_TOP_DEFAULT = 5
+val TonightPickFromTopRange = 1..20
+
+/** A Discover row family the pool can borrow titles from, with the line a card shows for one of its titles. */
+enum class TonightDiscoverSource(val family: DiscoverRowFamily, val storageKey: String) {
+    TopPicks(DiscoverRowFamily.TopPicks, "srcTopPicks"),
+    BecauseYouWatched(DiscoverRowFamily.Because, "srcBecause"),
+    Favourites(DiscoverRowFamily.Favourites, "srcFavourites"),
+    ;
+
+    /** [rowTitle] is the Discover row's own heading, which for Because you watched names the title. */
+    fun why(rowTitle: String): String = when (this) {
+        TopPicks -> "A top pick for you"
+        BecauseYouWatched -> rowTitle.ifBlank { "Because of what you watched" }
+        Favourites -> "More like your favourites"
+    }
+}
 
 object TonightSettingsRepository {
     private val _state = MutableStateFlow(TonightSettings())
@@ -41,6 +64,10 @@ object TonightSettingsRepository {
                     ?: TonightMode.ThreeQuestions,
                 reshuffleUsedNight = TonightStorage.getString("reshuffleNight")?.takeIf { it.isNotBlank() },
                 mapAiEnabled = TonightStorage.getString("mapAi") == "true",
+                discoverSources = TonightDiscoverSource.entries.filter { TonightStorage.getString(it.storageKey) == "true" }.toSet(),
+                pickFromTop = TonightStorage.getString("pickFromTop")?.toIntOrNull()
+                    ?.coerceIn(TonightPickFromTopRange.first, TonightPickFromTopRange.last)
+                    ?: TONIGHT_PICK_FROM_TOP_DEFAULT,
             )
         }.getOrDefault(TonightSettings())
     }
@@ -63,6 +90,19 @@ object TonightSettingsRepository {
     fun setMapAiEnabled(on: Boolean) {
         update { it.copy(mapAiEnabled = on) }
         TonightStorage.putString("mapAi", on.toString())
+    }
+
+    /** Turns a Discover source on or off; the pool is gathered again on the next visit. */
+    fun setDiscoverSource(source: TonightDiscoverSource, on: Boolean) {
+        update { it.copy(discoverSources = if (on) it.discoverSources + source else it.discoverSources - source) }
+        TonightStorage.putString(source.storageKey, on.toString())
+        TonightPool.markStale()
+    }
+
+    fun setPickFromTop(count: Int) {
+        val next = count.coerceIn(TonightPickFromTopRange.first, TonightPickFromTopRange.last)
+        update { it.copy(pickFromTop = next) }
+        TonightStorage.putString("pickFromTop", next.toString())
     }
 
     fun setBedtime(minuteOfDay: Int) {

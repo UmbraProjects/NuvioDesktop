@@ -44,7 +44,7 @@ fun tonightVetoTrait(title: TonightTitle, pool: List<TonightTitle>): TonightTrai
     if (light >= 0.5f) scores += TonightTrait.Light to light * 0.6f
     when {
         title.started || title.watched -> scores += TonightTrait.Familiar to 0.4f
-        TonightOrigin.Trending in title.origins && TonightOrigin.Library !in title.origins ->
+        title.isUnfamiliar() ->
             scores += TonightTrait.Unfamiliar to 0.3f
     }
     // Film or show is the weakest reading: only when the pool really is a mix of both.
@@ -71,8 +71,13 @@ fun TonightTitle.sharesVeto(veto: TonightVeto): Boolean = when (veto.trait) {
     TonightTrait.Film -> kind == TonightKind.Film
     TonightTrait.Show -> kind == TonightKind.Show
     TonightTrait.Familiar -> started || watched
-    TonightTrait.Unfamiliar -> TonightOrigin.Trending in origins && TonightOrigin.Library !in origins
+    TonightTrait.Unfamiliar -> isUnfamiliar()
 }
+
+/** Came from outside what the user keeps: trending, or a Discover suggestion. */
+private fun TonightTitle.isUnfamiliar(): Boolean =
+    TonightOrigin.Library !in origins &&
+        (TonightOrigin.Trending in origins || TonightOrigin.Recommended in origins)
 
 /** "leaning shorter and lighter", or null before any veto said anything. */
 fun tonightLeanLabel(vetoes: List<TonightVeto>): String? {

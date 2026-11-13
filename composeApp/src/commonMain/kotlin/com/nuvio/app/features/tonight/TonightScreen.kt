@@ -8,6 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,11 +38,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -49,6 +52,9 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -58,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.smoothBorder
+import com.nuvio.app.core.ui.smoothRoundClip
 import com.nuvio.app.features.library.LibraryRepository
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
@@ -100,7 +107,6 @@ internal data class TonightClock(val minuteOfDay: Int, val isoDate: String, val 
 
 @Composable
 fun TonightHost(
-    topPadding: Dp,
     onPlay: (type: String, id: String) -> Unit,
     onOpenDetails: (type: String, id: String) -> Unit,
     onClose: () -> Unit,
@@ -140,7 +146,11 @@ fun TonightHost(
 
     fun deal(from: List<TonightTitle>, reshuffle: Boolean) {
         val seed = (clock.night + answers.joinToString("|")).hashCode().toLong() + if (reshuffle) dealt.size else 0
-        hand = tonightDeal(from, taste, seed, exclude = if (reshuffle) dealt.toSet() else emptySet())
+        hand = tonightDeal(
+            from, taste, seed,
+            exclude = if (reshuffle) dealt.toSet() else emptySet(),
+            pickFrom = settings.pickFromTop,
+        )
         if (!reshuffle) dealt.clear()
         dealt += hand.map { it.title.key }
         dealtFrom = from
@@ -265,13 +275,15 @@ fun TonightHost(
                     radius = 1400f,
                 ),
             )
-            .padding(top = topPadding),
     ) {
         when (view) {
             TonightView.Launcher -> TonightLauncher(
                 clock = clock,
                 settings = settings,
                 bedtimeFilters = bedtimeFilters,
+                art = remember(pool, poolState.titles, clock.night, minutesUntilBed / 30) {
+                    tonightTileArt(pool, poolState.titles, taste, clock.night.hashCode().toLong(), minutesUntilBed, System.currentTimeMillis())
+                },
                 onOpen = { mode ->
                     when (mode) {
                         TonightMode.ThreeQuestions -> startQuestions()
@@ -312,6 +324,9 @@ fun TonightHost(
                 totalCount = pool.size,
                 leftCount = current.size,
                 loading = poolState.loading && poolState.titles.isEmpty(),
+                poolArt = remember(current) { tonightRepresentativeArt(current) },
+                leftArt = remember(current, question) { question?.let { tonightRepresentativeArt(tonightApply(current, it, TonightSide.Left)) } },
+                rightArt = remember(current, question) { question?.let { tonightRepresentativeArt(tonightApply(current, it, TonightSide.Right)) } },
                 onAnswer = ::answer,
                 onBack = ::questionBack,
             )
@@ -385,9 +400,6 @@ fun TonightHost(
                 onBack = { view = TonightView.Launcher },
             )
         }
-        // A way out that is always there (user, Nov 10): a fixed X in the top-right corner, inside the side margin
-        // every Tonight screen keeps clear, so it never covers anything.
-        TonightCloseButton(onClose = onClose, modifier = Modifier.align(Alignment.TopEnd).padding(top = 10.dp, end = 10.dp))
     }
     // A hand dealt before the pool arrived is dealt again once it has.
     LaunchedEffect(poolState.loadedAtEpochMs) {
@@ -492,8 +504,8 @@ internal fun rememberScreenFocus(key: Any?): FocusRequester {
 private data class TileInfo(val mode: TonightMode, val title: String, val line: String)
 
 private val Tiles = listOf(
-    TileInfo(TonightMode.ThreeQuestions, "Three Questions", "Three taps, then three cards"),
-    TileInfo(TonightMode.ThreeCards, "Three Cards", "Safe, new, wildcard. One reshuffle."),
+    TileInfo(TonightMode.ThreeQuestions, "Three Questions", "Three taps, three cards"),
+    TileInfo(TonightMode.ThreeCards, "Three Cards", "Safe, new, wildcard: one reshuffle"),
     TileInfo(TonightMode.Knockout, "Knockout", "Eight titles, two at a time"),
     TileInfo(TonightMode.TheMap, "The Map", "Light or heavy, comfort or new"),
     TileInfo(TonightMode.EndsBy, "Ends By", "What fits before bed"),
@@ -501,6 +513,12 @@ private val Tiles = listOf(
     TileInfo(TonightMode.CoinToss, "Coin Toss", "Nuvio picks; you veto or let it play"),
     TileInfo(TonightMode.ThePile, "The Pile", "Everything you meant to watch"),
 )
+
+/**
+ * Everything on the launcher but the tiles, top to bottom: padding 40 + 40, header row 64, title 76, subtitle 28,
+ * gap 36, then the controls strip (TonightControls). Keep in step with TonightLauncher's layout.
+ */
+private val LauncherFixedHeight = 284.dp + TonightControlsHeight
 
 private const val SEL_BROWSE = 8
 private const val SEL_BED = 9
@@ -510,6 +528,7 @@ private fun TonightLauncher(
     clock: TonightClock,
     settings: TonightSettings,
     bedtimeFilters: Boolean,
+    art: Map<TonightMode, TonightTitle>,
     onOpen: (TonightMode) -> Unit,
     onBrowseAll: () -> Unit,
 ) {
@@ -530,6 +549,17 @@ private fun TonightLauncher(
         }
     }
 
+    // Behind everything, a wash of the chosen tile's colours (user, Nov 12: like the Home ambient, not the picture),
+    // and each tile glows in its own backdrop's colour (TonightAmbient).
+    val colours = rememberBackdropColours(art.values.mapNotNull { it.backdrop }.distinct())
+    fun coloursOf(mode: TonightMode): List<Color>? = art[mode]?.backdrop?.let { colours[it] }?.takeIf { it.isNotEmpty() }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    // Tiles at the backdrops' own 16:9 (user, Nov 12: were ~2.2:1, cropping the art), unless the screen is too short
+    // for two rows of that and everything else, when they give up height evenly. Set by the screen, never the content.
+    val tileWidth = (maxWidth - Side * 2 - 24.dp * 3) / 4
+    val roomForTiles = (maxHeight - LauncherFixedHeight - 24.dp) / 2
+    val tileHeight = minOf(tileWidth * 9f / 16f, roomForTiles).coerceAtLeast(160.dp)
+    TonightAmbientWash(Tiles.getOrNull(lastTile)?.let { coloursOf(it.mode) })
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -574,10 +604,17 @@ private fun TonightLauncher(
             .padding(horizontal = Side, vertical = 40.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth().height(64.dp), verticalAlignment = Alignment.Top) {
-            Column(modifier = Modifier.weight(1f)) {
+            Row(modifier = Modifier.weight(1f).height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(clock.dayName, color = TextFaint, fontSize = 15.sp, letterSpacing = 3.sp)
                 Text(
-                    "${clock.dayName} · ${clockLabel(clock.minuteOfDay)}",
-                    color = TextDim, fontSize = 15.sp, letterSpacing = 2.sp,
+                    " · ${clockLabel(clock.minuteOfDay)}",
+                    color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp,
+                )
+                Spacer(Modifier.width(20.dp))
+                Box(
+                    Modifier.width(320.dp).height(1.dp).background(
+                        Brush.horizontalGradient(listOf(GlassEdge, Color.Transparent)),
+                    ),
                 )
             }
             BedtimeChip(
@@ -588,21 +625,32 @@ private fun TonightLauncher(
             )
         }
         Text(
-            "How shall we choose tonight?",
-            color = Color.White, fontSize = 52.sp, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.height(72.dp),
+            buildAnnotatedString {
+                append("How shall we choose ")
+                withStyle(SpanStyle(color = lerp(accent, Color.White, 0.45f))) { append("tonight?") }
+            },
+            color = Color.White, fontSize = 56.sp, fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            modifier = Modifier.height(76.dp),
         )
-        Spacer(Modifier.height(40.dp))
+        Text(
+            "A little inspiration goes a long way.",
+            color = TextDim, fontSize = 19.sp, maxLines = 1,
+            modifier = Modifier.height(28.dp),
+        )
+        Spacer(Modifier.height(36.dp))
         for (row in 0..1) {
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.fillMaxWidth()) {
                 for (col in 0..3) {
                     val index = row * 4 + col
                     ModeTile(
                         info = Tiles[index],
+                        art = art[Tiles[index].mode],
+                        glow = coloursOf(Tiles[index].mode)?.first()?.let(::glowColourOf) ?: lerp(accent, Color.White, 0.2f),
                         selected = selected == index,
                         lastUsed = Tiles[index].mode == settings.lastMode,
                         accent = accent,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(tileHeight),
                         onHover = { selected = index; lastTile = index },
                         onClick = { selected = index; lastTile = index; activate(index) },
                     )
@@ -610,22 +658,18 @@ private fun TonightLauncher(
             }
             if (row == 0) Spacer(Modifier.height(24.dp))
         }
-        // One fixed line under the tiles: the "not yet" note, else the key hint.
-        Text(
-            notYet ?: "OK starts a mode · Up sets bedtime · Back or ✕ closes",
-            color = if (notYet != null) accent else TextFaint, fontSize = 15.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 20.dp).height(22.dp),
-        )
-        Spacer(Modifier.weight(1f))
-        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        // The shared strip (TonightChrome): the hint, a separator, and the way out straight beneath it.
+        TonightControls(hint = notYet ?: "OK starts a mode · Up sets bedtime · Back closes", hintColor = if (notYet != null) accent else TextFaint) {
             GlassPill(
-                text = "Just browse everything ▸",
+                text = "Just browse everything  →",
                 selected = selected == SEL_BROWSE,
                 accent = accent,
                 onClick = onBrowseAll,
+                pill = true,
             )
         }
+        Spacer(Modifier.weight(1f))
+    }
     }
 }
 
@@ -656,9 +700,16 @@ private fun BedtimeChip(settings: TonightSettings, active: Boolean, selected: Bo
     }
 }
 
+/**
+ * A mode tile: the backdrop of a title this mode would offer tonight (TonightTileArt), darkened from the left so the
+ * name reads, with the tag, name, line and arrow in fixed slots. Chosen, it glows all round in [glow] (its backdrop's
+ * colour) instead of a bright border. Without art it is the plain glass tile.
+ */
 @Composable
 private fun ModeTile(
     info: TileInfo,
+    art: TonightTitle?,
+    glow: Color,
     selected: Boolean,
     lastUsed: Boolean,
     accent: Color,
@@ -666,50 +717,89 @@ private fun ModeTile(
     onHover: () -> Unit,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(18.dp)
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     LaunchedEffect(hovered) { if (hovered) onHover() }
-    Column(
-        modifier = modifier
-            .height(200.dp)
-            .clip(shape)
-            .background(if (selected) accent.copy(alpha = 0.12f) else GlassFill)
-            .smoothBorder(if (selected) 2.dp else 1.dp, if (selected) accent else GlassEdge, shape)
+    // The chosen tile is drawn above its neighbours so its glow lies over the gaps, not under the next tile.
+    Box(modifier = modifier.zIndex(if (selected) 1f else 0f)) {
+    AmbientGlow(lit = selected, colour = glow, cornerRadius = 18.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // Not .clip(): desktop clips are hard-edged and the corners stair-stepped (user, Nov 12).
+            .smoothRoundClip(18.dp)
+            // Opaque under the glass, so the glow behind never shows through a tile without art.
+            .background(Ground)
+            .background(GlassFill)
             .hoverable(hover)
             .clickable(onClick = onClick)
-            .graphicsLayer { alpha = if (info.mode.built) 1f else 0.55f }
-            .padding(22.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
+            .graphicsLayer { alpha = if (info.mode.built) 1f else 0.55f },
     ) {
-        Row(modifier = Modifier.fillMaxWidth().height(20.dp)) {
-            Spacer(Modifier.weight(1f))
-            val tag = when {
-                !info.mode.built -> "COMING SOON"
-                lastUsed -> "LAST TIME"
-                else -> ""
+        art?.backdrop?.let { url ->
+            NuvioAsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alpha = if (selected) 1f else 0.82f,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.horizontalGradient(
+                        0f to Ground.copy(alpha = 0.88f),
+                        0.55f to Ground.copy(alpha = 0.45f),
+                        1f to Ground.copy(alpha = 0.10f),
+                    ),
+                ),
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(0.4f to Color.Transparent, 1f to Ground.copy(alpha = 0.75f)),
+                ),
+            )
+        }
+        // The glass edge only while not chosen: chosen, the bloom is the edge (user, Nov 12: the two fought).
+        if (!selected) Box(Modifier.fillMaxSize().smoothBorder(1.dp, GlassEdge, shape))
+        val tag = when {
+            !info.mode.built -> "COMING SOON"
+            lastUsed -> "LAST TIME"
+            else -> ""
+        }
+        // Top left: the dark side of the tile, where the fade keeps it readable.
+        Text(
+            tag,
+            color = if (lastUsed && info.mode.built) lerp(accent, Color.White, 0.4f) else TextFaint,
+            fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp, maxLines = 1,
+            modifier = Modifier.align(Alignment.TopStart).padding(top = 22.dp, start = 26.dp).height(18.dp),
+        )
+        Row(
+            modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(start = 26.dp, end = 22.dp, bottom = 26.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(info.title, color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Spacer(Modifier.height(6.dp))
+                Text(info.line, color = Color.White.copy(alpha = 0.78f), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text(tag, color = if (lastUsed && info.mode.built) accent else TextFaint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
+            Spacer(Modifier.width(12.dp))
+            Text("→", color = Color.White.copy(alpha = if (selected) 1f else 0.75f), fontSize = 22.sp, modifier = Modifier.height(24.dp))
         }
-        Column {
-            Text(info.title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Spacer(Modifier.height(6.dp))
-            Text(info.line, color = TextDim, fontSize = 15.sp, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
-        }
+    }
     }
 }
 
 @Composable
-internal fun GlassPill(text: String, selected: Boolean, accent: Color, onClick: () -> Unit, enabled: Boolean = true) {
-    val shape = RoundedCornerShape(14.dp)
+internal fun GlassPill(text: String, selected: Boolean, accent: Color, onClick: () -> Unit, enabled: Boolean = true, pill: Boolean = false) {
+    val shape = RoundedCornerShape(if (pill) 999.dp else 14.dp)
     Box(
         modifier = Modifier
-            .height(48.dp)
+            .height(if (pill) 54.dp else 48.dp)
             .clip(shape)
             .background(if (selected) accent.copy(alpha = 0.16f) else GlassFill)
             .smoothBorder(if (selected) 2.dp else 1.dp, if (selected) accent else GlassEdge, shape)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 22.dp),
+            .padding(horizontal = if (pill) 36.dp else 22.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(text, color = if (enabled) Color.White else TextFaint, fontSize = 17.sp, maxLines = 1)
@@ -717,6 +807,10 @@ internal fun GlassPill(text: String, selected: Boolean, accent: Color, onClick: 
 }
 
 // ---- Three Questions ---------------------------------------------------------------------------
+
+/** The backdrop that best stands for [titles]: the best-rated one that has a backdrop. */
+internal fun tonightRepresentativeArt(titles: List<TonightTitle>): String? =
+    titles.filter { !it.backdrop.isNullOrBlank() }.maxByOrNull { it.rating ?: 0.0 }?.backdrop
 
 @Composable
 private fun TonightQuestions(
@@ -726,12 +820,25 @@ private fun TonightQuestions(
     totalCount: Int,
     leftCount: Int,
     loading: Boolean,
+    /** What is left now, and what each answer would leave, as one backdrop each (the wash previews an answer). */
+    poolArt: String?,
+    leftArt: String?,
+    rightArt: String?,
     onAnswer: (TonightQuestion, TonightSide) -> Unit,
     onBack: () -> Unit,
 ) {
     val accent = MaterialTheme.nuvio.colors.accent
     val focus = rememberScreenFocus(question?.id)
+    // The answer under the mouse (the remote answers at once, so only the mouse ever leans).
+    var leaning by remember(question?.id) { mutableStateOf<TonightSide?>(null) }
+    val washArt = when (leaning) {
+        TonightSide.Left -> leftArt ?: poolArt
+        TonightSide.Right -> rightArt ?: poolArt
+        else -> poolArt
+    }
 
+    Box(modifier = Modifier.fillMaxSize()) {
+    TonightAmbientWash(rememberColoursOf(washArt))
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -783,21 +890,26 @@ private fun TonightQuestions(
         )
         Spacer(Modifier.height(56.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(48.dp)) {
-            AnswerCard(question?.left, "◀ LEFT", false, accent, Color(0xFFF5B544)) {
-                question?.let { onAnswer(it, TonightSide.Left) }
-            }
-            AnswerCard(question?.right, "RIGHT ▶", false, accent, Color(0xFF6FD3C9)) {
-                question?.let { onAnswer(it, TonightSide.Right) }
-            }
+            AnswerCard(
+                answer = question?.left, keyLabel = "◀ LEFT", mirrored = false, keyColor = AnswerLeftColour,
+                onHover = { leaning = if (it) TonightSide.Left else leaning.takeIf { s -> s != TonightSide.Left } },
+            ) { question?.let { onAnswer(it, TonightSide.Left) } }
+            AnswerCard(
+                answer = question?.right, keyLabel = "RIGHT ▶", mirrored = true, keyColor = AnswerRightColour,
+                onHover = { leaning = if (it) TonightSide.Right else leaning.takeIf { s -> s != TonightSide.Right } },
+            ) { question?.let { onAnswer(it, TonightSide.Right) } }
         }
-        Spacer(Modifier.height(28.dp))
-        GlassPill(
-            text = "▼ Either is fine",
-            selected = false,
-            accent = accent,
-            enabled = question != null,
-            onClick = { question?.let { onAnswer(it, TonightSide.Skip) } },
-        )
+        TonightControls(hint = "◀ ▶ answer · ▼ either is fine · Back goes back a question") {
+            TonightBackPill(onBack = onBack)
+            GlassPill(
+                text = "▼ Either is fine",
+                selected = false,
+                accent = accent,
+                enabled = question != null,
+                pill = true,
+                onClick = { question?.let { onAnswer(it, TonightSide.Skip) } },
+            )
+        }
         Spacer(Modifier.weight(1f))
         Row(modifier = Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("SO FAR", color = TextFaint, fontSize = 14.sp, modifier = Modifier.padding(end = 12.dp))
@@ -816,37 +928,75 @@ private fun TonightQuestions(
                 }
             }
             Spacer(Modifier.weight(1f))
+            Text("$totalCount → $leftCount titles left", color = TextDim, fontSize = 17.sp)
+        }
+    }
+    }
+}
+
+private val AnswerLeftColour = Color(0xFFF5B544)
+private val AnswerRightColour = Color(0xFF6FD3C9)
+
+/**
+ * One answer. The two mirror each other about the gap between them (user, Nov 12: symmetry): the key sits in the
+ * outer top corner and the answer itself hugs the inner edge, so the left card's text is right-aligned. Glows in its
+ * key colour while the mouse is over it.
+ */
+@Composable
+private fun AnswerCard(
+    answer: TonightAnswer?,
+    keyLabel: String,
+    mirrored: Boolean,
+    keyColor: Color,
+    onHover: (Boolean) -> Unit,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(20.dp)
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
+    LaunchedEffect(hovered) { onHover(hovered) }
+    val lit = hovered && answer != null
+    val inner = if (mirrored) Alignment.Start else Alignment.End
+    val innerText = if (mirrored) TextAlign.Start else TextAlign.End
+    Box(modifier = Modifier.width(420.dp).height(220.dp).zIndex(if (lit) 1f else 0f)) {
+        AmbientGlow(lit = lit, colour = keyColor, cornerRadius = 20.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .smoothRoundClip(20.dp)
+                .background(Ground)
+                .background(GlassFill)
+                .then(if (lit) Modifier else Modifier.smoothBorder(1.dp, GlassEdge, shape))
+                .hoverable(hover)
+                .clickable(enabled = answer != null, onClick = onClick)
+                .padding(32.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
             Text(
-                "$totalCount → $leftCount titles left · Back goes back a question",
-                color = TextDim, fontSize = 17.sp,
+                keyLabel, color = keyColor, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = if (mirrored) TextAlign.End else TextAlign.Start,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                answer?.label ?: "", color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.SemiBold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = innerText,
+                modifier = Modifier.fillMaxWidth().align(inner),
+            )
+            Text(
+                answer?.detail ?: "", color = Color(0xFFCFCCC3), fontSize = 17.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = innerText,
+                modifier = Modifier.fillMaxWidth().align(inner),
             )
         }
     }
 }
 
-@Composable
-private fun AnswerCard(answer: TonightAnswer?, keyLabel: String, selected: Boolean, accent: Color, keyColor: Color, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(20.dp)
-    Column(
-        modifier = Modifier
-            .width(420.dp)
-            .height(220.dp)
-            .clip(shape)
-            .background(GlassFill)
-            .smoothBorder(if (selected) 2.dp else 1.dp, if (selected) accent else GlassEdge, shape)
-            .clickable(enabled = answer != null, onClick = onClick)
-            .padding(32.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(keyLabel, color = keyColor, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-        Text(answer?.label ?: "", color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(answer?.detail ?: "", color = Color(0xFFCFCCC3), fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
 // ---- Three Cards -------------------------------------------------------------------------------
 
-private const val SEL_RESHUFFLE = 3
+// The controls under the cards (Nov 12: moved from the header and the foot to one strip beneath them).
+private const val SEL_BACK = 3
+private const val SEL_PAGE = 4
+private const val SEL_RESHUFFLE = 5
 
 @Composable
 private fun TonightCards(
@@ -863,17 +1013,31 @@ private fun TonightCards(
 ) {
     val accent = MaterialTheme.nuvio.colors.accent
     var selected by remember(hand) { mutableIntStateOf(if (hand.size >= 2) 1 else 0) }
+    // The card the controls act on: the one chosen last, kept while the cursor is on the controls.
+    var lastCard by remember(hand) { mutableIntStateOf(selected) }
     // Phase 3: holding OK on a card plays its trailer in place of the hand.
     var trailerOf by remember(hand) { mutableStateOf<TonightCard?>(null) }
     val focus = rememberScreenFocus(Unit)
+    val focused = hand.getOrNull(lastCard)
 
+    fun activate(s: Int) {
+        when (s) {
+            SEL_BACK -> onBack()
+            SEL_PAGE -> focused?.let(onDetails)
+            SEL_RESHUFFLE -> if (reshuffleLeft) onReshuffle()
+            else -> hand.getOrNull(s)?.let(onPlay)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+    TonightAmbientWash(rememberColoursOf(focused?.title?.let { it.backdrop ?: it.poster }))
     Column(
         modifier = Modifier
             .fillMaxSize()
             .focusRequester(focus)
             .focusable()
             .tonightKeysWithHold(
-                onHoldOk = { if (selected != SEL_RESHUFFLE) trailerOf = hand.getOrNull(selected) },
+                onHoldOk = { if (selected < SEL_BACK) trailerOf = hand.getOrNull(selected) },
             ) { key ->
                 val s = selected
                 val showing = trailerOf
@@ -885,40 +1049,34 @@ private fun TonightCards(
                     }
                     return@tonightKeysWithHold true
                 }
+                val onControls = s >= SEL_BACK
                 when (key) {
-                    TonightKey.Left -> if (s in 1..2) selected = s - 1
-                    TonightKey.Right -> if (s in 0..1 && s + 1 < hand.size) selected = s + 1
-                    TonightKey.Up -> selected = SEL_RESHUFFLE
-                    TonightKey.Down -> if (s == SEL_RESHUFFLE) selected = if (hand.size >= 2) 1 else 0 else hand.getOrNull(s)?.let(onDetails)
-                    TonightKey.Ok -> if (s == SEL_RESHUFFLE) {
-                        if (reshuffleLeft) onReshuffle()
-                    } else {
-                        hand.getOrNull(s)?.let(onPlay)
-                    }
+                    TonightKey.Left -> if (onControls) {
+                        if (s > SEL_BACK) selected = s - 1
+                    } else if (s in 1..2) selected = s - 1
+                    TonightKey.Right -> if (onControls) {
+                        if (s < SEL_RESHUFFLE) selected = s + 1
+                    } else if (s in 0..1 && s + 1 < hand.size) selected = s + 1
+                    TonightKey.Up -> if (onControls) selected = lastCard
+                    TonightKey.Down -> if (!onControls) selected = SEL_PAGE
+                    TonightKey.Ok -> activate(s)
                     TonightKey.Back -> onBack()
                 }
+                if (selected < SEL_BACK) lastCard = selected
                 true
             }
             .padding(horizontal = Side, vertical = 36.dp),
     ) {
-        Row(modifier = Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("TONIGHT'S HAND", color = TextDim, fontSize = 15.sp, letterSpacing = 2.sp)
-                Text(
-                    answers.joinToString(" · ").ifEmpty { "Straight from everything that fits before bed" },
-                    color = TextFaint, fontSize = 16.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-            GlassPill(
-                text = if (reshuffleLeft) "Reshuffle · 1 left tonight" else "No reshuffles left tonight",
-                selected = selected == SEL_RESHUFFLE,
-                accent = accent,
-                enabled = reshuffleLeft,
-                onClick = onReshuffle,
+        Column(modifier = Modifier.fillMaxWidth().height(56.dp)) {
+            Text("TONIGHT'S HAND", color = TextDim, fontSize = 15.sp, letterSpacing = 2.sp)
+            Text(
+                answers.joinToString(" · ").ifEmpty { "Straight from everything that fits before bed" },
+                color = TextFaint, fontSize = 16.sp, maxLines = 1, modifier = Modifier.padding(top = 6.dp),
             )
         }
-        Spacer(Modifier.height(28.dp))
-        Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+        Spacer(Modifier.height(36.dp))
+        // A fixed box for the hand (or the trailer in its place), so the controls under it never move.
+        Box(modifier = Modifier.fillMaxWidth().height(CardsAreaHeight), contentAlignment = Alignment.Center) {
             val showing = trailerOf
             if (showing != null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -942,7 +1100,7 @@ private fun TonightCards(
                     color = TextDim, fontSize = 22.sp, textAlign = TextAlign.Center,
                 )
             } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(40.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(horizontalArrangement = Arrangement.spacedBy(40.dp), verticalAlignment = Alignment.Top) {
                     for (i in 0..2) {
                         val card = hand.getOrNull(i)
                         DealtCard(
@@ -950,21 +1108,42 @@ private fun TonightCards(
                             selected = selected == i,
                             accent = accent,
                             meta = card?.metaLine(clock, minutesUntilBed).orEmpty(),
-                            onHover = { if (card != null) selected = i },
+                            onHover = { if (card != null) { selected = i; lastCard = i } },
                             onClick = { if (card != null) onPlay(card) },
                         )
                     }
                 }
             }
         }
-        Text(
-            if (trailerOf != null) "OK plays it · Back returns to the cards"
-            else "◀ ▶ look at a card · OK plays · hold OK for the trailer · Down opens its page",
-            color = TextFaint, fontSize = 15.sp, textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().height(22.dp),
-        )
+        TonightControls(
+            hint = if (trailerOf != null) "OK plays it · Back returns to the cards"
+            else "◀ ▶ look at a card · OK plays · hold OK for the trailer · ▼ to these buttons",
+        ) {
+            TonightBackPill(onBack = onBack, selected = selected == SEL_BACK)
+            GlassPill(
+                text = "Detail page",
+                selected = selected == SEL_PAGE,
+                accent = accent,
+                enabled = focused != null,
+                pill = true,
+                onClick = { focused?.let(onDetails) },
+            )
+            GlassPill(
+                text = if (reshuffleLeft) "Reshuffle · 1 left tonight" else "No reshuffles left tonight",
+                selected = selected == SEL_RESHUFFLE,
+                accent = accent,
+                enabled = reshuffleLeft,
+                pill = true,
+                onClick = onReshuffle,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+    }
     }
 }
+
+/** The hand's box: a slot heading (22 + 14), a card (436) and its meta line (16 + 22), with room for the trailer's label and frame (518). */
+private val CardsAreaHeight = 520.dp
 
 private fun TonightCard.metaLine(clock: TonightClock, minutesUntilBed: Int): String {
     val t = title
@@ -1001,67 +1180,83 @@ private fun DealtCard(
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     LaunchedEffect(hovered) { if (hovered) onHover() }
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(320.dp)) {
+    val art = card?.title?.let { it.poster ?: it.backdrop }
+    // Chosen, it glows in its own poster's colour (the launcher's highlight) instead of an accent border.
+    val glow = rememberGlowOf(art, lerp(accent, Color.White, 0.2f))
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(320.dp).zIndex(if (selected) 1f else 0f)) {
+        // The slot is a heading above the poster, not printed on it (user, Nov 12), in a fixed slot so a missing
+        // card leaves the row level.
+        Text(
+            card?.slot?.label().orEmpty(),
+            color = when (card?.slot) {
+                TonightSlot.Safe -> Color(0xFF9CC7FF)
+                TonightSlot.New -> accent
+                TonightSlot.Wildcard -> Color(0xFF6FD3C9)
+                null -> Color.Transparent
+            }.let { if (selected) it else lerp(it, TextDim, 0.35f) },
+            fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.8.sp, maxLines = 1,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().height(22.dp),
+        )
+        Spacer(Modifier.height(14.dp))
         Box(
             modifier = Modifier
-                .size(width = 320.dp, height = 460.dp)
+                .size(width = 320.dp, height = 436.dp)
                 // Grows a touch when chosen, without taking more room: nothing beside it moves.
                 .graphicsLayer {
                     val s = if (selected) 1.04f else 1f
                     scaleX = s
                     scaleY = s
-                    alpha = if (card == null) 0.35f else if (selected) 1f else 0.82f
-                }
-                .clip(shape)
-                .background(GlassFill)
-                .smoothBorder(if (selected) 2.dp else 1.dp, if (selected) accent else GlassEdge, shape)
-                .hoverable(hover)
-                .clickable(enabled = card != null, onClick = onClick),
+                },
         ) {
-            if (card == null) {
-                Text(
-                    "Nothing else fits tonight",
-                    color = TextDim, fontSize = 18.sp, textAlign = TextAlign.Center,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                )
-            } else {
-                val art = card.title.poster ?: card.title.backdrop
-                if (art != null) {
-                    NuvioAsyncImage(
-                        model = art,
-                        contentDescription = card.title.name,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.35f),
-                            0.35f to Color.Transparent,
-                            0.55f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.9f),
-                        ),
-                    ),
-                )
-                Text(
-                    card.slot.label(),
-                    color = when (card.slot) {
-                        TonightSlot.Safe -> Color(0xFF9CC7FF)
-                        TonightSlot.New -> accent
-                        TonightSlot.Wildcard -> Color(0xFF6FD3C9)
-                    },
-                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.8.sp,
-                    modifier = Modifier.align(Alignment.TopStart).padding(20.dp),
-                )
-                Column(modifier = Modifier.align(Alignment.BottomStart).padding(22.dp)) {
+            AmbientGlow(lit = selected && card != null, colour = glow, cornerRadius = 20.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // The dimming is on the poster only: an alpha on the outer layer clips to the card's square
+                    // bounds, so the bloom fading out after a move survived only in the corners (user, Nov 12).
+                    .graphicsLayer { alpha = if (card == null) 0.35f else if (selected) 1f else 0.82f }
+                    .smoothRoundClip(20.dp)
+                    .background(Ground)
+                    .background(GlassFill)
+                    .hoverable(hover)
+                    .clickable(enabled = card != null, onClick = onClick),
+            ) {
+                if (card == null) {
                     Text(
-                        card.title.name, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.SemiBold,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 34.sp,
+                        "Nothing else fits tonight",
+                        color = TextDim, fontSize = 18.sp, textAlign = TextAlign.Center,
+                        modifier = Modifier.align(Alignment.Center).padding(24.dp),
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Text(card.why, color = Color(0xFFE8DCC8), fontSize = 15.sp, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
+                } else {
+                    if (art != null) {
+                        NuvioAsyncImage(
+                            model = art,
+                            contentDescription = card.title.name,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(
+                                0f to Color.Black.copy(alpha = 0.35f),
+                                0.35f to Color.Transparent,
+                                0.55f to Color.Transparent,
+                                1f to Color.Black.copy(alpha = 0.9f),
+                            ),
+                        ),
+                    )
+                    Column(modifier = Modifier.align(Alignment.BottomStart).padding(22.dp)) {
+                        Text(
+                            card.title.name, color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.SemiBold,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 34.sp,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(card.why, color = Color(0xFFE8DCC8), fontSize = 15.sp, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
                 }
+                if (!selected) Box(Modifier.fillMaxSize().smoothBorder(1.dp, GlassEdge, shape))
             }
         }
         Text(
@@ -1074,18 +1269,3 @@ private fun DealtCard(
 }
 
 
-@Composable
-private fun TonightCloseButton(onClose: () -> Unit, modifier: Modifier = Modifier) {
-    val shape = androidx.compose.foundation.shape.CircleShape
-    Box(
-        modifier = modifier
-            .size(40.dp)
-            .clip(shape)
-            .background(GlassFill)
-            .smoothBorder(1.dp, GlassEdge, shape)
-            .clickable(onClick = onClose),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("✕", color = Color.White, fontSize = 18.sp)
-    }
-}
