@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -90,7 +91,7 @@ internal object MusicKeyboard {
         from?.let { runCatching { it.requester.saveFocusedChild() } }
         returnTo = from
         returnControl = focusManager?.focusedControl()
-        return runCatching { player.requester.requestFocus() }.getOrDefault(false)
+        return player.requester.requestFocusLogged()
     }
 
     /**
@@ -101,7 +102,7 @@ internal object MusicKeyboard {
         if (roots.any { it.hasFocus }) return false
         val target = roots.lastOrNull { it.takesFocus && !it.covered } ?: return false
         return runCatching { (target.entry ?: target.requester).requestFocus() }.getOrDefault(false) ||
-            runCatching { target.requester.requestFocus() }.getOrDefault(false)
+            target.requester.requestFocusLogged()
     }
 }
 
@@ -135,8 +136,8 @@ internal fun Modifier.musicKeyboardRoot(
             repeat(FOCUS_TRIES) { attempt ->
                 delay(if (attempt == 0) 32 else 60)
                 if (root.hasFocus) return@LaunchedEffect
-                if (entry == null || !runCatching { entry.requestFocus() }.getOrDefault(false)) {
-                    runCatching { requester.requestFocus() }
+                if (entry == null || !entry.requestFocusLogged()) {
+                    requester.requestFocusLogged()
                 }
             }
         }

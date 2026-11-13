@@ -24,6 +24,7 @@ internal object UiFreezeWatchdog {
     private const val InterimMs = 5_000L
     private const val AppFrames = 4
     private const val LeafFrames = 8
+    private const val FullStackFrames = 60
 
     private val log = Logger.withTag("UiFreeze")
     private val started = AtomicBoolean(false)
@@ -69,7 +70,10 @@ internal object UiFreezeWatchdog {
             answeredAtNanos = System.nanoTime()
         }
         val byApp = HashMap<String, Int>()
-        val leafByApp = HashMap<String, String>()
+        // Per app bucket: how often each leaf (the innermost frames) was sampled. The line reports the most
+        // common one; the first-sampled leaf it used to report said where a freeze began, not where it sat.
+        val leafByApp = HashMap<String, HashMap<String, Int>>()
+        val stackByLeaf = HashMap<String, Array<StackTraceElement>>()
         var samples = 0
         var running: String? = null
         var interimLogged = false
@@ -83,7 +87,10 @@ internal object UiFreezeWatchdog {
             samples++
             val key = appKey(stack)
             byApp[key] = (byApp[key] ?: 0) + 1
-            leafByApp.getOrPut(key) { stack.take(LeafFrames).joinToString(" < ") { it.shortName() } }
+            val leaf = stack.take(LeafFrames).joinToString(" < ") { it.shortName() }
+            val leaves = leafByApp.getOrPut(key) { HashMap() }
+            leaves[leaf] = (leaves[leaf] ?: 0) + 1
+            stackByLeaf.getOrPut("$key|$leaf") { stack }
             if (running == null) running = runningThreads(thread)
             if (!interimLogged && waitedMs >= InterimMs) {
                 interimLogged = true
@@ -93,6 +100,17 @@ internal object UiFreezeWatchdog {
         val frozenMs = (answeredAtNanos - postedAt) / 1_000_000
         if (frozenMs >= ReportMs) {
             log.w { line("${frozenMs}ms", samples, byApp, leafByApp, running, gcCountAtPost, gcMsAtPost) }
+            // A long freeze also gets the whole stack of where it sat most, once, on its own lines.
+            if (frozenMs >= InterimMs) {
+                val top = byApp.maxByOrNull { it.value }?.key
+                val leaf = top?.let { leafByApp[it]?.maxByOrNull { e -> e.value }?.key }
+                stackByLeaf["$top|$leaf"]?.let { stack ->
+                    log.w {
+                        "stack of the most sampled spot:\n" + stack.take(FullStackFrames)
+                            .joinToString("\n") { "    at ${it.className}.${it.methodName}(${it.fileName}:${it.lineNumber})" }
+                    }
+                }
+            }
         }
     }
 
@@ -100,7 +118,7 @@ internal object UiFreezeWatchdog {
         what: String,
         samples: Int,
         byApp: Map<String, Int>,
-        leafByApp: Map<String, String>,
+        leafByApp: Map<String, Map<String, Int>>,
         running: String?,
         gcCountAtPost: Long,
         gcMsAtPost: Long,
@@ -110,7 +128,10 @@ internal object UiFreezeWatchdog {
         append(if (gcN > 0) "${gcN}x ${gcMs() - gcMsAtPost}ms" else "none")
         val top = byApp.entries.sortedByDescending { it.value }.take(3)
         top.forEach { (key, n) -> append(" | ${n}x $key") }
-        top.firstOrNull()?.let { (key, _) -> append(" || leaf: ${leafByApp[key]}") }
+        top.firstOrNull()?.let { (key, _) ->
+            leafByApp[key].orEmpty().entries.sortedByDescending { it.value }.take(3)
+                .forEach { (leaf, n) -> append(" || leaf ${n}x: $leaf") }
+        }
         running?.let { append(" || running: $it") }
     }
 

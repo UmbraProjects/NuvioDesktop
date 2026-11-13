@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.ui.window.PopupProperties
@@ -420,7 +421,7 @@ private fun ConstellationMap(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { at ->
-                        runCatching { focusRequester.requestFocus() }
+                        focusRequester.requestFocusLogged()
                         onSelectNow(hitStar(pointsNow, screenNow, at.x, at.y))
                     },
                 )

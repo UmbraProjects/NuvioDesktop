@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -108,7 +109,7 @@ actual fun PlayerShortcutRebindDialog(action: PlayerShortcutAction, onDismiss: (
     var error by remember { mutableStateOf<String?>(null) }
     val currentLabel = playerShortcutKeyCodeLabel(PlayerShortcutsRepository.keyCode(action))
 
-    LaunchedEffect(action) { runCatching { focusRequester.requestFocus() } }
+    LaunchedEffect(action) { focusRequester.requestFocusLogged() }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
         NuvioDialogSurface {
@@ -206,7 +207,7 @@ actual fun AppShortcutRebindDialog(action: AppShortcutAction, onDismiss: () -> U
     val focusRequester = remember { FocusRequester() }
     var error by remember { mutableStateOf<String?>(null) }
     val currentLabel = playerShortcutKeyCodeLabel(AppShortcutsRepository.keyCode(action))
-    LaunchedEffect(action) { runCatching { focusRequester.requestFocus() } }
+    LaunchedEffect(action) { focusRequester.requestFocusLogged() }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
         NuvioDialogSurface {

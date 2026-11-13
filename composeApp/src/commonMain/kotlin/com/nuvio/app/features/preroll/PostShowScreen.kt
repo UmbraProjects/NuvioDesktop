@@ -1,5 +1,6 @@
 package com.nuvio.app.features.preroll
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -69,7 +70,7 @@ fun PostShowScreen(
     val stage = view.stage
     val palette = remember(pack) { pack.theme.toPalette() }
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { focus.requestFocusLogged() }
 
     // How long the current card has been up. Holding a card stops the clock; questions never advance by themselves.
     var elapsedMs by remember(stage) { mutableStateOf(0L) }

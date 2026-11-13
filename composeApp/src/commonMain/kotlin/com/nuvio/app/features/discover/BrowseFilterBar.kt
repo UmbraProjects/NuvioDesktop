@@ -1,5 +1,6 @@
 package com.nuvio.app.features.discover
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.LocalScreenCovered
@@ -306,7 +307,7 @@ private fun BrowseFilterIconButton(
     LaunchedEffect(refocusAfterMenu) {
         if (!refocusAfterMenu) return@LaunchedEffect
         delay(16)
-        runCatching { focusRequester.requestFocus() }
+        focusRequester.requestFocusLogged()
     }
     Box(
         modifier = Modifier
@@ -372,7 +373,7 @@ private fun BrowseFilterMenuSurface(maxHeight: Dp, content: @Composable ColumnSc
     if (LocalBrowseMenuKeyboardOpened.current) {
         LaunchedEffect(Unit) {
             delay(16)
-            runCatching { firstChoice.requestFocus() }
+            firstChoice.requestFocusLogged()
         }
     }
     NuvioGlassMenuSurface(

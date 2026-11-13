@@ -1,5 +1,6 @@
 package com.nuvio.app.features.party
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -210,9 +211,9 @@ private fun JoinContent(
             lookUp(target)
         } else {
             delay(650)
-            runCatching { focusRequester.requestFocus() }
+            focusRequester.requestFocusLogged()
             delay(550)
-            runCatching { focusRequester.requestFocus() }
+            focusRequester.requestFocusLogged()
         }
     }
 

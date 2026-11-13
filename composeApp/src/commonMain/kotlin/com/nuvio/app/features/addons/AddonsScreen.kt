@@ -1,5 +1,6 @@
 package com.nuvio.app.features.addons
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.features.settings.SettingsSectionGlassEdge
 import com.nuvio.app.features.settings.SettingsSectionGlassEdgeColor
@@ -668,7 +669,7 @@ private fun DesktopAddonSearchField(
             voiceOwner?.let { owner ->
                 com.nuvio.app.core.ui.VoiceSearchButton(
                     owner = owner,
-                    focusField = { runCatching { focusRequester.requestFocus() } },
+                    focusField = { focusRequester.requestFocusLogged() },
                     tint = tokens.colors.textMuted,
                     size = 28.dp,
                 )

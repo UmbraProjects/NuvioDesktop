@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.ui.focus.FocusRequester
 
 /*
@@ -25,8 +26,8 @@ internal object SettingsKeyboard {
     /** Puts focus on the selected category, or else the page's first control. Returns whether it did. */
     fun focusPage(): Boolean {
         val page = root ?: return false
-        return runCatching { entry.requestFocus() }.getOrDefault(false) ||
-            runCatching { page.requester.requestFocus() }.getOrDefault(false)
+        return entry.requestFocusLogged() ||
+            page.requester.requestFocusLogged()
     }
 
     /** An arrow reached the window with no control taking it: while Settings is open and holds no focus, focus it. */

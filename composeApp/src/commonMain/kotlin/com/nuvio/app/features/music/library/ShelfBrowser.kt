@@ -1,6 +1,7 @@
 package com.nuvio.app.features.music.library
 // FORK UI (Spyder): Nick's Shelf redesign, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.music.nebula.LosslessPill
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -721,7 +722,7 @@ private fun CoverPages(
     LaunchedEffect(page, pendingSlot) {
         val slot = pendingSlot ?: return@LaunchedEffect
         withFrameNanos { }
-        runCatching { slots[slot].requestFocus() }
+        slots[slot].requestFocusLogged()
         pendingSlot = null
     }
     val onPage = albums.shelfPage(page, perPage)
@@ -1122,7 +1123,7 @@ private fun ItemPages(
     LaunchedEffect(page, pendingSlot) {
         val slot = pendingSlot ?: return@LaunchedEffect
         withFrameNanos { }
-        runCatching { slots[slot].requestFocus() }
+        slots[slot].requestFocusLogged()
         pendingSlot = null
     }
     val onPage = items.shelfPage(page, perPage)

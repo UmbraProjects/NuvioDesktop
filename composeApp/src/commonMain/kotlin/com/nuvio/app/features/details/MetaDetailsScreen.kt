@@ -1,5 +1,6 @@
 package com.nuvio.app.features.details
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.posterservice.CustomPosterScreen
 import com.nuvio.app.features.posterservice.rememberCustomPosters
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -1447,7 +1448,7 @@ fun MetaDetailsScreen(
                     episodeSearchQuery = ""
                     episodeSearchInputReady = false
                     if (detailsKeyboardNavigationEnabled) {
-                        try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                        tvFocusRequester.requestFocusLogged()
                     }
                 }
                 val tvCoroutineScope = rememberCoroutineScope()
@@ -1778,7 +1779,7 @@ fun MetaDetailsScreen(
                 val gameModeActive by GameModeController.active.collectAsStateWithLifecycle()
                 LaunchedEffect(detailsKeyboardNavigationEnabled, gameModeActive) {
                     if (detailsKeyboardNavigationEnabled && !gameModeActive) {
-                        runCatching { tvFocusRequester.requestFocus() }
+                        tvFocusRequester.requestFocusLogged()
                     }
                 }
 
@@ -2104,7 +2105,7 @@ fun MetaDetailsScreen(
                 // The picker held keyboard focus while it was open; take it back when it closes.
                 LaunchedEffect(streamPickerClosedCount) {
                     if (streamPickerClosedCount == 0 || !detailsKeyboardNavigationEnabled) return@LaunchedEffect
-                    try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                    tvFocusRequester.requestFocusLogged()
                 }
                 LaunchedEffect(Unit) {
                     DetailTvKeyboardBridge.keys.collect { key ->
@@ -2360,7 +2361,7 @@ fun MetaDetailsScreen(
                                             HeroTrailerAudioState.setVolume(newVolume)
                                         },
                                         onHeroTrailerReclaimFocus = {
-                                            try { tvFocusRequester.requestFocus() } catch (_: Exception) {}
+                                            tvFocusRequester.requestFocusLogged()
                                         },
                                         onHeroTrailerDismiss = dismissHeroTrailerPlayback,
                                         onHeroTrailerReady = {
@@ -3439,7 +3440,7 @@ private fun EpisodeSearchOverlay(
     LaunchedEffect(Unit) {
         // Let the overlay enter composition before handing focus to its text editor.
         delay(1)
-        try { focusRequester.requestFocus() } catch (_: Exception) {}
+        focusRequester.requestFocusLogged()
     }
 
     Column(

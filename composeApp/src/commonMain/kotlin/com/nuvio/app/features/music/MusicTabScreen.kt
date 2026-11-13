@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.layout.width
@@ -169,7 +170,7 @@ internal object MusicTabState {
     val pillsFocus = FocusRequester()
 
     /** Down from the bar: onto that row. */
-    fun focusPills(): Boolean = runCatching { pillsFocus.requestFocus() }.getOrDefault(false)
+    fun focusPills(): Boolean = pillsFocus.requestFocusLogged()
 
     /** Enter was pressed before the results came in: they take focus when they arrive. */
     var focusResultsWhenReady by mutableStateOf(false)
@@ -415,7 +416,7 @@ private fun MusicGlassField(
         if (MusicTopBarSearch.focusRequests == handledFocusRequests) return@LaunchedEffect
         handledFocusRequests = MusicTopBarSearch.focusRequests
         swallowActivationKey = true
-        runCatching { focusRequester.requestFocus() }
+        focusRequester.requestFocusLogged()
         delay(150)
         swallowActivationKey = false
     }
@@ -485,7 +486,7 @@ private fun MusicGlassField(
                             return@onPreviewKeyEvent true
                         }
                         Key.DirectionRight -> {
-                            if (trailingFocus != null) runCatching { trailingFocus.requestFocus() }
+                            if (trailingFocus != null) trailingFocus.requestFocusLogged()
                             return@onPreviewKeyEvent true
                         }
                         else -> Unit
@@ -505,7 +506,7 @@ private fun MusicGlassField(
                 // Escape clears the box and puts the keyboard back on the page under it, rather than nowhere.
                 if (event.type == KeyEventType.KeyUp) {
                     onQueryChange("")
-                    if (!runCatching { MusicTabState.bodyFocus.requestFocus() }.getOrDefault(false)) focusManager.clearFocus()
+                    if (!MusicTabState.bodyFocus.requestFocusLogged()) focusManager.clearFocus()
                 }
                 true
             },
@@ -675,7 +676,7 @@ private fun MusicResultGrid(modifier: Modifier, content: LazyGridScope.() -> Uni
         if (!MusicTabState.focusResultsWhenReady) return@LaunchedEffect
         repeat(8) {
             delay(40)
-            if (runCatching { MusicTabState.bodyFocus.requestFocus() }.getOrDefault(false)) {
+            if (MusicTabState.bodyFocus.requestFocusLogged()) {
                 MusicTabState.focusResultsWhenReady = false
                 return@LaunchedEffect
             }

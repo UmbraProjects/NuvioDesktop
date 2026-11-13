@@ -57,6 +57,10 @@ object PerfTelemetry {
 
     private val inFlight = AtomicInteger(0)
 
+    /** The screen last marked, kept whether or not perf logging is on (KeyRoute names it in its lines). */
+    @Volatile var visibleScreen: String = "startup"
+        private set
+
     /** The screen the current telemetry window belongs to (lags a screen change by a hop). */
     val currentScreen: String
         get() = synchronized(lock) { screen }
@@ -92,6 +96,7 @@ object PerfTelemetry {
      * opens one for [name]. Repeated marks of the same screen are ignored.
      */
     fun markScreen(name: String) {
+        visibleScreen = name
         if (!enabled) return
         val previous: String
         val spentMs: Long

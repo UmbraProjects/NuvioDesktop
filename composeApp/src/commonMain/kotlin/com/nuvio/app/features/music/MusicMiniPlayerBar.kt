@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.KeyboardInputMode
 import com.nuvio.app.core.ui.smoothBorder
@@ -572,7 +573,7 @@ internal fun MorePanel(
         properties = PopupProperties(focusable = true),
     ) {
         // The popup has its own composition, so the focus request has to run in here, once the first row exists.
-        LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+        LaunchedEffect(Unit) { first.requestFocusLogged() }
         val shape = RoundedCornerShape(24.dp)
         Column(
             modifier = Modifier

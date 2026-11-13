@@ -1,5 +1,6 @@
 package com.nuvio.app.features.tonight
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -495,7 +496,7 @@ internal fun Modifier.tonightKeysWithHold(onHoldOk: () -> Unit, handle: (Tonight
 @Composable
 internal fun rememberScreenFocus(key: Any?): FocusRequester {
     val requester = remember { FocusRequester() }
-    LaunchedEffect(key) { runCatching { requester.requestFocus() } }
+    LaunchedEffect(key) { requester.requestFocusLogged() }
     return requester
 }
 
@@ -1090,7 +1091,7 @@ private fun TonightCards(
                         title = showing.title,
                         modifier = Modifier.width(860.dp).height(484.dp),
                         onFinished = { trailerOf = null },
-                        onReclaimFocus = { runCatching { focus.requestFocus() } },
+                        onReclaimFocus = { focus.requestFocusLogged() },
                     )
                 }
             } else if (hand.isEmpty()) {

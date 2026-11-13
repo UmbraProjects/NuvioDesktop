@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import com.nuvio.app.features.music.nebula.NebulaMusicSource
 import com.nuvio.app.features.music.nebula.NebulaSourceRow
@@ -268,7 +269,7 @@ private fun AlbumContent(
         if (firstPlayable < 0) return@LaunchedEffect
         repeat(10) {
             delay(80)
-            if (runCatching { firstTrackFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+            if (firstTrackFocus.requestFocusLogged()) return@LaunchedEffect
         }
     }
     fun startAlbum(trackIndex: Int, mode: MusicPlayMode, shuffled: Boolean) {

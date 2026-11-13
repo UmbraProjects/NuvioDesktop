@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -106,7 +107,7 @@ internal fun ArtistWidgets(
                 LaunchedEffect(artist.id) {
                     repeat(10) {
                         delay(80)
-                        if (runCatching { entry.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+                        if (entry.requestFocusLogged()) return@LaunchedEffect
                     }
                 }
             }

@@ -1,5 +1,6 @@
 package com.nuvio.app
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.ui.draw.clip
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.accentFill
@@ -7197,7 +7198,7 @@ private fun TabletFloatingTopBar(
     LaunchedEffect(searchFocusRequestCount) {
         if (searchFocusRequestCount > 0 && isSearchActive) {
             suppressSearchActivationKey = true
-            try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
+            searchBarFocusRequester.requestFocusLogged()
             kotlinx.coroutines.delay(150)
             suppressSearchActivationKey = false
         }
@@ -7421,7 +7422,7 @@ private fun TabletFloatingTopBar(
                                 BarSearchScope.YouTube -> com.nuvio.app.features.voice.VoiceSearchScope.YouTube
                                 else -> com.nuvio.app.features.voice.VoiceSearchScope.All
                             },
-                            focusField = { try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {} },
+                            focusField = { searchBarFocusRequester.requestFocusLogged() },
                             tint = inactiveIconTint,
                             size = NuvioTokens.Space.s32,
                             iconSize = 16.dp,

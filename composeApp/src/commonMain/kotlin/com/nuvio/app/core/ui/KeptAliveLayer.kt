@@ -98,7 +98,10 @@ fun KeptAliveLayer(
     LaunchedEffect(visible) {
         // The covering screen usually takes focus itself in the same frame; only let go when it
         // has not, so its own request is never undone.
-        if (!visible && layerHasFocus) focusManager.clearFocus(force = true)
+        if (!visible && layerHasFocus) {
+            KeyRouteLog.note("a covered screen let go of focus")
+            focusManager.clearFocus(force = true)
+        }
     }
     val currentlyVisible by rememberUpdatedState(visible)
     Box(

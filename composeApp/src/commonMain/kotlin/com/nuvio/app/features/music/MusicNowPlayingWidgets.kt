@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -209,7 +210,7 @@ private fun QueueRow(
     LaunchedEffect(wantsFocus, focusable) {
         if (!wantsFocus) return@LaunchedEffect
         // The row becomes focusable on the frame after the window has moved.
-        if (focusable) runCatching { requester.requestFocus() }
+        if (focusable) requester.requestFocusLogged()
         onFocusHandled()
     }
     Row(

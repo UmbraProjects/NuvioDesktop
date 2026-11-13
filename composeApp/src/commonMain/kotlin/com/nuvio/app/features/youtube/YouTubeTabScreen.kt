@@ -1,5 +1,6 @@
 package com.nuvio.app.features.youtube
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -500,15 +501,15 @@ fun YouTubeTabScreen(
         kotlinx.coroutines.delay(50L) // the grid's first frame
         val index = videos.indexOfFirst { it.videoId == back.itemKey }
         if (index >= 0 && gridState.layoutInfo.visibleItemsInfo.none { it.key == back.itemKey }) gridState.scrollToItem(index)
-        if (index < 0 || runCatching { returnFocus.requestFocus() }.isFailure) {
-            if (firstVideoId != null) runCatching { firstCardFocus.requestFocus() }
+        if (index < 0 || !returnFocus.requestFocusLogged()) {
+            if (firstVideoId != null) firstCardFocus.requestFocusLogged()
         }
         pendingReturn = null
     }
     LaunchedEffect(KeyboardInputMode.active, selectedName, firstVideoId) {
         if (KeyboardInputMode.active && !tabHasFocus && firstVideoId != null && pendingReturn == null) {
             kotlinx.coroutines.delay(50L) // the grid's first frame
-            runCatching { firstCardFocus.requestFocus() }
+            firstCardFocus.requestFocusLogged()
         }
     }
     // The bar's box: Enter searches, its clear button leaves the results. Requests made before this
@@ -534,7 +535,7 @@ fun YouTubeTabScreen(
     LaunchedEffect(focusResultsPending, firstVideoId, feed.loading) {
         if (focusResultsPending && kind == YouTubeFeedKind.Search && firstVideoId != null && !feed.loading) {
             kotlinx.coroutines.delay(50L)
-            runCatching { firstCardFocus.requestFocus() }
+            firstCardFocus.requestFocusLogged()
             focusResultsPending = false
         }
     }
@@ -637,7 +638,7 @@ fun YouTubeTabScreen(
                             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                             when (event.key) {
                                 Key.DirectionDown -> {
-                                    if (firstVideoId == null || runCatching { firstCardFocus.requestFocus() }.isFailure) {
+                                    if (firstVideoId == null || !firstCardFocus.requestFocusLogged()) {
                                         focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
                                     }
                                     true
@@ -676,7 +677,7 @@ fun YouTubeTabScreen(
                         com.nuvio.app.core.ui.VoiceSearchButton(
                             owner = "youtube-tab",
                             voiceScope = com.nuvio.app.features.voice.VoiceSearchScope.YouTube,
-                            focusField = { runCatching { searchFocus.requestFocus() } },
+                            focusField = { searchFocus.requestFocusLogged() },
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(end = 4.dp),
                             size = 28.dp,
@@ -1030,7 +1031,7 @@ private fun ProfileMenu(
     LaunchedEffect(Unit) {
         if (KeyboardInputMode.active) {
             kotlinx.coroutines.delay(16)
-            runCatching { first.requestFocus() }
+            first.requestFocusLogged()
         }
     }
     NuvioGlassMenuSurface(modifier = Modifier.widthIn(min = 260.dp, max = 360.dp)) {
@@ -1227,7 +1228,7 @@ private fun rememberReturnFocus(
         if (index >= 0) {
             gridState.scrollToItem(index)
             kotlinx.coroutines.delay(50L) // the tile's first frame
-            runCatching { requester.requestFocus() }
+            requester.requestFocusLogged()
         }
         onDone()
     }

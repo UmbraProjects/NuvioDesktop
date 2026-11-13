@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.playlist
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.background
@@ -185,7 +186,7 @@ internal fun AddToPlaylistDialog(tracks: List<PlaylistTrack>, onDismiss: () -> U
     LaunchedEffect(Unit) {
         repeat(10) {
             delay(40)
-            if (runCatching { firstChoice.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+            if (firstChoice.requestFocusLogged()) return@LaunchedEffect
         }
     }
     val dialogFocus = LocalFocusManager.current

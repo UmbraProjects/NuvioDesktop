@@ -1,5 +1,6 @@
 package com.nuvio.app.features.iptv
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.ditheredBackground
@@ -268,12 +269,12 @@ fun IptvScreen(
     LaunchedEffect(Unit) {
         // The tab owns the keys as soon as it shows; the node may not be attached on the first frame.
         repeat(10) {
-            if (runCatching { screenFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+            if (screenFocus.requestFocusLogged()) return@LaunchedEffect
             delay(48)
         }
     }
     LaunchedEffect(focusSearchRequests) {
-        if (focusSearchRequests > 0) runCatching { searchFocus.requestFocus() }
+        if (focusSearchRequests > 0) searchFocus.requestFocusLogged()
     }
 
     val sidebarState = rememberLazyListState()
@@ -310,7 +311,7 @@ fun IptvScreen(
     fun closeSearch() {
         filter = ""
         searchOpen = false
-        runCatching { screenFocus.requestFocus() }
+        screenFocus.requestFocusLogged()
     }
 
     fun activateHeader(action: IptvHeaderAction) {
@@ -414,7 +415,7 @@ fun IptvScreen(
                 keyboardActive = false
                 // A press in the filter box is the box's own; anywhere else takes the keys back.
                 val at = event.changes.first().position + rootOrigin
-                if (searchBounds?.contains(at) != true) runCatching { screenFocus.requestFocus() }
+                if (searchBounds?.contains(at) != true) screenFocus.requestFocusLogged()
             }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) {
@@ -433,7 +434,7 @@ fun IptvScreen(
                             keyboardActive = true
                             zone = if (channels.isNotEmpty()) IptvZone.Channels else IptvZone.Sidebar
                             if (filter.isEmpty()) searchOpen = false
-                            runCatching { screenFocus.requestFocus() }
+                            screenFocus.requestFocusLogged()
                             true
                         }
                         else -> false
@@ -723,7 +724,7 @@ private fun IptvHeader(
                         trailingContent = {
                             com.nuvio.app.core.ui.VoiceSearchButton(
                                 owner = "iptv-filter",
-                                focusField = { runCatching { searchFocus.requestFocus() } },
+                                focusField = { searchFocus.requestFocusLogged() },
                                 tint = tokens.colors.textMuted,
                                 size = 26.dp,
                                 iconSize = 18.dp,

@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.ui.platform.LocalDensity
 import kotlin.math.roundToInt
 import androidx.compose.ui.unit.IntOffset
@@ -203,7 +204,7 @@ fun MusicPlayerHost(
     val windowFocus = androidx.compose.ui.platform.LocalFocusManager.current
     androidx.compose.runtime.SideEffect { MusicKeyboard.focusManager = windowFocus }
     LaunchedEffect(big) {
-        if (big) runCatching { keys.requestFocus() }
+        if (big) keys.requestFocusLogged()
     }
 
     BoxWithConstraints(

@@ -122,6 +122,19 @@ object LibraryPvrScheduler {
                     // A backed-off retry can come due long before the next periodic sweep; the
                     // poll interval below means it starts within a minute of its scheduled time.
                     if (remaining <= 0L || hasDueRetry(now)) {
+                        // Logging only (optimization audit B2): this ran once a minute all day on 2026-11-12.
+                        // Says which of the two conditions woke it, and which retry if it was one.
+                        val dueRetries = LibraryPvrRepository.uiState.value.grabHistory.filter { grab ->
+                            grab.isAwaitingRetry && (grab.nextAttemptAtEpochMs ?: Long.MAX_VALUE) <= now
+                        }
+                        log.i {
+                            "sweep starting: overdue by ${-remaining / 1000}s (interval ${settings.checkIntervalMs / 1000}s, " +
+                                "last completed ${settings.lastCompletedCheckEpochMs?.let { (now - it) / 1000 }}s ago), " +
+                                "due retries=${dueRetries.size}" +
+                                dueRetries.take(3).joinToString("") { grab ->
+                                    " [grab ${grab.id} status=${grab.status} due ${(now - (grab.nextAttemptAtEpochMs ?: now)) / 1000}s ago]"
+                                }
+                        }
                         runCheck()
                         // A disabled/empty/playback-paused check intentionally leaves the last
                         // completed time untouched; avoid spinning while it remains overdue.

@@ -37,6 +37,40 @@ private val imageFetchLog = Logger.withTag("ImageFetch")
  * poster template forwards the user's TMDB key in the URL. Written at Debug: see
  * DesktopFileLogging for how to turn Debug on.
  */
+/**
+ * Logging only (optimization audit A2): one picture decoded over and over at sizes a few pixels apart (64 to 72
+ * times each on 2026-11-12, about 100 ms a time). Counts decodes per picture and, when one passes [Limit] inside
+ * [WindowNanos], returns a line with the sizes and the screen, once per window.
+ */
+internal object RepeatedDecodes {
+    private const val Limit = 4
+    private const val WindowNanos = 10_000_000_000L
+    private const val MaxTracked = 256
+
+    private class Run(var startedAt: Long, val sizes: LinkedHashSet<String> = LinkedHashSet(), var count: Int = 0, var reported: Boolean = false)
+
+    private val runs = object : LinkedHashMap<String, Run>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Run>?) = size > MaxTracked
+    }
+
+    @Synchronized
+    fun note(data: String, width: Int, height: Int, now: Long = System.nanoTime()): String? {
+        val run = runs.getOrPut(data) { Run(now) }
+        if (now - run.startedAt > WindowNanos) {
+            run.startedAt = now
+            run.sizes.clear()
+            run.count = 0
+            run.reported = false
+        }
+        run.count++
+        run.sizes += "${width}x$height"
+        if (run.count < Limit || run.reported) return null
+        run.reported = true
+        return "REDECODE ${run.count}x in ${(now - run.startedAt) / 1_000_000}ms on ${PerfTelemetry.visibleScreen} " +
+            "sizes=${run.sizes.joinToString(",")} $data"
+    }
+}
+
 internal class ImageFetchTimingListener(
     private val now: () -> Long = System::nanoTime,
     private val emit: (String) -> Unit = { imageFetchLog.d { it } },
@@ -81,6 +115,9 @@ internal class ImageFetchTimingListener(
                 status = 200,
                 durationMs = fetchNanos.coerceAtLeast(0) / 1_000_000,
             )
+        }
+        if (decodeNanos >= 0) {
+            RepeatedDecodes.note(describeData(request.data), result.image.width, result.image.height)?.let(emit)
         }
         if (source != DataSource.NETWORK && totalMs < SlowDiskLoadMs) return
         emit(

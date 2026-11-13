@@ -491,3 +491,13 @@ Every mode below has a "← Back" button in a strip under its content (hint line
 - [ ] Music search rows put well-known artists ahead of near-unknown uploads among equally good matches: "love is dead" shows CHVRCHES' album before Gofun's (7 fans); rows don't reshuffle after they appear (they may take up to about 1.5 s longer to show)
 - [ ] Music search: move quickly off an album before its details load, then come back: it fills in (description, genres, facts) instead of staying with the plain cover and no words (Kerli's Love Is Dead in "love is dead" was one)
 - [ ] Artwork that was half grey (Momento's Love Is Dead (Extended Mix) and the other song tiles in "love is dead") shows whole after its next load, in the row and in the hero; posters and other artwork across the app are no longer kept when a download is cut short
+
+## Logging build for the optimization audit (2026-11-13)
+
+Nothing here changes how the app behaves; these runs fill the log (`Docs/plans/optimization-audit-2026-11.md`).
+Perf logging must be on (an empty file named `perf-log` in the Nuvio data folder) for the first check.
+
+- [ ] One normal launch on the HTPC, left on Home for a minute, then closed (records where the launch freeze sits and what the first requests are)
+- [ ] An evening driven only by the controller; each time the arrows or OK stop doing anything, note the time and the screen before fixing it by revisiting the tab
+- [ ] The app left idle on Home for ten minutes with Library auto-download on (records why its check runs every minute)
+- [ ] Nothing about focus, keys or the controller feels different from before this build

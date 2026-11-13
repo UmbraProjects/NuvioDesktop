@@ -1,5 +1,6 @@
 package com.nuvio.app.features.preroll
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -160,7 +161,7 @@ fun previouslyOnGateCleared(launchKey: String, launch: PlayerLaunch): Boolean {
             showWaiting = false
         }
     }
-    LaunchedEffect(pack) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(pack) { focus.requestFocusLogged() }
 
     Box(
         modifier = Modifier

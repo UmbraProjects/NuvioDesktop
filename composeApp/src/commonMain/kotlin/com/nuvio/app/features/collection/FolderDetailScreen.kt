@@ -1,5 +1,6 @@
 package com.nuvio.app.features.collection
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.ScrollableState
@@ -222,13 +223,13 @@ private fun rememberFolderPageScrollKeys(
     val coroutineScope = rememberCoroutineScope()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) {
-        runCatching { focusRequester.requestFocus() }
+        focusRequester.requestFocusLogged()
     }
     return Modifier
         .focusRequester(focusRequester)
         .focusable()
         .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
-            runCatching { focusRequester.requestFocus() }
+            focusRequester.requestFocusLogged()
         }
         .onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -751,7 +752,7 @@ private fun ImmersiveCollectionContent(
                 .focusRequester(focusRequester)
                 .focusable()
                 .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
-                    try { focusRequester.requestFocus() } catch (_: Exception) {}
+                    focusRequester.requestFocusLogged()
                 }
                 .onPointerEvent(PointerEventType.Move, PointerEventPass.Initial) { event ->
                     mouseActivity.onMouseMoved(event.changes.first().position)
@@ -1165,7 +1166,7 @@ private fun AdaptiveCollectionContent(
             .focusRequester(focusRequester)
             .focusable()
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
-                try { focusRequester.requestFocus() } catch (_: Exception) {}
+                focusRequester.requestFocusLogged()
             }
             .onPointerEvent(PointerEventType.Move, PointerEventPass.Initial) { event ->
                 mouseActivity.onMouseMoved(event.changes.first().position)

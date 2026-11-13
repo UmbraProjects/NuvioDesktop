@@ -1,5 +1,6 @@
 package com.nuvio.app.features.details
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.posterservice.CustomPosterScreen
 import com.nuvio.app.features.posterservice.rememberCustomPosters
 import androidx.compose.animation.AnimatedVisibilityScope
@@ -111,7 +112,7 @@ fun PersonDetailScreen(
     // one never did, so only the on-screen arrow could leave it. Key events only reach a focused
     // subtree, so the page takes focus when it opens.
     val rootFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { rootFocusRequester.requestFocus() } }
+    LaunchedEffect(Unit) { rootFocusRequester.requestFocusLogged() }
 
     LaunchedEffect(personId, loadAttempt) {
         uiState = PersonDetailUiState.Loading

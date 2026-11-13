@@ -1,5 +1,6 @@
 package com.nuvio.app.features.details.components
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -278,7 +279,7 @@ private fun DetailEpisodeSearchField(
     LaunchedEffect(Unit) {
         // Let the field enter composition before handing it focus.
         delay(1)
-        try { state.focusRequester.requestFocus() } catch (_: Exception) {}
+        state.focusRequester.requestFocusLogged()
     }
 
     val contentColor = LocalContentColor.current

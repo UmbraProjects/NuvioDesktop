@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.material.icons.rounded.MusicNote
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.core.storage.PortableMode
@@ -3142,7 +3143,7 @@ internal fun SettingsSearchField(
                 }
                 com.nuvio.app.core.ui.VoiceSearchButton(
                     owner = "settings-search",
-                    focusField = { runCatching { fieldFocus.requestFocus() } },
+                    focusField = { fieldFocus.requestFocusLogged() },
                     tint = tokens.colors.textMuted,
                     size = 28.dp,
                 )

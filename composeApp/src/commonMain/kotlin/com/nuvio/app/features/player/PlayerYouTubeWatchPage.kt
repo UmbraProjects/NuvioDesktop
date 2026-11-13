@@ -1,5 +1,6 @@
 package com.nuvio.app.features.player
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -786,7 +787,7 @@ private fun CommentBox(placeholder: String, autoFocus: Boolean = false, onSend: 
     var text by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-    if (autoFocus) LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    if (autoFocus) LaunchedEffect(Unit) { focus.requestFocusLogged() }
     fun send() {
         val message = text.trim()
         if (message.isEmpty() || sending) return

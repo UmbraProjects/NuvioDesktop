@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -132,7 +133,7 @@ internal fun MusicDockNotch(
         if (!focused) return@LaunchedEffect
         repeat(6) {
             delay(32)
-            if (runCatching { panelEntry.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+            if (panelEntry.requestFocusLogged()) return@LaunchedEffect
         }
     }
     // Opens at once on hover or focus; folds back a moment after both are gone.

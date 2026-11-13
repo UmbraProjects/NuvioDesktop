@@ -1,5 +1,6 @@
 package com.nuvio.app.features.tonight
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -150,7 +151,7 @@ internal fun TonightFlickView(
                         modifier = Modifier.width(frameHeight * 16f / 9f).height(frameHeight),
                         // A channel with no trailer leaves the line-up for this visit (not Not interested).
                         onFinished = { played -> if (played) next() else gone += current.key },
-                        onReclaimFocus = { runCatching { focus.requestFocus() } },
+                        onReclaimFocus = { focus.requestFocusLogged() },
                     )
                 }
                 Spacer(Modifier.height(16.dp))

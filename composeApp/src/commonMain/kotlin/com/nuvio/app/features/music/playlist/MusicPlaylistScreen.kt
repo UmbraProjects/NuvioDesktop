@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.playlist
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -104,7 +105,7 @@ fun MusicPlaylistScreen(
         if (playlist == null) return@LaunchedEffect
         repeat(10) {
             delay(80)
-            if (runCatching { entryFocus.requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+            if (entryFocus.requestFocusLogged()) return@LaunchedEffect
         }
     }
 

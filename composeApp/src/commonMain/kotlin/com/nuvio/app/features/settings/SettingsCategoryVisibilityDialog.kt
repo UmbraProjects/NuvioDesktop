@@ -1,5 +1,6 @@
 package com.nuvio.app.features.settings
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -206,7 +207,7 @@ private fun EditableCategoryName(
         if (save) onCommit(draft.text) else onCancel()
     }
 
-    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+    LaunchedEffect(Unit) { focusRequester.requestFocusLogged() }
 
     BasicTextField(
         value = draft,

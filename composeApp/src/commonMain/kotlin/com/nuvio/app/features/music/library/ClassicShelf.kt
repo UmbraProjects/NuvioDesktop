@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.material.icons.rounded.Explore
@@ -454,7 +455,7 @@ private fun ShelfArtistRow(
                     rowListState.scrollToItem(target)
                     withFrameNanos { }
                 }
-                runCatching { columnRequesters[column].requestFocus() }
+                columnRequesters[column].requestFocusLogged()
             }
         }
         navigator.rows[index] = focusColumn

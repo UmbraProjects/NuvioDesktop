@@ -1,5 +1,6 @@
 package com.nuvio.app.features.calendar
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.appShortcutMatches
@@ -301,7 +302,7 @@ fun CalendarScreen(
     LaunchedEffect(calendarHasFocus, navigatingAway) {
         if (!calendarHasFocus && !navigatingAway) {
             repeat(25) {
-                runCatching { screenFocusRequester.requestFocus() }
+                screenFocusRequester.requestFocusLogged()
                 delay(48)
                 if (calendarHasFocus || navigatingAway) return@LaunchedEffect
             }
@@ -317,7 +318,7 @@ fun CalendarScreen(
             .onFocusChanged { calendarHasFocus = it.hasFocus }
             .focusable()
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
-                try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
+                screenFocusRequester.requestFocusLogged()
             }
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false

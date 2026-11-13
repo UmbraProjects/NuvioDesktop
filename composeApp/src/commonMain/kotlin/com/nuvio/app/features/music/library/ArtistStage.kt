@@ -1,6 +1,7 @@
 package com.nuvio.app.features.music.library
 // FORK UI (Spyder): Nick's artist page redesign, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import kotlinx.coroutines.async
@@ -595,7 +596,7 @@ private fun StageHero(
                 // Asked a few times: the page root's own first-control request lands first.
                 repeat(10) {
                     delay(80)
-                    if (runCatching { playFocus.requestFocus() }.getOrDefault(false)) {
+                    if (playFocus.requestFocusLogged()) {
                         onHeroFocused()
                         return@LaunchedEffect
                     }

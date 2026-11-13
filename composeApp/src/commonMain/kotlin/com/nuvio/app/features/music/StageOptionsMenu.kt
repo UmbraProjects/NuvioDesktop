@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.layout.Spacer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
@@ -88,7 +89,7 @@ internal fun StageOptionsMenu(
 
     fun close() {
         open = false
-        runCatching { buttonFocus.requestFocus() }
+        buttonFocus.requestFocusLogged()
     }
 
     LaunchedEffect(open, touched) {
@@ -126,7 +127,7 @@ internal fun StageOptionsMenu(
                 onDismissRequest = { close() },
                 properties = PopupProperties(focusable = true),
             ) {
-                LaunchedEffect(Unit) { runCatching { firstRow.requestFocus() } }
+                LaunchedEffect(Unit) { firstRow.requestFocusLogged() }
                 Column(
                     Modifier
                         .width(MENU_WIDTH)

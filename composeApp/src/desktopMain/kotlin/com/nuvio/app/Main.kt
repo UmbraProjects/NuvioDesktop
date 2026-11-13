@@ -39,6 +39,8 @@ import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
 import com.nuvio.app.core.sync.AppForegroundMonitor
 import com.nuvio.app.core.build.AppVersionPolicy
+import com.nuvio.app.core.ui.keyRouteInner
+import com.nuvio.app.core.ui.keyRouteOuter
 import com.nuvio.app.core.ui.DesktopNavigationGestureBridge
 import com.nuvio.app.core.ui.HoldToSelect
 import com.nuvio.app.core.ui.SwallowedClickRescue
@@ -849,8 +851,19 @@ fun main(args: Array<String>) {
                 // being used; moving, clicking or scrolling the mouse hides them again (see KeyboardInputMode).
                 val inputModeListener = AWTEventListener { event ->
                     when (event.id) {
-                        KeyEvent.KEY_PRESSED -> if ((event as KeyEvent).keyCode in KEYBOARD_NAVIGATION_KEYS) {
-                            com.nuvio.app.core.ui.KeyboardInputMode.active = true
+                        KeyEvent.KEY_PRESSED -> {
+                            val keyCode = (event as KeyEvent).keyCode
+                            if (keyCode in KEYBOARD_NAVIGATION_KEYS) com.nuvio.app.core.ui.KeyboardInputMode.active = true
+                            // Logging only: follow the key through its handlers, then write where it went.
+                            if (keyCode in KEYBOARD_NAVIGATION_KEYS || keyCode == KeyEvent.VK_ESCAPE) {
+                                com.nuvio.app.core.ui.KeyRouteLog.keyPressed(KeyEvent.getKeyText(keyCode))
+                                java.awt.EventQueue.invokeLater {
+                                    val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
+                                    val owner = focusManager.focusOwner?.javaClass?.simpleName
+                                        ?: if (focusManager.focusedWindow == null) "another app" else "no component"
+                                    com.nuvio.app.core.ui.KeyRouteLog.settle(owner)
+                                }
+                            }
                         }
                         MouseEvent.MOUSE_MOVED, MouseEvent.MOUSE_PRESSED, MouseEvent.MOUSE_DRAGGED, MouseEvent.MOUSE_WHEEL ->
                             com.nuvio.app.core.ui.KeyboardInputMode.active = false
@@ -1000,6 +1013,8 @@ fun main(args: Array<String>) {
                         // Clicks lost to a list still easing from the wheel are replayed by
                         // MouseFiveShiftEventQueue; this is where they are recognised.
                         .detectClicksSwallowedByScrolling()
+                        // Logging only: where each navigation key ends up (KeyRouteLog).
+                        .keyRouteOuter()
                         // Bubble-phase handling means focused text fields retain ordinary paste.
                         // Elsewhere, a copied HTTP(S) media URL opens through the same direct-play
                         // path as a dropped local file; App rejects it while playback is active.
@@ -1119,6 +1134,7 @@ fun main(args: Array<String>) {
                                 else -> false
                             }
                         }
+                        .keyRouteInner()
                         .dragAndDropTarget(
                             shouldStartDragAndDrop = { event ->
                                 // Accept the drag hover if it carries a file list.

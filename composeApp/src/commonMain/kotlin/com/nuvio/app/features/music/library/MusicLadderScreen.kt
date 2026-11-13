@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.library
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -217,7 +218,7 @@ internal fun MusicLadderScreen(
         if (focusedIndex >= 0) listState.ensureVisible(focusedId, focusedIndex)
     }
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focusRequester.requestFocus() } }
+    LaunchedEffect(Unit) { focusRequester.requestFocusLogged() }
 
     fun playAlbum(rung: LadderRung) {
         val id = rung.candidate.id

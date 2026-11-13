@@ -1,5 +1,6 @@
 package com.nuvio.app.features.search
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.player.AppShortcutAction
 import com.nuvio.app.features.player.appShortcutMatches
 
@@ -126,7 +127,7 @@ fun SearchScreen(
 
     // Focus the outer box immediately so keyboard nav works as soon as the screen appears.
     LaunchedEffect(Unit) {
-        if (isDesktop) try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
+        if (isDesktop) screenFocusRequester.requestFocusLogged()
     }
 
     LaunchedEffect(searchFocusRequestCount) {
@@ -135,8 +136,8 @@ fun SearchScreen(
             isInRowNav = false
             // Request the field immediately. The activation-key guard below prevents the
             // shortcut's S key from becoming query text while focus changes hands.
-            try { screenFocusRequester.requestFocus() } catch (_: Exception) {}
-            try { searchBarFocusRequester.requestFocus() } catch (_: Exception) {}
+            screenFocusRequester.requestFocusLogged()
+            searchBarFocusRequester.requestFocusLogged()
             delay(150)
             suppressSearchActivationKey = false
         }

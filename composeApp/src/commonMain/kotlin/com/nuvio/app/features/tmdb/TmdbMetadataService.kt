@@ -1110,6 +1110,12 @@ object TmdbMetadataService {
                 async {
                     val seasons = meta.videos.mapNotNull { it.season }.distinct()
                         .filter { season -> episodeSeasons == null || season in episodeSeasons }
+                    // Logging only (optimization audit B1): 155 season requests went out in one launch and the
+                    // hero path asks for none. Names the title; its "Fetching meta ... [origin=...]" line says who asked.
+                    log.d {
+                        "episode decoration for ${meta.type}:${meta.id} tmdb=$tmdbId: ${seasons.size} seasons " +
+                            "(asked for ${episodeSeasons ?: "all"}, depth=$depth, keepAddon=$keepAddon)"
+                    }
                     fetchEpisodeEnrichment(
                         tmdbId = tmdbId,
                         seasonNumbers = seasons,

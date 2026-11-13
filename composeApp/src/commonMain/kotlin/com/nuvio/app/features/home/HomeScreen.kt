@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.LocalScreenCovered
 import coil3.compose.LocalPlatformContext
@@ -2425,7 +2426,7 @@ fun HomeScreen(
     val homeFocusHeld by rememberUpdatedState(setupPanelOpen && contentMode is HomeContentMode.Normal)
     fun requestHomeFocus() {
         if (homeScreenCovered || homeFocusHeld) return
-        runCatching { tvFocusRequester.requestFocus() }
+        tvFocusRequester.requestFocusLogged()
     }
     var homeRootHasFocus by remember { mutableStateOf(false) }
     // A filter bar in a row's header (Discover's browser row, Library's first row) takes real focus, unlike the cards:
@@ -3772,7 +3773,7 @@ fun HomeScreen(
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Initial) { _ ->
                 // A click on Home is the user choosing it, so it takes focus even from the open
                 // setup panel; only Home's own automatic requests are held for the panel.
-                if (!homeScreenCovered) runCatching { tvFocusRequester.requestFocus() }
+                if (!homeScreenCovered) tvFocusRequester.requestFocusLogged()
             }
             .onPreviewKeyEvent { event ->
                 when {
@@ -3953,7 +3954,7 @@ fun HomeScreen(
                                     val onFilteredRow = tvRows.getOrNull(tvRowIndexForSection(tvFocus.sectionIndex))?.hasFilterStrip == true &&
                                         !(heroFocusable && tvFocus.sectionIndex == 0)
                                     if (onFilteredRow) {
-                                        runCatching { filterStripFocusRequester.requestFocus() }
+                                        filterStripFocusRequester.requestFocusLogged()
                                         if (filterStripHasFocus) return@onPreviewKeyEvent true
                                     }
                                     withCarriedTvItemIndex {

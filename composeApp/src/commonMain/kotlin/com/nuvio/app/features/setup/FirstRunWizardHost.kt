@@ -1,5 +1,6 @@
 package com.nuvio.app.features.setup
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -135,7 +136,7 @@ fun FirstRunWizardPanel(
         val target = if (state.step == FirstRunWizardStep.Metadata) primaryFocus else stepFocus
         repeat(12) { attempt ->
             delay(if (attempt == 0) 50 else 48)
-            if (runCatching { target.requestFocus() }.isSuccess) return@LaunchedEffect
+            if (target.requestFocusLogged()) return@LaunchedEffect
         }
     }
 

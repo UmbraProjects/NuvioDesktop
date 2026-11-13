@@ -1,5 +1,6 @@
 package com.nuvio.app.features.preroll
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -155,7 +156,7 @@ fun TriviaPreShow(
         }
         stage = current.advance(slides.size, questions.size)
     }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    LaunchedEffect(Unit) { focus.requestFocusLogged() }
 
     Box(
         modifier = modifier

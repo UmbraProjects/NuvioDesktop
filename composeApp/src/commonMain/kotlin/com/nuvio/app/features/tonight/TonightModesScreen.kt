@@ -1,5 +1,6 @@
 package com.nuvio.app.features.tonight
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -480,7 +481,7 @@ internal fun TonightKnockoutView(
                                 modifier = Modifier.width(800.dp).height(450.dp),
                                 limitMs = 20_000L,
                                 onFinished = { tasting = if (side == 0) 1 else null },
-                                onReclaimFocus = { runCatching { focus.requestFocus() } },
+                                onReclaimFocus = { focus.requestFocusLogged() },
                             )
                         }
                     }

@@ -389,7 +389,7 @@ fun NuvioNumberStepper(
     }
 
     LaunchedEffect(editing) {
-        if (editing) runCatching { focusRequester.requestFocus() }
+        if (editing) focusRequester.requestFocusLogged()
     }
 
     val stepperAccentEnd = tokens.colors.accentGradientEnd

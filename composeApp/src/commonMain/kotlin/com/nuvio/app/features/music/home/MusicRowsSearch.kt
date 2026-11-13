@@ -1,5 +1,6 @@
 package com.nuvio.app.features.music.home
 
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.foundation.focusable
 import androidx.compose.animation.AnimatedContent
@@ -330,7 +331,7 @@ internal fun MusicRowsSearch(
         isInRowNav = true
         focusedRow = 0
         focusedItem = 0
-        runCatching { tab.bodyFocus.requestFocus() }
+        tab.bodyFocus.requestFocusLogged()
     }
 
     // The app's search shortcut focuses the field (requests made before this screen existed are not replayed).
@@ -339,7 +340,7 @@ internal fun MusicRowsSearch(
         if (MusicTopBarSearch.focusRequests == handledFocusRequests) return@LaunchedEffect
         handledFocusRequests = MusicTopBarSearch.focusRequests
         isInRowNav = false
-        runCatching { fieldFocus.requestFocus() }
+        fieldFocus.requestFocusLogged()
     }
     VoiceSearchCommands(owner = VOICE_OWNER, text = query, onTextChange = ::setQuery)
 
@@ -486,7 +487,7 @@ internal fun MusicRowsSearch(
                         scrollToRow(0)
                         true
                     }
-                    !isInRowNav && key == Key.DirectionUp -> ownField && runCatching { fieldFocus.requestFocus() }.isSuccess
+                    !isInRowNav && key == Key.DirectionUp -> ownField && fieldFocus.requestFocusLogged()
                     isInRowNav -> when (key) {
                         Key.DirectionUp -> {
                             if (shownRow > 0) {
@@ -497,7 +498,7 @@ internal fun MusicRowsSearch(
                             } else {
                                 // Off the top: back to this screen's field, or (without one) let focus move up as usual.
                                 isInRowNav = false
-                                if (ownField) runCatching { fieldFocus.requestFocus() }
+                                if (ownField) fieldFocus.requestFocusLogged()
                                 ownField
                             }
                         }
