@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Anime Artwork Kept Between Launches** - the season backdrops and posters found on Kitsu or AniList are now kept for 30 days instead of being looked up again on every launch (92 to 126 Kitsu and about 35 AniList requests per launch). Pictures that were not found are still asked again next launch. Not yet tried on the HTPC.
+
 - **Fix: TorBox Missing From Library After Some Launches** - at startup the cloud library could read the Debrid settings while they were still loading, find no TorBox key, and then believe it had already loaded TorBox, so the Library showed no cloud items until the next launch (Debrid settings still said connected). The settings now finish loading before anything reads them, and the library refreshes again if a connection appears while it is refreshing. Not yet tried on the HTPC.
 
 - **Home Hero: A Warm Launch Without The Request Storm** - the hero now looks up the title on screen and two each side of it, not the whole carousel (33 titles on one install), and the rest as the carousel or the focus reaches them; a lookup that is already running is no longer cancelled and started again each time the hero moves. Each title's badges, director / writer / studio and IMDb sub-genres are now kept between launches (the Metadata Cache setting in Advanced; at most a day for a series, six hours for an empty answer), like its cast and ratings already were, so a warm launch shows them without fetching the title again. **Hero trailers**: moving off a hero no longer throws away its half-finished trailer lookup and marks the title as having no trailer for ten minutes; the lookup finishes, so the next visit plays at once. Not yet tried on the HTPC.

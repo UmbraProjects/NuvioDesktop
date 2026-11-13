@@ -44,12 +44,17 @@ internal object AnimeArtworkService {
         val ids = animeArtworkLookupIds(nativeId) ?: return null
         val cacheKey = nativeId.nativeAnimeBase().lowercase()
         cacheMutex.withLock { if (cache.containsKey(cacheKey)) return cache[cacheKey] }
+        AnimeArtworkDiskCache.get("backdrop|$cacheKey")?.let { stored ->
+            cacheMutex.withLock { cache[cacheKey] = stored }
+            return stored
+        }
 
         // Kitsu first: same key art as AniList in most cases but at 3360×800 vs ~1900×400,
         // which survives the hero's vertical crop much better.
         val backdrop = ids.kitsu?.let { fetchKitsuCover(it) }
             ?: ids.anilist?.let { fetchAniListBanner(it) }
         cacheMutex.withLock { cache[cacheKey] = backdrop }
+        if (backdrop != null) AnimeArtworkDiskCache.put("backdrop|$cacheKey", backdrop)
         return backdrop
     }
 
@@ -72,10 +77,15 @@ internal object AnimeArtworkService {
         val ids = animeArtworkLookupIds(nativeId) ?: return null
         val cacheKey = nativeId.nativeAnimeBase().lowercase()
         cacheMutex.withLock { if (posterCache.containsKey(cacheKey)) return posterCache[cacheKey] }
+        AnimeArtworkDiskCache.get("poster|$cacheKey")?.let { stored ->
+            cacheMutex.withLock { posterCache[cacheKey] = stored }
+            return stored
+        }
 
         val poster = ids.kitsu?.let { fetchKitsuPoster(it) }
             ?: ids.anilist?.let { fetchAniListCover(it) }
         cacheMutex.withLock { posterCache[cacheKey] = poster }
+        if (poster != null) AnimeArtworkDiskCache.put("poster|$cacheKey", poster)
         return poster
     }
 

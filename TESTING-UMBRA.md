@@ -85,3 +85,8 @@ again and close. Claude reads `nuvio.log` for these:
 - [~] Log: the first `PerfNet` Home window on a warm launch has far fewer than 120 `tv/{n}/season/{n}` requests; `episode decoration` lines say `asked for [n, n+1]` or `[n]`, not `all`, for the cards (2026-11-13): 54; the cards asked for their seasons, but 45 decorations still asked for all, from the startup retry of five Up Next cards with no thumbnail, all for episodes that have not aired
   - [ ] Re-check: the log's `ARTWORK-RETRY` line no longer lists cards whose episode has not aired, and next to no `asked for all` lines at launch
 
+## Anime artwork on disk (2026-11-13)
+
+- [ ] Anime rows and heroes still show their season backdrops and posters
+- [ ] Log, second launch: `anime artwork loaded: N pictures` with N > 0, `PerfWork` shows `AnimeArtworkDisk.hit`, and the first Home `PerfNet` window has far fewer `kitsu.io/api/edge/anime` and `graphql.anilist.co` requests than the 126 and 35 of 03:59
+
