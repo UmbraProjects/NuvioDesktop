@@ -497,7 +497,13 @@ Every mode below has a "← Back" button in a strip under its content (hint line
 Nothing here changes how the app behaves; these runs fill the log (`Docs/plans/optimization-audit-2026-11.md`).
 Perf logging must be on (an empty file named `perf-log` in the Nuvio data folder) for the first check.
 
-- [ ] One normal launch on the HTPC, left on Home for a minute, then closed (records where the launch freeze sits and what the first requests are)
-- [ ] An evening driven only by the controller; each time the arrows or OK stop doing anything, note the time and the screen before fixing it by revisiting the tab
-- [ ] The app left idle on Home for ten minutes with Library auto-download on (records why its check runs every minute)
+- [x] One normal launch on the HTPC, left on Home for a minute, then closed (records where the launch freeze sits and what the first requests are) (2026-11-13): JVM and native both run; the freeze did not happen on either
+- [~] An evening driven only by the controller; each time the arrows or OK stop doing anything, note the time and the screen before fixing it by revisiting the tab (2026-11-13): done with the keyboard; the dropped-keys bug hardly showed (Nick: it may need mouse and keyboard together), but these did:
+  - [ ] **BROKEN** Search: open a result, go Back, press Right: an empty "Movies Search - Movies" catalog opens, and the arrows do nothing on it (Escape leaves)
+  - [ ] **BROKEN** Discover, 00:47: going too far Right loses navigation; every arrow is then ignored, and hovering a poster does not bring it back (a shortcut to another tab and back does)
+  - [ ] **BROKEN** Artist page: the mouse scroll guard makes it impossible to go back up the page with the keyboard; the album page's order of stops is odd
+  - [ ] **BROKEN** Tonight: where Left means "never show me this again", the Back button cannot be reached with the keyboard; Escape works but is not shown as its key
+  - [ ] **BROKEN** Music player panel, 01:02: B does not leave it and neither does Escape; only the mouse does (may be the same bug as the panel sometimes not minimising)
+  - [ ] **BROKEN** Player: the on-screen controls cannot be reached with the keyboard, only shortcuts; Nick wants Enter (the pad's OK) to focus the bar and the arrows to move along it
+- [x] The app left idle on Home for ten minutes with Library auto-download on (records why its check runs every minute) (2026-11-13): answered by the launch logs, one failed grab's retry has been due for 4.7 days and wakes the check each minute
 - [ ] Nothing about focus, keys or the controller feels different from before this build
