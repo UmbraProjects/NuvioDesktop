@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Keys No Longer Go Nowhere On Home, Catalog Pages And Details** - the first step of a keyboard focus router. When an arrow or OK reaches nothing at all (focus was lost to a closed popup, a reloaded row, a click on something that cannot take focus), Home, Search, Library and Discover, a catalog page or a details page now takes the keyboard back and the same key press does what it was meant to, instead of nothing happening until the tab was opened again. Each screen keeps its own handling; this only steps in when nothing else took the key, and never while typing, in a dialog window or in an open menu. Other screens (Settings, Music, YouTube, Tonight) are not covered yet. Not yet tried on the HTPC.
+
 - **Anime Artwork Kept Between Launches** - the season backdrops and posters found on Kitsu or AniList are now kept for 30 days instead of being looked up again on every launch (92 to 126 Kitsu and about 35 AniList requests per launch). Pictures that were not found are still asked again next launch. Not yet tried on the HTPC.
 
 - **Fix: TorBox Missing From Library After Some Launches** - at startup the cloud library could read the Debrid settings while they were still loading, find no TorBox key, and then believe it had already loaded TorBox, so the Library showed no cloud items until the next launch (Debrid settings still said connected). The settings now finish loading before anything reads them, and the library refreshes again if a connection appears while it is refreshing. Not yet tried on the HTPC.

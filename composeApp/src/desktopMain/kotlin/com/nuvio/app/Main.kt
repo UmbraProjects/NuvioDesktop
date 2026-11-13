@@ -857,11 +857,42 @@ fun main(args: Array<String>) {
                             // Logging only: follow the key through its handlers, then write where it went.
                             if (keyCode in KEYBOARD_NAVIGATION_KEYS || keyCode == KeyEvent.VK_ESCAPE) {
                                 com.nuvio.app.core.ui.KeyRouteLog.keyPressed(KeyEvent.getKeyText(keyCode))
+                                val pressed = event as KeyEvent
                                 java.awt.EventQueue.invokeLater {
                                     val focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
                                     val owner = focusManager.focusOwner?.javaClass?.name?.substringAfterLast('.')
                                         ?: if (focusManager.focusedWindow == null) "another app" else "no component"
                                     com.nuvio.app.core.ui.KeyRouteLog.settle(owner)
+                                    // Focus router fallback (KeyLayers): an arrow or OK that nothing in the window took
+                                    // (Compose consumes every key it handles, popups included) puts focus back on the
+                                    // screen on top and is sent again. Not inside a dialog window or an open popup.
+                                    val window = focusManager.focusedWindow
+                                    if (
+                                        keyCode in FOCUS_FALLBACK_KEYS &&
+                                        !pressed.isConsumed &&
+                                        !com.nuvio.app.core.ui.KeyLayers.replaying &&
+                                        window is androidx.compose.ui.awt.ComposeWindow &&
+                                        !com.nuvio.app.core.ui.KeyRouteLog.popupOpen &&
+                                        com.nuvio.app.core.ui.KeyLayers.reclaim(KeyEvent.getKeyText(keyCode)) != null
+                                    ) {
+                                        val target: java.awt.Component = focusManager.focusOwner ?: window
+                                        com.nuvio.app.core.ui.KeyLayers.replaying = true
+                                        try {
+                                            target.dispatchEvent(
+                                                KeyEvent(
+                                                    target,
+                                                    KeyEvent.KEY_PRESSED,
+                                                    System.currentTimeMillis(),
+                                                    pressed.modifiersEx,
+                                                    keyCode,
+                                                    pressed.keyChar,
+                                                    pressed.keyLocation,
+                                                ),
+                                            )
+                                        } finally {
+                                            com.nuvio.app.core.ui.KeyLayers.replaying = false
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1300,6 +1331,11 @@ private fun swallowHeldSelectKey(event: KeyEvent): Boolean {
 }
 
 /** The keys that mean "moving around with the keyboard" (or a pad's D-pad and A, which arrive as these). */
+/** Keys the focus router's fallback sends on to the screen on top when nothing took them (see KeyLayers). */
+private val FOCUS_FALLBACK_KEYS = setOf(
+    KeyEvent.VK_UP, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT, KeyEvent.VK_ENTER,
+)
+
 private val KEYBOARD_NAVIGATION_KEYS = setOf(
     KeyEvent.VK_UP, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT,
     KeyEvent.VK_TAB, KeyEvent.VK_ENTER, KeyEvent.VK_PAGE_UP, KeyEvent.VK_PAGE_DOWN, KeyEvent.VK_HOME, KeyEvent.VK_END,

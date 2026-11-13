@@ -1,5 +1,6 @@
 package com.nuvio.app.features.catalog
 
+import com.nuvio.app.core.ui.keyLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -239,6 +240,8 @@ fun CatalogScreen(
                 .then(
                     if (adaptiveHeroEnabled) {
                         Modifier
+                            // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back here.
+                            .keyLayer("Catalog") { tvFocusRequester.requestFocusLogged() }
                             .focusRequester(tvFocusRequester)
                             .focusable()
                             .onPointerEvent(PointerEventType.Move) { event ->
@@ -291,7 +294,8 @@ fun CatalogScreen(
                                 }
                             }
                     } else {
-                        Modifier
+                        // Posters take focus themselves here; the fallback returns it to the last one (KeyLayers).
+                        Modifier.keyLayer("Catalog")
                     },
                 ),
         ) {

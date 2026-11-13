@@ -50,6 +50,9 @@ object KeyRouteLog {
     /** Reads where the focused control is in the window, set by [keyRouteOuter]; the only name a control has. */
     internal var focusPlace: (() -> String?)? = null
 
+    /** A popup or dialog that said so ([KeyRouteLayer]) is open. */
+    val popupOpen: Boolean get() = layers.isNotEmpty()
+
     internal fun layerOpened(name: String) { layers += name }
     internal fun layerClosed(name: String) { layers.remove(name) }
 

@@ -90,3 +90,16 @@ again and close. Claude reads `nuvio.log` for these:
 - [ ] Anime rows and heroes still show their season backdrops and posters
 - [ ] Log, second launch: `anime artwork loaded: N pictures` with N > 0, `PerfWork` shows `AnimeArtworkDisk.hit`, and the first Home `PerfNet` window has far fewer `kitsu.io/api/edge/anime` and `graphql.anilist.co` requests than the 126 and 35 of 03:59
 
+## Focus router, step 1: the fallback (2026-11-13)
+
+Covers Home (with Search, Library and Discover), catalog pages and details pages only.
+
+- [x] Mixed mouse and keyboard on Home: click around (a poster's menu, a filter menu picked with the mouse, empty space), then press an arrow: it moves the selection at once, without a click or revisiting the tab (2026-11-13): stress-tested, held up
+- [ ] **BROKEN** YouTube, after a handful of quick inputs (2026-11-13): navigation stopped (shortcuts still worked); the log shows Up put focus on a control at the top right, outside the tab, where every arrow (70 of them) went to no one. YouTube had no layer, so the fallback could not help
+  - [ ] Re-check after the fix (YouTube now has a layer): the same quick inputs; if focus lands somewhere dead, the next arrow brings it back to the control last used in the tab, and the log says `focus put back on YouTube`
+- [ ] The same on a catalog page and on a details page (2026-11-13: never stepped in during the stress test; on catalog pages without the adaptive hero and on details pages with keyboard mode off the screens had no layer. Catalog's poster layout now has one)
+- [ ] Typing in Search: Up and Down do not pull the cursor out of the search field
+- [ ] With a menu open (a poster's menu, a filter menu), the arrows still move inside the menu, not on the page behind it
+- [ ] Nothing feels different when focus was never lost (no double moves, no jumps back to the first row)
+- [ ] Log: a `went to no one ... focus put back on Home, key sent again` line whenever it stepped in; `PerfWork` counts `KeyLayers.reclaimed`
+

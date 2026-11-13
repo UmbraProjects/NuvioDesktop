@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
 import com.nuvio.app.core.ui.LocalScreenCovered
@@ -3767,6 +3768,10 @@ fun HomeScreen(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
+            // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus back here.
+            .keyLayer("Home", active = !homeFocusHeld) {
+                !homeScreenCovered && tvFocusRequester.requestFocusLogged()
+            }
             .focusRequester(tvFocusRequester)
             .onFocusChanged { homeRootHasFocus = it.hasFocus }
             .focusable()

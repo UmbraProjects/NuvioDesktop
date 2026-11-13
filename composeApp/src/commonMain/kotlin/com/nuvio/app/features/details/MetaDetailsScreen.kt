@@ -1,5 +1,6 @@
 package com.nuvio.app.features.details
 
+import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.posterservice.CustomPosterScreen
 import com.nuvio.app.features.posterservice.rememberCustomPosters
@@ -2158,6 +2159,9 @@ fun MetaDetailsScreen(
                         .then(
                             if (detailsKeyboardNavigationEnabled) {
                                 Modifier
+                                    // Focus router fallback (KeyLayers): an arrow or OK that went to no one puts focus
+                                    // back here.
+                                    .keyLayer("Details") { tvFocusRequester.requestFocusLogged() }
                                     .focusRequester(tvFocusRequester)
                                     .focusable()
                                     .onPointerEvent(PointerEventType.Move) { event ->

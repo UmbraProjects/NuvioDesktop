@@ -1,5 +1,6 @@
 package com.nuvio.app.features.youtube
 
+import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -548,6 +549,10 @@ fun YouTubeTabScreen(
             .fillMaxSize()
             // Settings > YouTube account > Gradient background: the Settings screen's sky.
             .then(if (sky) Modifier.settingsSkyBackground(tokens.colors.background, tokens.colors.accent) else Modifier)
+            // Focus router fallback (KeyLayers): an arrow or OK that went to no one returns focus to the control
+            // last used in here. Focus had ended up on a control outside the tab, where every arrow was lost
+            // (2026-11-13, 70 keys until a shortcut moved it).
+            .keyLayer("YouTube")
             .onFocusChanged { tabHasFocus = it.hasFocus }
             .arrowKeyFocusNavigation()
             // With the search on the top bar, the page starts right under the bar.
