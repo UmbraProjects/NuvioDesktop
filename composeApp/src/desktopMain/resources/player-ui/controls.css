@@ -5563,15 +5563,17 @@ svg {
   width: auto;
   min-height: 0;
 }
-/* The .time-cluster hop in these selectors is deliberate: the hud-compact/hud-small width tiers
-   set the slider's width and the control's gap at (0,5,1)/(0,4,1), and the slide-out below
-   has to beat them or a narrow window would pin the slider open. */
-.player.minimal-hud .time-cluster .player-volume-control { gap: 0; }
+/* The :not(.legacy-hud) and .time-cluster hops in these selectors are deliberate: the
+   hud-compact/hud-small width tiers set the slider's width and the control's gap at (0,6,0), and
+   the slide-out below has to tie them (and win on source order) or a narrow window keeps the
+   hidden slider's width and the pill never shrinks. Minimal and legacy are exclusive, so the
+   :not() costs nothing. */
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control { gap: 0; }
 /* YouTube-style slide-out: the slider is collapsed to nothing beside the mute button and grows
    out on hover, keyboard focus, or while a drag is in flight (the .dragging class from
    controls.js, since a vertical wobble mid-drag leaves the hover area). Width and margin animate
    together so the time readout glides right instead of jumping. */
-.player.minimal-hud .time-cluster .player-volume-control .player-volume {
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control .player-volume {
   width: 0;
   margin-left: 0;
   opacity: 0;
@@ -5581,9 +5583,9 @@ svg {
     margin-left 200ms cubic-bezier(.4, 0, .2, 1),
     opacity 140ms ease;
 }
-.player.minimal-hud .time-cluster .player-volume-control:hover .player-volume,
-.player.minimal-hud .time-cluster .player-volume-control:focus-within .player-volume,
-.player.minimal-hud .time-cluster .player-volume-control.dragging .player-volume {
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control:hover .player-volume,
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control:focus-within .player-volume,
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control.dragging .player-volume {
   width: calc(var(--user-scale) * 84px);
   margin-left: calc(var(--user-scale) * 10px);
   opacity: 1;
