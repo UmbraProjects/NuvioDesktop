@@ -399,7 +399,15 @@ internal class NativePlayerController(
             },
             tracePlaybackStart = tracePlaybackStart,
             restoreVolume = restoreVolume,
+            fastStreamEligible = enableUserMpvOptions,
         )
+        if (pending.fastStreamEligible) {
+            // fork:faststream-optin - FastStream stays on while the same streams re-attach (settings,
+            // surface rebuilds) and ends with the next video.
+            com.nuvio.app.features.youtube.YouTubeFastStream.retainOnly(pending.streamUrls)
+            val available = pending.streamUrls.all(com.nuvio.app.features.youtube.YouTubeFastStream::eligible)
+            com.nuvio.app.features.youtube.YouTubeFastStreamState.update { it.copy(available = available, failed = it.failed && it.active) }
+        }
         pendingSource = pending
         svpInChain = pending.animeSvpFilter != null
         lastSeekFailureTargetMs = null
@@ -459,8 +467,10 @@ internal class NativePlayerController(
                 val mpvSourceUrl = if (com.nuvio.app.features.iptv.IptvPlaybackSession.isIptvUrl(pending.sourceUrl)) {
                     com.nuvio.app.features.iptv.IptvHlsSubtitleServer.playbackUrlFor(pending.sourceUrl, pending.headerLines)
                 } else {
-                    pending.sourceUrl
+                    // fork:faststream-optin - the loopback copy while FastStream is on for this stream.
+                    com.nuvio.app.features.youtube.YouTubeFastStream.playbackUrl(pending.sourceUrl)
                 }
+                val mpvAudioUrl = com.nuvio.app.features.youtube.YouTubeFastStream.playbackAudio(pending.sourceAudioUrl)
                 synchronized(nativeProcessLifecycleLock) {
                     if (reuseHandle != 0L) {
                         if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeAttachThread")
@@ -511,7 +521,7 @@ internal class NativePlayerController(
                         newHandle = NativePlayerBridge.create(
                             hostViewPtr = hostViewPtr,
                             sourceUrl = withMpvFilenameHint(mpvSourceUrl, pending.mediaTitle),
-                            sourceAudioUrl = pending.sourceAudioUrl,
+                            sourceAudioUrl = mpvAudioUrl,
                             headerLines = pending.headerLines.toTypedArray(),
                             playWhenReady = pending.playWhenReady,
                             initialPositionMs = pending.initialPositionMs,
@@ -1898,9 +1908,39 @@ internal class NativePlayerController(
         }.getOrDefault(PlayerPlaybackSnapshot(isLoading = true))
     }
 
+    /**
+     * fork:faststream-optin - turns FastStream on or off for the playing source and reopens it where
+     * it is (a fresh player, as a surface rebuild does), reading from the download or from YouTube.
+     */
+    fun setFastStream(on: Boolean) {
+        if (disposed) return
+        val pending = pendingSource?.takeIf { it.fastStreamEligible } ?: return
+        val fastStream = com.nuvio.app.features.youtube.YouTubeFastStream
+        if (!pending.streamUrls.all(fastStream::eligible)) return
+        if (on == pending.streamUrls.all(fastStream::isEnabled)) return
+        val current = synchronized(handleLock) { handle }.takeIf { it != 0L }
+        val positionMs = current?.let { runCatching { NativePlayerBridge.positionMs(it) }.getOrNull() }
+            ?.takeIf { it > 0L } ?: pending.initialPositionMs
+        val paused = current?.let { runCatching { NativePlayerBridge.isPaused(it) }.getOrNull() } ?: !pending.playWhenReady
+        if (on) {
+            val headers = pending.headerLines.toHeaderMap()
+            fastStream.enable(pending.streamUrls, headers)
+        } else {
+            fastStream.release(pending.streamUrls)
+        }
+        Logger.withTag("FastStream").i { "${if (on) "on" else "off"}: reopening at ${positionMs}ms" }
+        pendingSource = pending.copy(initialPositionMs = positionMs, initialProgressFraction = 0f, playWhenReady = !paused)
+        lastSeekFailureTargetMs = null
+        attachPending()
+    }
+
     fun dispose() {
         disposed = true
         attachGeneration.incrementAndGet()
+        pendingSource?.takeIf { it.fastStreamEligible }?.let { closing ->
+            com.nuvio.app.features.youtube.YouTubeFastStream.release(closing.streamUrls)
+            com.nuvio.app.features.youtube.YouTubeFastStreamState.update { it.copy(available = false) }
+        }
         pendingSource = null
         host.onPeerReady = null
         onAction = { false }
@@ -2703,7 +2743,13 @@ private data class PendingSource(
     val controlsPageUrl: String,
     val tracePlaybackStart: Boolean = false,
     val restoreVolume: Boolean = false,
-)
+    /** fork:faststream-optin - the main player (never a trailer): its YouTube streams may use FastStream. */
+    val fastStreamEligible: Boolean = false,
+) {
+    /** fork:faststream-optin - every stream URL mpv opens for this source: the video, then each audio track. */
+    val streamUrls: List<String>
+        get() = listOf(sourceUrl) + sourceAudioUrl?.lines()?.filter { it.isNotBlank() }?.map { it.substringAfterLast('\t') }.orEmpty()
+}
 
 // Standard bitstream formats to hand untouched to a receiver when passthrough is on. dts-hd
 // covers DTS-HD High Resolution; dts-hd-ma covers DTS-HD Master Audio.

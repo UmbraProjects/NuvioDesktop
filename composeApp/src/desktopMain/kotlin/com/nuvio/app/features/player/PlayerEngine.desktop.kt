@@ -694,6 +694,11 @@ private fun NativePlayerSurface(
         controller.isAnimeContentDetected = isAnimeContent
     }
 
+    // fork:faststream-optin - the YouTube watch page's FastStream button.
+    LaunchedEffect(controller) {
+        com.nuvio.app.features.youtube.YouTubeFastStream.toggleRequests.collect { on -> controller.setFastStream(on) }
+    }
+
     LaunchedEffect(
         controller,
         playbackAttemptId,
