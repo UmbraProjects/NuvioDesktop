@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ThumbUp
+import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.CheckBox
 import androidx.compose.material.icons.rounded.CheckBoxOutlineBlank
 import androidx.compose.material.icons.rounded.Close
@@ -90,6 +91,7 @@ import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.youtube.WATCH_LATER_PLAYLIST_ID
 import com.nuvio.app.features.youtube.YouTubeComment
+import com.nuvio.app.features.youtube.YouTubeFastStreamState
 import com.nuvio.app.features.youtube.YouTubeFeedRepository
 import com.nuvio.app.features.youtube.YouTubeLikeCounts
 import com.nuvio.app.features.youtube.YouTubeMiniPlayerHost
@@ -100,6 +102,7 @@ import com.nuvio.app.features.youtube.YouTubeWatchLayout
 import com.nuvio.app.features.youtube.YouTubeWatchQueue
 import com.nuvio.app.features.youtube.formatYouTubeCount
 import com.nuvio.app.features.youtube.isYouTubeVideoWatched
+import com.nuvio.app.features.youtube.requestYouTubeFastStream
 import com.nuvio.app.features.youtube.requestYouTubeFullscreen
 import com.nuvio.app.features.youtube.youTubeDisplayTitle
 import com.nuvio.app.features.youtubemusic.YouTubeMusicAuth
@@ -422,6 +425,7 @@ private fun WatchActions(current: YouTubeVideo, details: YouTubeVideoDetails?, s
     val queue by YouTubeWatchQueue.videos.collectAsState()
     val queued = queue.any { it.videoId == current.videoId }
     val theater by YouTubeFeedRepository.theaterMode.collectAsState()
+    val fastStream by YouTubeFastStreamState.status.collectAsState()
     var choosingPlaylist by remember(current.videoId) { mutableStateOf(false) }
     fun failed() {
         status = "YouTube didn't take that. Try again shortly."
@@ -455,6 +459,22 @@ private fun WatchActions(current: YouTubeVideo, details: YouTubeVideoDetails?, s
             }
             if (signedIn) {
                 WatchIconButton(Icons.Rounded.PlaylistAdd, "Save to playlist", on = choosingPlaylist) { choosingPlaylist = !choosingPlaylist }
+            }
+            // fork:faststream-optin - fetch the whole video in parallel ranges and play from that.
+            if (fastStream.available) {
+                WatchIconButton(
+                    Icons.Rounded.Bolt,
+                    when {
+                        !fastStream.active -> "FastStream: download the whole video quickly"
+                        fastStream.failed -> "FastStream stopped (YouTube refused); streaming normally. Click to turn off"
+                        fastStream.throttled -> "FastStream (slowed by YouTube). Click to turn off"
+                        else -> "FastStream on. Click to turn off"
+                    },
+                    on = fastStream.active && !fastStream.failed,
+                    badge = fastStream.percent?.let { "$it%" },
+                ) {
+                    requestYouTubeFastStream(!fastStream.active)
+                }
             }
             WatchIconButton(TheaterIcon, if (theater) "Default view" else "Theater mode", on = theater) {
                 YouTubeFeedRepository.setTheaterMode(!theater)
