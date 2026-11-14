@@ -36,3 +36,7 @@ composeApp/src/desktopMain/resources/torrserver/windows-amd64/TorrServer.exe
 
 # Build and test output captured to files while working; never part of a release commit
 *.log
+
+# Personal test checklists: kept locally, never committed
+/TESTING.md
+/TESTING-UMBRA.md
