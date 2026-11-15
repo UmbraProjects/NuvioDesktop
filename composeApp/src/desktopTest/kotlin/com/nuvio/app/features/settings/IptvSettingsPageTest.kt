@@ -4,7 +4,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.ui.graphics.toAwtImage
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -37,6 +40,8 @@ class IptvSettingsPageTest {
                     LazyColumn { iptvSettingsContent(isTablet = true) }
                 }
             }
+            // Live TV's own switches come first, so the button is below a test window's edge.
+            onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Add playlist"))
             onNodeWithText("Add playlist").performClick()
             waitForIdle()
 
@@ -85,6 +90,8 @@ class IptvSettingsPageTest {
                     LazyColumn { iptvSettingsContent(isTablet = true) }
                 }
             }
+            // Live TV's own switches come first, so the button is below a test window's edge.
+            onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Add playlist"))
             onNodeWithText("Add playlist").performClick()
             waitForIdle()
             onNodeWithText("Stalker portal").performScrollTo().performClick()

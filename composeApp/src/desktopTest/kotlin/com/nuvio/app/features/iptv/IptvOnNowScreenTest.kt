@@ -118,7 +118,7 @@ class IptvOnNowScreenTest {
                 // The wall is worked out off the UI thread.
                 waitUntil(timeoutMillis = 10_000) { shown("Heat") }
                 assertTrue(shown("Live sport"))
-                assertTrue(shown("Live: Man Utd v Real Sociedad"))
+                assertTrue(shown("Man Utd v Real Sociedad"), "the guide's \"Live: \" prefix is shown as a badge, not in the title")
                 assertTrue(shown("Mad Max: Fury Road"), "a film on a film channel, about to start")
                 assertTrue(shown("On now"))
                 saveScreenshot("iptv-on-now.png")

@@ -102,6 +102,7 @@ class IptvTriageScreenTest {
                 click("United Kingdom")
                 check(shown("3"), "'three UK channels left'")
                 saveScreenshot("iptv-triage-countries.png")
+                click("Next: languages")
                 click("Next: kinds")
 
                 check(shown("Which of these would you ever watch?"), "shown('Which of these would you ever watch?')")
@@ -119,7 +120,7 @@ class IptvTriageScreenTest {
                 click("Done")
 
                 // Back on the tab: only what was kept, with BBC One starred.
-                assertEquals(IptvTriage(setOf("GB"), setOf("Entertainment")), IptvRepository.settings.value.triage[playlist.id])
+                assertEquals(IptvTriage(setOf("GB"), setOf("Entertainment"), setOf("en")), IptvRepository.settings.value.triage[playlist.id])
                 check(IptvRepository.settings.value.favourites.any { it.startsWith(playlist.id) }, "BBC One was starred")
                 check(shown("UK | Entertainment"), "shown('UK | Entertainment')")
                 check(!shown("UK | Sports"), "!shown('UK | Sports')")
