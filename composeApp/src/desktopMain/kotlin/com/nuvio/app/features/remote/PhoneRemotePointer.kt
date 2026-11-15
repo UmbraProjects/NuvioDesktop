@@ -8,6 +8,7 @@ import java.awt.Point
 import java.awt.Rectangle
 import java.awt.Robot
 import java.awt.event.InputEvent
+import java.awt.event.KeyEvent
 
 /**
  * fork:phone-remote pointer - the phone as an air mouse, like a Magic Remote: the phone turns its gyro (or a drag on
@@ -47,19 +48,59 @@ internal object PhoneRemotePointer {
     @Synchronized
     fun click(button: PointerButton) {
         val robot = robot() ?: return
-        val mask = when (button) {
-            PointerButton.Left -> InputEvent.BUTTON1_DOWN_MASK
-            PointerButton.Right -> InputEvent.BUTTON3_DOWN_MASK
-            PointerButton.Middle -> InputEvent.BUTTON2_DOWN_MASK
-        }
-        robot.mousePress(mask)
-        robot.mouseRelease(mask)
+        if (button in held) release(button)
+        robot.mousePress(button.mask)
+        robot.mouseRelease(button.mask)
+    }
+
+    /** Holds [button] down for a drag, until [release] (or [releaseAll] when the phone goes away). */
+    @Synchronized
+    fun press(button: PointerButton) {
+        val robot = robot() ?: return
+        if (!held.add(button)) return
+        robot.mousePress(button.mask)
+    }
+
+    @Synchronized
+    fun release(button: PointerButton) {
+        val robot = robot() ?: return
+        if (!held.remove(button)) return
+        robot.mouseRelease(button.mask)
+    }
+
+    @Synchronized
+    fun releaseAll() {
+        held.toList().forEach(::release)
     }
 
     @Synchronized
     fun scroll(notches: Int) {
         robot()?.mouseWheel(notches)
     }
+
+    /**
+     * Sideways: Shift with the wheel, which Windows apps and Nuvio's poster rows read as horizontal scrolling (Robot
+     * has no horizontal wheel). Positive is right.
+     */
+    @Synchronized
+    fun scrollSideways(notches: Int) {
+        val robot = robot() ?: return
+        robot.keyPress(KeyEvent.VK_SHIFT)
+        try {
+            robot.mouseWheel(notches)
+        } finally {
+            robot.keyRelease(KeyEvent.VK_SHIFT)
+        }
+    }
+
+    private val held = mutableSetOf<PointerButton>()
+
+    private val PointerButton.mask: Int
+        get() = when (this) {
+            PointerButton.Left -> InputEvent.BUTTON1_DOWN_MASK
+            PointerButton.Right -> InputEvent.BUTTON3_DOWN_MASK
+            PointerButton.Middle -> InputEvent.BUTTON2_DOWN_MASK
+        }
 
     private fun screenAt(point: Point): Rectangle? {
         if (GraphicsEnvironment.isHeadless()) return null

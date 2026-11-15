@@ -12,6 +12,11 @@ class PhoneRemotePointerTest {
         assertEquals(RemoteMessage.Click(PointerButton.Left), PhoneRemoteProtocol.parse("CLICK left"))
         assertEquals(RemoteMessage.Click(PointerButton.Right), PhoneRemoteProtocol.parse("CLICK RIGHT"))
         assertEquals(RemoteMessage.Scroll(-3), PhoneRemoteProtocol.parse("SCROLL -3"))
+        assertEquals(RemoteMessage.ScrollSideways(4), PhoneRemoteProtocol.parse("HSCROLL 4"))
+        assertEquals(RemoteMessage.Press(PointerButton.Left), PhoneRemoteProtocol.parse("PRESS left"))
+        assertEquals(RemoteMessage.Release(PointerButton.Left), PhoneRemoteProtocol.parse("RELEASE left"))
+        assertNull(PhoneRemoteProtocol.parse("PRESS thumb"))
+        assertNull(PhoneRemoteProtocol.parse("HSCROLL 0"))
     }
 
     @Test

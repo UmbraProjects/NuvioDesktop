@@ -55,6 +55,8 @@ import java.nio.charset.StandardCharsets
  * phone: POINT <dx> <dy>                the gyro pointer: move the PC's mouse cursor, in ten-thousandths of the
  *                                       screen's width (PhoneRemotePointer); POINT_CENTRE puts it mid-screen
  * phone: CLICK <left|right|middle> | SCROLL <notches, + is down>     the pointer's buttons and wheel
+ * phone: PRESS <button> | RELEASE <button>   a button held for a drag; the PC lets go of it if the phone disconnects
+ * phone: HSCROLL <notches, + is right>  sideways scrolling (Shift and the wheel, which Nuvio's rows and most apps take)
  * pc:    OPENING <what> | CANT_OPEN     (only for OPEN)
  * ```
  * The phone moves the position on by itself while playing; the PC re-sends STATE when anything but the position
@@ -243,6 +245,9 @@ internal object PhoneRemoteProtocol {
             "POINT_CENTRE" -> RemoteMessage.PointCentre
             "CLICK" -> parts.getOrNull(1)?.let(PointerButton::fromWire)?.let { RemoteMessage.Click(it) }
             "SCROLL" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it != 0 }?.let { RemoteMessage.Scroll(it.coerceIn(-MAX_SCROLL, MAX_SCROLL)) }
+            "HSCROLL" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it != 0 }?.let { RemoteMessage.ScrollSideways(it.coerceIn(-MAX_SCROLL, MAX_SCROLL)) }
+            "PRESS" -> parts.getOrNull(1)?.let(PointerButton::fromWire)?.let { RemoteMessage.Press(it) }
+            "RELEASE" -> parts.getOrNull(1)?.let(PointerButton::fromWire)?.let { RemoteMessage.Release(it) }
             "RESUME" -> if (parts.size >= 3) {
                 RemoteMessage.Resume(parentId = decode(parts[1]), videoId = decode(parts[2]))
                     .takeIf { it.parentId.isNotBlank() && it.videoId.isNotBlank() }
@@ -290,6 +295,9 @@ internal sealed interface RemoteMessage {
     data object PointCentre : RemoteMessage
     data class Click(val button: PointerButton) : RemoteMessage
     data class Scroll(val notches: Int) : RemoteMessage
+    data class ScrollSideways(val notches: Int) : RemoteMessage
+    data class Press(val button: PointerButton) : RemoteMessage
+    data class Release(val button: PointerButton) : RemoteMessage
 }
 
 /** The pointer's mouse buttons. */

@@ -31,9 +31,11 @@ queue, and can "sleep" to try Wake. A strip shows what it was sent. This is for 
 - Touchpad (swipe to move a tile, tap for OK), D-pad or **Pointer**, with Back, Home, Search (opens the phone keyboard)
   and More. The tag in the pad's corner switches between them, and the choice is remembered.
 - **Pointer**: the phone as an air mouse for the PC, like a Magic Remote. Point the phone at the TV and turn or tilt it:
-  the real Windows cursor follows, over Nuvio, the player and any other window. Tap to click, hold for a right-click,
-  drag on the pad to move it by touch (the only way on a phone without a gyroscope), and drag the strip on the right
-  to scroll. **Centre** puts the cursor in the middle of the TV when the phone and the cursor no longer line up (the
+  the real Windows cursor follows, over Nuvio, the player and any other window. Tap to click; hold a finger still for a
+  moment (the phone buzzes) and the left button stays down until you lift, so turning the phone or sliding the finger
+  drags, as holding OK does on a Magic Remote. Drag on the pad to move the cursor by touch (the only way on a phone
+  without a gyroscope). The strip on the right scrolls up and down, the one underneath scrolls sideways (a poster row),
+  and **Right-click** is a tag below. **Centre** puts the cursor in the middle of the TV when the phone and the cursor no longer line up (the
   phone only ever sends how it moved, never where it points). **Gyro on/off** leaves touch only, and the speed tag
   cycles Slow, Normal and Fast. The gyro stops whenever the app is not on screen.
 - Works everywhere in Nuvio, including Settings (arrow keys there show a focus ring in the theme's colour).
@@ -112,7 +114,7 @@ source lines are built in `PhoneRemoteLibraryLines.kt` and answered in `PhoneRem
 | Live scores | (none) | `SCORE <sport> <kind> <title> <text>` (after `SUBSCRIBE`, a favourite team's event; shown as a notification) |
 | Long-press menus | `MENU`, `DO` | `MENU`, `DONE`, `PLAYLISTS`, `RECAP` |
 | Links | `OPEN` | `OPENING`, `CANT_OPEN` |
-| Pointer | `POINT <dx> <dy>` (ten-thousandths of the screen's width), `POINT_CENTRE`, `CLICK <left\|right\|middle>`, `SCROLL <notches>` | (none) |
+| Pointer | `POINT <dx> <dy>` (ten-thousandths of the screen's width), `POINT_CENTRE`, `CLICK <left\|right\|middle>`, `PRESS` / `RELEASE <button>` (a drag; the PC lets go if the phone disconnects), `SCROLL <notches>`, `HSCROLL <notches>` (Shift + wheel) | (none) |
 
 The QR code holds `nuvioremote://pair?n=<name>&p=<port>&c=<code>&a=<addresses>`. The app tries each address until one
 answers.

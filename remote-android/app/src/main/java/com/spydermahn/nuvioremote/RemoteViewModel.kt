@@ -373,6 +373,32 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     /** Wheel notches, positive is down. */
     fun scroll(notches: Int) = sendOrReconnect { it.control("SCROLL $notches") }
 
+    /** Sideways wheel notches, positive is right. */
+    fun scrollSideways(notches: Int) = sendOrReconnect { it.control("HSCROLL $notches") }
+
+    /**
+     * Holds a mouse button down on the PC for a drag; [release] lets go. Sent in order with the POINT steps (one io
+     * thread), so a drag ends where the cursor got to. The PC lets go by itself if the phone disconnects.
+     */
+    fun press(button: String) {
+        flushPoint()
+        sendOrReconnect { it.control("PRESS $button") }
+    }
+
+    fun release(button: String) {
+        flushPoint()
+        sendOrReconnect { it.control("RELEASE $button") }
+    }
+
+    /** Queues what the gyro has built up ahead of a button change. */
+    private fun flushPoint() {
+        io.execute {
+            val x = pendingX.getAndSet(0)
+            val y = pendingY.getAndSet(0)
+            if (x != 0 || y != 0) sendIfConnected { it.point(x, y) }
+        }
+    }
+
     fun type(text: String) = sendOrReconnect { it.text(text) }
 
     fun backspace(count: Int) = sendOrReconnect { session -> repeat(count) { session.key(RemoteKey.Backspace) } }

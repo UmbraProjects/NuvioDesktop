@@ -6,7 +6,8 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,9 +36,11 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -45,6 +49,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.hypot
 import kotlin.math.sqrt
 
@@ -132,7 +137,9 @@ class GyroShaper(var speed: PointerSpeed = PointerSpeed.Normal) {
 
 /**
  * The pointer pad: the gyro moves the TV's cursor while this is on screen, a drag moves it too (and does it alone on a
- * phone without a gyroscope), a tap clicks, a long press right-clicks, and the strip on the right scrolls.
+ * phone without a gyroscope), a tap clicks, and holding still for a moment holds the left button down until the finger
+ * lifts, so turning the phone (or sliding the finger) then drags, as holding OK does on a Magic Remote. The strip on the
+ * right scrolls up and down, the one underneath sideways (a poster row), and Right-click is a tag below.
  */
 @Composable
 fun PointerPad(viewModel: RemoteViewModel, speed: PointerSpeed, compact: Boolean, modifier: Modifier = Modifier) {
@@ -147,6 +154,7 @@ fun PointerPad(viewModel: RemoteViewModel, speed: PointerSpeed, compact: Boolean
     val shaper = remember { GyroShaper() }
     shaper.speed = speed
     val vm by rememberUpdatedState(viewModel)
+    var holding by remember { mutableStateOf(false) }
 
     // Only while the app is in front: a phone in a pocket must not wander the cursor.
     LifecycleResumeEffect(gyroOn, gyroscope) {
@@ -179,6 +187,7 @@ fun PointerPad(viewModel: RemoteViewModel, speed: PointerSpeed, compact: Boolean
         onPauseOrDispose { sensors.unregisterListener(listener) }
     }
 
+    val stepPx = with(density) { SCROLL_STEP.toPx() }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             // The surface: tap, long press, drag.
@@ -187,35 +196,67 @@ fun PointerPad(viewModel: RemoteViewModel, speed: PointerSpeed, compact: Boolean
                     .weight(1f)
                     .fillMaxHeight()
                     .glass(RoundedCornerShape(18.dp), fill = Color.White.copy(alpha = 0.03f))
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                vm.click("left")
-                            },
-                            onLongPress = {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                vm.click("right")
-                            },
-                        )
-                    }
                     .pointerInput(speed) {
                         // A drag the width of the pad moves the cursor about six tenths of the TV's width.
                         val unitsPerPx = DRAG_SHARE * POINT_UNITS_PER_WIDTH / size.width.coerceAtLeast(1) * speed.factor
-                        var restX = 0f
-                        var restY = 0f
-                        detectDragGestures(onDragStart = {
-                            restX = 0f
-                            restY = 0f
-                        }) { change, drag ->
-                            change.consume()
-                            restX += drag.x * unitsPerPx
-                            restY += drag.y * unitsPerPx
-                            val x = restX.toInt()
-                            val y = restY.toInt()
-                            restX -= x
-                            restY -= y
-                            if (x != 0 || y != 0) vm.point(x, y)
+                        val slop = viewConfiguration.touchSlop
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var restX = 0f
+                            var restY = 0f
+                            fun move(dx: Float, dy: Float) {
+                                restX += dx * unitsPerPx
+                                restY += dy * unitsPerPx
+                                val x = restX.toInt()
+                                val y = restY.toInt()
+                                restX -= x
+                                restY -= y
+                                if (x != 0 || y != 0) vm.point(x, y)
+                            }
+                            // Until HOLD_MS: lifting is a click, moving past the slop is a plain move; still is a hold.
+                            var travel = 0f
+                            val early: PadStart? = withTimeoutOrNull(HOLD_MS) {
+                                var result: PadStart? = null
+                                while (result == null) {
+                                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                                    result = when {
+                                        change == null || !change.pressed -> PadStart.Tap
+                                        else -> {
+                                            travel += change.positionChange().getDistance()
+                                            if (travel > slop) PadStart.Move else null
+                                        }
+                                    }
+                                }
+                                result
+                            }
+                            when (early) {
+                                PadStart.Tap -> {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    vm.click("left")
+                                    return@awaitEachGesture
+                                }
+                                PadStart.Move -> Unit
+                                null -> {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    vm.press("left")
+                                    holding = true
+                                }
+                            }
+                            try {
+                                while (true) {
+                                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    val delta = change.positionChange()
+                                    change.consume()
+                                    move(delta.x, delta.y)
+                                }
+                            } finally {
+                                // Lifted, or the gesture was cut short: never leave the PC's button down.
+                                if (holding) {
+                                    holding = false
+                                    vm.release("left")
+                                }
+                            }
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -224,6 +265,7 @@ fun PointerPad(viewModel: RemoteViewModel, speed: PointerSpeed, compact: Boolean
                     if (!compact) Icon(Icons.Rounded.Mouse, contentDescription = null, tint = Color.White.copy(alpha = 0.28f), modifier = Modifier.size(44.dp))
                     Text(
                         when {
+                            holding -> "Dragging"
                             gyroscope == null -> "Drag to move"
                             gyroOn -> "Point at the TV"
                             else -> "Drag to move"
@@ -233,8 +275,11 @@ fun PointerPad(viewModel: RemoteViewModel, speed: PointerSpeed, compact: Boolean
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        if (gyroscope == null) "No gyroscope on this phone · tap to click, hold for right-click"
-                        else "Tap to click · hold for right-click",
+                        when {
+                            holding -> "Turn the phone or slide your finger · lift to let go"
+                            gyroscope == null -> "No gyroscope on this phone · tap to click, hold then slide to drag"
+                            else -> "Tap to click · hold, then move to drag"
+                        },
                         color = g.textMuted,
                         fontSize = 12.sp,
                         textAlign = TextAlign.Center,
@@ -243,7 +288,6 @@ fun PointerPad(viewModel: RemoteViewModel, speed: PointerSpeed, compact: Boolean
                 }
             }
             // The scroll strip: every step of a drag is one notch of the wheel, down for down.
-            val stepPx = with(density) { SCROLL_STEP.toPx() }
             Box(
                 Modifier
                     .width(if (compact) 40.dp else 48.dp)
@@ -267,13 +311,40 @@ fun PointerPad(viewModel: RemoteViewModel, speed: PointerSpeed, compact: Boolean
                 Icon(Icons.Rounded.UnfoldMore, contentDescription = "Scroll", tint = g.textMuted, modifier = Modifier.size(24.dp))
             }
         }
+        // Sideways: through a poster row, a timeline, a wide page. Finger right, content scrolls right.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(if (compact) 40.dp else 48.dp)
+                .glass(RoundedCornerShape(18.dp), fill = Color.White.copy(alpha = 0.03f))
+                .pointerInput(Unit) {
+                    var rest = 0f
+                    detectDragGestures(onDragStart = { rest = 0f }) { change, drag ->
+                        change.consume()
+                        rest += drag.x
+                        val notches = (rest / stepPx).toInt()
+                        if (notches != 0) {
+                            rest -= notches * stepPx
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            vm.scrollSideways(notches)
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.UnfoldMore, contentDescription = "Scroll sideways", tint = g.textMuted, modifier = Modifier.size(24.dp).rotate(90f))
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
             GlassTag("Centre", icon = Icons.Rounded.CenterFocusStrong, onClick = {
                 shaper.reset()
                 vm.pointCentre()
             })
+            GlassTag("Right-click", icon = Icons.Rounded.Mouse, onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                vm.click("right")
+            })
             if (gyroscope != null) {
-                GlassTag(if (gyroOn) "Gyro on" else "Gyro off", icon = Icons.Rounded.ScreenRotation, accent = gyroOn, onClick = { gyroOn = !gyroOn })
+                GlassTag(if (gyroOn) "Gyro" else "Gyro off", icon = Icons.Rounded.ScreenRotation, accent = gyroOn, onClick = { gyroOn = !gyroOn })
             }
             GlassTag(speed.label, icon = Icons.Rounded.Speed, onClick = { vm.setPointerSpeed(speed.next()) })
         }
@@ -281,4 +352,9 @@ fun PointerPad(viewModel: RemoteViewModel, speed: PointerSpeed, compact: Boolean
 }
 
 private const val DRAG_SHARE = 0.6f
+
+/** How long a still finger waits before it holds the button down for a drag. */
+private const val HOLD_MS = 320L
+
+private enum class PadStart { Tap, Move }
 private val SCROLL_STEP = 26.dp

@@ -85,6 +85,11 @@ internal interface PhoneRemoteListener {
     fun onPointCentre() = Unit
     fun onClick(button: PointerButton) = Unit
     fun onScroll(notches: Int) = Unit
+    fun onScrollSideways(notches: Int) = Unit
+    fun onPress(button: PointerButton) = Unit
+    fun onRelease(button: PointerButton) = Unit
+    /** A phone went away: let go of anything it was holding down. */
+    fun onPhoneGone() = Unit
 }
 
 /**
@@ -366,6 +371,9 @@ internal class PhoneRemoteServer(
                             RemoteMessage.PointCentre -> listener.onPointCentre()
                             is RemoteMessage.Click -> listener.onClick(message.button)
                             is RemoteMessage.Scroll -> listener.onScroll(message.notches)
+                            is RemoteMessage.ScrollSideways -> listener.onScrollSideways(message.notches)
+                            is RemoteMessage.Press -> listener.onPress(message.button)
+                            is RemoteMessage.Release -> listener.onRelease(message.button)
                             else -> Unit
                         }
                     }
@@ -373,6 +381,8 @@ internal class PhoneRemoteServer(
             } catch (_: IOException) {
                 // The phone went away: screen off, Wi-Fi dropped, app closed.
             } finally {
+                // A drag cut short by the Wi-Fi must not leave the PC's mouse button down.
+                runCatching { listener.onPhoneGone() }
                 if (clients.remove(this)) {
                     publishClients()
                     log("Phone remote disconnected: $deviceName")

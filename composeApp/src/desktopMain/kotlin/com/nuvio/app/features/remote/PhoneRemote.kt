@@ -202,6 +202,10 @@ internal object PhoneRemote {
         override fun onPointCentre() = PhoneRemotePointer.centre()
         override fun onClick(button: PointerButton) = PhoneRemotePointer.click(button)
         override fun onScroll(notches: Int) = PhoneRemotePointer.scroll(notches)
+        override fun onScrollSideways(notches: Int) = PhoneRemotePointer.scrollSideways(notches)
+        override fun onPress(button: PointerButton) = PhoneRemotePointer.press(button)
+        override fun onRelease(button: PointerButton) = PhoneRemotePointer.release(button)
+        override fun onPhoneGone() = PhoneRemotePointer.releaseAll()
 
         override fun onText(text: String) {
             text.forEach { char ->
