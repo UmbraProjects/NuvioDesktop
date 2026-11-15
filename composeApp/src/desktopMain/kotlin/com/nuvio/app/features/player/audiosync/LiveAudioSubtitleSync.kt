@@ -52,6 +52,29 @@ internal object LiveAudioSubtitleSync {
      */
     data class Guess(val offsetMs: Long, val minShiftMs: Double, val maxShiftMs: Double)
 
+    /**
+     * The speech heard on one channel during one programme. Kept across subtitle picks, so trying another file searches
+     * at once with everything already heard instead of starting over (a minute or two each time).
+     */
+    class Heard internal constructor(val key: String, val guideOffsetMs: Long) {
+        val timeline = SpeechTimeline()
+        @Volatile var readUntil = -1L
+    }
+
+    private var lastHeard: Heard? = null
+
+    /**
+     * The speech heard so far for [key] (channel and programme) on this tune-in; a new key starts afresh, and so does
+     * tuning in again, which restarts media time (the guide's offset at media time 0 then moves on).
+     */
+    @Synchronized
+    fun heardFor(key: String, guideOffsetMs: Long): Heard =
+        lastHeard?.takeIf { it.key == key && kotlin.math.abs(it.guideOffsetMs - guideOffsetMs) <= SAME_TUNE_MS }
+            ?: Heard(key, guideOffsetMs).also { lastHeard = it }
+
+    /** The guide's offset is read afresh at each pick, a second or two apart on the same tune-in. */
+    private const val SAME_TUNE_MS = 10_000L
+
     /** The lines as the tracker should see them for one guess: film time minus [offsetMs]; what falls before 0 goes. */
     fun shifted(dialogue: List<Triple<Long, Long, String>>, offsetMs: Long): List<Triple<Long, Long, String>> =
         dialogue.mapNotNull { (start, end, text) -> if (end - offsetMs <= 0) null else Triple(maxOf(0L, start - offsetMs), end - offsetMs, text) }
@@ -81,11 +104,12 @@ internal object LiveAudioSubtitleSync {
     suspend fun run(
         dialogue: List<Triple<Long, Long, String>>,
         guideOffsetMs: Long,
+        heard: Heard,
         positionMs: () -> Long,
         decode: suspend (startMs: Long, endMs: Long) -> FloatArray?,
         onModel: suspend (model: SubtitleSyncModel, confirmed: Boolean, recheck: Boolean) -> Unit,
     ) {
-        val timeline = SpeechTimeline()
+        val timeline = heard.timeline
         val analyzer = SpeechAnalyzer(SileroVad(DesktopAudioSubtitleSync.weights()), timeline)
         val trackers = guesses(guideOffsetMs).map { guess ->
             guess.offsetMs to AudioSyncTracker(
@@ -96,8 +120,8 @@ internal object LiveAudioSubtitleSync {
             )
         }
         var lockedOffset: Long? = null
-        var readUntil = -1L
-        log.i { "start lines=${dialogue.size} guideOffsetMs=$guideOffsetMs guesses=${guesses(guideOffsetMs)}" }
+        var readUntil = heard.readUntil
+        log.i { "start lines=${dialogue.size} guideOffsetMs=$guideOffsetMs heard=${(timeline.knownFrameCount() * SpeechTimeline.FRAME_DURATION_MS / 1_000).toLong()}s guesses=${guesses(guideOffsetMs)}" }
         while (true) {
             currentCoroutineContext().ensureActive()
             val position = positionMs()
@@ -117,10 +141,14 @@ internal object LiveAudioSubtitleSync {
                         offset += count
                     }
                     readUntil = from + pcm.size * 1_000L / DesktopAudioSubtitleSync.SAMPLE_RATE
+                    heard.readUntil = readUntil
                     log.d { "read ${from / 1_000}s..${readUntil / 1_000}s known=${timeline.knownFrameCount()}" }
                 } else {
                     log.i { "nothing out of the cache for ${from / 1_000}s..${to / 1_000}s" }
                 }
+            }
+            // Every round, not only after a read: speech heard for an earlier subtitle is searched straight away.
+            run {
                 for ((guess, tracker) in trackers) {
                     if (lockedOffset != null && guess != lockedOffset) continue
                     when (val outcome = tracker.update(timeline, positionMs())) {

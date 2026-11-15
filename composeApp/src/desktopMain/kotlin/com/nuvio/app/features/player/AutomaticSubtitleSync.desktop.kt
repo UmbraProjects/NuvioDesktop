@@ -224,6 +224,7 @@ internal actual suspend fun runLiveSubtitleSync(
         com.nuvio.app.features.player.audiosync.LiveAudioSubtitleSync.run(
             dialogue = cues.map { Triple(it.startTimeMs, it.endTimeMs, it.text) },
             guideOffsetMs = guideOffsetMs,
+            heard = com.nuvio.app.features.player.audiosync.LiveAudioSubtitleSync.heardFor("$sourceKey@$programmeStartMs", guideOffsetMs),
             positionMs = positionMs,
             decode = { startMs, endMs -> withContext(Dispatchers.IO) { player.decodeCachedAudio(startMs / 1_000.0, endMs / 1_000.0) } },
         ) { model, confirmed, recheck ->

@@ -42,6 +42,14 @@ class LiveAudioSubtitleSyncTest {
     }
 
     @Test
+    fun `speech heard is kept for another subtitle on the same tune-in, not after tuning in again`() {
+        val first = LiveAudioSubtitleSync.heardFor("chan@1000", 600_000L)
+        assertTrue(first === LiveAudioSubtitleSync.heardFor("chan@1000", 602_000L))
+        assertTrue(first !== LiveAudioSubtitleSync.heardFor("chan@1000", 900_000L))
+        assertTrue(LiveAudioSubtitleSync.heardFor("other@1000", 900_000L) !== LiveAudioSubtitleSync.heardFor("chan@2000", 900_000L))
+    }
+
+    @Test
     fun `a film twelve minutes behind the guide locks`() {
         // Speech exactly where the lines say, 12 minutes behind the guide's guess (ad breaks before tuning in).
         val guideOffset = 45 * 60_000L
