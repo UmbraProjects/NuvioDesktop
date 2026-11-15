@@ -125,6 +125,7 @@ jobs:
           --tests "com.nuvio.app.features.iptv.IptvWeedTest"
           --tests "com.nuvio.app.features.iptv.IptvProgrammeLineTest"
           --tests "com.nuvio.app.features.iptv.IptvStageTest"
+          --tests "com.nuvio.app.features.iptv.IptvFrontDoorTest"
           --tests "com.nuvio.app.features.iptv.IptvGuideTextTest"
           --tests "com.nuvio.app.features.iptv.IptvTasteTest"
           --tests "com.nuvio.app.features.iptv.IptvAskAiTest"

@@ -180,7 +180,8 @@ internal fun LazyListScope.iptvSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = "Stage",
-                    description = "Live TV opens on full-screen stages, one decision each: Three things, Starting soon, " +
+                    description = "Live TV opens on the front door: one pick (OK plays it), your favourite channels and the " +
+                        "scores of the teams you follow. Behind it, full-screen stages, one decision each: Three things, Starting soon, " +
                         "I have N minutes, Tonight's running order, Earlier today, Following, Just ask and Your 40. " +
                         "Left and right on the strip at the top change stage; All channels opens the classic list. " +
                         "The picks learn from what you watch to the end, put new episodes above repeats and prefer " +
@@ -189,6 +190,17 @@ internal fun LazyListScope.iptvSettingsContent(
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-stage")),
                     onCheckedChange = IptvRepository::setStage,
+                )
+                // fork:live-tv-front-door
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Front door picture",
+                    description = "The front door's pick shows a still from its channel instead of the programme's art, " +
+                        "taken every few minutes and only while nothing is playing (it needs ffmpeg). Off: the art only.",
+                    checked = settings.doorPreview,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-door-preview")),
+                    onCheckedChange = IptvRepository::setDoorPreview,
                 )
                 // fork:live-tv-on-demand
                 SettingsGroupDivider(isTablet = isTablet)

@@ -883,3 +883,17 @@ Settings > Live TV > Stage. Watch a few programmes on Live TV first (each one at
 - [ ] On a channel with ads, after a break the lines are back in time within a couple of minutes
 - [ ] A subtitle for a different cut, or for another film, does not lock (stays "timed from the guide")
 - [ ] With the switch off, or no model downloaded, it works as before (speech detection alone); CPU stays reasonable while it listens
+
+## Live TV: the front door (Nov 15)
+
+- [ ] With Stage on, Live TV opens on the front door ("Live TV", Home first on the strip): favourites on the left, one pick in the centre with Watch highlighted, scores and Next up on the right
+- [ ] OK on Watch plays the pick; a pick that starts within 5 minutes puts its channel on at once ("Watch · starts 20:00")
+- [ ] The pick's line says why: you follow it, starts in N min, your usual at this hour (with its Your 40 number), or a film that began N min ago
+- [ ] Something else swaps the pick for the next one; the pick otherwise stays the same for 15 minutes, unless a followed match comes on
+- [ ] A followed team playing live becomes the pick, and its score is on the right with the channel showing it; OK on the score plays that channel
+- [ ] Hide scores empties the scores box (it says hidden); Show scores brings them back, and the choice is kept after a restart
+- [ ] Favourites now lists the starred channels with what is on and a progress bar; the last channel watched sits above them as Carry on; OK plays, hold OK unstars
+- [ ] Back from the player lands on the front door, whichever stage you left from
+- [ ] First run: on a playlist with no triage yet, Live TV opens on the triage questions; Done (or Back out of them) leads to the front door, and they don't come back by themselves until Nuvio is restarted
+- [ ] Settings > Live TV > Front door picture (with ffmpeg): the pick shows a still of its channel marked LIVE and how old it is; off, the art only
+- [ ] The phone remote's Live TV shows Home with the pick first and the favourites that have something on

@@ -17,6 +17,8 @@ data class IptvAsked(val text: String, val at: Long)
  * IptvStageTest; the screen is IptvStageScreen.kt.
  */
 enum class IptvStage(val label: String) {
+    /** fork:live-tv-front-door - the front door: one pick, favourites and scores. First, and where Live TV opens. */
+    Door("Home"),
     Three("Three things"),
     Soon("Starting soon"),
     Minutes("I have time"),

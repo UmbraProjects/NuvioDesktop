@@ -102,6 +102,10 @@ data class IptvSettings(
     val tally: Map<String, IptvNight> = emptyMap(),
     /** fork:live-tv-brakes - the night the zap-budget card was last offered. */
     val brakeOffered: Long? = null,
+    /** fork:live-tv-front-door - the pick shows a live still of its channel (refreshed while nothing plays); off by default. */
+    val doorPreview: Boolean = false,
+    /** fork:live-tv-front-door - the front door's scores hidden, so it never spoils a result. */
+    val doorHideScores: Boolean = false,
 ) {
     /** Whether the Live TV entry belongs in the navigation. */
     val tabShown: Boolean
@@ -327,6 +331,18 @@ object IptvRepository {
     fun setOnDemand(enabled: Boolean) {
         ensureLoaded()
         mutate { it.copy(onDemand = enabled) }
+    }
+
+    /** fork:live-tv-front-door */
+    fun setDoorPreview(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(doorPreview = enabled) }
+    }
+
+    /** fork:live-tv-front-door */
+    fun setDoorHideScores(hidden: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(doorHideScores = hidden) }
     }
 
     fun setStage(enabled: Boolean) {

@@ -228,6 +228,11 @@ fun IptvScreen(
     // fork:live-tv-on-now - copies of one channel folded into one row; null with the setting off.
     // fork:live-tv-stage - the stages read merged channels and the lineup too.
     val stageOn = settings.stage
+    // fork:live-tv-front-door - first run: with no triage yet, Live TV opens on its questions (once a session), and
+    // the front door follows them.
+    LaunchedEffect(stageOn, triage == null, content != null) {
+        if (stageOn && triage == null && content != null && IptvFirstRun.shouldAsk(playlist.id)) triageOpen = true
+    }
     val merged = remember(content, onNow, lineupOn, stageOn, categoryRegions) {
         if ((onNow || lineupOn || stageOn) && content != null) IptvChannelMerge.merge(content.channels) { categoryRegions[it.categoryId] } else null
     }

@@ -634,6 +634,13 @@ private fun settingsSearchEntries(
             "Live TV as full-screen stages: Three things, Starting soon, I have N minutes, Tonight, Earlier today, Following, Just ask, Your 40.",
             "General",
         ),
+        // fork:live-tv-front-door
+        PlaybackSearchRow(
+            "iptv-door-preview",
+            "Front door picture",
+            "Live TV's front door shows a still from the pick's channel, taken only while nothing plays.",
+            "General",
+        ),
         // fork:live-tv-on-demand
         PlaybackSearchRow(
             "iptv-on-demand",
