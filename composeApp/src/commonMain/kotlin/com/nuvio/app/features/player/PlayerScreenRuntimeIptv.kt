@@ -141,13 +141,26 @@ internal fun PlayerScreenRuntime.BindIptvLiveEffects() {
                         on.kind == null && IptvOnNow.isFilm(on, onChannel) -> on.copy(kind = IptvProgrammeKind.FILM)
                         on.kind == null && IptvOnNow.isSport(on, onChannel) -> null
                         on.kind == IptvProgrammeKind.NEWS || on.kind == IptvProgrammeKind.SPORT -> null
+                        // fork:live-tv-polish - "Channel 4 News" is news even when the guide does not say so.
+                        on.kind == null && NEWS_WORD.containsMatchIn(on.title) -> null
                         else -> on
                     }
                     if (looked != null) {
-                        val found = runCatching { IptvOnDemand.find(looked) }.getOrNull()
+                        var asked = looked
+                        var found = runCatching { IptvOnDemand.find(looked) }.getOrNull()
+                        // fork:live-tv-polish - a feature-length programme that is no series with episode numbers is tried
+                        // as a film ("The Ring" on Film4, "Matilda" on ITV2 were looked for as series and found nothing).
+                        if (found?.playable != true && looked.kind != IptvProgrammeKind.FILM && looked.endMs - looked.startMs >= 75 * 60_000L) {
+                            val asFilm = looked.copy(kind = IptvProgrammeKind.FILM)
+                            val film = runCatching { IptvOnDemand.find(asFilm) }.getOrNull()
+                            if (film?.playable == true) {
+                                asked = asFilm
+                                found = film
+                            }
+                        }
                         iptvSubtitleTarget = found?.takeIf { it.playable }
                         IptvPlaybackLog.i {
-                            "live subtitles: '${on.title}' as ${if (looked.kind == IptvProgrammeKind.FILM) "a film" else "a programme"} -> " +
+                            "live subtitles: '${on.title}' as ${if (asked.kind == IptvProgrammeKind.FILM) "a film" else "a programme"} -> " +
                                 (iptvSubtitleTarget?.let { "${it.type} ${it.videoId}" } ?: found?.let { "${it.name}, no episode numbers" } ?: "not found on TMDB")
                         }
                     } else {
@@ -628,3 +641,6 @@ private const val IPTV_PANEL_MAX_CHANNELS = 600
  * about two minutes of 8 Mbit/s HD. An estimate; seeking past what mpv kept just stops at it.
  */
 private const val IPTV_DEFAULT_REWIND_MS = 2 * 60_000L
+
+/** fork:live-tv-polish - a title that says it is news ("Channel 4 News", "BBC News at Six"). */
+private val NEWS_WORD = Regex("""\bnews\b""", RegexOption.IGNORE_CASE)
