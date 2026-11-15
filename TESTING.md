@@ -861,7 +861,8 @@ Settings > Live TV > Stage. Watch a few programmes on Live TV first (each one at
 ## Live TV: subtitles for films on live channels (Nov 15)
 
 - [ ] Settings > Live TV has "Subtitles for films on live channels"; Settings search finds it
-- [ ] With it on, tune to a film (Jaws on Sky Cinema): the player's subtitles list shows add-on subtitles (Subsense) within about half a minute
+- [ ] **BROKEN** With it on, tune to a film (Jaws on Sky Cinema): the player's subtitles list shows add-on subtitles (Subsense) within about half a minute (2026-11-15): 21 Jump Street and Mission: Impossible showed nothing
+  - [ ] Re-check after the fix (films the guide does not mark as films are now recognised by their channel or category, so they are not looked up as the TV series of the same name): 21 Jump Street or Mission: Impossible on a Sky Cinema channel lists Subsense subtitles
 - [ ] Pick one: the HUD says "timed from the guide", and the lines are roughly right straight away
 - [ ] Within a few minutes the HUD says "synced to the audio (+x.xs)" and the lines match the speech
 - [ ] A film shown sped up (most UK film channels): still in time half an hour later

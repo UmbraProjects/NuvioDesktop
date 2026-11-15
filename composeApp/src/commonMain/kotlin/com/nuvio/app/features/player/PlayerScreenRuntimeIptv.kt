@@ -12,7 +12,10 @@ import androidx.compose.runtime.snapshotFlow
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.iptv.IptvChannel
 import com.nuvio.app.features.iptv.IptvEpgRepository
+import com.nuvio.app.features.iptv.IptvChannelNow
+import com.nuvio.app.features.iptv.IptvMergedChannel
 import com.nuvio.app.features.iptv.IptvOnDemand
+import com.nuvio.app.features.iptv.IptvOnNow
 import com.nuvio.app.features.iptv.IptvProgrammeKind
 import com.nuvio.app.features.iptv.IptvGroups
 import com.nuvio.app.features.iptv.IptvRepository
@@ -122,9 +125,27 @@ internal fun PlayerScreenRuntime.BindIptvLiveEffects() {
                 }
                 iptvSubtitleProgramme = on
                 iptvSubtitleTarget = null
-                if (on != null && on.kind != IptvProgrammeKind.NEWS && on.kind != IptvProgrammeKind.SPORT) {
-                    iptvSubtitleTarget = runCatching { IptvOnDemand.find(on) }.getOrNull()?.takeIf { it.playable }
-                    IptvPlaybackLog.i { "live subtitles: '${on.title}' is ${iptvSubtitleTarget?.videoId ?: "not found on TMDB"}" }
+                if (on != null && active != null) {
+                    // Most guides do not mark films: a feature-length programme on a film channel or in a film category
+                    // is one (as everywhere else in Live TV), so "21 Jump Street" on Sky Cinema is the film, not the series.
+                    val categoryName = IptvRepository.contentState(active.playlist.id).value.content?.categoryNames?.get(active.channel.categoryId).orEmpty()
+                    val onChannel = IptvChannelNow(IptvMergedChannel(listOf(active.channel)), listOf(on), categoryName)
+                    val looked = when {
+                        on.kind == null && IptvOnNow.isFilm(on, onChannel) -> on.copy(kind = IptvProgrammeKind.FILM)
+                        on.kind == null && IptvOnNow.isSport(on, onChannel) -> null
+                        on.kind == IptvProgrammeKind.NEWS || on.kind == IptvProgrammeKind.SPORT -> null
+                        else -> on
+                    }
+                    if (looked != null) {
+                        val found = runCatching { IptvOnDemand.find(looked) }.getOrNull()
+                        iptvSubtitleTarget = found?.takeIf { it.playable }
+                        IptvPlaybackLog.i {
+                            "live subtitles: '${on.title}' as ${if (looked.kind == IptvProgrammeKind.FILM) "a film" else "a programme"} -> " +
+                                (iptvSubtitleTarget?.let { "${it.type} ${it.videoId}" } ?: found?.let { "${it.name}, no episode numbers" } ?: "not found on TMDB")
+                        }
+                    } else {
+                        IptvPlaybackLog.i { "live subtitles: '${on.title}' is news or sport, not looked up" }
+                    }
                 }
             }
             delay(30_000L)
