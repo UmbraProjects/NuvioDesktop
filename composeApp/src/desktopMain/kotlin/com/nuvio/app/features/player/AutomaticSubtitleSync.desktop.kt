@@ -188,6 +188,57 @@ internal actual suspend fun runAudioReferencedSubtitleSync(
     }
 }
 
+internal actual suspend fun runLiveSubtitleSync(
+    sourceKey: String,
+    subtitle: AddonSubtitle,
+    player: PlayerEngineController,
+    programmeStartMs: Long,
+    positionMs: () -> Long,
+    liveEdgeMs: () -> Long,
+    onUpdate: suspend (LiveSubtitleSyncUpdate) -> Unit,
+) {
+    val body = runCatching {
+        withContext(Dispatchers.IO) { AutomaticSubtitleSync.downloadSubtitleBody(subtitle.url, emptyMap(), subtitle.language) }
+    }.getOrNull()
+    val cues = body?.let { AutoSyncTimelineRetimer.normalizeExternalTimeline(AutoSyncSubtitleCueParser.parse(it, subtitle.url)) }.orEmpty()
+    if (body == null || cues.isEmpty()) {
+        onUpdate(LiveSubtitleSyncUpdate.Unavailable)
+        return
+    }
+    // Film time at media time 0: the frame at the live edge went out just now, the programme began at its guide time.
+    val guideOffsetMs = System.currentTimeMillis() - liveEdgeMs() - programmeStartMs
+    var writes = 0
+    suspend fun apply(model: SubtitleSyncModel, stage: LiveSubtitleSyncUpdate.Stage) {
+        val synced = withContext(Dispatchers.IO) {
+            writeRetimedSubtitle("live:$sourceKey", subtitle, body, timelineFor(cues, model), nameSuffix = "-l${writes++}")
+        }
+        onUpdate(LiveSubtitleSyncUpdate.Applied(synced, stage, model.delayUsAt(positionMs() * 1_000L) / 1_000L))
+    }
+    log.i { "live sync: ${cues.size} lines, guide offset ${guideOffsetMs / 1_000}s" }
+    apply(com.nuvio.app.features.player.audiosync.SubtitleSyncModel(
+        listOf(com.nuvio.app.features.player.audiosync.SubtitleSyncSegment(0L, 1.0, -guideOffsetMs.toDouble())),
+    ), LiveSubtitleSyncUpdate.Stage.Guide)
+    // Without the native calls (macOS) the guide's placing is all there is.
+    if (!player.supportsSpeechSpots) return
+    withContext(Dispatchers.Default) {
+        com.nuvio.app.features.player.audiosync.LiveAudioSubtitleSync.run(
+            dialogue = cues.map { Triple(it.startTimeMs, it.endTimeMs, it.text) },
+            guideOffsetMs = guideOffsetMs,
+            positionMs = positionMs,
+            decode = { startMs, endMs -> withContext(Dispatchers.IO) { player.decodeCachedAudio(startMs / 1_000.0, endMs / 1_000.0) } },
+        ) { model, confirmed, recheck ->
+            apply(
+                model,
+                when {
+                    recheck -> LiveSubtitleSyncUpdate.Stage.Rechecked
+                    confirmed -> LiveSubtitleSyncUpdate.Stage.Locked
+                    else -> LiveSubtitleSyncUpdate.Stage.Estimated
+                },
+            )
+        }
+    }
+}
+
 /**
  * The rewriter's view of an audio mapping: every cue placed by [model] (subtitle time to media
  * time, piecewise for releases with a different cut), its first piece as the fallback transform.

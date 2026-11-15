@@ -3994,6 +3994,17 @@ public:
         setChangedPropertyLocked(key, value);
     }
 
+    // fork:live-tv-subtitles - one mpv command, synchronously (dump-cache for the live subtitle sync); mpv's result.
+    int runMpvCommand(const std::vector<std::string> &parts) {
+        std::lock_guard<std::mutex> lock(mpvMutex);
+        if (!mpv || parts.empty()) return -1;
+        std::vector<const char *> argv;
+        argv.reserve(parts.size() + 1);
+        for (const auto &part : parts) argv.push_back(part.c_str());
+        argv.push_back(nullptr);
+        return mpvApi().command(mpv, argv.data());
+    }
+
     void toggleStatsOverlay() {
         std::lock_guard<std::mutex> lock(mpvMutex);
         if (!mpv) return;
@@ -8516,6 +8527,26 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setMpvProperty(
     player->postMpvCall([p = player.get(), keyText = jstringToUtf8(env, key), valueText = jstringToUtf8(env, value)]() {
         p->setMpvPropertyString(keyText, valueText);
     });
+}
+
+// fork:live-tv-subtitles
+extern "C" JNIEXPORT jint JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_mpvCommand(
+    JNIEnv *env,
+    jobject,
+    jlong handle,
+    jobjectArray args
+) {
+    auto player = playerFromHandle(handle);
+    if (!player || !args) return -1;
+    std::vector<std::string> parts;
+    const jsize count = env->GetArrayLength(args);
+    for (jsize i = 0; i < count; ++i) {
+        auto item = static_cast<jstring>(env->GetObjectArrayElement(args, i));
+        parts.push_back(jstringToUtf8(env, item));
+        env->DeleteLocalRef(item);
+    }
+    return player->runMpvCommand(parts);
 }
 
 extern "C" JNIEXPORT jdouble JNICALL

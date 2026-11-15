@@ -47,6 +47,13 @@ interface PlayerEngineController {
     /** Whether [decodeSpeechSpot] can work for the current source. */
     val supportsSpeechSpots: Boolean get() = false
 
+    /**
+     * fork:live-tv-subtitles - [startSeconds] to [endSeconds] of what has already played, copied out of the player's
+     * own cache (no second connection, no seek) and decoded to 16 kHz mono PCM. Blocking. Null when unsupported or not
+     * in the cache any more.
+     */
+    fun decodeCachedAudio(startSeconds: Double, endSeconds: Double): FloatArray? = null
+
     /** Average bytes per second of the playing source, when known. */
     fun sourceBytesPerSecond(): Double? = null
     fun configureIosVideoOutput(settings: PlayerSettingsUiState) {}

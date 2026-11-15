@@ -655,6 +655,20 @@ private fun settingsSearchEntries(
             "Live TV proposes one evening up to bedtime and changes channel at each start, or answers a typed line like \"something funny, half an hour\" with one programme.",
             "General",
         ),
+        // fork:live-tv-subtitles
+        PlaybackSearchRow(
+            "iptv-live-subtitles",
+            "Subtitles for films on live channels",
+            "Live TV asks your subtitle add-ons for the film or episode on now and syncs the subtitle to the channel.",
+            "General",
+        ),
+        // fork:live-tv-views
+        PlaybackSearchRow("iptv-view-map", "View: Map", "A Live TV stage: everything on now by kind, zoom into a block.", "General"),
+        PlaybackSearchRow("iptv-view-mosaic", "View: For you now", "A Live TV stage: one mosaic sized by how likely you are to want each.", "General"),
+        PlaybackSearchRow("iptv-view-river", "View: River", "A Live TV stage: the next three hours by kind, not by channel.", "General"),
+        PlaybackSearchRow("iptv-view-wall", "View: Picture wall", "A Live TV stage: real stills from your channels.", "General"),
+        PlaybackSearchRow("iptv-view-grid", "View: Tonight grid", "A Live TV stage: tonight by kind and half-hour.", "General"),
+        PlaybackSearchRow("iptv-view-dial", "View: Dial", "A Live TV stage: one channel at a time, numbers jump.", "General"),
         // fork:live-tv-ask-ai
         PlaybackSearchRow(
             "iptv-ask-ai",

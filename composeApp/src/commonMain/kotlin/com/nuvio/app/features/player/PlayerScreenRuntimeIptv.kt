@@ -12,6 +12,8 @@ import androidx.compose.runtime.snapshotFlow
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.iptv.IptvChannel
 import com.nuvio.app.features.iptv.IptvEpgRepository
+import com.nuvio.app.features.iptv.IptvOnDemand
+import com.nuvio.app.features.iptv.IptvProgrammeKind
 import com.nuvio.app.features.iptv.IptvGroups
 import com.nuvio.app.features.iptv.IptvRepository
 import com.nuvio.app.features.iptv.IptvBrakeAnswer
@@ -96,6 +98,38 @@ internal fun PlayerScreenRuntime.BindIptvLiveEffects() {
         }
     }
     BindIptvBufferTelemetry()
+
+    // fork:live-tv-subtitles - what is on, as TMDB knows it (the lookup "From the start, on demand" uses), so the subtitle
+    // add-ons can be asked for it. A new programme takes the last one's add-on subtitle off: its lines belong to another
+    // film. Recordings (catch-up) are left alone; news and sport are not looked up.
+    LaunchedEffect(Unit) {
+        while (true) {
+            val active = IptvPlaybackSession.active.value
+            val now = System.currentTimeMillis()
+            val on = if (active == null || active.catchup != null || !IptvRepository.settings.value.liveSubtitles) {
+                null
+            } else {
+                IptvEpgRepository.cached(active.playlist, active.channel, now).orEmpty().firstOrNull { it.startMs <= now && it.endMs > now }
+            }
+            val was = iptvSubtitleProgramme
+            if (on?.startMs != was?.startMs || on?.title != was?.title) {
+                if (was != null && useCustomSubtitles) {
+                    automaticSubtitleSyncJob?.cancel()
+                    selectedAddonSubtitleId = null
+                    useCustomSubtitles = false
+                    selectedSubtitleIndex = -1
+                    playerController?.clearExternalSubtitleAndSelect(-1)
+                }
+                iptvSubtitleProgramme = on
+                iptvSubtitleTarget = null
+                if (on != null && on.kind != IptvProgrammeKind.NEWS && on.kind != IptvProgrammeKind.SPORT) {
+                    iptvSubtitleTarget = runCatching { IptvOnDemand.find(on) }.getOrNull()?.takeIf { it.playable }
+                    IptvPlaybackLog.i { "live subtitles: '${on.title}' is ${iptvSubtitleTarget?.videoId ?: "not found on TMDB"}" }
+                }
+            }
+            delay(30_000L)
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose { IptvPlaybackSession.clear() }

@@ -12,7 +12,7 @@ import com.nuvio.app.core.i18n.localizedString
 
 internal fun PlayerScreenRuntime.fetchAddonSubtitlesForActiveItem(): Job? {
     val type = activeAddonSubtitleType.takeIf { it.isNotBlank() } ?: return null
-    val videoId = activeVideoId?.takeIf { it.isNotBlank() } ?: return null
+    val videoId = addonSubtitleVideoId?.takeIf { it.isNotBlank() } ?: return null
     val extras = SubtitleRequestExtras.from(activeStream?.behaviorHints, activeSourceUrl)
     // A direct http(s) file the addon gave no hash for: hash it first (a HEAD and two 64 KiB range reads),
     // so hash-matching addons can answer for this exact release. Torrents are not hashed: the tail read
@@ -47,9 +47,13 @@ internal fun PlayerScreenRuntime.loadAddonSubtitle(subtitle: AddonSubtitle, allo
     automaticSubtitleSyncJob?.cancel()
     automaticSubtitleSyncJob = null
     playerController?.setSubtitleUri(subtitle.url)
+    // fork:live-tv-subtitles - Live TV: always placed on the channel's timeline (the lines are timed to the film, the
+    // channel's clock started when it was tuned in), from the guide and the rewind buffer, never a second connection.
+    if (isIptvPlayback) {
+        if (com.nuvio.app.features.iptv.IptvRepository.settings.value.liveSubtitles) startLiveSubtitleSync(subtitle)
+        return
+    }
     if (!playerSettingsUiState.automaticSubtitleSyncEnabled) return
-    // Live TV: nothing to sync against, and reading the stream costs a provider connection.
-    if (isIptvPlayback) return
     // A YouTube video's own subtitles are timed to it already, and it has no embedded track to sync
     // against: the attempt only ever failed, with its toast, on every load.
     if (isYouTubeVideoPlayback) return
@@ -118,6 +122,47 @@ internal fun PlayerScreenRuntime.loadAddonSubtitle(subtitle: AddonSubtitle, allo
                 showAutomaticSyncMessage(localizedString(Res.string.subtitle_sync_no_confident_match_kept_original_timing))
             AutomaticSubtitleSyncResult.SubtitleUnavailable, null ->
                 showAutomaticSyncMessage("Failed, kept original timing")
+        }
+    }
+}
+
+/** fork:live-tv-subtitles - see [runLiveSubtitleSync]. Stops when the subtitle, the channel or the programme changes. */
+private fun PlayerScreenRuntime.startLiveSubtitleSync(subtitle: AddonSubtitle) {
+    val programme = iptvSubtitleProgramme ?: return
+    val player = playerController ?: return
+    val sourceKey = activeSourceUrl ?: return
+    fun stillWanted() = useCustomSubtitles && iptvSubtitleProgramme == programme && activeSourceUrl == sourceKey &&
+        (selectedAddonSubtitleId == subtitle.id || selectedAddonSubtitleId == subtitle.url)
+    automaticSubtitleSyncJob = scope.launch {
+        showAutomaticSyncMessage("Live: placing subtitles from the guide...")
+        try {
+            runLiveSubtitleSync(
+                sourceKey = sourceKey,
+                subtitle = subtitle,
+                player = player,
+                programmeStartMs = programme.startMs,
+                positionMs = { playbackSnapshot.positionMs },
+                liveEdgeMs = { maxOf(playbackSnapshot.bufferedPositionMs, playbackSnapshot.positionMs) },
+            ) { update ->
+                if (!stillWanted()) throw CancellationException("subtitle or programme changed")
+                when (update) {
+                    is LiveSubtitleSyncUpdate.Applied -> {
+                        applySyncedSubtitle(update.synced)
+                        val offset = formatSyncOffset(update.offsetMs)
+                        when (update.stage) {
+                            LiveSubtitleSyncUpdate.Stage.Guide -> showAutomaticSyncMessage("Live: timed from the guide, matching to the audio...")
+                            LiveSubtitleSyncUpdate.Stage.Estimated -> showAutomaticSyncMessage("Live: estimated from the audio ($offset)")
+                            LiveSubtitleSyncUpdate.Stage.Locked -> showAutomaticSyncMessage("Live: synced to the audio ($offset)")
+                            LiveSubtitleSyncUpdate.Stage.Rechecked -> showAutomaticSyncMessage("Live: re-synced ($offset)")
+                        }
+                    }
+                    LiveSubtitleSyncUpdate.Unavailable -> showAutomaticSyncMessage("Live: this subtitle could not be read")
+                }
+            }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (error: Throwable) {
+            if (stillWanted()) showAutomaticSyncMessage("Live: subtitle sync stopped")
         }
     }
 }

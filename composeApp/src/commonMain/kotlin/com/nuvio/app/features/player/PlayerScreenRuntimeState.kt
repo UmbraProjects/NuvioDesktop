@@ -378,6 +378,9 @@ internal class PlayerScreenRuntime(
     var subtitleDelayMs by mutableStateOf(0)
     var subtitleAutoSyncState by mutableStateOf(SubtitleAutoSyncUiState())
     var automaticSubtitleSyncJob: Job? = null
+    /** fork:live-tv-subtitles - the programme on the live channel and what TMDB says it is, for subtitle add-ons. */
+    var iptvSubtitleProgramme by mutableStateOf<com.nuvio.app.features.iptv.IptvEpgEntry?>(null)
+    var iptvSubtitleTarget by mutableStateOf<com.nuvio.app.features.iptv.IptvOnDemandTarget?>(null)
     /** The last automatic sync applied: the addon subtitle's URL and its retimed text. */
     var automaticallySyncedSubtitle by mutableStateOf<Pair<String, String>?>(null)
 

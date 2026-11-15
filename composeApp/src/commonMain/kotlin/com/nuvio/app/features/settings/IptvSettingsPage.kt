@@ -265,6 +265,20 @@ internal fun LazyListScope.iptvSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-brakes")),
                     onCheckedChange = IptvRepository::setBrakes,
                 )
+                // fork:live-tv-subtitles
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Subtitles for films on live channels",
+                    description = "When a film or an episode is on, Nuvio finds it on TMDB and asks your subtitle add-ons " +
+                        "(Subsense and the like) for it, as for TorBox; pick one in the player's subtitles. It is placed from " +
+                        "the guide's start time at once, then matched to the speech in what has already played (from the " +
+                        "rewind buffer, no second connection), at the film's speed or sped up to 25 frames, and checked again " +
+                        "every few minutes for ad breaks. A new programme takes the subtitle off. Not for news, sport or recordings.",
+                    checked = settings.liveSubtitles,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-live-subtitles")),
+                    onCheckedChange = IptvRepository::setLiveSubtitles,
+                )
                 // fork:live-tv-views - more ways to see everything, each a stage of its own.
                 IptvViewRules.VIEWS.forEach { view ->
                     SettingsGroupDivider(isTablet = isTablet)

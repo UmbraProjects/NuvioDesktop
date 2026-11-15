@@ -857,3 +857,15 @@ Settings > Live TV > Stage. Watch a few programmes on Live TV first (each one at
 - [ ] Tonight grid: darker cells where more starts; OK on a cell lists them on the right; OK on one plays or tunes in
 - [ ] Dial: up/down flip one channel at a time with two peeking above and below; typing a number jumps there; OK plays
 - [ ] The phone remote shows For you now, Dial and Picture wall as lists, and says the other three are on the TV
+
+## Live TV: subtitles for films on live channels (Nov 15)
+
+- [ ] Settings > Live TV has "Subtitles for films on live channels"; Settings search finds it
+- [ ] With it on, tune to a film (Jaws on Sky Cinema): the player's subtitles list shows add-on subtitles (Subsense) within about half a minute
+- [ ] Pick one: the HUD says "timed from the guide", and the lines are roughly right straight away
+- [ ] Within a few minutes the HUD says "synced to the audio (+x.xs)" and the lines match the speech
+- [ ] A film shown sped up (most UK film channels): still in time half an hour later
+- [ ] Rewind with the buffer, then Go live: the subtitles stay in time
+- [ ] On a channel with ad breaks: after a break the HUD says "re-synced" and the lines are back in time
+- [ ] When the film ends and the next programme starts, the subtitle goes off; the next film offers its own
+- [ ] News and sport offer no add-on subtitles; playback is never interrupted by the sync (no second connection)

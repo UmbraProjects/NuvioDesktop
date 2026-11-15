@@ -25,13 +25,17 @@ internal fun PlayerScreenRuntime.updateSubtitleStyle(style: SubtitleStyleState) 
 }
 
 internal val PlayerScreenRuntime.activeAddonSubtitleType: String
-    get() = contentType ?: parentMetaType
+    get() = if (isIptvPlayback) iptvSubtitleTarget?.type ?: parentMetaType else contentType ?: parentMetaType
+
+/** fork:live-tv-subtitles - what subtitle add-ons are asked for: on Live TV the programme TMDB found, else the item. */
+internal val PlayerScreenRuntime.addonSubtitleVideoId: String?
+    get() = if (isIptvPlayback) iptvSubtitleTarget?.videoId else activeVideoId
 
 internal val PlayerScreenRuntime.addonSubtitleFetchKey: String?
     get() = buildAddonSubtitleFetchKey(
         addons = addonsUiState.addons,
         type = activeAddonSubtitleType,
-        videoId = activeVideoId,
+        videoId = addonSubtitleVideoId,
     )
 
 internal val PlayerScreenRuntime.visibleAddonSubtitles: List<AddonSubtitle>

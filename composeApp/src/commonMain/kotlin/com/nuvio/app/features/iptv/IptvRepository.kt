@@ -88,6 +88,8 @@ data class IptvSettings(
     val askAi: Boolean = false,
     /** fork:live-tv-taste - what was watched and finished, per programme title (see IptvTasteRules). */
     val titles: Map<String, IptvTitleStat> = emptyMap(),
+    /** fork:live-tv-subtitles - subtitle add-ons for films and episodes on live channels, synced to the channel; off by default. */
+    val liveSubtitles: Boolean = false,
     /** fork:live-tv-views - the extra stages switched on in Settings (IptvStage names; see IptvViewRules.VIEWS). */
     val views: Set<String> = emptySet(),
     /** fork:live-tv-learn - the teams in what was watched, by name key (see IptvTeamRules). */
@@ -357,6 +359,12 @@ object IptvRepository {
     fun setAskAi(enabled: Boolean) {
         ensureLoaded()
         mutate { it.copy(askAi = enabled) }
+    }
+
+    /** fork:live-tv-subtitles */
+    fun setLiveSubtitles(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(liveSubtitles = enabled) }
     }
 
     /** fork:live-tv-views - one extra stage on or off. */
