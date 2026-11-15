@@ -895,6 +895,7 @@ object TmdbService {
 
     /** TMDB `episode_number`s of one season, keyed `"<tmdbId>:<season>"`, for the session. */
     private val seasonEpisodeNumbersCache = java.util.concurrent.ConcurrentHashMap<String, List<Int>>()
+    private val seasonEpisodeNamesCache = java.util.concurrent.ConcurrentHashMap<String, List<Pair<Int, String>>>()
 
     /**
      * Episode count of every season of a TV show, in season order, specials (season 0) left out.
@@ -923,6 +924,18 @@ object TmdbService {
      * Usually 1..n, but not always: TMDB numbers One Piece absolutely inside its arc seasons
      * (season 6 runs 144-195), and its episode endpoints answer only to that number.
      */
+    /** fork:live-tv-on-demand - each episode's number and name in a season, for matching a guide's episode title. */
+    suspend fun fetchSeasonEpisodeNames(tmdbId: Int, season: Int): List<Pair<Int, String>>? {
+        if (tmdbId <= 0 || season < 0) return null
+        val key = "$tmdbId:$season"
+        seasonEpisodeNamesCache[key]?.let { return it }
+        val apiKey = currentApiKey() ?: return null
+        val body = fetch<TmdbSeasonEpisodesResponse>(endpoint = "tv/$tmdbId/season/$season", apiKey = apiKey) ?: return null
+        val names = body.episodes.mapNotNull { e -> e.name?.takeIf { it.isNotBlank() }?.let { e.episodeNumber to it } }
+        seasonEpisodeNamesCache[key] = names
+        return names
+    }
+
     suspend fun fetchSeasonEpisodeNumbers(tmdbId: Int, season: Int): List<Int>? {
         if (tmdbId <= 0 || season < 0) return null
         val key = "$tmdbId:$season"
@@ -1167,6 +1180,8 @@ private data class TmdbSeasonEpisodesResponse(
 @Serializable
 private data class TmdbSeasonEpisodeNumber(
     @SerialName("episode_number") val episodeNumber: Int,
+    /** fork:live-tv-on-demand - matched against a TV guide's description. */
+    val name: String? = null,
 )
 
 @Serializable

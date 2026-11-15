@@ -99,6 +99,8 @@ internal val forkSearchRows: List<ForkSearchRow> = listOf(
     ForkSearchRow(SettingsPage.Preshow, "x-theme-song-trivia", Res.string.settings_theme_song_trivia, Res.string.settings_theme_song_trivia_description, Res.string.compose_settings_page_preshow, Res.string.settings_theme_song_section, desktopOnly = true),
     ForkSearchRow(SettingsPage.Preshow, "x-theme-song-details", Res.string.settings_theme_song_details, Res.string.settings_theme_song_details_description, Res.string.compose_settings_page_preshow, Res.string.settings_theme_song_section, desktopOnly = true),
     ForkSearchRow(SettingsPage.Preshow, "x-theme-song-volume", Res.string.settings_theme_song_volume, null, Res.string.compose_settings_page_preshow, Res.string.settings_theme_song_section, desktopOnly = true),
+    // fork:live-scores - the pop-ups' switch at the end of the Live TV page.
+    ForkSearchRow(SettingsPage.Iptv, "x-live-scores-enable", Res.string.live_scores_enable, Res.string.live_scores_enable_description, Res.string.iptv_settings_page, Res.string.live_scores_section, desktopOnly = true),
     // fork:tonight - the Tonight picker's switches sit at the top of the Random Play page.
     ForkSearchRow(SettingsPage.RandomPlay, "x-tonight-enable", Res.string.tonight_enable, Res.string.tonight_enable_description, Res.string.random_play_title, Res.string.tonight_section, desktopOnly = true),
     ForkSearchRow(SettingsPage.RandomPlay, "x-tonight-bedtime", Res.string.tonight_bedtime, Res.string.tonight_bedtime_description, Res.string.random_play_title, Res.string.tonight_section, desktopOnly = true),

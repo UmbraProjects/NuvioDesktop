@@ -8,8 +8,9 @@ import java.util.concurrent.TimeUnit
 private val ffmpegLog = Logger.withTag("CastFfmpeg")
 
 /**
- * The user's own ffmpeg/ffprobe, found on PATH or where winget and the usual installers put it.
- * Not bundled: only the Dolby Vision remux needs it, and it is an opt-in beta.
+ * ffmpeg/ffprobe: beside Nuvio.exe when the local build put them there (build.cmd copies them from MSYS2; they
+ * use the avcodec/avformat DLLs the app already ships for mpv), else the user's own, on PATH or where winget and the
+ * usual installers put it. The CI build does not bundle them.
  */
 internal object Ffmpeg {
     val ffmpeg: File? by lazy { locate("ffmpeg.exe") }
@@ -18,6 +19,8 @@ internal object Ffmpeg {
 
     private fun locate(exe: String): File? {
         val dirs = buildList {
+            // fork:live-tv-views - the copy build.cmd puts beside Nuvio.exe first: it uses the app's own ffmpeg DLLs.
+            System.getProperty("jpackage.app-path")?.takeIf { it.isNotBlank() }?.let { File(it).parentFile?.absolutePath }?.let(::add)
             System.getenv("PATH").orEmpty().split(File.pathSeparatorChar).forEach { add(it.trim()) }
             System.getenv("LOCALAPPDATA")?.let { add("$it\\Microsoft\\WinGet\\Links") }
             System.getenv("ProgramFiles")?.let { add("$it\\ffmpeg\\bin") }

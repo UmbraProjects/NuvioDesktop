@@ -27,6 +27,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioModalDialog
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.features.iptv.IptvBrakeRules
+import com.nuvio.app.features.iptv.IptvWeedRules
+import com.nuvio.app.features.iptv.IptvDecide
 import com.nuvio.app.features.iptv.IptvPlaylist
 import com.nuvio.app.features.iptv.IptvPlaylistType
 import com.nuvio.app.features.iptv.IptvRefreshPolicy
@@ -145,6 +148,218 @@ internal fun LazyListScope.iptvSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-in-navigation")),
                     onCheckedChange = IptvRepository::setTabEnabled,
                 )
+                // fork:live-tv-on-now
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "On Now",
+                    description = "Live TV opens on what is on: live sport with the score (from Live scores below), " +
+                        "films with how far in they are, and the channels you usually watch at this hour. Copies of " +
+                        "one channel (FHD, HD, SD, backup) become one row that moves to the next copy when one fails, " +
+                        "and a programme can be started from its beginning where the provider keeps catch-up.",
+                    checked = settings.onNow,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-on-now")),
+                    onCheckedChange = IptvRepository::setOnNow,
+                )
+                // fork:live-tv-decide
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Decide for me",
+                    description = "Needs On Now. Four short views that offer little and end: Three things (a safe one, one " +
+                        "starting soon, a wildcard, and one reshuffle a night), I have N minutes (only what fits, 15 to 90), " +
+                        "Earlier today (what your provider kept, ready to play from the start) and Following (programmes and " +
+                        "teams you follow, found on whichever channel has them).",
+                    checked = settings.decide,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-decide")),
+                    onCheckedChange = IptvRepository::setDecide,
+                )
+                // fork:live-tv-stage
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Stage",
+                    description = "Live TV opens on the front door: one pick (OK plays it), your favourite channels and the " +
+                        "scores of the teams you follow. Behind it, full-screen stages, one decision each: Three things, Starting soon, " +
+                        "I have N minutes, Tonight's running order, Earlier today, Following, Just ask and Your 40. " +
+                        "Left and right on the strip at the top change stage; All channels opens the classic list. " +
+                        "The picks learn from what you watch to the end, put new episodes above repeats and prefer " +
+                        "programmes with a picture and a description.",
+                    checked = settings.stage,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-stage")),
+                    onCheckedChange = IptvRepository::setStage,
+                )
+                // fork:live-tv-polish - the home country for the picks.
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsChoiceRow(
+                    title = "Home country",
+                    description = "The picks (the front door, Three things, For you now and the other views) put this country's " +
+                        "channels first and push other countries' news down, so the news you see is yours. " +
+                        "From the triage: uses the triage's country when it kept only one.",
+                    options = listOf(SettingsChoiceOption<String?>(null, "From the triage")) +
+                        com.nuvio.app.features.iptv.IptvRegions.HOME_CHOICES.map { SettingsChoiceOption<String?>(it, com.nuvio.app.features.iptv.IptvRegions.countryName(it)) },
+                    selectedValue = settings.homeRegion,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-home-region")),
+                    onSelected = IptvRepository::setHomeRegion,
+                )
+                // fork:live-tv-front-door
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Front door picture",
+                    description = "The front door's pick plays its channel, muted, instead of the programme's art, " +
+                        "only while nothing else is playing. It uses a connection to your provider while it shows. Off: the art only.",
+                    checked = settings.doorPreview,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-door-preview")),
+                    onCheckedChange = IptvRepository::setDoorPreview,
+                )
+                // fork:live-tv-on-demand
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "From the start, on demand",
+                    description = "On the stages, On Now and the channel list (Your 40 and the guide too): picking a film or episode " +
+                        "that started a few minutes ago asks first: join live, or " +
+                        "play it from the beginning through your add-ons (your TorBox cache and the like), found by its title " +
+                        "on TMDB. Episodes need the guide's series and episode numbers; without them the series' page opens to " +
+                        "pick one. News, sport and anything marked Live are always joined live.",
+                    checked = settings.onDemand,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-on-demand")),
+                    onCheckedChange = IptvRepository::setOnDemand,
+                )
+                // fork:live-tv-weed
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Overnight weeding",
+                    description = "Between 02:00 and 05:00, while nothing is playing, opens the channels of Your 40 and the ones " +
+                        "you watched lately, one at a time and for a few seconds (at most 60 a night; not on portals). A channel " +
+                        "that fails three nights in a row leaves Your 40 and the wall; one good night keeps it. " +
+                        "\"Bring back channels thrown out\" returns them. " +
+                        "Now marked dead: ${settings.weeds.values.sumOf { IptvWeedRules.dead(it).size }}.",
+                    checked = settings.weed,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-weed")),
+                    onCheckedChange = IptvRepository::setWeed,
+                )
+                // fork:live-tv-evening
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Running order and Just ask",
+                    description = "Needs On Now. Tonight's running order: one proposed evening from your lineup (or usual channels), " +
+                        "ending before the bedtime set under What to watch; approve it once and Nuvio changes channel at each " +
+                        "start, any key takes over, nothing starts after the last. Just ask: type a line in the search box " +
+                        "(\"something funny, half an hour\") and get one answer, with Not that for the next.",
+                    checked = settings.evening,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-evening")),
+                    onCheckedChange = IptvRepository::setEvening,
+                )
+                // fork:live-tv-ask-ai
+                var askConsentFor by remember { mutableStateOf<AiConsentTarget?>(null) }
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Let the AI answer Just ask",
+                    description = "Just ask sends your question, the time, and the titles, channels and descriptions of what is on " +
+                        "now or within the hour (60 at most) to the AI under Settings > Discover, with your key; it picks up " +
+                        "to three and says why. Without a key, or when it fails, the rules answer as before. At most 40 " +
+                        "questions a day.",
+                    checked = settings.askAi,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-ask-ai")),
+                    onCheckedChange = { on ->
+                        val ai = com.nuvio.app.features.discover.DiscoverAiSettingsRepository.snapshot()
+                        when {
+                            !on -> IptvRepository.setAskAi(false)
+                            ai.apiKey.isNotBlank() && !ai.consentGiven -> askConsentFor = AiConsentTarget.LiveTvAsk
+                            else -> IptvRepository.setAskAi(true)
+                        }
+                    },
+                )
+                AiConsentDialog(target = askConsentFor, onDismiss = { askConsentFor = null })
+                // fork:live-tv-brakes
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Brakes",
+                    description = "Three gentle stops. Five channel changes in two minutes offers to stop (once a night). " +
+                        "After a programme you stayed with, \"Stop here\" comes first. And an honest week: " +
+                        (IptvBrakeRules.weekLine(IptvBrakeRules.week(settings.tally, IptvDecide.nightOf(System.currentTimeMillis()))) + "."),
+                    checked = settings.brakes,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-brakes")),
+                    onCheckedChange = IptvRepository::setBrakes,
+                )
+                // fork:live-tv-subtitles
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Subtitles for films on live channels",
+                    description = "When a film or an episode is on, Nuvio finds it on TMDB and asks your subtitle add-ons " +
+                        "(Subsense and the like) for it, as for TorBox; pick one in the player's subtitles. It is placed from " +
+                        "the guide's start time at once, then matched to the speech in what has already played (from the " +
+                        "rewind buffer, no second connection), at the film's speed or sped up to 25 frames, and checked again " +
+                        "every few minutes for ad breaks. A new programme takes the subtitle off. Not for news, sport or recordings.",
+                    checked = settings.liveSubtitles,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-live-subtitles")),
+                    onCheckedChange = IptvRepository::setLiveSubtitles,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Match live subtitles by their words",
+                    description = "Needs the setting above and a speech model downloaded in Settings > Voice control (voice " +
+                        "control itself can stay off). Nuvio listens to what has already played, writes down the words and " +
+                        "finds them in the subtitle, so it is in time within a minute, songs do not confuse it, and an ad " +
+                        "break is caught by the words that follow. English subtitles only; uses some CPU while it listens.",
+                    checked = settings.liveSubtitleWords,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-live-subtitle-words")),
+                    onCheckedChange = IptvRepository::setLiveSubtitleWords,
+                )
+                // fork:live-tv-views - the six extra views are always there: the Views chip on Live TV's strip picks one.
+                // fork:live-tv-departure
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Starting soon",
+                    description = "Needs On Now. Adds a departure board to Live TV: only programmes that have not started, " +
+                        "leaving within 15, 30 and 60 minutes, with a countdown (on the channels of Your 40 when that is on). " +
+                        "Open one to be reminded when it starts, or to have Nuvio switch to the channel by itself.",
+                    checked = settings.departure,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-departure")),
+                    onCheckedChange = IptvRepository::setDeparture,
+                )
+                // fork:live-tv-lineup
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Your 40",
+                    description = "Live TV opens on a numbered lineup of about forty channels, like a television: what you " +
+                        "watch most, then what the triage kept. The numbers stay where they are until you move a channel " +
+                        "(the ... beside its star); typed numbers in the player and channel up and down follow the lineup. " +
+                        "\"Never again\" in the same menu hides a channel from the lineup and the lists for good.",
+                    checked = settings.lineupOn,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-lineup")),
+                    onCheckedChange = IptvRepository::setLineupOn,
+                )
+                // fork:live-tv-taste
+                if (settings.titles.isNotEmpty()) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = "Forget what I watched",
+                        description = "Clears the ${settings.titles.size} programmes the Stage's picks learned from. Channels you usually watch are kept.",
+                        isTablet = isTablet,
+                        onClick = IptvRepository::forgetWatched,
+                    )
+                }
+                if (settings.never.values.any { it.isNotEmpty() }) {
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = "Bring back channels thrown out",
+                        description = "Shows every channel you chose Never again for. They are not added to Your 40 again.",
+                        isTablet = isTablet,
+                        onClick = IptvRepository::bringBackAll,
+                    )
+                }
             }
         }
     }
@@ -234,6 +449,8 @@ internal fun LazyListScope.iptvSettingsContent(
     item {
         IptvProxySection(isTablet = isTablet, proxy = rememberIptvSettings().proxy)
     }
+
+    liveScoresSettingsContent(isTablet) // fork:live-scores
 }
 
 /**

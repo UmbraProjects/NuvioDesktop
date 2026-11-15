@@ -2254,6 +2254,43 @@ internal class NativePlayerController(
     }
 
     /**
+     * fork:live-tv-subtitles - what already played from [startSeconds] to [endSeconds], copied out of mpv's own cache
+     * (dump-cache: the live rewind buffer, so no second connection to the provider and no seek on the live stream), then
+     * decoded from that local copy to 16 kHz mono float PCM. Sample 0 is [startSeconds] (mpv starts a file at its first
+     * timestamp). Null when the range has left the cache, or on a bridge without the command (macOS).
+     */
+    override fun decodeCachedAudio(startSeconds: Double, endSeconds: Double): FloatArray? {
+        val current = handle.takeIf { it != 0L } ?: return null
+        if (endSeconds - startSeconds < 1.0) return null
+        val directory = File(System.getProperty("java.io.tmpdir"), "nuvio-autosync").apply { mkdirs() }
+        val dump = File.createTempFile("live-", ".ts", directory)
+        val pcm = File.createTempFile("live-", ".f32", directory)
+        return try {
+            val dumped = try {
+                NativePlayerBridge.mpvCommand(
+                    current,
+                    arrayOf("dump-cache", "%.3f".format(java.util.Locale.ROOT, startSeconds), "%.3f".format(java.util.Locale.ROOT, endSeconds), dump.absolutePath),
+                )
+            } catch (_: UnsatisfiedLinkError) {
+                -1
+            }
+            if (dumped < 0 || dump.length() < 4_096) return null
+            val decoded = try {
+                NativePlayerBridge.decodeAudioUrl(dump.absolutePath, emptyArray(), 0.0, endSeconds - startSeconds, 16_000, 1, pcm.absolutePath)
+            } catch (_: UnsatisfiedLinkError) {
+                -2
+            }
+            // -1 is the native time limit: what was written by then is real audio.
+            if ((decoded != 0 && decoded != -1) || pcm.length() < 4) return null
+            val samples = ByteBuffer.wrap(pcm.readBytes()).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer()
+            FloatArray(samples.remaining()).also(samples::get)
+        } finally {
+            dump.delete()
+            pcm.delete()
+        }
+    }
+
+    /**
      * A stretch of the playing audio as interleaved float32 PCM at [sampleRate] Hz with [channels] channels (1 or 2),
      * decoded by a throwaway headless mpv like [decodeSpeechSpot]; null when it could not be read. Blocks. Used to
      * measure a track's loudness (see MusicLoudness).

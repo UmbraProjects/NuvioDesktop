@@ -128,6 +128,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (savedInstanceState == null) openPairingLink(intent)
+        // fork:live-scores - Android 13+ needs consent before any notification shows (scores, lock-screen controls).
+        if (savedInstanceState == null && android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 47)
+        }
         setContent {
             // The TV's theme, as soon as the PC has sent it (and the last one it sent until then).
             val theme by viewModel.state.collectAsStateWithLifecycle()

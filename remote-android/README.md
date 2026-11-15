@@ -1,11 +1,11 @@
 # Nuvio Remote
 
 An Android app that drives Nuvio HTPC from a phone over the home Wi-Fi. It works as a remote, shows what is playing,
-browses the library and music, and can wake the PC. It is part of the `Spyder` branch (Nick's HTPC fork) and is not in
+browses the library and music, and can wake the PC. It comes from the `Spyder` branch (Nick's HTPC fork), is also built on `windows-tv-adaptive`, and is not in
 upstream Nuvio.
 
-- **Download:** the APK in the [NuvioRemote release](https://github.com/spydermahn1234/NuvioDesktop/releases/tag/NuvioRemote).
-  It is rebuilt by `.github/workflows/android-remote.yml` on every push to `Spyder` that touches `remote-android/` or that workflow.
+- **Download:** the APK in the NuvioRemote release of the repo your desktop build comes from: [UmbraProjects](https://github.com/UmbraProjects/NuvioDesktop/releases/tag/NuvioRemote) or [Spyder's fork](https://github.com/spydermahn1234/NuvioDesktop/releases/tag/NuvioRemote).
+  It is rebuilt by `.github/workflows/android-remote.yml` on every push to `Spyder` or `windows-tv-adaptive` that touches `remote-android/` or that workflow.
 - **Needs:** Android 8 or newer, and a Nuvio build from the same branch. Most features need the PC and the phone on
   the same build: an older PC ignores what it does not know, and an older phone never asks for it.
 
@@ -38,6 +38,11 @@ queue, and can "sleep" to try Wake. A strip shows what it was sent. This is for 
 - **Dark** turns the phone black and dims it (Low / Medium / High) so it does not light up the room. Tap for play or
   pause, swipe left and right to seek, swipe up and down for volume.
 - Lock-screen and notification controls while something plays.
+- **Poster wallpaper** (More › Lock screen, off until turned on): while the TV plays, the phone's lock screen shows
+  the film or show's poster, or the album cover for music, whole and centred over a blurred copy of itself. The home
+  screen is not touched. About 20 seconds after playback stops your normal lock-screen picture goes back: choose it
+  once with **My picture** (Android does not let apps read the current wallpaper, so it cannot simply undo); without
+  one, the lock screen goes back to matching the home screen. Pausing keeps the poster.
 - The app takes the TV's theme colours and follows them when they change.
 
 **Watch tab**
@@ -65,6 +70,12 @@ queue, and can "sleep" to try Wake. A strip shows what it was sent. This is for 
   on the phone too: the launcher lists all eight; Coin Toss, Knockout and Channel Flick have big buttons for the TV's
   keys, Ends By and The Pile are lists (tap to play, Let go asks first), and The Map is a touchpad that moves the TV's
   lens. The header tag still swaps to the pad. Needs a Nuvio from Nov 11, 2026 or later for the modes.
+- **Live TV:** while the TV shows Live TV's stages (Settings > Live TV > Stage), the Remote tab mirrors the stage on
+  screen: its heading, a chip for every stage (and All channels), its programmes as cards with a picture and progress,
+  and its buttons (Deal again, Approve and start, Not that, the minutes). A tap does what OK does on the TV; the tag in
+  the header swaps to the pad. On the TV's front door (Home) the phone has its own layout: the pick as one big card
+  with **Watch** and **Something else**, then Favourites now (Carry on first), the scores of the teams you follow (tap
+  one on a channel to watch it) and Next up, with **Hide scores** at the bottom.
 - **Send to Nuvio:** share a YouTube or YouTube Music link from any app and it plays on the TV.
 - **Wake:** when the PC is asleep or off, the app offers to wake it with Wake-on-LAN. The PC sends its network card and
   broadcast addresses while connected. Wake-on-LAN must be on in the PC's BIOS and network adapter settings.
@@ -86,6 +97,8 @@ source lines are built in `PhoneRemoteLibraryLines.kt` and answered in `PhoneRem
 | Music | `PLAY_ALBUM`, `ALBUM_TRACKS`, `PLAY_TRACK`, `ARTIST`, `QUEUE`, `QUEUE_PLAY`, `QUEUE_NEXT`, `QUEUE_REMOVE` | `ALBUM_TRACKS`, `QUEUE` |
 | Sources | `PICK_SOURCE` | `SOURCES` |
 | Tonight | `TONIGHT_DO` | `TONIGHT` (after `SUBSCRIBE`, whenever it changes) |
+| Live TV | `LIVETV_DO` | `LIVETV` (after `SUBSCRIBE`, whenever it changes) |
+| Live scores | (none) | `SCORE <sport> <kind> <title> <text>` (after `SUBSCRIBE`, a favourite team's event; shown as a notification) |
 | Long-press menus | `MENU`, `DO` | `MENU`, `DONE`, `PLAYLISTS`, `RECAP` |
 | Links | `OPEN` | `OPENING`, `CANT_OPEN` |
 

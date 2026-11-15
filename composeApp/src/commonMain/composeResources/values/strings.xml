@@ -5128,6 +5128,9 @@
     <string name="settings_backup_import_untouched">Settings the backup does not contain are left as they are.</string>
     <string name="settings_backup_read_failed">Could not read that backup: %1$s</string>
     <!-- fork:tonight -->
+    <string name="live_scores_section">Live scores</string>
+    <string name="live_scores_enable">Live score pop-ups</string>
+    <string name="live_scores_enable_description">Goals, tries, red cards, missed penalties, VAR, kick-off, half-time and full-time for your favourite teams and the competitions you follow, over everything including films.</string>
     <string name="tonight_section">Tonight picker</string>
     <string name="tonight_enable">Open on Tonight</string>
     <string name="tonight_enable_description">The app opens on a picker that helps you choose a film or show instead of the Home rows. &quot;Just browse everything&quot; still goes to Home.</string>

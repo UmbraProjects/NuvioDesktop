@@ -116,8 +116,26 @@ class IptvPlaylistContent(
     }
 }
 
+/** [kind]: what the guide's categories say the programme is (see [IptvProgrammeKind]); null when they say nothing. */
 @Serializable
-data class IptvEpgEntry(val title: String, val startMs: Long, val endMs: Long) {
+data class IptvEpgEntry(
+    val title: String,
+    val startMs: Long,
+    val endMs: Long,
+    val kind: String? = null,
+    /** fork:live-tv-stage - the guide's description, cut to a few lines; kept near now only (see XmltvGuide.build). */
+    val desc: String? = null,
+    /** fork:live-tv-stage - "S2 E5", from the guide's episode number or the title. */
+    val episode: String? = null,
+    /** fork:live-tv-stage - the guide's own picture for the programme. */
+    val image: String? = null,
+    val year: Int? = null,
+    /** fork:live-tv-stage - [IptvGuideText.FLAG_NEW], [IptvGuideText.FLAG_LIVE]. */
+    val flags: Int = 0,
+) {
+    val isNew: Boolean get() = flags and IptvGuideText.FLAG_NEW != 0
+    val isLive: Boolean get() = flags and IptvGuideText.FLAG_LIVE != 0
+
     fun progress(now: Long): Float =
         if (endMs <= startMs) 0f else ((now - startMs).toFloat() / (endMs - startMs)).coerceIn(0f, 1f)
 }

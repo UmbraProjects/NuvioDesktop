@@ -57,6 +57,34 @@ data class ResumeItem(
         }
 }
 
+/** One row of a Live TV stage on the TV (`LIVETV` line); [group] "-" cannot be tapped. */
+data class LiveTvItemInfo(
+    val group: String,
+    val index: Int,
+    val slot: String,
+    val title: String,
+    val sub: String,
+    val picture: String?,
+    val live: Boolean,
+    /** 0..1000 how far in; -1 when not on. */
+    val progress: Int,
+    val action: String?,
+)
+
+data class LiveTvButtonInfo(val group: String, val index: Int, val label: String, val accent: Boolean)
+
+/** The TV's Live TV stage as the phone mirrors it (`LIVETV` line, Nov 14). */
+data class LiveTvScreenInfo(
+    val stage: String,
+    val heading: String,
+    val sub: String,
+    /** The strip of stages: (name, label). */
+    val stages: List<Pair<String, String>>,
+    val items: List<LiveTvItemInfo>,
+    val buttons: List<LiveTvButtonInfo>,
+    val empty: String?,
+)
+
 /** One of the three cards on the TV's Tonight picker (`TONIGHT` line). [number] is what `TONIGHT_DO play` sends back. */
 data class TonightCardInfo(
     val number: Int,
@@ -514,6 +542,48 @@ object LibraryLines {
         val parts = line.trim().split(' ')
         if (parts.size < 3 || parts[0] != "RECAP") return null
         return ServerLine.Recap(state = parts[1].toIntOrNull() ?: 2, heading = field(parts[2]).orEmpty(), text = field(parts.getOrNull(3)))
+    }
+
+    /**
+     * `LIVETV 0`, or `LIVETV 1 <stage> <heading> <sub> <stages> <items> <buttons> <empty>`; mirrors `liveTvLine` in
+     * the PC's PhoneRemoteLibraryLines.kt.
+     */
+    fun parseLiveTv(line: String): ServerLine? {
+        val parts = line.trim().split(' ')
+        if (parts.size < 2 || parts[0] != "LIVETV") return null
+        if (parts[1] != "1") return ServerLine.LiveTv(null)
+        if (parts.size < 9) return null
+        val stages = records(parts[5]).mapNotNull { r -> r.getOrNull(0)?.let { name -> name to (r.getOrNull(1) ?: name) } }
+        val items = records(parts[6]).mapNotNull { r ->
+            if (r.size < 9) return@mapNotNull null
+            LiveTvItemInfo(
+                group = r[0] ?: "-",
+                index = r[1]?.toIntOrNull() ?: return@mapNotNull null,
+                slot = r[2] ?: "",
+                title = r[3] ?: return@mapNotNull null,
+                sub = r[4] ?: "",
+                picture = r[5],
+                live = r[6] == "1",
+                progress = r[7]?.toIntOrNull() ?: -1,
+                action = r[8],
+            )
+        }
+        val buttons = records(parts[7]).mapNotNull { r ->
+            val group = r.getOrNull(0) ?: return@mapNotNull null
+            val index = r.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
+            LiveTvButtonInfo(group, index, r.getOrNull(2) ?: return@mapNotNull null, r.getOrNull(3) == "1")
+        }
+        return ServerLine.LiveTv(
+            LiveTvScreenInfo(
+                stage = field(parts[2]) ?: return null,
+                heading = field(parts[3]).orEmpty(),
+                sub = field(parts[4]).orEmpty(),
+                stages = stages,
+                items = items,
+                buttons = buttons,
+                empty = field(parts[8]),
+            ),
+        )
     }
 
     /** Each record's fields, decoded; `-` becomes null. */

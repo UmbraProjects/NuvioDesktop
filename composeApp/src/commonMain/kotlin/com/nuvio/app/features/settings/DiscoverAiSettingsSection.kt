@@ -633,6 +633,7 @@ internal fun AiConsentDialog(target: AiConsentTarget?, onDismiss: () -> Unit) {
                         AiConsentTarget.PreviouslyOn -> PreshowSettings.setPreviouslyOnEnabled(true)
                         AiConsentTarget.MusicFacts -> com.nuvio.app.features.music.booklet.FactsFiller.setEnabled(true)
                         AiConsentTarget.TonightMap -> com.nuvio.app.features.tonight.TonightSettingsRepository.setMapAiEnabled(true) // fork:tonight
+                        AiConsentTarget.LiveTvAsk -> com.nuvio.app.features.iptv.IptvRepository.setAskAi(true) // fork:live-tv-ask-ai
                     }
                 },
             ) { Text(stringResource(Res.string.settings_discover_ai_consent_accept)) }
@@ -656,7 +657,7 @@ internal fun AiConsentDialog(target: AiConsentTarget?, onDismiss: () -> Unit) {
 }
 
 /** Which switch opened the shared consent dialog. */
-internal enum class AiConsentTarget { Rows, Recap, Trivia, PostShow, PreviouslyOn, MusicFacts, TonightMap }
+internal enum class AiConsentTarget { Rows, Recap, Trivia, PostShow, PreviouslyOn, MusicFacts, TonightMap, LiveTvAsk }
 
 /** Each failure says what to do about it — they need different things from the user. */
 internal suspend fun discoverAiErrorMessage(error: Throwable): String =

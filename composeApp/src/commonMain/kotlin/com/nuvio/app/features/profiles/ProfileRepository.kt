@@ -247,6 +247,7 @@ object ProfileRepository {
         com.nuvio.app.features.player.onPlayerShortcutsProfileChanged()
         StreamBadgeSettingsRepository.onProfileChanged()
         StreamScoreRepository.reload()
+        com.nuvio.app.features.livescores.LiveScoreSettingsRepository.reload() // fork:live-scores
         P2pSettingsRepository.onProfileChanged()
         HomeCatalogSettingsRepository.onProfileChanged()
         com.nuvio.app.features.discover.DiscoverRecommendationsRepository.onProfileChanged(profileIndex)

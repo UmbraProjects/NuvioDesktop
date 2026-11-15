@@ -33,7 +33,7 @@ object IptvEpgRepository {
     private val json = Json { ignoreUnknownKeys = true }
 
     private const val SHORT_TTL_MS = 10 * 60 * 1000L
-    private const val CACHE_VERSION = 1
+    private const val CACHE_VERSION = 2 // fork:live-tv-stage - 2: descriptions, episodes, pictures
 
     data class GuideState(val guide: XmltvGuide? = null, val loading: Boolean = false, val failed: Boolean = false)
 

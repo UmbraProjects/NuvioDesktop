@@ -1,6 +1,5 @@
 package com.nuvio.app.features.music
 
-import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
@@ -19,7 +18,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -103,9 +101,7 @@ internal fun NowPlayingWidgets(
     val total = album?.tracks?.size ?: 0
     Column(modifier.graphicsLayer { this.alpha = alpha }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         if (queue.size > 1) {
-            // Where the song is in the queue, beside the heading: it only means something when there is a queue.
-            val place = if (total > 1 && state.trackIndex >= 0) "  •  Track ${state.trackIndex + 1} of $total" else ""
-            Text("QUEUE$place", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("QUEUE", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
             QueueWindow(queue, playingAt, album?.thumbnailUrl, player, Modifier.weight(1f, fill = false))
         }
         if (lyricsMissing && state.isPlaying && libraryArtist != null) MiniLadder(libraryArtist, onOpenArtist)
@@ -210,7 +206,7 @@ private fun QueueRow(
     LaunchedEffect(wantsFocus, focusable) {
         if (!wantsFocus) return@LaunchedEffect
         // The row becomes focusable on the frame after the window has moved.
-        if (focusable) requester.requestFocusLogged()
+        if (focusable) runCatching { requester.requestFocus() }
         onFocusHandled()
     }
     Row(
@@ -312,24 +308,31 @@ private fun MiniLadder(artist: LibraryArtist, onOpenArtist: (String) -> Unit) {
     note?.let { Text(it, color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
-/** Room for "88:88 / 88:88" at 15 sp: the time keeps one width whatever it says. */
-private val CONTROLS_TIME_WIDTH = 104.dp
-
 /** One white for every control and one softer shade for the texts either side (where in the album, the time). */
 private val CONTROLS_SIDE_TEXT = Color.White.copy(alpha = 0.7f)
 
 /**
  * The lyric view's own player, which stays on screen (the bar, dock and card step aside while the view is open). One
- * row: the volume on the left, previous / play / next and Add to playlist spread over the rest; under it the seek bar and
- * the time. Where the song is in the queue is beside the Queue heading (NowPlayingWidgets), so it shows only with a queue.
+ * compact row: where the song is in the album or playlist on the left, previous / play / next and Add to playlist in
+ * the middle, the time on the right; under it one row with the seek bar in two thirds and the volume in the last
+ * (not on a row of its own above). The middle is placed in a Box on its own, so it never moves as the texts either
+ * side change width.
  */
 @Composable
 internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, modifier: Modifier = Modifier, barModifier: Modifier = Modifier) {
+    val total = state.album?.tracks?.size ?: 0
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        // The volume at the left, then previous / play / next / Add to playlist spread evenly over the rest of the row.
-        Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-            MusicVolumeControl(state, player, sliderWidth = 84.dp, tint = Color.White, glass = true)
-            Row(Modifier.weight(1f).padding(start = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.fillMaxWidth().height(44.dp)) {
+            if (total > 1 && state.trackIndex >= 0) {
+                Text(
+                    "Track ${state.trackIndex + 1} of $total",
+                    color = CONTROLS_SIDE_TEXT,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                )
+            }
+            Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
                 ControlIcon(Icons.Rounded.SkipPrevious, "Previous") { player.previous() }
                 ControlIcon(
                     if (state.playWhenReady) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
@@ -345,33 +348,29 @@ internal fun NowPlayingControls(state: MusicPlayerState, player: MusicPlayer, mo
                     }
                 }
             }
-        }
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            // The seek bar, then the time after it (where the song is in the queue is beside the Queue heading below).
-            MusicSeekControl(
-                state,
-                player,
-                nudgeMs = 5_000L,
-                modifier = Modifier.weight(1f),
-                barModifier = barModifier,
-                tint = Color.White,
-                glass = true,
-            )
-            // A fixed width with figures of one width, so the seek bar beside it never changes length as the time counts.
             Text(
                 "${formatMusicTime(state.positionMs)} / ${formatMusicTime(state.durationMs)}",
                 color = CONTROLS_SIDE_TEXT,
                 fontSize = 15.sp,
-                style = androidx.compose.ui.text.TextStyle(fontFeatureSettings = "tnum"),
                 maxLines = 1,
-                softWrap = false,
-                textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                modifier = Modifier.width(CONTROLS_TIME_WIDTH),
+                modifier = Modifier.align(Alignment.CenterEnd),
             )
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            MusicSeekControl(
+                state,
+                player,
+                nudgeMs = 5_000L,
+                modifier = Modifier.weight(2f),
+                barModifier = barModifier,
+                tint = Color.White,
+                glass = true,
+            )
+            MusicVolumeControl(state, player, sliderWidth = null, modifier = Modifier.weight(1f), tint = Color.White, glass = true)
         }
     }
 }

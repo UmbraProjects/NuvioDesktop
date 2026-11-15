@@ -12,8 +12,19 @@ import androidx.compose.runtime.snapshotFlow
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.iptv.IptvChannel
 import com.nuvio.app.features.iptv.IptvEpgRepository
+import com.nuvio.app.features.iptv.IptvChannelNow
+import com.nuvio.app.features.iptv.IptvMergedChannel
+import com.nuvio.app.features.iptv.IptvOnDemand
+import com.nuvio.app.features.iptv.IptvOnNow
+import com.nuvio.app.features.iptv.IptvProgrammeKind
 import com.nuvio.app.features.iptv.IptvGroups
 import com.nuvio.app.features.iptv.IptvRepository
+import com.nuvio.app.features.iptv.IptvBrakeAnswer
+import com.nuvio.app.features.iptv.IptvBrakeEngine
+import com.nuvio.app.features.iptv.IptvTasteEngine
+import com.nuvio.app.features.iptv.IptvReminderEngine
+import com.nuvio.app.features.iptv.IptvStage
+import com.nuvio.app.features.iptv.IptvStageNav
 import com.nuvio.app.features.iptv.IptvPlaybackSession
 import com.nuvio.app.features.iptv.redactIptvCredentials
 import com.nuvio.app.features.iptv.requestHeaders
@@ -59,13 +70,107 @@ internal fun PlayerScreenRuntime.BindIptvLiveEffects() {
 
     LaunchedEffect(playbackSnapshot.isEnded, playbackAttemptId) {
         if (!playbackSnapshot.isEnded) return@LaunchedEffect
-        if (!takeIptvReconnectSlot("live stream ended")) return@LaunchedEffect
+        // fork:live-tv-on-now - a recording that ran out has caught up with the present: carry on live.
+        if (IptvPlaybackSession.active.value?.catchup != null) {
+            IptvPlaybackSession.finishCatchup()?.let { live ->
+                IptvPlaybackLog.i { "recording ended; joining the channel live" }
+                reopenIptvSource(live)
+            }
+            return@LaunchedEffect
+        }
+        if (!takeIptvReconnectSlot("live stream ended")) {
+            tryAnotherIptvCopy("live stream kept ending")
+            return@LaunchedEffect
+        }
         delay(1_500L)
         reconnectIptvSource()
     }
 
     BindIptvStallReconnect()
+
+    // fork:live-tv-departure - a channel asked for while this player is up (a reminder switching at the start) plays here.
+    DisposableEffect(Unit) {
+        val take: (PlayerLaunch) -> Unit = { launch -> takeIptvLaunch(launch) }
+        com.nuvio.app.features.iptv.IptvPlaybackRequests.inPlayer = take
+        onDispose { if (com.nuvio.app.features.iptv.IptvPlaybackRequests.inPlayer === take) com.nuvio.app.features.iptv.IptvPlaybackRequests.inPlayer = null }
+    }
+
+    // fork:live-tv-brakes - a minute counted while it plays; the end card is the engine's call.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            val active = IptvPlaybackSession.active.value ?: continue
+            if (playbackSnapshot.isPlaying && active.catchup == null) {
+                IptvBrakeEngine.tick(active.playlist, active.channel)
+                // fork:live-tv-taste - what was watched and finished, for the Stage's picks.
+                IptvTasteEngine.tick(active.playlist, active.channel)
+            }
+        }
+    }
     BindIptvBufferTelemetry()
+
+    // fork:live-tv-subtitles - what is on, as TMDB knows it (the lookup "From the start, on demand" uses), so the subtitle
+    // add-ons can be asked for it. A new programme takes the last one's add-on subtitle off: its lines belong to another
+    // film. Recordings (catch-up) are left alone; news and sport are not looked up.
+    LaunchedEffect(Unit) {
+        while (true) {
+            val active = IptvPlaybackSession.active.value
+            val now = System.currentTimeMillis()
+            val on = if (active == null || active.catchup != null || !IptvRepository.settings.value.liveSubtitles) {
+                null
+            } else {
+                IptvEpgRepository.cached(active.playlist, active.channel, now).orEmpty().firstOrNull { it.startMs <= now && it.endMs > now }
+            }
+            val was = iptvSubtitleProgramme
+            if (on?.startMs != was?.startMs || on?.title != was?.title) {
+                if (was != null && useCustomSubtitles) {
+                    automaticSubtitleSyncJob?.cancel()
+                    selectedAddonSubtitleId = null
+                    useCustomSubtitles = false
+                    selectedSubtitleIndex = -1
+                    playerController?.clearExternalSubtitleAndSelect(-1)
+                }
+                iptvSubtitleProgramme = on
+                iptvSubtitleTarget = null
+                if (on != null && active != null) {
+                    // Most guides do not mark films: a feature-length programme on a film channel or in a film category
+                    // is one (as everywhere else in Live TV), so "21 Jump Street" on Sky Cinema is the film, not the series.
+                    val categoryName = IptvRepository.contentState(active.playlist.id).value.content?.categoryNames?.get(active.channel.categoryId).orEmpty()
+                    val onChannel = IptvChannelNow(IptvMergedChannel(listOf(active.channel)), listOf(on), categoryName)
+                    val looked = when {
+                        on.kind == null && IptvOnNow.isFilm(on, onChannel) -> on.copy(kind = IptvProgrammeKind.FILM)
+                        on.kind == null && IptvOnNow.isSport(on, onChannel) -> null
+                        on.kind == IptvProgrammeKind.NEWS || on.kind == IptvProgrammeKind.SPORT -> null
+                        // fork:live-tv-polish - "Channel 4 News" is news even when the guide does not say so.
+                        on.kind == null && NEWS_WORD.containsMatchIn(on.title) -> null
+                        else -> on
+                    }
+                    if (looked != null) {
+                        var asked = looked
+                        var found = runCatching { IptvOnDemand.find(looked) }.getOrNull()
+                        // fork:live-tv-polish - a feature-length programme that is no series with episode numbers is tried
+                        // as a film ("The Ring" on Film4, "Matilda" on ITV2 were looked for as series and found nothing).
+                        if (found?.playable != true && looked.kind != IptvProgrammeKind.FILM && looked.endMs - looked.startMs >= 75 * 60_000L) {
+                            val asFilm = looked.copy(kind = IptvProgrammeKind.FILM)
+                            val film = runCatching { IptvOnDemand.find(asFilm) }.getOrNull()
+                            if (film?.playable == true) {
+                                asked = asFilm
+                                found = film
+                            }
+                        }
+                        iptvSubtitleTarget = found?.takeIf { it.playable }
+                        IptvPlaybackLog.i {
+                            "live subtitles: '${on.title}' as ${if (asked.kind == IptvProgrammeKind.FILM) "a film" else "a programme"} -> " +
+                                (iptvSubtitleTarget?.let { "${it.type} ${it.videoId}" } ?: found?.let { "${it.name}, no episode numbers" } ?: "not found on TMDB")
+                        }
+                    } else {
+                        IptvPlaybackLog.i { "live subtitles: '${on.title}' is news or sport, not looked up" }
+                    }
+                }
+            }
+            delay(30_000L)
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose { IptvPlaybackSession.clear() }
@@ -128,7 +233,9 @@ private fun PlayerScreenRuntime.BindIptvStallReconnect() {
         while (true) {
             delay(1_000L)
             val snapshot = playbackSnapshot
-            if (!snapshot.isLoading || !played || snapshot.isEnded || !shouldPlay) {
+            // fork:live-tv-on-now - reopening a recording would start the programme again; leave it to buffer.
+            val recording = IptvPlaybackSession.active.value?.catchup != null
+            if (recording || !snapshot.isLoading || !played || snapshot.isEnded || !shouldPlay) {
                 if (!snapshot.isLoading && snapshot.isPlaying) played = true
                 stallStartMs = 0L
                 stuckStartMs = 0L
@@ -161,7 +268,7 @@ private fun PlayerScreenRuntime.BindIptvStallReconnect() {
                 }
             }
             if (reason != null) {
-                if (takeIptvReconnectSlot(reason)) reconnectIptvSource()
+                if (takeIptvReconnectSlot(reason)) reconnectIptvSource() else tryAnotherIptvCopy(reason)
                 return@LaunchedEffect
             }
         }
@@ -246,6 +353,16 @@ internal fun PlayerScreenRuntime.tryNextIptvFormat(reason: String): Boolean {
     return true
 }
 
+/**
+ * fork:live-tv-on-now - the reconnects are spent: when the channel has another copy in the playlist, play that
+ * (with a fresh allowance) instead of leaving the picture frozen. Does nothing for a channel with one copy.
+ */
+private fun PlayerScreenRuntime.tryAnotherIptvCopy(reason: String) {
+    if (!IptvPlaybackSession.hasAlternates()) return
+    iptvReconnectTimesMs.clear()
+    tryNextIptvFormat(reason)
+}
+
 private fun failedFormat(url: String): String =
     IptvPlaybackSession.active.value?.candidates?.firstOrNull { it.url == url }?.format ?: "?"
 
@@ -280,6 +397,17 @@ internal fun PlayerScreenRuntime.handleIptvControlsEvent(type: String, value: Do
         "previousEpisode" -> switchIptvChannel(-1)
         "iptvChannel" -> switchIptvChannel(if (value < 0) -1 else 1)
         "iptvChannelNumber" -> switchIptvChannelNumber(value.toInt())
+        // fork:live-tv-brakes - the answer to the HUD's choice card.
+        // fork:live-tv-reminder-card - the reminder card shares the HUD's choice card; it answers first when it is up.
+        "iptvChoice" -> if (!IptvReminderEngine.answer(value.toInt())) when (IptvBrakeEngine.answer(value.toInt())) {
+            IptvBrakeAnswer.TurnOff -> args.onBack()
+            // Back to Live TV, on the Three things stage.
+            IptvBrakeAnswer.PickForMe -> {
+                IptvStageNav.open(IptvStage.Three)
+                args.onBack()
+            }
+            else -> Unit
+        }
         "iptvPanelOpen" -> {
             iptvPanelOpen = value > 0
             if (!iptvPanelOpen) iptvPanelQuery = ""
@@ -342,6 +470,7 @@ private fun PlayerScreenRuntime.zapTo(channel: IptvChannel) {
     iptvLinkJob?.cancel()
     IptvPlaybackSession.setOpening(null)
     if (IptvPlaybackSession.active.value?.channel?.uid == channel.uid) return
+    IptvBrakeEngine.noteChange() // fork:live-tv-brakes
     if (!IptvPlaybackSession.needsLink(channel)) {
         openIptvChannel(channel, IptvPlaybackSession.switchTo(channel))
         return
@@ -350,6 +479,20 @@ private fun PlayerScreenRuntime.zapTo(channel: IptvChannel) {
     iptvLinkJob = scope.launch {
         openIptvChannel(channel, IptvPlaybackSession.switchTo(channel, IptvPlaybackSession.linkCandidates(channel)))
     }
+}
+
+/**
+ * fork:live-tv-departure - [launch] (made by IptvPlaybackSession.launchFor, which already made its channel the active
+ * one) in this player: the same reopen as a channel change.
+ */
+private fun PlayerScreenRuntime.takeIptvLaunch(launch: PlayerLaunch) {
+    iptvLinkJob?.cancel()
+    IptvPlaybackSession.setOpening(null)
+    IptvPlaybackLog.i { "channel change to '${launch.title}' from outside the player" }
+    activeSourceHeaders = sanitizePlaybackHeaders(launch.sourceHeaders)
+    iptvReconnectTimesMs.clear()
+    playbackSourceFailureActive = false
+    reopenIptvSource(launch.sourceUrl)
 }
 
 private fun PlayerScreenRuntime.openIptvChannel(channel: IptvChannel, url: String?) {
@@ -498,3 +641,6 @@ private const val IPTV_PANEL_MAX_CHANNELS = 600
  * about two minutes of 8 Mbit/s HD. An estimate; seeking past what mpv kept just stops at it.
  */
 private const val IPTV_DEFAULT_REWIND_MS = 2 * 60_000L
+
+/** fork:live-tv-polish - a title that says it is news ("Channel 4 News", "BBC News at Six"). */
+private val NEWS_WORD = Regex("""\bnews\b""", RegexOption.IGNORE_CASE)

@@ -243,6 +243,54 @@ JNIEXPORT jstring JNICALL Java_com_nuvio_app_features_voice_WhisperNative_native
     return fromUtf8(env, std::string(head) + decoded.text);
 }
 
+// fork:live-tv-subtitles - a stretch of a programme's audio (up to 30 s) as words, each with when it was said:
+// "<start ms>\t<end ms>\t<word>" per line, times from the start of [samples]. The full 30 s window and whisper's own
+// token timestamps, one word per segment; no prompt, no context between calls. Null when decoding failed.
+JNIEXPORT jstring JNICALL Java_com_nuvio_app_features_voice_WhisperNative_nativeTranscribeWords(
+    JNIEnv *env, jobject, jlong handle, jfloatArray samples, jint threads, jstring language) {
+    whisper_context *ctx = context(handle);
+    if (ctx == nullptr || samples == nullptr) return nullptr;
+    const jsize count = env->GetArrayLength(samples);
+    std::vector<float> pcm(static_cast<size_t>(count));
+    env->GetFloatArrayRegion(samples, 0, count, pcm.data());
+    std::string lang = toUtf8(env, language);
+    if (lang.empty()) lang = "en";
+
+    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    params.n_threads = threads > 0 ? threads : 4;
+    params.language = lang.c_str();
+    params.translate = false;
+    params.no_context = true;
+    params.single_segment = false;
+    params.no_timestamps = false;
+    params.token_timestamps = true;
+    params.max_len = 1;
+    params.split_on_word = true;
+    params.print_progress = false;
+    params.print_realtime = false;
+    params.print_special = false;
+    params.print_timestamps = false;
+    params.suppress_blank = true;
+    params.suppress_nst = true;
+    if (whisper_full(ctx, params, pcm.data(), static_cast<int>(pcm.size())) != 0) return nullptr;
+
+    std::string out;
+    const int segments = whisper_full_n_segments(ctx);
+    char head[48];
+    for (int i = 0; i < segments; ++i) {
+        const char *text = whisper_full_get_segment_text(ctx, i);
+        if (text == nullptr || *text == '\0') continue;
+        // Segment times are in hundredths of a second.
+        const long long t0 = static_cast<long long>(whisper_full_get_segment_t0(ctx, i)) * 10;
+        const long long t1 = static_cast<long long>(whisper_full_get_segment_t1(ctx, i)) * 10;
+        std::snprintf(head, sizeof(head), "%lld\t%lld\t", t0, t1);
+        out += head;
+        for (const char *c = text; *c != '\0'; ++c) out += (*c == '\n' || *c == '\t') ? ' ' : *c;
+        out += '\n';
+    }
+    return fromUtf8(env, out);
+}
+
 JNIEXPORT void JNICALL Java_com_nuvio_app_features_voice_WhisperNative_nativeFree(JNIEnv *, jobject, jlong handle) {
     if (whisper_context *ctx = context(handle)) whisper_free(ctx);
 }

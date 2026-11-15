@@ -45,6 +45,31 @@ internal class WhisperTranscriber private constructor(val modelFile: File, priva
         )
     }
 
+    /** fork:live-tv-subtitles - one word heard, its times in ms from the start of the samples. */
+    class TimedWord(val startMs: Long, val endMs: Long, val text: String)
+
+    /**
+     * fork:live-tv-subtitles - [samples] (16 kHz mono, at most 30 s) as words with when each was said; empty for nothing
+     * heard, null when decoding failed or nuvio_whisper.dll is too old to time words.
+     */
+    @Synchronized
+    fun words(samples: FloatArray, language: String = "en"): List<TimedWord>? {
+        check(handle != 0L) { "transcriber is closed" }
+        if (samples.isEmpty()) return emptyList()
+        val started = System.nanoTime()
+        val raw = try {
+            WhisperNative.nativeTranscribeWords(handle, samples, decodeThreads(), language)
+        } catch (_: UnsatisfiedLinkError) {
+            return null
+        }
+        lastDecodeMs = (System.nanoTime() - started) / 1_000_000
+        return raw?.lineSequence()?.mapNotNull { line ->
+            val parts = line.split('\t', limit = 3)
+            if (parts.size < 3 || parts[2].isBlank()) return@mapNotNull null
+            TimedWord(parts[0].toLongOrNull() ?: return@mapNotNull null, parts[1].toLongOrNull() ?: return@mapNotNull null, parts[2].trim())
+        }?.toList()
+    }
+
     /**
      * How long the last decode took, null before the first. It is what decides whether live
      * previews can run without holding up the final decode (see the listen loop).

@@ -1,7 +1,6 @@
 package com.nuvio.app.features.music
 // FORK UI (Spyder): Nick's album page lenses, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
-import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -70,8 +69,9 @@ internal fun PinPill(label: String, tint: Color, onClick: () -> Unit, modifier: 
         maxLines = 1,
         modifier = modifier
             .clip(shape)
+            .border(1.dp, shown.copy(alpha = if (enabled) 0.5f else 0.25f), shape)
             .then(if (enabled) Modifier.musicKeyFocusRing(shape).clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 6.dp, vertical = 3.dp),
+            .padding(horizontal = 10.dp, vertical = 3.dp),
     )
 }
 
@@ -92,7 +92,7 @@ internal fun PinEditField(
 ) {
     val colors = MaterialTheme.nuvio.colors
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocusLogged() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     Box(modifier.verticalScroll(rememberScrollState())) {
         BasicTextField(
             value = value,

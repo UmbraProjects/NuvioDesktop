@@ -182,6 +182,14 @@ internal object XtreamUrls {
         base(playlist) + "/live/" + segment(playlist.username.orEmpty()) + "/" + segment(playlist.password.orEmpty()) +
             "/" + segment("$streamId.$ext")
 
+    /**
+     * A recorded programme ("catch-up"): [minutes] of [streamId] from [startLocal], which is the start in the
+     * server's own time zone as `yyyy-MM-dd:HH-mm`. The path form every Xtream panel serves.
+     */
+    fun timeshiftUrl(playlist: IptvPlaylist, streamId: String, startLocal: String, minutes: Int): String =
+        base(playlist) + "/timeshift/" + segment(playlist.username.orEmpty()) + "/" + segment(playlist.password.orEmpty()) +
+            "/" + minutes + "/" + startLocal + "/" + segment("$streamId.ts")
+
     /** The account's full XMLTV guide (`xmltv.php`). */
     fun xmltv(playlist: IptvPlaylist): String =
         base(playlist) + "/xmltv.php?username=" + query(playlist.username.orEmpty()) +

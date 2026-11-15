@@ -97,6 +97,8 @@ class NowPlayingService : Service() {
     override fun onDestroy() {
         stopped = true
         main.removeCallbacksAndMessages(null)
+        // Nothing is watching the TV for the lock screen any more: put the normal picture back.
+        PosterWallpaper.restore(this)
         onIo { closeRemote() }
         io.shutdown()
         session.isActive = false
@@ -200,6 +202,7 @@ class NowPlayingService : Service() {
 
     private fun show(playing: NowPlaying?) {
         nowPlaying = playing
+        updateWallpaper(playing)
         if (playing == null) {
             session.setPlaybackState(PlaybackState.Builder().setState(PlaybackState.STATE_STOPPED, 0L, 0f).build())
             session.setMetadata(null)
@@ -253,6 +256,33 @@ class NowPlayingService : Service() {
         )
         updateVolume(playing)
         updateNotification()
+    }
+
+    /**
+     * Poster wallpaper (Remote › More › Lock screen): the lock screen shows what plays, and the normal picture goes
+     * back a little after playback stops (not straight away, so the gap between episodes or albums does not flicker).
+     */
+    private fun updateWallpaper(playing: NowPlaying?) {
+        if (playing == null) {
+            // Idle may be said more than once: the first one starts the wait.
+            if (!wallpaperBackPending && store.wallpaperUrl != null) {
+                wallpaperBackPending = true
+                main.postDelayed(putWallpaperBack, WALLPAPER_BACK_MS)
+            }
+            return
+        }
+        if (wallpaperBackPending) {
+            wallpaperBackPending = false
+            main.removeCallbacks(putWallpaperBack)
+        }
+        val url = playing.imageUrl ?: return
+        if (store.posterWallpaper && store.wallpaperUrl != url) PosterWallpaper.show(this, url)
+    }
+
+    private var wallpaperBackPending = false
+    private val putWallpaperBack = Runnable {
+        wallpaperBackPending = false
+        PosterWallpaper.restore(this)
     }
 
     /** The phone's volume keys set the PC's volume while this session is the one in charge (the lock screen, say). */
@@ -407,6 +437,8 @@ class NowPlayingService : Service() {
         private const val SILENT_MS = 12_000L
         private const val RETRY_MS = 5_000L
         private const val VOLUME_STEP = 5
+        /** How long after playback stops the lock screen's normal picture goes back. */
+        private const val WALLPAPER_BACK_MS = 20_000L
         /** Nothing has played for this long: gone. A gap between films or albums is shorter. */
         private const val IDLE_STOP_MS = 10 * 60_000L
         /** The PC has been unreachable (asleep, off) for this long: gone. */

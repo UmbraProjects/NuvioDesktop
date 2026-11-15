@@ -58,7 +58,22 @@ internal class SubtitleSyncModel(val segments: List<SubtitleSyncSegment>) {
 internal class AudioSyncTracker(
     private val track: SubtitleSpeechTrack,
     private val provisionalPolicy: ProvisionalPolicy = ProvisionalPolicy(),
+    /**
+     * fork:live-tv-subtitles: the shifts the first lock is searched in. A file is within a minute of its film; a live
+     * channel's guide can be many minutes out (a late start, the ads so far), so Live TV passes a wider range.
+     */
+    private val searchMinShiftMs: Double = -MAX_SHIFT_MS,
+    private val searchMaxShiftMs: Double = MAX_SHIFT_MS,
+    /**
+     * fork:live-tv-subtitles: when set, a jump after the lock is looked for from a minute before the active shift to
+     * this far after it (an ad break moves a live film later by minutes), instead of a minute either side of 0.
+     */
+    private val jumpAheadMs: Double? = null,
 ) {
+    /** The shifts a jump (or a rate check) around [shiftMs] is looked for in. */
+    private fun followRange(shiftMs: Double): Pair<Double, Double> =
+        jumpAheadMs?.let { (shiftMs - MAX_SHIFT_MS) to (shiftMs + it) } ?: (-MAX_SHIFT_MS to MAX_SHIFT_MS)
+
     /**
      * Thresholds for the early, unconfirmed estimate shown while evidence is still thin. Looser
      * than the lock, but it must repeat on two consecutive runs before it is applied.
@@ -161,11 +176,11 @@ internal class AudioSyncTracker(
         val minFrames = if (provisionalPolicy.enabled) minOf(MIN_KNOWN_FRAMES, provisionalFrames) else MIN_KNOWN_FRAMES
         if (knownFrames < minFrames) return Outcome.NotEnoughEvidence
         // One transform of the speech serves every check below; each ratio is correlated once.
-        val speech = SubtitleAudioAligner.prepare(segments, -MAX_SHIFT_MS, MAX_SHIFT_MS)
+        val speech = SubtitleAudioAligner.prepare(segments, searchMinShiftMs, searchMaxShiftMs)
             ?: return Outcome.NotEnoughEvidence
         val estimate = speech.estimate(track) ?: return Outcome.NotEnoughEvidence
         lastEstimate = estimate
-        if (isLockable(estimate, segments, knownFrames, track)) {
+        if (isLockable(estimate, segments, knownFrames, track, searchMinShiftMs, searchMaxShiftMs)) {
             val locked = SubtitleSyncModel(listOf(SubtitleSyncSegment(0L, estimate.scale, estimate.shiftMs)))
             model = locked
             provisionalModel = null
@@ -281,13 +296,14 @@ internal class AudioSyncTracker(
         val localFrom = maxOf(known.first, segmentStartFrame, playheadFrame - LOCAL_BACK_FRAMES)
         val localTo = minOf(to, playheadFrame + LOCAL_AHEAD_FRAMES)
         if (localTo - localFrom >= MIN_LOCAL_FRAMES && timeline.knownFramesIn(localFrom, localTo) >= MIN_LOCAL_FRAMES) {
+            val (jumpMin, jumpMax) = followRange(segment.shiftMs)
             val local = SubtitleAudioAligner.estimate(
                 probabilities = timeline.snapshot(localFrom, localTo),
                 fromFrame = localFrom,
                 track = track,
                 scales = doubleArrayOf(segment.scale),
-                minShiftMs = -MAX_SHIFT_MS,
-                maxShiftMs = MAX_SHIFT_MS,
+                minShiftMs = jumpMin,
+                maxShiftMs = jumpMax,
             )
             if (local != null && hasEnoughEvidence(local, minCues = MIN_LOCAL_CUES) && !local.atSearchEdge &&
                 abs(local.shiftMs - segment.shiftMs) > JUMP_THRESHOLD_MS &&
@@ -350,7 +366,8 @@ internal class AudioSyncTracker(
         current: SubtitleSyncModel,
         segment: SubtitleSyncSegment,
     ): Outcome? {
-        val speech = SubtitleAudioAligner.prepare(heard, -MAX_SHIFT_MS, MAX_SHIFT_MS) ?: return null
+        val (rateMin, rateMax) = followRange(segment.shiftMs)
+        val speech = SubtitleAudioAligner.prepare(heard, rateMin, rateMax) ?: return null
         val here = speech.estimate(track, doubleArrayOf(segment.scale)) ?: return null
         val neighbour = speech.estimate(track, doubleArrayOf(segment.scale * NEAR_RATE, segment.scale / NEAR_RATE))
             ?: return null
@@ -429,6 +446,8 @@ internal class AudioSyncTracker(
             segments: List<SpeechSegment>,
             knownFrames: Int,
             track: SubtitleSpeechTrack,
+            minShiftMs: Double = -MAX_SHIFT_MS,
+            maxShiftMs: Double = MAX_SHIFT_MS,
         ): Boolean {
             val requiredProminence = if (isStandardRate(estimate.scale)) {
                 ACCEPT_PROMINENCE
@@ -437,7 +456,7 @@ internal class AudioSyncTracker(
             }
             return knownFrames >= MIN_KNOWN_FRAMES && hasEnoughEvidence(estimate) &&
                 !estimate.atSearchEdge && estimate.prominence >= requiredProminence &&
-                confirmedByBothHalves(segments, estimate, track)
+                confirmedByBothHalves(segments, estimate, track, minShiftMs, maxShiftMs)
         }
 
         private fun hasEnoughEvidence(
@@ -455,6 +474,8 @@ internal class AudioSyncTracker(
             segments: List<SpeechSegment>,
             estimate: SubtitleAudioAligner.Estimate,
             track: SubtitleSpeechTrack,
+            minShiftMs: Double,
+            maxShiftMs: Double,
         ): Boolean {
             val halves = splitByKnownFrames(segments)
             return halves.all { half ->
@@ -462,8 +483,8 @@ internal class AudioSyncTracker(
                     segments = half,
                     track = track,
                     scales = doubleArrayOf(estimate.scale),
-                    minShiftMs = -MAX_SHIFT_MS,
-                    maxShiftMs = MAX_SHIFT_MS,
+                    minShiftMs = minShiftMs,
+                    maxShiftMs = maxShiftMs,
                 )
                 result != null &&
                     !result.atSearchEdge &&

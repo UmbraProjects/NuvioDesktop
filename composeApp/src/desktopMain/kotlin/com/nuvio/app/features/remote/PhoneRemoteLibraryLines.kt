@@ -297,6 +297,25 @@ internal object PhoneRemoteLibraryLines {
         ).joinToString(" ")
     }
 
+    /**
+     * fork:phone-remote live-tv: `LIVETV 0`, or `LIVETV 1 <stage> <heading> <sub> <stages> <items> <buttons> <empty>`.
+     * Stages are `name,label`; items `group,index,slot,title,sub,picture,live,progress,action`; buttons
+     * `group,index,label,accent`. At most 60 items.
+     */
+    fun liveTvLine(screen: com.nuvio.app.features.remote.RemoteLiveTvScreen?): String {
+        if (screen == null) return "LIVETV 0"
+        return listOf(
+            "LIVETV", "1",
+            text(screen.stage), text(screen.heading), text(screen.sub),
+            records(screen.stages) { (name, label) -> listOf(text(name), text(label)) },
+            records(screen.items.take(60)) { i ->
+                listOf(text(i.group), i.index.toString(), text(i.slot), text(i.title), text(i.sub), url(i.picture), flag(i.live), i.progress.toString(), text(i.action))
+            },
+            records(screen.buttons) { b -> listOf(text(b.group), b.index.toString(), text(b.label), flag(b.accent)) },
+            text(screen.empty),
+        ).joinToString(" ")
+    }
+
     // --- fork:phone-remote menus: the long-press sheet (see PhoneRemoteActions). ---
 
     /** What the phone should reload after a menu action changed something. */

@@ -41,7 +41,7 @@ internal object DesktopAudioSubtitleSync {
     @Volatile
     private var cachedWeights: SileroVadWeights? = null
 
-    private fun weights(): SileroVadWeights = cachedWeights ?: synchronized(this) {
+    internal fun weights(): SileroVadWeights = cachedWeights ?: synchronized(this) {
         cachedWeights ?: checkNotNull(javaClass.getResourceAsStream(WEIGHTS_RESOURCE)) { "missing $WEIGHTS_RESOURCE" }
             .use(SileroVadWeights::read)
             .also { cachedWeights = it }

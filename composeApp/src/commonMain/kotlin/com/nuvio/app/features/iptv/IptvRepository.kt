@@ -43,6 +43,71 @@ data class IptvSettings(
      * while a playlist exists, as it always did, so turning the switch into a setting moves nobody's bar.
      */
     val tabEnabled: Boolean? = null,
+    /**
+     * fork:live-tv-on-now - Settings > Live TV > On Now. The tab opens on what is on (sport with scores, films,
+     * the usual channels), copies of one channel become one row, and a programme can be started over.
+     */
+    val onNow: Boolean = false,
+    /** fork:live-tv-on-now - when each channel was put on, newest last, for "Your channels" ([IptvUsuals]). */
+    val plays: List<IptvPlay> = emptyList(),
+    /** fork:live-tv-triage - by playlist id: the countries and kinds its triage kept. No entry = everything shows. */
+    val triage: Map<String, IptvTriage> = emptyMap(),
+    /** fork:live-tv-lineup - Settings > Live TV > Your 40. The tab opens on a numbered lineup of about forty channels. */
+    val lineupOn: Boolean = false,
+    /** fork:live-tv-lineup - by playlist id: the lineup's channel keys in order (the position is the number). No entry = not built yet. */
+    val lineup: Map<String, List<String>> = emptyMap(),
+    /** fork:live-tv-lineup - by playlist id: the keys of every copy of the channels thrown out with "Never again". */
+    val never: Map<String, Set<String>> = emptyMap(),
+    /** fork:live-tv-departure - Settings > Live TV > Starting soon. The On Now wall gets a departure board; programmes can have a reminder. */
+    val departure: Boolean = false,
+    /** fork:live-tv-departure - the reminders waiting, earliest first ([IptvReminderRules]). */
+    val reminders: List<IptvReminder> = emptyList(),
+    /** fork:live-tv-decide - Settings > Live TV > Decide for me: Three things, I have N minutes, Earlier today, Following. */
+    val decide: Boolean = false,
+    /** fork:live-tv-decide - the minutes dialled on "I have N minutes". */
+    val minutes: Int = IptvDecide.DEFAULT_MINUTES,
+    /** fork:live-tv-decide - tonight's reshuffle of Three things. */
+    val shuffle: IptvShuffle = IptvShuffle(),
+    /** fork:live-tv-decide - what is followed: programme titles, teams, "any Bond film". */
+    val follows: List<String> = emptyList(),
+    /** fork:live-tv-stage - Live TV as full-screen stages; off by default. */
+    val stage: Boolean = false,
+    /** fork:live-tv-on-demand - offer a programme under way from the start through the add-ons; off by default. */
+    val onDemand: Boolean = false,
+    /** fork:live-tv-stage - what was asked on Just ask, newest first. */
+    val asks: List<IptvAsked> = emptyList(),
+    /** fork:live-tv-weed - overnight checks of the lineup's channels; off by default. */
+    val weed: Boolean = false,
+    /** fork:live-tv-weed - what the checks found, per playlist and channel key. */
+    val weeds: Map<String, Map<String, IptvWeedRecord>> = emptyMap(),
+    /** fork:live-tv-evening - Tonight's running order and Just ask; off by default. */
+    val evening: Boolean = false,
+    /** fork:live-tv-brakes - zap budget and end card; off by default. */
+    val brakes: Boolean = false,
+    /** fork:live-tv-ask-ai - let the viewer's own AI answer Just ask; off by default, needs the shared AI consent. */
+    val askAi: Boolean = false,
+    /** fork:live-tv-taste - what was watched and finished, per programme title (see IptvTasteRules). */
+    val titles: Map<String, IptvTitleStat> = emptyMap(),
+    /** fork:live-tv-subtitles - subtitle add-ons for films and episodes on live channels, synced to the channel; off by default. */
+    val liveSubtitles: Boolean = false,
+    /** fork:live-tv-subtitles - match those subtitles by their words with the voice control speech model; off by default. */
+    val liveSubtitleWords: Boolean = false,
+    /** fork:live-tv-views - the extra stages switched on in Settings (IptvStage names; see IptvViewRules.VIEWS). */
+    val views: Set<String> = emptySet(),
+    /** fork:live-tv-learn - the teams in what was watched, by name key (see IptvTeamRules). */
+    val teams: Map<String, IptvTeamStat> = emptyMap(),
+    /** fork:live-tv-learn - teams the viewer said no to following; Following does not ask about them again. */
+    val teamsDeclined: Set<String> = emptySet(),
+    /** fork:live-tv-brakes - the honest tally, one entry per night (key: the night's number). */
+    val tally: Map<String, IptvNight> = emptyMap(),
+    /** fork:live-tv-brakes - the night the zap-budget card was last offered. */
+    val brakeOffered: Long? = null,
+    /** fork:live-tv-front-door - the pick shows a live still of its channel (refreshed while nothing plays); off by default. */
+    val doorPreview: Boolean = false,
+    /** fork:live-tv-front-door - the front door's scores hidden, so it never spoils a result. */
+    val doorHideScores: Boolean = false,
+    /** fork:live-tv-polish - the viewer's country (ISO code): its channels rank higher, other countries' news lower. Null = from the triage. */
+    val homeRegion: String? = null,
 ) {
     /** Whether the Live TV entry belongs in the navigation. */
     val tabShown: Boolean
@@ -192,6 +257,12 @@ object IptvRepository {
                 playlists = s.playlists.filterNot { it.id == id },
                 favourites = s.favourites.filterNot { it.startsWith(prefix) },
                 recents = s.recents.filterNot { it.startsWith(prefix) },
+                plays = s.plays.filterNot { it.ref.startsWith(prefix) },
+                triage = s.triage - id,
+                lineup = s.lineup - id,
+                never = s.never - id,
+                weeds = s.weeds - id,
+                reminders = s.reminders.filterNot { it.playlistId == id },
             )
         }
         contentStates.remove(id)
@@ -239,7 +310,236 @@ object IptvRepository {
     fun recordRecent(playlistId: String, channelKey: String) {
         ensureLoaded()
         val ref = channelRef(playlistId, channelKey)
-        mutate { s -> s.copy(recents = (listOf(ref) + (s.recents - ref)).take(MAX_RECENTS)) }
+        mutate { s ->
+            s.copy(
+                recents = (listOf(ref) + (s.recents - ref)).take(MAX_RECENTS),
+                plays = (s.plays + IptvPlay(ref, System.currentTimeMillis())).takeLast(IptvUsuals.MAX_PLAYS),
+            )
+        }
+    }
+
+    /** fork:live-tv-triage - saves [playlistId]'s triage; null shows everything again. */
+    fun setTriage(playlistId: String, triage: IptvTriage?) {
+        ensureLoaded()
+        mutate { s -> s.copy(triage = if (triage == null) s.triage - playlistId else s.triage + (playlistId to triage)) }
+    }
+
+    /** fork:live-tv-decide */
+    fun setDecide(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(decide = enabled) }
+    }
+
+    fun setOnDemand(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(onDemand = enabled) }
+    }
+
+    /** fork:live-tv-front-door */
+    fun setDoorPreview(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(doorPreview = enabled) }
+    }
+
+    /** fork:live-tv-polish */
+    fun setHomeRegion(region: String?) {
+        ensureLoaded()
+        mutate { it.copy(homeRegion = region) }
+    }
+
+    /** fork:live-tv-front-door */
+    fun setDoorHideScores(hidden: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(doorHideScores = hidden) }
+    }
+
+    fun setStage(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(stage = enabled) }
+    }
+
+    /** fork:live-tv-stage - keeps the last eight asks, the same line once. */
+    fun rememberAsk(text: String, at: Long = System.currentTimeMillis()) {
+        val clean = text.trim()
+        if (clean.isEmpty()) return
+        ensureLoaded()
+        mutate { s -> s.copy(asks = (listOf(IptvAsked(clean, at)) + s.asks.filterNot { it.text.equals(clean, ignoreCase = true) }).take(8)) }
+    }
+
+    fun setWeed(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(weed = enabled) }
+    }
+
+    /** fork:live-tv-weed - one channel's result for [night]. */
+    fun weedResult(playlistId: String, key: String, ok: Boolean, night: Long) {
+        ensureLoaded()
+        mutate { s -> s.copy(weeds = s.weeds + (playlistId to IptvWeedRules.record(s.weeds[playlistId].orEmpty(), key, ok, night))) }
+    }
+
+    fun setEvening(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(evening = enabled) }
+    }
+
+    fun setAskAi(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(askAi = enabled) }
+    }
+
+    /** fork:live-tv-subtitles */
+    fun setLiveSubtitles(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(liveSubtitles = enabled) }
+    }
+
+    /** fork:live-tv-subtitles */
+    fun setLiveSubtitleWords(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(liveSubtitleWords = enabled) }
+    }
+
+    /** fork:live-tv-views - one extra stage on or off. */
+    fun setView(stage: IptvStage, enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(views = if (enabled) it.views + stage.name else it.views - stage.name) }
+    }
+
+    fun setBrakes(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(brakes = enabled) }
+    }
+
+    /** fork:live-tv-brakes - adds to tonight's tally. */
+    fun tally(night: Long, change: (IptvNight) -> IptvNight) {
+        ensureLoaded()
+        mutate { it.copy(tally = IptvBrakeRules.add(it.tally, night, change)) }
+    }
+
+    /** fork:live-tv-taste - a programme seen or finished. */
+    fun noteWatch(entry: IptvEpgEntry, event: IptvWatchEvent, now: Long = System.currentTimeMillis()) {
+        if (event == IptvWatchEvent.None) return
+        ensureLoaded()
+        mutate {
+            it.copy(
+                titles = IptvTasteRules.note(it.titles, entry, event, now),
+                teams = IptvTeamRules.note(it.teams, entry, event, now),
+            )
+        }
+    }
+
+    /** fork:live-tv-learn - "Not interested" on a learned team: never offered again. */
+    fun declineTeam(key: String) {
+        ensureLoaded()
+        mutate { it.copy(teamsDeclined = it.teamsDeclined + key) }
+    }
+
+    /** fork:live-tv-taste - forget what was watched. */
+    fun forgetWatched() {
+        ensureLoaded()
+        mutate { it.copy(titles = emptyMap(), teams = emptyMap(), teamsDeclined = emptySet()) }
+    }
+
+    fun brakeOffered(night: Long) {
+        ensureLoaded()
+        mutate { it.copy(brakeOffered = night) }
+    }
+
+    fun setMinutes(minutes: Int) {
+        ensureLoaded()
+        if (minutes in IptvDecide.MINUTE_CHOICES) mutate { it.copy(minutes = minutes) }
+    }
+
+    /** One reshuffle a night: does nothing once tonight's is used. */
+    fun reshuffleThree(night: Long) {
+        ensureLoaded()
+        mutate { s -> if (IptvDecide.canReshuffle(s.shuffle, night)) s.copy(shuffle = IptvShuffle(night, 1)) else s }
+    }
+
+    fun follow(text: String) {
+        ensureLoaded()
+        val clean = text.trim()
+        if (clean.isEmpty()) return
+        mutate { s -> if (IptvDecide.normalise(clean) in s.follows.map(IptvDecide::normalise)) s else s.copy(follows = s.follows + clean) }
+    }
+
+    /** Stops following everything that [title] counts as. */
+    fun unfollow(title: String) {
+        ensureLoaded()
+        mutate { s -> s.copy(follows = s.follows - IptvDecide.followsOf(s.follows, title).toSet()) }
+    }
+
+    /** fork:live-tv-departure */
+    fun setDeparture(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(departure = enabled) }
+    }
+
+    /** fork:live-tv-departure - sets [reminder] (one per programme: setting it again replaces it). */
+    fun addReminder(reminder: IptvReminder) {
+        ensureLoaded()
+        mutate { it.copy(reminders = IptvReminderRules.add(it.reminders, reminder)) }
+    }
+
+    fun removeReminder(id: String) {
+        ensureLoaded()
+        mutate { s -> s.copy(reminders = s.reminders.filterNot { it.id == id }) }
+    }
+
+    /** fork:live-tv-departure - takes the reminders that are due at [now] out of the list and returns them; late ones just go. */
+    fun takeDueReminders(now: Long): List<IptvReminder> {
+        ensureLoaded()
+        val due = IptvReminderRules.due(_settings.value.reminders, now)
+        val gone = (due + IptvReminderRules.stale(_settings.value.reminders, now)).mapTo(HashSet()) { it.id }
+        if (gone.isNotEmpty()) mutate { s -> s.copy(reminders = s.reminders.filterNot { it.id in gone }) }
+        return due
+    }
+
+    /** fork:live-tv-lineup */
+    fun setLineupOn(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(lineupOn = enabled) }
+    }
+
+    /** fork:live-tv-lineup - stores [playlistId]'s lineup (channel keys in order). */
+    fun setLineup(playlistId: String, keys: List<String>) {
+        ensureLoaded()
+        mutate { it.copy(lineup = it.lineup + (playlistId to keys)) }
+    }
+
+    /** fork:live-tv-lineup - throws [channel] out for good: out of the lineup, the favourites and the lists. */
+    fun neverAgain(playlistId: String, channel: IptvMergedChannel) {
+        ensureLoaded()
+        val keys = IptvLineupRules.neverKeys(channel)
+        val refs = keys.map { channelRef(playlistId, it) }.toSet()
+        mutate { s ->
+            s.copy(
+                never = s.never + (playlistId to (s.never[playlistId].orEmpty() + keys)),
+                lineup = s.lineup[playlistId]?.let { s.lineup + (playlistId to IptvLineupRules.remove(it, channel)) } ?: s.lineup,
+                favourites = s.favourites - refs,
+            )
+        }
+    }
+
+    /** fork:live-tv-lineup - brings back every channel thrown out (all playlists). */
+    fun bringBackAll() {
+        ensureLoaded()
+        mutate { it.copy(never = emptyMap(), weeds = emptyMap()) }
+    }
+
+    /** fork:live-tv-on-now */
+    fun setOnNow(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(onNow = enabled) }
+    }
+
+    /** fork:live-tv-on-now - stars or unstars a merged channel: any starred copy counts, and unstarring clears them all. */
+    fun toggleFavourite(playlistId: String, channel: IptvMergedChannel) {
+        ensureLoaded()
+        val refs = channel.sources.map { channelRef(playlistId, it.key) }
+        mutate { s ->
+            if (refs.any { it in s.favourites }) s.copy(favourites = s.favourites - refs.toSet()) else s.copy(favourites = s.favourites + refs.first())
+        }
     }
 
     fun setRefreshHours(hours: Int) {

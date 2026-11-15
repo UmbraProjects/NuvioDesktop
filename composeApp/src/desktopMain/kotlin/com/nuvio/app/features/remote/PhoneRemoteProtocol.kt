@@ -43,10 +43,14 @@ import java.nio.charset.StandardCharsets
  * phone: SEEK <ms> | VOLUME <0..volumeMax>
  * pc:    TONIGHT 0 | TONIGHT 1 <view> ...    the Tonight picker on screen (PhoneRemoteLibraryLines.tonightLine), on change
  * phone: TONIGHT_DO <action> [n]        a tap on the phone's mirror of it (RemoteTonightAction)
+ * pc:    LIVETV 0 | LIVETV 1 <stage> ...   the Live TV stage on screen (PhoneRemoteLibraryLines.liveTvLine), on change
+ * phone: LIVETV_DO stage <name> | LIVETV_DO item <group> <index> | LIVETV_DO all   a tap on its mirror (RemoteLiveTvDo)
  * phone: MENU <kind> <type> <id> <ref>  a long press on a poster, card, episode or season (PhoneRemoteActions)
  * pc:    MENU ... <heading> <detail> <actions>   the sheet to show (PhoneRemoteLibraryLines.menuLine)
  * phone: DO <kind> <type> <id> <ref> <code> [<arg>...]   a row of it chosen
  * pc:    DONE <ok> <message> <refresh> | PLAYLISTS ... | RECAP <state> <heading> <text>
+ * pc:    SCORE <sport> <kind> <title> <text>   a favourite team's live-score event, as a phone notification
+ *              (fork:live-scores; scoreLine, only while Settings > Live TV > Live scores > Notify the phone is on)
  * phone: OPEN <url>                     a link from the phone's share menu
  * pc:    OPENING <what> | CANT_OPEN     (only for OPEN)
  * ```
@@ -65,6 +69,13 @@ internal object PhoneRemoteProtocol {
     const val PIN_LENGTH = 6
 
     fun encode(text: String): String = URLEncoder.encode(text, StandardCharsets.UTF_8).replace("+", "%20")
+
+    /**
+     * fork:live-scores - `SCORE <sport> <kind> <title> <text>`: [title] is "GOAL · Man United 2 – 1 Liverpool",
+     * [text] the scorer, minute and competition. Mirrored by the app's `ServerLine.Score`.
+     */
+    fun scoreLine(sport: String, kind: String, title: String, text: String): String =
+        "SCORE ${encode(sport)} ${encode(kind)} ${encode(title)} ${encode(text.ifBlank { "-" })}"
     fun decode(text: String): String = try {
         URLDecoder.decode(text, StandardCharsets.UTF_8)
     } catch (_: IllegalArgumentException) {
@@ -207,6 +218,8 @@ internal object PhoneRemoteProtocol {
             "TONIGHT_DO" -> parts.getOrNull(1)?.let(com.nuvio.app.features.remote.RemoteTonightAction::fromWire)?.let { action ->
                 RemoteMessage.TonightDo(action, parts.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 99) ?: 0)
             }
+            // fork:phone-remote live-tv: a tap on the phone's mirror of a Live TV stage.
+            "LIVETV_DO" -> com.nuvio.app.features.remote.RemoteLiveTvDo.parse(parts.drop(1).map { decode(it) })?.let { RemoteMessage.LiveTvDo(it) }
             // fork:phone-remote menus: a long press, and a row of its sheet.
             "MENU" -> menuTarget(parts)?.let { RemoteMessage.Menu(it) }
             "DO" -> menuTarget(parts)?.let { target ->
@@ -254,6 +267,7 @@ internal sealed interface RemoteMessage {
     data class PlayTrack(val browseId: String, val index: Int) : RemoteMessage
     data class Control(val action: ControlAction, val value: Int) : RemoteMessage
     data class TonightDo(val action: com.nuvio.app.features.remote.RemoteTonightAction, val number: Int) : RemoteMessage
+    data class LiveTvDo(val action: com.nuvio.app.features.remote.RemoteLiveTvDo) : RemoteMessage
     data class Menu(val target: RemoteMenuTarget) : RemoteMessage
     data class Do(val target: RemoteMenuTarget, val code: String, val args: List<String>) : RemoteMessage
 }

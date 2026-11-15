@@ -613,6 +613,103 @@ private fun settingsSearchEntries(
             "A Live TV button in the sidebar and top bar.",
             "General",
         ),
+        // fork:live-tv-on-now
+        PlaybackSearchRow(
+            "iptv-on-now",
+            "On Now",
+            "Live TV opens on what is on: sport with scores, films, your usual channels. Merges copies of a channel and adds Start over.",
+            "General",
+        ),
+        // fork:live-tv-decide
+        PlaybackSearchRow(
+            "iptv-decide",
+            "Decide for me",
+            "Three things, I have 25 minutes, Earlier today and Following: Live TV views that offer very little.",
+            "General",
+        ),
+        // fork:live-tv-stage
+        PlaybackSearchRow(
+            "iptv-stage",
+            "Live TV stage",
+            "Live TV as full-screen stages: Three things, Starting soon, I have N minutes, Tonight, Earlier today, Following, Just ask, Your 40.",
+            "General",
+        ),
+        // fork:live-tv-polish
+        PlaybackSearchRow(
+            "iptv-home-region",
+            "Home country",
+            "Live TV's picks put your country's channels first and push other countries' news down.",
+            "General",
+        ),
+        // fork:live-tv-front-door
+        PlaybackSearchRow(
+            "iptv-door-preview",
+            "Front door picture",
+            "Live TV's front door plays the pick's channel, muted, while nothing else plays.",
+            "General",
+        ),
+        // fork:live-tv-on-demand
+        PlaybackSearchRow(
+            "iptv-on-demand",
+            "From the start, on demand",
+            "A Live TV film or episode already under way can be played from the beginning through your add-ons, found on TMDB.",
+            "General",
+        ),
+        // fork:live-tv-weed
+        PlaybackSearchRow(
+            "iptv-weed",
+            "Overnight weeding",
+            "At night, tests the channels of Your 40 one at a time and drops the ones that fail three nights in a row.",
+            "General",
+        ),
+        // fork:live-tv-evening
+        PlaybackSearchRow(
+            "iptv-evening",
+            "Running order and Just ask",
+            "Live TV proposes one evening up to bedtime and changes channel at each start, or answers a typed line like \"something funny, half an hour\" with one programme.",
+            "General",
+        ),
+        // fork:live-tv-subtitles
+        PlaybackSearchRow(
+            "iptv-live-subtitles",
+            "Subtitles for films on live channels",
+            "Live TV asks your subtitle add-ons for the film or episode on now and syncs the subtitle to the channel.",
+            "General",
+        ),
+        PlaybackSearchRow(
+            "iptv-live-subtitle-words",
+            "Match live subtitles by their words",
+            "Live TV subtitles placed by the words heard (the voice control speech model), not only by when people talk.",
+            "General",
+        ),
+        // fork:live-tv-ask-ai
+        PlaybackSearchRow(
+            "iptv-ask-ai",
+            "Let the AI answer Just ask",
+            "Live TV's Just ask sends your question and what is on to your own AI key, which picks up to three programmes and says why.",
+            "General",
+        ),
+        // fork:live-tv-brakes
+        PlaybackSearchRow(
+            "iptv-brakes",
+            "Brakes",
+            "Live TV offers to stop after five quick channel changes or at the end of a programme, and keeps an honest tally of your week.",
+            "General",
+        ),
+        // fork:live-tv-departure
+        PlaybackSearchRow(
+            "iptv-departure",
+            "Starting soon",
+            "A departure board of programmes about to start, with a countdown, and reminders that tell you or switch for you.",
+            "General",
+        ),
+        // fork:live-tv-lineup
+        PlaybackSearchRow(
+            "iptv-lineup",
+            "Your 40",
+            "Live TV opens on a numbered lineup of about forty channels. Move channels, and Never again hides one for good.",
+            "General",
+        ),
         PlaybackSearchRow("iptv-add-playlist", resolve(Res.string.iptv_settings_add_playlist), resolve(Res.string.iptv_settings_add_playlist_description), resolve(Res.string.iptv_settings_section_playlists)),
         PlaybackSearchRow("iptv-refresh-interval", resolve(Res.string.iptv_settings_refresh_interval), resolve(Res.string.iptv_settings_refresh_interval_description), resolve(Res.string.iptv_settings_section_updates)),
         PlaybackSearchRow("iptv-refresh-now", resolve(Res.string.iptv_settings_refresh_now), resolve(Res.string.iptv_settings_refresh_now_description), resolve(Res.string.iptv_settings_section_updates)),
@@ -2738,6 +2835,9 @@ private fun settingsSearchEntries(
             PlaybackSearchRow("music-show-tab", resolve(Res.string.settings_music_show_tab), resolve(Res.string.settings_music_show_tab_description), resolve(Res.string.settings_music_section_general)),
             PlaybackSearchRow("music-reduced-motion", resolve(Res.string.settings_music_reduced_motion), resolve(Res.string.settings_music_reduced_motion_description), resolve(Res.string.settings_music_section_general)),
             PlaybackSearchRow("music-album-notes", resolve(Res.string.settings_music_album_notes), resolve(Res.string.settings_music_album_notes_description), resolve(Res.string.settings_music_section_general)),
+            PlaybackSearchRow("music-album-lenses", resolve(Res.string.settings_music_album_lenses), resolve(Res.string.settings_music_album_lenses_description), resolve(Res.string.settings_music_section_general)),
+            PlaybackSearchRow("music-artist-stage", resolve(Res.string.settings_music_artist_stage), resolve(Res.string.settings_music_artist_stage_description), resolve(Res.string.settings_music_section_general)),
+            PlaybackSearchRow("music-home", resolve(Res.string.settings_music_home), resolve(Res.string.settings_music_home_description), resolve(Res.string.settings_music_section_general)),
             PlaybackSearchRow("music-view-shelf", resolve(Res.string.settings_music_view_shelf), resolve(Res.string.settings_music_view_shelf_description), resolve(Res.string.settings_music_section_views)),
             PlaybackSearchRow("music-view-crates", resolve(Res.string.settings_music_view_crates), resolve(Res.string.settings_music_view_crates_description), resolve(Res.string.settings_music_section_views)),
             PlaybackSearchRow("music-view-constellation", resolve(Res.string.settings_music_view_constellation), resolve(Res.string.settings_music_view_constellation_description), resolve(Res.string.settings_music_section_views)),

@@ -131,6 +131,16 @@ actual object VoiceControlRepository {
 
     internal fun modelFile(model: VoiceModel) = File(modelsDir, model.fileName)
 
+    /**
+     * fork:live-tv-subtitles - a downloaded speech model for matching live subtitles by their words: the one chosen for
+     * voice control first, else any downloaded one. Voice control itself need not be on.
+     */
+    internal fun downloadedModelFile(): File? {
+        val chosen = if (loaded) _uiState.value.selectedModel
+        else store.getString(KEY_MODEL)?.let(VoiceModels::byId) ?: VoiceModels.default
+        return (listOf(chosen) + VoiceModels.all).distinct().map(::modelFile).firstOrNull(File::isFile)
+    }
+
     @Synchronized
     actual fun ensureLoaded() {
         if (loaded) return

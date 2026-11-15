@@ -79,18 +79,13 @@ import com.nuvio.app.features.music.library.musicKeyFocusRing
 
 /** The lenses, in tab order. [built] lenses have panels; the rest show "Coming soon". */
 internal enum class AlbumLens(val label: String, val built: Boolean) {
-    SongBySong("Song List", true),
-    /** The artist's best songs and albums (what the old album page's right column held); the side panels are Song by song's. */
-    BestOf("Hits", true),
-    History("History", true),
-    CutToFit("Cut to Fit", true),
-    SonicMap("Sonic Map", true),
+    SongBySong("Song by song", true),
+    History("Your history", true),
+    CutToFit("Cut to fit", true),
+    SonicMap("Sonic map", true),
     Lineage("Lineage", true),
-    Credits("Credits", true),
+    Credits("Who made it", true),
 }
-
-/** The lenses whose side panels are Song by song's (the song in focus, and its other versions). */
-internal val AlbumLens.songPanels: Boolean get() = this == AlbumLens.SongBySong || this == AlbumLens.BestOf
 
 /** The tint of what comes from the person's own library, opposite the accent's AI side. */
 internal val LENS_LIBRARY_TINT = Color(0xFFC08AF0)
@@ -100,19 +95,6 @@ internal fun lensPanelWidth(width: Dp): Dp {
     val room = (width - LENS_OUTER * 2 - LENS_GAP * 2 - 640.dp) / 2
     return room.coerceIn(360.dp, 440.dp)
 }
-
-/** The least the middle column (the songs, the lens) keeps before a side panel gives way. */
-internal val LENS_MIDDLE_MIN = 640.dp
-
-/**
- * fork:lenses - which side panels a window [width] has room for, on the album page and the artist page alike. Short of
- * room the panels go, never the middle: the left one first, then the right. Window width only, never content.
- */
-internal fun lensShowsRight(width: Dp, panel: Dp = lensPanelWidth(width)): Boolean =
-    width >= LENS_OUTER * 2 + LENS_MIDDLE_MIN + LENS_GAP + panel
-
-internal fun lensShowsLeft(width: Dp, panel: Dp = lensPanelWidth(width)): Boolean =
-    width >= LENS_OUTER * 2 + LENS_MIDDLE_MIN + (LENS_GAP + panel) * 2
 
 /** The window's edge to each panel, and each panel to the middle: the same on both sides. */
 internal val LENS_OUTER = 40.dp
@@ -249,22 +231,33 @@ internal fun LensPanel(modifier: Modifier = Modifier, content: @Composable Colum
     )
 }
 
-/**
- * A panel's first line once held an icon, a label and a source pill. The panels now open on their title like the artist
- * page's, so this draws nothing; it stays so every panel keeps one shape.
- */
-@Suppress("UNUSED_PARAMETER")
+/** A panel's first line: icon and label in [tint], and a pill naming where the panel's words come from. */
 @Composable
-internal fun LensPanelHeader(icon: ImageVector, label: String, pill: String?, tint: Color) = Unit
+internal fun LensPanelHeader(icon: ImageVector, label: String, pill: String?, tint: Color) {
+    val colors = MaterialTheme.nuvio.colors
+    Row(Modifier.fillMaxWidth().height(24.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = tint, maxLines = 1)
+        Spacer(Modifier.weight(1f))
+        if (pill != null) {
+            Text(
+                pill,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = colors.textSecondary,
+                modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(999.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+        }
+    }
+}
 
 /** The panel's title and the line under it, each one line high whatever they say. */
 @Composable
 internal fun LensPanelTitle(title: String, subtitle: String) {
     val colors = MaterialTheme.nuvio.colors
-    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-    }
+    Spacer(Modifier.height(12.dp))
+    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
 }
 
 /** One fact tile's content: a short value, or a bar (0..1) when [bar] is set. */
@@ -272,26 +265,24 @@ internal class LensFact(val label: String, val value: String, val bar: Float? = 
 
 /** Four facts in two rows of two equal tiles, 76 dp high. */
 @Composable
-internal fun LensFactGrid(tiles: List<LensFact>, centred: Boolean = true) {
+internal fun LensFactGrid(tiles: List<LensFact>) {
     Column(Modifier.fillMaxWidth().padding(top = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         tiles.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { LensFactTile(it, centred) } }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { LensFactTile(it) } }
         }
     }
 }
 
-/** [centred] puts the label and value in the middle of the tile (the artist page's right panel). */
 @Composable
-private fun RowScope.LensFactTile(fact: LensFact, centred: Boolean = false) {
+private fun RowScope.LensFactTile(fact: LensFact) {
     val colors = MaterialTheme.nuvio.colors
     val shape = RoundedCornerShape(12.dp)
     Column(
         Modifier.weight(1f).height(76.dp).clip(shape).background(Color.White.copy(alpha = 0.04f))
             .border(1.dp, Color.White.copy(alpha = 0.07f), shape).padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalAlignment = if (centred) Alignment.CenterHorizontally else Alignment.Start,
     ) {
         Text(fact.label, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = if (centred) Alignment.Center else Alignment.CenterStart) {
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.CenterStart) {
             val bar = fact.bar
             if (bar != null) {
                 Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.12f))) {
@@ -311,15 +302,14 @@ private fun RowScope.LensFactTile(fact: LensFact, centred: Boolean = false) {
 @Composable
 internal fun LensSectionLabel(label: String, note: String, trailing: (@Composable RowScope.() -> Unit)? = null) {
     val colors = MaterialTheme.nuvio.colors
-    // Always the same height, note or not, so both panels' sections start level.
-    Box(Modifier.fillMaxWidth().padding(top = 26.dp, bottom = 12.dp)) {
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.textSecondary, maxLines = 1)
-            Text(note, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
-        }
-        if (trailing != null) {
-            Row(Modifier.align(Alignment.TopEnd).height(LENS_LABEL_HEIGHT), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), content = trailing)
-        }
+    Row(
+        Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 10.dp).height(LENS_LABEL_HEIGHT),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = colors.textSecondary, modifier = Modifier.weight(1f), maxLines = 1)
+        if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1)
+        trailing?.invoke(this)
     }
 }
 
@@ -339,25 +329,22 @@ internal fun LensNoteCard(
     editor: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
     val colors = MaterialTheme.nuvio.colors
-    // Only the person's own edit is named; where the words came from is said once, under the section heading above.
-    val shownFooter = footer?.takeIf { it == "Edited by you" }
+    val shape = RoundedCornerShape(14.dp)
     Column(
-        Modifier.fillMaxWidth().height(LENS_NOTE_HEIGHT).padding(horizontal = 4.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        Modifier.fillMaxWidth().height(LENS_NOTE_HEIGHT).clip(shape).background(Color.White.copy(alpha = 0.04f))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), shape).padding(horizontal = 18.dp, vertical = 14.dp),
     ) {
-        Box(Modifier.fillMaxWidth().height(LENS_LABEL_HEIGHT)) {
-            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, color = colors.textSecondary, maxLines = 1, modifier = Modifier.align(Alignment.Center))
-            if (trailing != null) {
-                Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), content = trailing)
-            }
+        Row(Modifier.fillMaxWidth().height(LENS_LABEL_HEIGHT), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = tint, maxLines = 1, modifier = Modifier.weight(1f))
+            trailing?.invoke(this)
         }
         if (editor != null) {
             editor()
         } else {
-            Text(text, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.weight(1f))
         }
-        if (shownFooter != null) Text(shownFooter, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1)
+        if (footer != null) Text(footer, style = MaterialTheme.typography.bodySmall, color = colors.textMuted, maxLines = 1)
     }
 }
 
@@ -383,9 +370,12 @@ internal fun LensButton(label: String, tint: Color, enabled: Boolean, onClick: (
 /** The big box in the middle of a panel: it takes what the window leaves, so its size depends on the window only. */
 @Composable
 internal fun ColumnScope.LensBody(tint: Color, highlighted: Boolean, content: @Composable ColumnScope.() -> Unit) {
-    // No box inside the panel, highlighted or not (the artist page's calmer look); [tint] and [highlighted] are kept for callers.
+    val shape = RoundedCornerShape(16.dp)
     Column(
-        Modifier.fillMaxWidth().weight(1f),
+        Modifier.fillMaxWidth().weight(1f).clip(shape)
+            .background(if (highlighted) tint.copy(alpha = 0.07f) else Color.Transparent)
+            .then(if (highlighted) Modifier.border(1.dp, tint.copy(alpha = 0.3f), shape) else Modifier)
+            .padding(if (highlighted) 20.dp else 0.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         content = content,
     )
@@ -692,11 +682,12 @@ private fun VersionRow(v: SongVersion, onClick: () -> Unit) {
 @Composable
 internal fun LensRow(title: String, where: String, tag: String, onClick: (() -> Unit)?) {
     val colors = MaterialTheme.nuvio.colors
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(14.dp)
     Row(
-        Modifier.fillMaxWidth().height(56.dp).clip(shape)
+        Modifier.fillMaxWidth().height(64.dp).clip(shape).background(LENS_LIBRARY_TINT.copy(alpha = 0.07f))
+            .border(1.dp, LENS_LIBRARY_TINT.copy(alpha = 0.4f), shape)
             .then(if (onClick != null) Modifier.musicKeyFocusRing(shape).clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -705,10 +696,13 @@ internal fun LensRow(title: String, where: String, tag: String, onClick: (() -> 
             Text(where, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(
-            tag.lowercase().replaceFirstChar { it.uppercaseChar() },
-            style = MaterialTheme.typography.labelMedium,
+            tag,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
             color = LENS_LIBRARY_TINT,
             maxLines = 1,
+            modifier = Modifier.border(1.dp, LENS_LIBRARY_TINT.copy(alpha = 0.55f), RoundedCornerShape(999.dp)).padding(horizontal = 10.dp, vertical = 3.dp),
         )
     }
 }
@@ -892,14 +886,29 @@ private fun LineageRow(row: LineageRowUi, after: Boolean, tint: Color, modifier:
     val open = row.onOpen
     val owned = open != null
     Row(
-        modifier.clip(shape)
+        modifier.clip(shape).background(Color.White.copy(alpha = if (owned) 0.06f else 0.03f))
+            .border(1.dp, if (owned) tint.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.07f), shape)
             .then(if (open != null) Modifier.musicKeyFocusRing(shape).clickable(onClick = open) else Modifier)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        val chip: @Composable () -> Unit = {
+            Text(
+                row.gap,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = tint,
+                maxLines = 1,
+                modifier = Modifier.width(LINEAGE_CHIP).clip(RoundedCornerShape(999.dp)).background(tint.copy(alpha = 0.12f))
+                    .border(1.dp, tint.copy(alpha = 0.5f), RoundedCornerShape(999.dp)).padding(vertical = 3.dp),
+                textAlign = TextAlign.Center,
+            )
+        }
+        if (after) chip()
         Box(
-            Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.08f)),
+            Modifier.size(44.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.08f))
+                .then(if (owned) Modifier.border(1.5.dp, tint, CircleShape) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
             Text(row.mono, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1)
@@ -915,9 +924,11 @@ private fun LineageRow(row: LineageRowUi, after: Boolean, tint: Color, modifier:
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        if (!after) chip()
     }
 }
 
+private val LINEAGE_CHIP = 72.dp
 
 /** Two letters for a record's circle: "Earth, Wind & Fire" gives "EW", "Prince" gives "PR". */
 internal fun lineageMono(artist: String): String {
@@ -1242,10 +1253,9 @@ internal fun CreditsSidePanel(
                                 .border(1.dp, if (t.selected) tint else Color.White.copy(alpha = 0.07f), shape)
                                 .then(if (click != null) Modifier.musicKeyFocusRing(shape).semantics { this.selected = t.selected }.clickable(onClick = click) else Modifier)
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(t.label, style = MaterialTheme.typography.bodySmall, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.CenterStart) {
                                 Text(t.value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
@@ -1258,14 +1268,15 @@ internal fun CreditsSidePanel(
             if (rows.isEmpty()) {
                 Text(empty, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).padding(horizontal = 16.dp))
             } else {
-                androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(rows.size, key = { rows[it].key }) { i ->
                         val r = rows[i]
                         val shape = RoundedCornerShape(12.dp)
                         val click = r.onClick
                         Row(
                             Modifier.fillMaxWidth().height(56.dp).clip(shape)
-                                .background(if (r.selected) tint.copy(alpha = 0.14f) else Color.Transparent)
+                                .background(if (r.selected) tint.copy(alpha = 0.16f) else Color.White.copy(alpha = 0.04f))
+                                .border(1.dp, if (r.selected) tint else Color.White.copy(alpha = 0.08f), shape)
                                 .then(if (click != null) Modifier.musicKeyFocusRing(shape).semantics { this.selected = r.selected }.clickable(onClick = click) else Modifier)
                                 .padding(horizontal = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,

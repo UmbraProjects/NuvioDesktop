@@ -1460,7 +1460,19 @@ private fun MainAppContent(
         // Live TV plays in the built-in player only: the proxy relay and live reconnects are mpv's.
         LaunchedEffect(navController) {
             com.nuvio.app.features.iptv.IptvPlaybackRequests.requests.collect { launch ->
-                navController.navigateToPlayer(launch)
+                // fork:live-tv-departure - with a player already up, a live channel plays in it, and anything else
+                // (a film) gives way to the channel.
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    val running = com.nuvio.app.features.iptv.IptvPlaybackRequests.inPlayer
+                    if (running != null) {
+                        running(launch)
+                    } else {
+                        navController.popBackStack()
+                        navController.navigateToPlayer(launch)
+                    }
+                } else {
+                    navController.navigateToPlayer(launch)
+                }
             }
         }
         val uriHandler = LocalUriHandler.current
@@ -1767,6 +1779,11 @@ private fun MainAppContent(
         if (tab == AppScreenTab.Discover && !discoverTabVisible) return
         if (tab == AppScreenTab.LiveTv && !liveTvTabVisible) return
         if (tab == AppScreenTab.YouTube && !youTubeTabVisible) return // fork:youtube-mode
+        // fork:music-home - with the music home on, Search on the Music tab goes to the home's own search line.
+        if (tab == AppScreenTab.Search && selectedTab == AppScreenTab.Music && com.nuvio.app.features.music.MusicTabState.homeOwnsSearch()) {
+            com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
+            return
+        }
         // fork:navbar-search - on Music, YouTube and Live TV, Search searches that tab: the bar's box opens over it.
         if (tab == AppScreenTab.Search && barSearchScopeFor(selectedTab) != BarSearchScope.Media) {
             searchOverlayActive = true
@@ -2059,6 +2076,14 @@ private fun MainAppContent(
     LaunchedEffect(navController) {
         AppShortcutBridge.events.collect { action ->
             if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) return@collect
+            // fork:music-home - with the music home on, the search key on the Music tab goes to the home's own search line.
+            if (action == AppShortcutAction.OpenSearch && selectedTab == AppScreenTab.Music &&
+                navController.currentDestination?.hasRoute<TabsRoute>() == true &&
+                com.nuvio.app.features.music.MusicTabState.homeOwnsSearch()
+            ) {
+                com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
+                return@collect
+            }
             // fork:navbar-search - on Music, YouTube and Live TV the search key opens the bar's box, which searches the tab.
             if (action == AppShortcutAction.OpenSearch && barSearchScopeFor(selectedTab) != BarSearchScope.Media &&
                 navController.currentDestination?.hasRoute<TabsRoute>() == true
@@ -5197,6 +5222,13 @@ private fun MainAppContent(
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
                 com.nuvio.app.features.voice.VoiceControlOverlay()
             }
+
+            // fork:live-scores - goal and match-event pop-ups (Settings > Live TV > Live scores). Takes no input; over a
+            // playing video the HUD draws the same card, since the video surface covers this layer.
+            com.nuvio.app.features.livescores.LiveScoreOverlay()
+
+            // fork:live-tv-departure - the "starting soon" reminder card (Live TV > a programme's page > Remind me).
+            com.nuvio.app.features.iptv.IptvReminderOverlay()
 
             // Settings > Advanced > Memory overlay. Draws nothing when off; over the player the HUD
             // shows it instead, since the video surface covers this layer.

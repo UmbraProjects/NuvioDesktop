@@ -71,6 +71,16 @@ class XmltvGuide(
             val nameIds = HashSet<String>()
             val programmes = HashMap<String, ArrayList<IptvEpgEntry>>()
             val titles = HashMap<String, String>() // titles repeat a lot: one String per title
+            var kind: String? = null // of the programme being read, from its categories
+            // fork:live-tv-stage - its details, kept only near now so a 16,000-channel guide stays small in memory.
+            val detailFrom = fetchedAt - 12 * 3600_000L
+            val detailTo = fetchedAt + 18 * 3600_000L
+            val texts = HashMap<String, String>() // descriptions repeat (loops, repeats): one String per text
+            var desc: String? = null
+            var episode: String? = null
+            var image: String? = null
+            var year: Int? = null
+            var flags = 0
 
             val parser = XmltvParser(
                 onChannel = { id, displayNames ->
@@ -84,10 +94,42 @@ class XmltvGuide(
                     }
                 },
                 wantsProgramme = { ch, start, end ->
+                    kind = null
+                    desc = null
+                    episode = null
+                    image = null
+                    year = null
+                    flags = 0
                     end > fromMs && start < toMs && ch.lowercase().let { it in wantedIds || it in nameIds }
                 },
                 onProgramme = { ch, start, end, title ->
-                    programmes.getOrPut(ch.lowercase()) { ArrayList() } += IptvEpgEntry(titles.getOrPut(title) { title }, start, end)
+                    val clean = IptvGuideText.clean(title)
+                    val near = start in detailFrom..detailTo
+                    if (clean.isNew) flags = flags or IptvGuideText.FLAG_NEW
+                    if (clean.isLive) flags = flags or IptvGuideText.FLAG_LIVE
+                    programmes.getOrPut(ch.lowercase()) { ArrayList() } += IptvEpgEntry(
+                        title = titles.getOrPut(clean.name) { clean.name },
+                        startMs = start,
+                        endMs = end,
+                        kind = kind,
+                        desc = if (near) desc?.let { d -> texts.getOrPut(d) { d } } else null,
+                        episode = episode ?: clean.episode,
+                        image = if (near) image else null,
+                        year = year,
+                        flags = flags,
+                    )
+                    kind = null
+                },
+                onCategory = { category -> if (kind == null) kind = IptvProgrammeKind.of(category) },
+                onDetail = { name, attrs, text ->
+                    when (name) {
+                        "desc" -> if (desc == null && text != null) desc = IptvGuideText.shortDesc(text)
+                        "episode-num" -> if (text != null) IptvGuideText.episode(attrs["system"], text)?.let { if (episode == null || attrs["system"] == "xmltv_ns") episode = it }
+                        "date" -> if (text != null) year = IptvGuideText.year(text)
+                        "icon" -> attrs["src"]?.trim()?.takeIf { it.startsWith("http") }?.let { image = it }
+                        "new", "premiere" -> flags = flags or IptvGuideText.FLAG_NEW
+                        "live" -> flags = flags or IptvGuideText.FLAG_LIVE
+                    }
                 },
             )
             parse(parser)

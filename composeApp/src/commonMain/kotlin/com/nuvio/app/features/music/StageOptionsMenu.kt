@@ -1,8 +1,5 @@
 package com.nuvio.app.features.music
 
-import com.nuvio.app.core.ui.requestFocusLogged
-import androidx.compose.foundation.layout.Spacer
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -89,7 +86,7 @@ internal fun StageOptionsMenu(
 
     fun close() {
         open = false
-        buttonFocus.requestFocusLogged()
+        runCatching { buttonFocus.requestFocus() }
     }
 
     LaunchedEffect(open, touched) {
@@ -127,8 +124,8 @@ internal fun StageOptionsMenu(
                 onDismissRequest = { close() },
                 properties = PopupProperties(focusable = true),
             ) {
-                com.nuvio.app.core.ui.KeyRouteLayer("stage options menu") // the focus router leaves an open menu alone
-                LaunchedEffect(Unit) { firstRow.requestFocusLogged() }
+                com.nuvio.app.core.ui.KeyRouteLayer("stage options menu") // upstream focus router (Nov 13): leaves an open menu alone
+                LaunchedEffect(Unit) { runCatching { firstRow.requestFocus() } }
                 Column(
                     Modifier
                         .width(MENU_WIDTH)
@@ -163,12 +160,6 @@ internal fun StageOptionsMenu(
                                 touched++
                                 onCycleLyricStyle()
                             }
-                            // The notes / visualiser box beside the lyrics.
-                            val settings = com.nuvio.app.features.music.library.MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings
-                            OptionRow("Side box", if (settings.stageBoxShown) "On" else "Off", on = settings.stageBoxShown) {
-                                touched++
-                                com.nuvio.app.features.music.library.MusicLibraryRepository.updateSettings(settings.copy(stageBoxShown = !settings.stageBoxShown))
-                            }
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             OptionRow("Fade queue", if (fadeQueue) "On" else "Off", on = fadeQueue) {
@@ -179,8 +170,6 @@ internal fun StageOptionsMenu(
                                 touched++
                                 onToggleMotion()
                             }
-                            // Level with the left column's third row.
-                            Spacer(Modifier.height(ROW_HEIGHT))
                         }
                     }
                 }

@@ -65,6 +65,34 @@ internal sealed interface AudioSubtitleSyncUpdate {
  * [AutomaticSubtitleSyncResult.NotConfident], [AutomaticSubtitleSyncResult.SubtitleUnavailable],
  * or [AutomaticSubtitleSyncResult.NoReference] when the engine can't sample audio.
  */
+/** fork:live-tv-subtitles - progress of [runLiveSubtitleSync]; each one replaces the previous mapping. */
+internal sealed interface LiveSubtitleSyncUpdate {
+    enum class Stage { Guide, Estimated, Locked, Rechecked }
+
+    /** Load [synced] now. [stage]: from the guide's times alone, an early audio estimate, confirmed, or re-confirmed. */
+    data class Applied(val synced: AutomaticSubtitleSyncResult.Synced, val stage: Stage, val offsetMs: Long) : LiveSubtitleSyncUpdate
+
+    /** The subtitle could not be read. */
+    data object Unavailable : LiveSubtitleSyncUpdate
+}
+
+/**
+ * fork:live-tv-subtitles - places [subtitle] (timed to the film) on a live channel's timeline. First from the guide:
+ * the programme began at [programmeStartMs] and the frame at the live edge ([liveEdgeMs]) went out just now. Then from
+ * the audio: what has already played is copied out of the rewind buffer, its speech found and matched to the lines
+ * (at the film's own speed or sped up to 25 frames). Keeps checking while it plays, as an ad break shifts everything.
+ * Runs until cancelled.
+ */
+internal expect suspend fun runLiveSubtitleSync(
+    sourceKey: String,
+    subtitle: AddonSubtitle,
+    player: PlayerEngineController,
+    programmeStartMs: Long,
+    positionMs: () -> Long,
+    liveEdgeMs: () -> Long,
+    onUpdate: suspend (LiveSubtitleSyncUpdate) -> Unit,
+)
+
 internal expect suspend fun runAudioReferencedSubtitleSync(
     sourceUrl: String,
     subtitle: AddonSubtitle,

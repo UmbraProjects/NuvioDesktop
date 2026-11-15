@@ -915,6 +915,34 @@ fun main(args: Array<String>) {
                 // fork:phone-remote - the phone sends the same keystrokes a pad does, so it shares
                 // the pad's lifetime. Off the UI thread: listing network adapters can be slow on Windows.
                 kotlin.concurrent.thread(isDaemon = true, name = "phone-remote-start") { PhoneRemote.start() }
+                // fork:live-scores - polls only while Settings > Live TV > Live scores is on.
+                com.nuvio.app.features.livescores.LiveScoreEngine.start()
+                // fork:live-tv-departure - reminders ("Tune in at"); over a playing video the HUD's pill says it.
+                com.nuvio.app.features.iptv.IptvReminderEngine.playerPill = { title, line, durationMs ->
+                    val handles = runCatching { com.nuvio.app.features.player.desktop.NativeAudioDuck.liveHandles() }.getOrDefault(emptyList())
+                    val script = "window.nuvioShowPresetPill&&window.nuvioShowPresetPill(" +
+                        "${kotlinx.serialization.json.JsonPrimitive(title)},${kotlinx.serialization.json.JsonPrimitive(line)},$durationMs)"
+                    handles.forEach { handle -> runCatching { com.nuvio.app.features.player.desktop.NativePlayerBridge.runJavaScript(handle, script) } }
+                }
+                // fork:live-tv-reminder-card - the reminder's question on a playing video's HUD; false with no video.
+                com.nuvio.app.features.iptv.IptvReminderEngine.playerChoice = { title, line, options, focused, timeoutMs ->
+                    val handles = runCatching { com.nuvio.app.features.player.desktop.NativeAudioDuck.liveHandles() }.getOrDefault(emptyList())
+                    val script = "window.nuvioShowChoice&&window.nuvioShowChoice(" +
+                        "${kotlinx.serialization.json.JsonPrimitive(title)},${kotlinx.serialization.json.JsonPrimitive(line)}," +
+                        "${kotlinx.serialization.json.JsonArray(options.map { kotlinx.serialization.json.JsonPrimitive(it) })},$focused,$timeoutMs)"
+                    handles.forEach { handle -> runCatching { com.nuvio.app.features.player.desktop.NativePlayerBridge.runJavaScript(handle, script) } }
+                    handles.isNotEmpty()
+                }
+                com.nuvio.app.features.iptv.IptvReminderEngine.start()
+                com.nuvio.app.features.iptv.IptvWeedEngine.start() // fork:live-tv-weed
+                // fork:live-tv-brakes - the choice card (zap budget, end card) drawn by the player's HUD.
+                com.nuvio.app.features.iptv.IptvBrakeEngine.showChoice = { title, line, options, focused ->
+                    val handles = runCatching { com.nuvio.app.features.player.desktop.NativeAudioDuck.liveHandles() }.getOrDefault(emptyList())
+                    val script = "window.nuvioShowChoice&&window.nuvioShowChoice(" +
+                        "${kotlinx.serialization.json.JsonPrimitive(title)},${kotlinx.serialization.json.JsonPrimitive(line)}," +
+                        "${kotlinx.serialization.json.JsonArray(options.map { kotlinx.serialization.json.JsonPrimitive(it) })},$focused)"
+                    handles.forEach { handle -> runCatching { com.nuvio.app.features.player.desktop.NativePlayerBridge.runJavaScript(handle, script) } }
+                }
                 // Same reasoning: idle is idle wherever the user is in the app, and the shade has
                 // to cover the native player as much as the browsing screens.
                 val uninstallScreensaver = com.nuvio.app.features.screensaver.DesktopScreensaver.install(

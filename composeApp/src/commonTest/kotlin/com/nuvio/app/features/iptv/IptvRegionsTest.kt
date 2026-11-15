@@ -19,6 +19,33 @@ class IptvRegionsTest {
     }
 
     @Test
+    fun `reads countries written out, alone or with a separator`() {
+        assertEquals("DE", IptvRegions.regionOf("Germany | Sports"))
+        assertEquals("CR", IptvRegions.regionOf("Costa Rica | TV"))
+        assertEquals("DO", IptvRegions.regionOf("Dominican Republic | TV"))
+        assertEquals("CZ", IptvRegions.regionOf("Czech | TV"))
+        assertEquals("NZ", IptvRegions.regionOf("New Zealand | TV"))
+        assertEquals("SV", IptvRegions.regionOf("El Salvador | TV"))
+        assertEquals("MX", IptvRegions.regionOf("[Mexico] Cine"))
+        assertEquals("NO", IptvRegions.regionOf("Norway Sports"))
+        assertEquals("GB", IptvRegions.regionOf("Scotland | Football"))
+        assertEquals("DE", IptvRegions.regionOf("Germany"))
+        assertEquals("JE", IptvRegions.regionOf("Jersey | TV"))
+        assertNull(IptvRegions.regionOf("Jersey Shore Marathon"), "an ordinary word with no separator is not a country")
+        assertNull(IptvRegions.regionOf("Latin America | TV"))
+    }
+
+    @Test
+    fun `a country written out needs no second category`() {
+        val playlist = IptvPlaylist(id = "p", type = IptvPlaylistType.M3u, name = "P", url = "http://h/l.m3u")
+        val categories = listOf(IptvCategory("1", "Costa Rica | TV"), IptvCategory("2", "FR | Info"))
+        val channels = categories.mapIndexed { i, c -> IptvChannel(uid = i, key = "k$i", num = i + 1, name = "C$i", categoryId = c.id) }
+        val byCategory = IptvRegions.categoryRegions(IptvPlaylistContent.build(playlist, categories, channels))
+        assertEquals("CR", byCategory["1"])
+        assertNull(byCategory["2"])
+    }
+
+    @Test
     fun `ignores words that only look like a code`() {
         assertNull(IptvRegions.regionOf("Sports"))
         assertNull(IptvRegions.regionOf("TV Shows"))

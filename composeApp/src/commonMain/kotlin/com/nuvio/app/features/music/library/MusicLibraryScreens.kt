@@ -1,6 +1,5 @@
 package com.nuvio.app.features.music.library
 
-import com.nuvio.app.features.music.nebula.LosslessPill
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import com.nuvio.app.features.music.MusicAlbum
 import com.nuvio.app.features.music.nebula.AddonAlbumRef
@@ -305,6 +304,7 @@ fun MusicArtistScreen(
     var filterName by rememberSaveable { mutableStateOf(ReleaseFilter.All.name) }
     var selectedKey by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     var showLinks by remember { mutableStateOf(false) }
     var demosOpen by rememberSaveable { mutableStateOf(false) }
     var playNotice by remember { mutableStateOf<String?>(null) }
@@ -393,14 +393,7 @@ fun MusicArtistScreen(
     }
 
     val playTarget = latest?.takeIf { it.isPlayable }
-    // Shuffle all mixes songs from several of these (shuffleAllReleases), not one random release.
-    val shufflePool = artist.releases.filter { (it.isPlayable || addon.albumIdOf(it.key) != null) && !it.isDemo() }
-    val onShuffleAll: () -> Unit = {
-        playNotice = null
-        scope.launch {
-            if (!shuffleAllReleases(artist.name, artist.art.thumb, shufflePool, ::albumOf)) playNotice = "Nothing here is on YouTube Music yet."
-        }
-    }
+    val shuffleTarget = artist.releases.filter { (it.isPlayable || addon.albumIdOf(it.key) != null) && !it.isDemo() }.randomOrNull()
 
     val onOpenRelease: (LibraryRelease) -> Unit = { release ->
         val id = release.ytBrowseId
@@ -432,10 +425,48 @@ fun MusicArtistScreen(
         }
     }
 
-    // fork:artist-stage - the only artist page (the old one is gone, Nov 12 2026); on a narrow window its side panels give way.
-    ArtistStage(
+    // fork:artist-stage - the redesigned page (Music settings, "New artist page"), on a window wide enough for its three panels.
+    BoxWithConstraints(modifier.fillMaxSize()) {
+    if (state.settings.artistStage && maxWidth >= ARTIST_STAGE_MIN_WIDTH) {
+        ArtistStage(
+            artist = artist,
+            discography = discography,
+            notice = playNotice,
+            saved = saved,
+            refreshing = working?.status,
+            working = working != null,
+            filter = filter,
+            playableOnly = playableOnly,
+            demosOpen = demosOpen || filter == ReleaseFilter.Demos,
+            canShuffle = shuffleTarget != null,
+            topLabel = topLabel,
+            onBack = onBack,
+            onPlayLatest = { startPlayback(playTarget, shuffled = false) },
+            onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
+            onPlayTop = onPlayTopAlbums,
+            onLinks = { showLinks = true },
+            onRefresh = { MusicLibraryRepository.refresh(artist.id) },
+            onRemove = { confirmRemove = true },
+            onOpenArtist = onArtistClick,
+            onOpen = onOpenRelease,
+            onInfo = { selectedKey = it.key },
+            onPlayableOnly = { playableOnly = it },
+            onFilter = { filterName = it.name },
+            onToggleDemos = { demosOpen = !demosOpen },
+            addonKeys = addonKeys,
+            onPlayRelease = { release, shuffled -> startPlayback(release, shuffled) },
+            onQueueRelease = { queueRelease(it) },
+            onPlayNextRelease = { queueRelease(it, next = true) },
+            onOpenAlbumId = onAlbumClick,
+            modifier = Modifier.fillMaxSize(),
+        )
+    } else {
+    ArtistRoom(
         artist = artist,
         discography = discography,
+        latest = latest,
+        playTarget = playTarget,
+        canShuffle = shuffleTarget != null,
         notice = playNotice,
         saved = saved,
         refreshing = working?.status,
@@ -443,28 +474,26 @@ fun MusicArtistScreen(
         filter = filter,
         playableOnly = playableOnly,
         demosOpen = demosOpen || filter == ReleaseFilter.Demos,
-        canShuffle = shufflePool.isNotEmpty(),
-        topLabel = topLabel,
         onBack = onBack,
-        onPlayLatest = { startPlayback(playTarget, shuffled = false) },
-        onShuffle = onShuffleAll,
+        onPlay = { startPlayback(playTarget, shuffled = false) },
+        onShuffle = { startPlayback(shuffleTarget, shuffled = true) },
         onPlayTop = onPlayTopAlbums,
+        topLabel = topLabel,
+        onAbout = { showAbout = true },
         onLinks = { showLinks = true },
+        onOpenArtist = onArtistClick,
         onRefresh = { MusicLibraryRepository.refresh(artist.id) },
         onRemove = { confirmRemove = true },
-        onOpenArtist = onArtistClick,
         onOpen = onOpenRelease,
         onInfo = { selectedKey = it.key },
         onPlayableOnly = { playableOnly = it },
         onFilter = { filterName = it.name },
         onToggleDemos = { demosOpen = !demosOpen },
         addonKeys = addonKeys,
-        onPlayRelease = { release, shuffled -> startPlayback(release, shuffled) },
-        onQueueRelease = { queueRelease(it) },
-        onPlayNextRelease = { queueRelease(it, next = true) },
-        onOpenAlbumId = onAlbumClick,
-        modifier = modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
     )
+    }
+    }
 
     selectedKey?.let { key ->
         artist.releases.firstOrNull { it.key == key }?.let { release ->
@@ -504,6 +533,7 @@ fun MusicArtistScreen(
         }
     }
 
+    if (showAbout) AboutDialog(artist) { showAbout = false }
     if (showLinks) {
         LinksDialog(artist.links, onOpen = { runCatching { uriHandler.openUri(it) } }) { showLinks = false }
     }
@@ -621,7 +651,7 @@ internal fun ReleaseCard(
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             ReleaseCover(release, Modifier.fillMaxSize())
             // fork:nebula - an overlay, so the card does not change size when the addon's answer arrives.
-            if (addon) LosslessPill()
+            if (addon) com.nuvio.app.features.music.nebula.LosslessPill(Modifier.align(Alignment.TopStart).padding(6.dp))
             if (group.extraVersions > 0) {
                 Text(
                     "${group.versions.size} versions",
@@ -703,6 +733,42 @@ internal fun SegmentedPair(left: String, right: String, rightSelected: Boolean, 
 // endregion
 
 // region dialogs
+
+@Composable
+private fun AboutDialog(artist: LibraryArtist, onDismiss: () -> Unit) {
+    val colors = MaterialTheme.nuvio.colors
+    val facts = listOfNotNull(
+        artist.area?.let { "From" to it },
+        artist.style?.let { "Style" to it },
+        artist.mood?.let { "Mood" to it },
+        artist.fans?.let { "Deezer fans" to formatCount(it) },
+        artist.rating?.takeIf { it > 0.0 }?.let { "MusicBrainz rating" to "${(it * 10).toInt() / 10.0} / 5" },
+        artist.tags.takeIf { it.isNotEmpty() }?.let { "Tags" to it.take(8).joinToString(", ") },
+    )
+    NuvioAlertDialog(
+        onDismissRequest = onDismiss,
+        maxWidth = 640.dp,
+        title = { Text(artist.name) },
+        text = {
+            Column(
+                Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                artist.biography?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary)
+                    artist.biographySource?.let { src -> Text("From $src", style = MaterialTheme.typography.bodySmall, color = colors.textMuted) }
+                }
+                facts.forEach { (label, value) ->
+                    Row {
+                        Text("$label  ", style = MaterialTheme.typography.bodySmall, color = colors.textMuted)
+                        Text(value, style = MaterialTheme.typography.bodySmall, color = colors.textPrimary)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
 
 /**
  * Links, one per site and grouped. Each row shows its address too, so a person on a TV (where

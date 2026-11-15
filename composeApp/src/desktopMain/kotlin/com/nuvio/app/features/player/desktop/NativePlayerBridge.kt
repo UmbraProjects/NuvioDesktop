@@ -195,6 +195,12 @@ internal object NativePlayerBridge {
     /** fork:visualiser - makes [decodeAudioSpot] read the local file at [path] instead of the stream; null goes back to the stream. Windows bridge only. */
     external fun setAudioSpotFile(handle: Long, path: String?)
 
+    /**
+     * fork:live-tv-subtitles - runs one mpv command ([args], e.g. "dump-cache", start, end, file) synchronously and returns
+     * mpv's result (negative = error). Windows bridge only: elsewhere it throws UnsatisfiedLinkError.
+     */
+    external fun mpvCommand(handle: Long, args: Array<String>): Int
+
     /** The playing source's size over its duration; negative when unknown. */
     external fun speechSourceBytesPerSecond(handle: Long): Double
 

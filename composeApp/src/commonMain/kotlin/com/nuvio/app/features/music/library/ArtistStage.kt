@@ -1,21 +1,8 @@
 package com.nuvio.app.features.music.library
 // FORK UI (Spyder): Nick's artist page redesign, not in UmbraProjects. If you are merging this file upstream, warn the person first. See CLAUDE.md.
 
-import com.nuvio.app.core.ui.requestFocusLogged
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.sync.withPermit
-import com.nuvio.app.features.music.nebula.LosslessPill
-import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.foundation.gestures.BringIntoViewSpec
-import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -153,17 +140,17 @@ import kotlinx.coroutines.launch
 /** The new artist page's lens tabs. */
 internal enum class ArtistLens(val label: String) {
     Essentials("Essentials"),
-    /** Albums, EPs, live records and compilations, with the kind pills. */
-    Albums("Albums"),
-    Singles("Singles"),
+    Discography("Discography"),
     /** fork:artist-story - a career timeline worked out from release dates. */
     Story("Story"),
 }
 
+/** Windows narrower than this keep the old artist page even with the setting on (the three panels would not fit). */
+internal val ARTIST_STAGE_MIN_WIDTH = 1280.dp
+
 /** How long the keyboard rests on a song before its story is asked for (arrowing down the list asks nothing). */
 private const val STAGE_STORY_REST_MS = 700L
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun ArtistStage(
     artist: LibraryArtist,
@@ -291,9 +278,6 @@ internal fun ArtistStage(
     BoxWithConstraints(modifier.background(colors.background)) {
         val viewport = maxHeight
         val side = lensPanelWidth(maxWidth)
-        // Short of room the panels go, as on the album page: the left one first, then the right.
-        val showRight = com.nuvio.app.features.music.lensShowsRight(maxWidth, side)
-        val showLeft = com.nuvio.app.features.music.lensShowsLeft(maxWidth, side)
         val inset = LocalMusicBarInset.current
         val scroll = rememberScrollState()
         // The page is two screens: the hero, then the three panels. Whether the person was on the panels is kept with the page, so
@@ -302,92 +286,22 @@ internal fun ArtistStage(
         var onPanels by rememberSaveable(artist.id) { mutableStateOf(false) }
         // Read while composing, before the tracker below can see the page's first frame (scrolled to the top) and reset it.
         val returnToPanels = remember(artist.id) { onPanels }
-        // While a return to the panels settles, focus landing on the hero for a moment must not take the page back up.
-        var returnSettled by remember(artist.id) { mutableStateOf(!returnToPanels) }
         LaunchedEffect(scroll) {
             snapshotFlow { scroll.maxValue.takeIf { it > 0 }?.let { scroll.value >= it / 2 } }.collect { if (it != null) onPanels = it }
-        }
-        // Snapping: the page is two screens and is never left between them. One notch of the wheel goes the whole way (a
-        // list inside a panel that can still scroll keeps the notch), and a move that stops part way (focus brought a
-        // control into view) carries on to the screen it was heading for.
-        var settledOnPanels by remember(artist.id) { mutableStateOf(returnToPanels) }
-        var lastInnerUp by remember(artist.id) { mutableStateOf<kotlin.time.TimeMark?>(null) }
-        // Where a move in progress is going, until it gets there. A move that is cut short (focus going up into the hero
-        // also scrolls its control into view, which cancels the animation) must carry on to the same screen: reading the
-        // direction off `settledOnPanels`, which goTo has already flipped, sent the page straight back down, so Up from the
-        // panels with the keyboard never reached the hero (2026-11-13).
-        var heading by remember(artist.id) { mutableStateOf<Boolean?>(null) }
-        fun goTo(panels: Boolean) {
-            heading = panels
-            settledOnPanels = panels
-            scope.launch { scroll.animateScrollTo(if (panels) scroll.maxValue else 0) }
-        }
-        LaunchedEffect(scroll) {
-            snapshotFlow { scroll.isScrollInProgress }.collect { moving ->
-                if (moving) return@collect
-                val max = scroll.maxValue
-                val at = scroll.value
-                when {
-                    max <= 0 -> Unit
-                    at <= 0 -> { settledOnPanels = false; heading = null }
-                    at >= max -> { settledOnPanels = true; heading = null }
-                    else -> goTo(heading ?: !settledOnPanels)
-                }
-            }
         }
         LaunchedEffect(artist.id) {
             if (!returnToPanels) return@LaunchedEffect
             snapshotFlow { scroll.maxValue }.first { it > 0 }
-            settledOnPanels = true
             scroll.scrollTo(scroll.maxValue)
             // Focus coming back to the tile runs after the first frames and may scroll again: settle on the panels once more.
             delay(RETURN_SETTLE_MS)
-            settledOnPanels = true
             scroll.scrollTo(scroll.maxValue)
-            returnSettled = true
         }
         // A new visit (another artist opened from Similar taste, the search, ...) starts on the hero. The page root's first-control
         // focus can land on a control in the panels before Play Essentials takes it, and scrolls part way down to show it; once
         // Play Essentials has focus the page goes back to the top.
-        val onHeroFocused: () -> Unit = { if (!returnToPanels) scope.launch { settledOnPanels = false; scroll.scrollTo(0) } }
-        // Focus moving between the hero and the panels (the keyboard, a pad) snaps the page the same way the wheel does: the
-        // page's own bring-into-view goes the whole way to the other screen in one animation. Before, it scrolled just far
-        // enough to show the control, stopped, and the settle logic above then scrolled the rest (2026-11-13). The panels'
-        // own lists keep the normal behaviour.
-        val innerBringIntoView = LocalBringIntoViewSpec.current
-        val snapBringIntoView = remember(scroll) { snapBringIntoViewSpec(scroll) }
-        CompositionLocalProvider(LocalBringIntoViewSpec provides snapBringIntoView) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .onPointerEvent(PointerEventType.Scroll) { event ->
-                    val change = event.changes.firstOrNull() ?: return@onPointerEvent
-                    val dy = change.scrollDelta.y
-                    val now = kotlin.time.TimeSource.Monotonic.markNow()
-                    // A list in a panel scrolling up (Albums, Singles): remember when, so reaching its top does not carry
-                    // straight on up to the hero.
-                    if (change.isConsumed) {
-                        if (dy < 0f) lastInnerUp = now
-                        return@onPointerEvent
-                    }
-                    // Grace: an upward notch soon after the list was scrolling up is swallowed (and keeps the grace going), so
-                    // only a fresh scroll up after a pause goes back to the hero.
-                    val recent = lastInnerUp
-                    if (dy < 0f && recent != null && recent.elapsedNow() < UP_GRACE) {
-                        lastInnerUp = now
-                        change.consume()
-                        return@onPointerEvent
-                    }
-                    when {
-                        dy > 0f && scroll.value < scroll.maxValue -> goTo(panels = true)
-                        dy < 0f && scroll.value > 0 -> goTo(panels = false)
-                        else -> return@onPointerEvent
-                    }
-                    change.consume()
-                }
-                // The wheel is the snapping above, not a free scroll; focus and the code still move the page.
-                .verticalScroll(scroll, enabled = false),
-        ) { CompositionLocalProvider(LocalBringIntoViewSpec provides innerBringIntoView) {
+        val onHeroFocused: () -> Unit = { if (!returnToPanels) scope.launch { scroll.scrollTo(0) } }
+        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
             StageHero(
                 artist = artist,
                 discography = discography,
@@ -404,19 +318,16 @@ internal fun ArtistStage(
                 onLinks = onLinks,
                 onRefresh = onRefresh,
                 onRemove = onRemove,
-                // Focus going up into the hero takes the page back to it (and down into the panels, below, to them).
-                modifier = Modifier.fillMaxWidth().height(viewport)
-                    .onFocusChanged { if (it.hasFocus && settledOnPanels && returnSettled) goTo(panels = false) },
+                modifier = Modifier.fillMaxWidth().height(viewport),
             )
             Row(
                 Modifier.fillMaxWidth().height(viewport)
-                    .onFocusChanged { if (it.hasFocus && !settledOnPanels) goTo(panels = true) }
                     // The top clears the back button, which stays in the corner on both screens.
                     .padding(start = LENS_OUTER, end = LENS_OUTER, top = BACK_CLEARANCE, bottom = inset + 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(LENS_GAP),
             ) {
                 val left = Modifier.width(side)
-                if (!showLeft) Unit else if (focusRow != null) {
+                if (focusRow != null) {
                     StageSongPanel(artist, focusRow, single = songKey(focusRow.title) in singles, onPlay = { playEssentials(focusRow.videoId) }, modifier = left)
                 } else {
                     StageArtistPanel(artist, discography, canPlay = mix != null || discography.playableCount > 0, onPlay = { playEssentials() }, modifier = left)
@@ -447,8 +358,7 @@ internal fun ArtistStage(
                             addonKeys = addonKeys,
                             modifier = Modifier.fillMaxWidth().weight(1f),
                         )
-                        ArtistLens.Albums, ArtistLens.Singles -> DiscographyLens(
-                            singlesOnly = lens == ArtistLens.Singles,
+                        ArtistLens.Discography -> DiscographyLens(
                             artist = artist,
                             discography = discography,
                             working = working,
@@ -467,7 +377,7 @@ internal fun ArtistStage(
                         )
                     }
                 }
-                if (showRight) StageLibraryPanel(
+                StageLibraryPanel(
                     artist = artist,
                     discography = discography,
                     addonCount = addonKeys.size,
@@ -490,30 +400,14 @@ internal fun ArtistStage(
                     modifier = Modifier.width(side),
                 )
             }
-        } }
         }
         // Always in the top left corner, over the hero and over the panels, so Back never needs a scroll to the top first.
         Box(Modifier.padding(start = 24.dp, top = 16.dp)) { NuvioBackButton(onClick = onBack) }
     }
 }
 
-/**
- * Bring-into-view for the two-screen artist page: a control already in view stays put; one above goes to the hero (the top),
- * one below to the panels (the bottom), so a focus move snaps a whole screen in a single animation, as the wheel does.
- */
-private fun snapBringIntoViewSpec(scroll: androidx.compose.foundation.ScrollState) = object : BringIntoViewSpec {
-    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = when {
-        offset >= 0f && offset + size <= containerSize -> 0f
-        offset < 0f -> -scroll.value.toFloat()
-        else -> (scroll.maxValue - scroll.value).toFloat()
-    }
-}
-
 /** How long after coming back to the page focus may still scroll it; the page settles on the panels again after that. */
 private const val RETURN_SETTLE_MS = 250L
-
-/** How long after a panel's list stopped scrolling up the wheel waits before an upward notch may go back to the hero. */
-private val UP_GRACE = kotlin.time.Duration.parse("700ms")
 
 /** The panel screen's top: under the back button (16 dp down, 40 dp tall) with a small gap. */
 private val BACK_CLEARANCE = 64.dp
@@ -610,8 +504,8 @@ private fun StageHero(
                         Text(
                             chip.split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } },
                             style = MaterialTheme.typography.labelLarge,
-                            color = colors.textSecondary.copy(alpha = colors.textSecondary.alpha * 0.75f),
-                            modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(999.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
+                            color = colors.textSecondary,
+                            modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(999.dp)).padding(horizontal = 14.dp, vertical = 6.dp),
                         )
                     }
                 }
@@ -625,39 +519,50 @@ private fun StageHero(
                 // Asked a few times: the page root's own first-control request lands first.
                 repeat(10) {
                     delay(80)
-                    if (playFocus.requestFocusLogged()) {
+                    if (runCatching { playFocus.requestFocus() }.getOrDefault(false)) {
                         onHeroFocused()
                         return@LaunchedEffect
                     }
                 }
             }
-            // The old artist page's round buttons, each named on hover (the labelled pills ran the width of the hero).
-            val actions = listOfNotNull(
-                HeroAction("Play Essentials", Icons.Rounded.PlayArrow, modifier = Modifier.focusRequester(playFocus), onClick = onPlayEssentials),
-                HeroAction("Shuffle all", Icons.Rounded.Shuffle, onClick = { if (canShuffle) onShuffle() }),
-                topLabel?.let { HeroAction("Play $it", Icons.Rounded.LocalFireDepartment, onClick = onPlayTop) },
+            FlowRow(
+                Modifier.padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                HeroButton("Play Essentials", Icons.Rounded.PlayArrow, primary = true, modifier = Modifier.focusRequester(playFocus), onClick = onPlayEssentials)
+                HeroButton("Shuffle all", Icons.Rounded.Shuffle, enabled = canShuffle, onClick = onShuffle)
+                topLabel?.let { HeroButton("Play $it", Icons.Rounded.LocalFireDepartment, onClick = onPlayTop) }
                 // fork:music-radio - the artist's radio, as YouTube Music makes it.
-                if (artist.id.startsWith("UC")) HeroAction("Radio", Icons.Rounded.Radio, onClick = { com.nuvio.app.features.music.MusicRadioStarter.artist(artist.id, artist.name) }) else null,
-                HeroAction(
-                    if (inLibrary) "In your library (remove)" else "Add to library",
+                if (artist.id.startsWith("UC")) HeroButton("Radio", Icons.Rounded.Radio, onClick = { com.nuvio.app.features.music.MusicRadioStarter.artist(artist.id, artist.name) })
+                HeroButton(
+                    if (inLibrary) "In your library" else "Add to library",
                     if (inLibrary) Icons.Rounded.Check else Icons.Rounded.Add,
                     active = inLibrary,
                     onClick = { if (inLibrary) onRemove() else MusicLibraryRepository.add(artist.id) },
-                ),
-                if (linkCount > 0) HeroAction("Links ($linkCount)", Icons.Rounded.Link, onClick = onLinks) else null,
-                if (saved) HeroAction(refreshing ?: "Refresh", Icons.Rounded.Refresh, onClick = { if (refreshing == null) onRefresh() }) else null,
-            )
-            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)) {
-                actions.forEach { action ->
-                    com.nuvio.app.core.ui.NuvioPosterHoverTooltip(title = action.label) {
-                        com.nuvio.app.features.details.components.DetailIconAction(
-                            label = action.label,
-                            icon = action.icon,
-                            active = action.active,
-                            size = 56.dp,
-                            modifier = action.modifier,
-                            onClick = action.onClick,
-                        )
+                )
+                // Links and Refresh live in More, and the buttons are kept compact (14 dp inside, 8 dp apart), so all six fit one centred line.
+                if (linkCount > 0 || saved) {
+                    var moreOpen by remember { mutableStateOf(false) }
+                    Box {
+                        HeroButton("More", Icons.Rounded.MoreHoriz, onClick = { moreOpen = true })
+                        DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                            if (linkCount > 0) {
+                                DropdownMenuItem(
+                                    text = { Text("Links ($linkCount)") },
+                                    leadingIcon = { Icon(Icons.Rounded.Link, contentDescription = null) },
+                                    onClick = { moreOpen = false; onLinks() },
+                                )
+                            }
+                            if (saved) {
+                                DropdownMenuItem(
+                                    text = { Text(refreshing ?: "Refresh") },
+                                    leadingIcon = { Icon(Icons.Rounded.Refresh, contentDescription = null) },
+                                    enabled = refreshing == null,
+                                    onClick = { moreOpen = false; onRefresh() },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -677,14 +582,42 @@ private fun StageHero(
     }
 }
 
-/** One of the hero's round buttons; [active] lights it (the artist is in the library). */
-private class HeroAction(
-    val label: String,
-    val icon: ImageVector,
-    val active: Boolean = false,
-    val modifier: Modifier = Modifier,
-    val onClick: () -> Unit,
-)
+/** A labelled glass pill for the hero's row; [primary] is filled in the accent, [active] is edged in it. */
+@Composable
+private fun HeroButton(
+    label: String,
+    icon: ImageVector,
+    primary: Boolean = false,
+    active: Boolean = false,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = MaterialTheme.nuvio.colors
+    val shape = RoundedCornerShape(28.dp)
+    val fill = when {
+        primary -> colors.accent
+        active -> colors.accent.copy(alpha = 0.22f)
+        else -> Color.Black.copy(alpha = 0.45f)
+    }
+    val edge = when {
+        primary -> Color.White.copy(alpha = 0.85f)
+        active -> colors.accent.copy(alpha = 0.7f)
+        else -> Color.White.copy(alpha = 0.16f)
+    }
+    val tint = if (enabled) (if (primary) Color.White else colors.textPrimary) else colors.textDisabled
+    Row(
+        modifier.height(56.dp).clip(shape).background(fill).border(1.dp, edge, shape)
+            .musicKeyFocusRing(shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = if (primary) FontWeight.SemiBold else FontWeight.Medium, color = tint, maxLines = 1)
+    }
+}
 
 // endregion
 
@@ -701,28 +634,37 @@ private fun StageArtistPanel(artist: LibraryArtist, discography: ArtistDiscograp
         if (own.isEmpty() && value == null) value = StageWikipedia.load(artist.name)
     }
     val bio = own.ifEmpty { wiki.orEmpty() }
+    val bioSource = if (own.isNotEmpty()) artist.biographySource else if (bio.isNotEmpty()) "Wikipedia" else null
     LensPanel(modifier) {
-        StagePanelTitle(artist.name, passportLine(artist).ifEmpty { "Artist" })
+        LensPanelHeader(Icons.Rounded.AutoAwesome, "ABOUT THIS ARTIST", pill = bioSource ?: "Library", tint = colors.accent)
+        LensPanelTitle(artist.name, passportLine(artist).ifEmpty { "Artist" })
         LensFactGrid(
             remember(artist, discography.totalCount, discography.playableCount) {
                 artistStageFacts(artist, discography.totalCount, discography.playableCount).map { (label, value) -> LensFact(label, value) }
             },
-            centred = true,
         )
-        // The story only when there is one (no box: it reads like Similar taste opposite); the facts are their own section.
-        val facts = remember(artist) { artistFactSheet(artist) }
-        Column(Modifier.fillMaxWidth().weight(1f)) {
-            if (bio.isNotEmpty()) {
-                StageSectionHeading("THE STORY")
+        LensSectionLabel("THE STORY", bioSource?.let { "From $it" }.orEmpty())
+        LensBody(colors.accent, highlighted = true) {
+            // The story takes the room its text needs (scrolling past a long one); a Facts card fills the rest, so the
+            // box itself never changes size.
+            val facts = remember(artist) { artistFactRows(artist) }
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
                 Text(
-                    bio,
+                    bio.ifEmpty { "Nothing has been written about ${artist.name} yet." },
                     style = MaterialTheme.typography.bodyLarge,
-                    color = colors.textPrimary,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+                    color = if (bio.isNotEmpty()) colors.textPrimary else colors.textMuted,
                 )
             }
-            if (!facts.isEmpty) StageFacts(facts)
+            if (facts.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text("FACTS", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, color = colors.accent)
+                facts.forEach { (label, value) ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.width(110.dp), maxLines = 1)
+                        Text(value, style = MaterialTheme.typography.bodyMedium, color = colors.textPrimary, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
         }
         LensButton("Play Essentials", tint = colors.accent, enabled = canPlay, onClick = onPlay)
     }
@@ -735,12 +677,9 @@ private fun StageArtistPanel(artist: LibraryArtist, discography: ArtistDiscograp
 @Composable
 private fun StageSongPanel(artist: LibraryArtist, row: EssentialRow, single: Boolean, onPlay: () -> Unit, modifier: Modifier) {
     val colors = MaterialTheme.nuvio.colors
-    // Settings > Music > Album notes and facts: off, no song story is looked up or shown.
-    val notesOn = MusicLibraryRepository.state.collectAsState().value.settings.albumNotes
-    var story by remember(artist.name, row.title, notesOn) { mutableStateOf<SongStory?>(if (notesOn) SongStories.peek(artist.name, row.title) else null) }
+    var story by remember(artist.name, row.title) { mutableStateOf<SongStory?>(SongStories.peek(artist.name, row.title)) }
     var loading by remember(artist.name, row.title) { mutableStateOf(false) }
-    LaunchedEffect(artist.name, row.title, notesOn) {
-        if (!notesOn) return@LaunchedEffect
+    LaunchedEffect(artist.name, row.title) {
         val aiReady = com.nuvio.app.features.discover.DiscoverAiSettingsRepository.snapshot().isConfigured
         val kept = story
         if (kept != null && (kept.ai || !aiReady)) return@LaunchedEffect
@@ -750,8 +689,14 @@ private fun StageSongPanel(artist: LibraryArtist, row: EssentialRow, single: Boo
         loading = false
     }
     val text = lensStoryBox(story)?.text
+    val source = when {
+        text != null && story?.ai == true -> "AI"
+        text != null -> "Wikipedia"
+        else -> "Library"
+    }
     LensPanel(modifier) {
-        StagePanelTitle(row.title, row.albumTitle?.let { "On $it" } ?: "One of ${artist.name}'s most played")
+        LensPanelHeader(Icons.Rounded.AutoAwesome, "ABOUT THIS SONG", pill = source, tint = colors.accent)
+        LensPanelTitle(row.title, row.albumTitle?.let { "On $it" } ?: "One of ${artist.name}'s most played")
         LensFactGrid(
             listOf(
                 LensFact("Length", row.durationSeconds.takeIf { it > 0 }?.let { formatMusicTime(it * 1000L) } ?: "–"),
@@ -759,22 +704,24 @@ private fun StageSongPanel(artist: LibraryArtist, row: EssentialRow, single: Boo
                 LensFact("Released as a single", if (single) "Yes" else "No"),
                 LensFact("Album", row.albumTitle ?: "–"),
             ),
-            centred = true,
         )
-        // The story only while it is being looked for or once found; no box around it.
-        Column(Modifier.fillMaxWidth().weight(1f)) {
-            if (text != null || loading) {
-                StageSectionHeading("THE STORY", if (text == null) "Looking…" else null)
-                if (text != null) {
-                    Text(
-                        text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = colors.textPrimary,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 4.dp),
-                    )
-                }
-            }
+        LensSectionLabel(
+            "THE STORY",
+            when {
+                text != null && story?.ai == true -> "Written from Wikipedia"
+                text != null -> "From Wikipedia"
+                loading -> "Looking…"
+                else -> ""
+            },
+        )
+        LensBody(colors.accent, highlighted = true) {
+            Text(
+                text ?: if (loading) "Looking for this song's story…" else "Nothing has been written about this song yet.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (text != null) colors.textPrimary else colors.textMuted,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
         }
         LensButton("Play the song", tint = colors.accent, enabled = true, onClick = onPlay)
     }
@@ -833,10 +780,11 @@ private fun StageLibraryPanel(
         val savedNames = saved.map { it.name.lowercase() }.toSet()
         saved.map { StageSimilar(it.name, it.id) } +
             names.orEmpty().filter { it.name.lowercase() !in savedNames }.map { StageSimilar(it.name, null) }
-    }.take(SIMILAR_PER_ROW * SIMILAR_ROWS)
+    }.take(8)
     var note by remember(artist.id) { mutableStateOf<String?>(null) }
     LensPanel(modifier) {
-        StagePanelTitle(
+        LensPanelHeader(Icons.Rounded.LibraryMusic, "IN YOUR LIBRARY", pill = "Library", tint = LENS_LIBRARY_TINT)
+        LensPanelTitle(
             if (inLibrary) "Saved in your library" else "Not in your library",
             "${discography.playableCount} of ${discography.totalCount} releases play here",
         )
@@ -848,168 +796,27 @@ private fun StageLibraryPanel(
                 LensFact("Only on addon", if (addonCount == 0) "None" else "$addonCount"),
                 LensFact("Demos", if (discography.demos.isEmpty()) "None" else "${discography.demos.size}"),
             ),
-            centred = true,
         )
-        StageSectionHeading("SIMILAR TASTE", note ?: if (names == null) "Looking…" else null)
+        LensSectionLabel("SIMILAR TASTE", note ?: if (names == null) "Looking…" else "")
         LensBody(LENS_LIBRARY_TINT, highlighted = false) {
-            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (similar.isEmpty() && names != null) {
                     Text("No similar artists found.", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted)
                 }
-                // Portraits three to a row, each with the name under it; one saved in the library is ringed in the accent.
-                similar.chunked(SIMILAR_PER_ROW).forEach { line ->
-                    Row(Modifier.fillMaxWidth().padding(bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        line.forEach { other ->
-                            val savedArt = other.savedId?.let { id -> library.artists.firstOrNull { it.id == id }?.art?.thumb }
-                            SimilarPortrait(
-                                name = other.name,
-                                photo = savedArt,
-                                saved = other.savedId != null,
-                                onClick = {
-                                    val id = other.savedId
-                                    if (id != null) onOpenArtist(id) else openSimilar(other.name) { found -> note = if (found) null else "${other.name} isn't on YouTube Music" }
-                                },
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        repeat(SIMILAR_PER_ROW - line.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
-            }
-        }
-        LensButton("Shuffle all", tint = LENS_LIBRARY_TINT, enabled = canShuffle, onClick = onShuffle)
-    }
-}
-
-/**
- * The side panels' title and the line under it, centred, at the same place in both so the two read as a pair (the artist
- * or the song on the left, the library on the right).
- */
-@Composable
-private fun StagePanelTitle(title: String, subtitle: String) {
-    val colors = MaterialTheme.nuvio.colors
-    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            title,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = colors.textPrimary,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            subtitle,
-            style = MaterialTheme.typography.bodyMedium,
-            color = colors.textSecondary,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 2.dp),
-        )
-    }
-}
-
-/** A side panel's section heading (The story, Similar taste): centred, one size, with an optional [note] under it. */
-@Composable
-private fun StageSectionHeading(label: String, note: String? = null) {
-    val colors = MaterialTheme.nuvio.colors
-    Column(Modifier.fillMaxWidth().padding(top = 34.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = colors.textSecondary)
-        // Kept to one line's height whether or not there is a note, so the two panels' sections start level.
-        Text(
-            note.orEmpty(),
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textMuted,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            modifier = Modifier.padding(top = 2.dp),
-        )
-    }
-}
-
-/**
- * The facts under the story, drawn like the rest of the panel rather than as a form: a short hairline, the years active
- * as one centred line, the span of releases under it, and the genres, style and mood as the hero's quiet outlined tags
- * (the mood in the accent).
- */
-@Composable
-private fun StageFacts(facts: ArtistFactSheet) {
-    val colors = MaterialTheme.nuvio.colors
-    Column(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.fillMaxWidth(0.3f).height(1.dp).background(Color.White.copy(alpha = 0.12f)))
-        facts.years?.let {
-            Text(it, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = colors.textPrimary, modifier = Modifier.padding(top = 22.dp))
-        }
-        facts.releases?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(top = 4.dp))
-        }
-        val tags = facts.tags.map { it.titleCasedTag() to false } + listOfNotNull(facts.mood?.let { it.titleCasedTag() to true })
-        if (tags.isNotEmpty()) {
-            FlowRow(
-                Modifier.padding(top = 18.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                tags.forEach { (tag, mood) ->
-                    Text(
-                        tag,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (mood) colors.accent else colors.textSecondary,
-                        maxLines = 1,
-                        modifier = Modifier
-                            .border(1.dp, if (mood) colors.accent.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.12f), RoundedCornerShape(999.dp))
-                            .padding(horizontal = 12.dp, vertical = 5.dp),
+                similar.forEach { other ->
+                    LensRow(
+                        title = other.name,
+                        where = if (other.savedId != null) "In your library" else "Similar taste",
+                        tag = if (other.savedId != null) "LIBRARY" else "OPEN",
+                        onClick = {
+                            val id = other.savedId
+                            if (id != null) onOpenArtist(id) else openSimilar(other.name) { found -> note = if (found) null else "${other.name} isn't on YouTube Music" }
+                        },
                     )
                 }
             }
         }
-    }
-}
-
-/** "synth-pop" as "Synth-pop"; a word already in capitals ("EDM") stays as it is. */
-private fun String.titleCasedTag(): String = split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
-
-private const val SIMILAR_PER_ROW = 3
-private const val SIMILAR_ROWS = 3
-
-/**
- * One similar artist: a round portrait (the library's picture for a saved one, else TheAudioDB's, looked up when it
- * shows) and the name under it. A saved artist is ringed in the accent.
- */
-@Composable
-private fun SimilarPortrait(name: String, photo: String?, saved: Boolean, onClick: () -> Unit, modifier: Modifier) {
-    val colors = MaterialTheme.nuvio.colors
-    val looked by produceState(photo, name, photo) {
-        if (value == null) value = runCatching { com.nuvio.app.features.music.home.MusicHeroInfo.artist(name)?.thumb }.getOrNull()
-    }
-    Column(
-        modifier.clip(RoundedCornerShape(12.dp)).musicKeyFocusRing(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(
-            Modifier.fillMaxWidth(0.82f).aspectRatio(1f).clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.06f))
-                .border(if (saved) 3.dp else 1.dp, if (saved) colors.accent else Color.White.copy(alpha = 0.12f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            val url = looked
-            if (url != null) {
-                NuvioAsyncImage(model = url, contentDescription = name, modifier = Modifier.fillMaxSize().padding(if (saved) 3.dp else 1.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-            } else {
-                Text(name.take(1).uppercase(), style = MaterialTheme.typography.headlineSmall, color = colors.textMuted)
-            }
-        }
-        Text(
-            name,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = colors.textPrimary,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 8.dp, start = 2.dp, end = 2.dp),
-        )
+        LensButton("Shuffle all", tint = LENS_LIBRARY_TINT, enabled = canShuffle, onClick = onShuffle)
     }
 }
 
@@ -1189,7 +996,7 @@ private fun StageAlbumTile(release: LibraryRelease, addon: Boolean, onFocus: () 
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
             ReleaseCover(release, Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)))
             // fork:nebula - an overlay on the cover, so the tile does not change when the addon's answer arrives.
-            if (addon) LosslessPill()
+            if (addon) com.nuvio.app.features.music.nebula.LosslessPill(Modifier.align(Alignment.TopStart).padding(6.dp))
         }
         Text(release.title, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
@@ -1230,6 +1037,7 @@ private fun StoryLens(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             )
         }
+        if (ruler != null) StoryRulerBar(ruler)
         points.forEachIndexed { index, point ->
             StoryRow(
                 point = point,
@@ -1289,7 +1097,7 @@ private fun StoryRow(point: StoryPoint, first: Boolean, last: Boolean, addon: Bo
             Box(Modifier.size(56.dp)) {
                 ReleaseCover(release, Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)))
                 // An overlay on the cover, so the row does not change when the addon's answer arrives.
-                if (addon) LosslessPill()
+                if (addon) com.nuvio.app.features.music.nebula.LosslessPill(Modifier.align(Alignment.TopStart).padding(3.dp))
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(release.title, style = MaterialTheme.typography.titleSmall, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1380,8 +1188,6 @@ private val STORY_RECORD_WIDTH = 250.dp
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DiscographyLens(
-    /** The Singles tab: singles only, with just the Playable / All switch. Otherwise the Albums tab: everything else. */
-    singlesOnly: Boolean,
     artist: LibraryArtist,
     discography: ArtistDiscography,
     working: Boolean,
@@ -1404,26 +1210,12 @@ private fun DiscographyLens(
         timeline.eras.flatMap { it.groups }
             .sortedWith(compareByDescending<ReleaseGroup> { releasePosition(it.primary) ?: 0.0 }.thenBy { it.primary.title })
     }
-    // Each tab keeps to its own kinds; a kind pill picked on the other tab (Singles) reads as All here.
-    val sections = if (singlesOnly) SINGLES_SECTIONS else ALBUM_SECTIONS
-    val kindsHere = sections.flatMap { it.second }.toSet()
-    val shownFilter = if (singlesOnly || filter == ReleaseFilter.Singles) ReleaseFilter.All else filter
-    val shown = if (shownFilter == ReleaseFilter.Demos) emptyList() else dated.filter { it.kind in kindsHere && it.passes(playableOnly, shownFilter, addonKeys) }
-    val undated = if (shownFilter == ReleaseFilter.Demos) emptyList() else timeline.undated.filter { it.kind in kindsHere && it.passes(playableOnly, shownFilter, addonKeys) }
-    val scroll = rememberScrollState()
-    Column(modifier.verticalScroll(scroll).padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        FilterPanel(
-            discography,
-            shownFilter,
-            playableOnly,
-            onPlayableOnly,
-            onFilter,
-            addonInPlay = addonKeys.isNotEmpty(),
-            bare = true,
-            kinds = if (singlesOnly) emptySet() else ALBUM_TAB_FILTERS,
-        )
+    val shown = if (filter == ReleaseFilter.Demos) emptyList() else dated.filter { it.passes(playableOnly, filter, addonKeys) }
+    val undated = if (filter == ReleaseFilter.Demos) emptyList() else timeline.undated.filter { it.passes(playableOnly, filter, addonKeys) }
+    Column(modifier.verticalScroll(rememberScrollState()).padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        FilterPanel(discography, filter, playableOnly, onPlayableOnly, onFilter, addonInPlay = addonKeys.isNotEmpty())
         val all = shown + undated
-        if (all.isEmpty() && shownFilter != ReleaseFilter.Demos) {
+        if (all.isEmpty() && filter != ReleaseFilter.Demos) {
             Text(
                 when {
                     working -> "Looking up releases…"
@@ -1435,19 +1227,10 @@ private fun DiscographyLens(
                 color = colors.textMuted,
             )
         }
-        if (singlesOnly) {
-            SinglesBody(artist, all, addonKeys, releaseActions, hold, onOpen, scroll)
-            Spacer(Modifier.height(16.dp))
-            return@Column
-        }
-        sections.forEach { (title, kinds) ->
+        RELEASE_SECTIONS.forEach { (title, kinds) ->
             val section = all.filter { it.kind in kinds }
             if (section.isEmpty()) return@forEach
-            Row(
-                Modifier.fillMaxWidth().padding(top = 6.dp),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-            ) {
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(title, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
                 Text("${section.size}", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(bottom = 2.dp))
             }
@@ -1456,11 +1239,7 @@ private fun DiscographyLens(
                 val gap = 14.dp
                 val columns = ((maxWidth + gap) / (150.dp + gap)).toInt().coerceAtLeast(1)
                 val card = (maxWidth - gap * (columns - 1)) / columns
-                FlowRow(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     section.forEach { group ->
                         val menu = rememberMusicMenu()
                         MusicItemMenu(menu) { releaseMenu(group.primary, releaseActions) }
@@ -1475,197 +1254,12 @@ private fun DiscographyLens(
                 }
             }
         }
-        if (!singlesOnly && discography.demos.isNotEmpty()) {
+        if (discography.demos.isNotEmpty()) {
             DemosArchive(discography.demos, open = demosOpen, onToggle = onToggleDemos, onOpen = onOpen, onInfo = onInfo)
         }
         Spacer(Modifier.height(16.dp))
     }
 }
-
-/**
- * The Singles tab's body, with its three options (kept in the music settings): Hide album songs (a single whose song is
- * also on one of the artist's albums or EPs is left out; the albums' track lists are read once, when it is turned on),
- * By year (a heading per year, newest first, and a strip of years that jumps to one) and List (a compact row per single
- * instead of the cover grid).
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun androidx.compose.foundation.layout.ColumnScope.SinglesBody(
-    artist: LibraryArtist,
-    singles: List<ReleaseGroup>,
-    addonKeys: Set<String>,
-    releaseActions: ReleaseMenuActions,
-    hold: HoldToSelectState,
-    onOpen: (LibraryRelease) -> Unit,
-    scroll: androidx.compose.foundation.ScrollState,
-) {
-    val colors = MaterialTheme.nuvio.colors
-    val settings = MusicLibraryRepository.state.collectAsState().value.settings
-    val scope = rememberCoroutineScope()
-    FlowRow(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ActionPill("Hide album songs", selected = settings.singlesHideAlbumSongs) {
-            MusicLibraryRepository.updateSettings(settings.copy(singlesHideAlbumSongs = !settings.singlesHideAlbumSongs))
-        }
-        ActionPill("By year", selected = settings.singlesByYear) {
-            MusicLibraryRepository.updateSettings(settings.copy(singlesByYear = !settings.singlesByYear))
-        }
-        ActionPill("List", selected = settings.singlesAsList) {
-            MusicLibraryRepository.updateSettings(settings.copy(singlesAsList = !settings.singlesAsList))
-        }
-    }
-    // The songs on the artist's albums and EPs, read only while Hide album songs is on (the catalog keeps the albums).
-    val albumSongs by produceState<Set<String>?>(null, artist.id, artist.releases.size, settings.singlesHideAlbumSongs) {
-        value = if (settings.singlesHideAlbumSongs) albumSongKeys(artist.releases) else emptySet()
-    }
-    val hiding = settings.singlesHideAlbumSongs
-    val kept = if (!hiding) singles else singles.filterNot { songKey(it.primary.title) in albumSongs.orEmpty() }
-    val hidden = singles.size - kept.size
-    if (hiding) {
-        Text(
-            when {
-                albumSongs == null -> "Checking the albums…"
-                hidden > 0 -> "$hidden single${if (hidden == 1) " is" else "s are"} also on an album"
-                else -> "None of these is on an album"
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = colors.textMuted,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-    val groups: List<Pair<String, List<ReleaseGroup>>> = if (settings.singlesByYear) {
-        kept.groupBy { it.primary.yearLabel() }.toList()
-            .sortedByDescending { (year, _) -> year.toIntOrNull() ?: Int.MIN_VALUE }
-    } else {
-        listOf("Singles" to kept)
-    }
-    // Where each year's heading sits in the column, so a year in the strip can scroll to it.
-    val headingAt = remember { mutableMapOf<String, Int>() }
-    if (settings.singlesByYear && groups.size > 1) {
-        FlowRow(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            groups.forEach { (year, _) ->
-                ActionPill(year) { headingAt[year]?.let { y -> scope.launch { scroll.animateScrollTo(y) } } }
-            }
-        }
-    }
-    groups.forEach { (title, section) ->
-        if (section.isEmpty()) return@forEach
-        Row(
-            Modifier.fillMaxWidth().padding(top = 6.dp).onGloballyPositioned { headingAt[title] = it.positionInParent().y.toInt() },
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-        ) {
-            Text(title, style = MaterialTheme.typography.titleLarge, color = colors.textPrimary)
-            Text("${section.size}", style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, modifier = Modifier.padding(bottom = 2.dp))
-        }
-        if (settings.singlesAsList) {
-            Column(Modifier.fillMaxWidth().widthIn(max = 760.dp).align(Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                section.forEach { group ->
-                    val menu = rememberMusicMenu()
-                    MusicItemMenu(menu) { releaseMenu(group.primary, releaseActions) }
-                    SingleListRow(
-                        group,
-                        addon = group.hasLossless(addonKeys),
-                        onClick = { onOpen(group.primary) },
-                        extra = Modifier.musicMenuTrigger(menu, hold, onSelect = { onOpen(group.primary) }),
-                    )
-                }
-            }
-        } else {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val gap = 14.dp
-                val columns = ((maxWidth + gap) / (150.dp + gap)).toInt().coerceAtLeast(1)
-                val card = (maxWidth - gap * (columns - 1)) / columns
-                FlowRow(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    section.forEach { group ->
-                        val menu = rememberMusicMenu()
-                        MusicItemMenu(menu) { releaseMenu(group.primary, releaseActions) }
-                        ReleaseCard(
-                            group,
-                            onClick = { onOpen(group.primary) },
-                            addon = group.hasLossless(addonKeys),
-                            width = card,
-                            extra = Modifier.musicMenuTrigger(menu, hold, onSelect = { onOpen(group.primary) }),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** A single as one compact row: a small cover, its title, and its year. */
-@Composable
-private fun SingleListRow(group: ReleaseGroup, addon: Boolean, onClick: () -> Unit, extra: Modifier) {
-    val colors = MaterialTheme.nuvio.colors
-    val release = group.primary
-    val shape = RoundedCornerShape(12.dp)
-    Row(
-        extra.fillMaxWidth().height(68.dp).clip(shape)
-            .musicKeyFocusRing(shape)
-            .clickable(onClick = onClick)
-            .alpha(if (group.isPlayable || addon) 1f else 0.5f)
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Box(Modifier.size(52.dp)) {
-            ReleaseCover(release, Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)))
-            if (addon) LosslessPill()
-        }
-        Text(
-            release.title,
-            style = MaterialTheme.typography.titleMedium,
-            color = colors.textPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Text(release.yearLabel(), style = MaterialTheme.typography.bodyMedium, color = colors.textMuted, maxLines = 1)
-    }
-}
-
-/** The year a release came out, as a heading; "Undated" when none is known. */
-private fun LibraryRelease.yearLabel(): String =
-    (releaseDate ?: year)?.take(4)?.takeIf { it.length == 4 && it.all(Char::isDigit) } ?: "Undated"
-
-/** The songs on [releases]' albums and EPs, as song keys, read through the catalog (which keeps each album it opens). */
-private suspend fun albumSongKeys(releases: List<LibraryRelease>): Set<String> {
-    val catalog = defaultMusicCatalog()
-    val ids = releases.filter { it.kind == ReleaseKind.Album || it.kind == ReleaseKind.EP }.mapNotNull { it.ytBrowseId }.distinct()
-    val gate = kotlinx.coroutines.sync.Semaphore(4)
-    return kotlinx.coroutines.coroutineScope {
-        ids.map { id ->
-            async {
-                gate.withPermit { runCatching { catalog.album(id) }.getOrNull()?.tracks?.map { songKey(it.title) }.orEmpty() }
-            }
-        }.awaitAll().flatten().filter { it.isNotEmpty() }.toSet()
-    }
-}
-
-/** The Albums tab's sections (EPs with the albums), and the Singles tab's one. */
-private val ALBUM_SECTIONS = listOf(
-    "Albums" to setOf(ReleaseKind.Album),
-    "EPs" to setOf(ReleaseKind.EP),
-    "Live & Compilations" to setOf(ReleaseKind.Live, ReleaseKind.Compilation),
-    "Other" to setOf(ReleaseKind.Other),
-)
-private val SINGLES_SECTIONS = listOf("Singles" to setOf(ReleaseKind.Single))
-
-/** The kind pills on the Albums tab (Singles has a tab of its own). */
-private val ALBUM_TAB_FILTERS = setOf(ReleaseFilter.Albums, ReleaseFilter.EPs, ReleaseFilter.Other, ReleaseFilter.Demos)
 
 // endregion
 

@@ -6,7 +6,7 @@ name: Android remote
 on:
   workflow_dispatch:
   push:
-    branches: [Spyder]
+    branches: [Spyder, windows-tv-adaptive]
     paths:
       - 'remote-android/**'
       - '.github/workflows/android-remote.yml'
@@ -57,7 +57,7 @@ jobs:
       # A prerelease under its own tag: the desktop updater reads /releases/latest (never a
       # prerelease) and the "Nightly" tag, so this release can never be mistaken for a desktop build.
       - name: Publish NuvioRemote release
-        if: github.ref == 'refs/heads/Spyder'
+        if: github.ref == 'refs/heads/Spyder' || github.ref == 'refs/heads/windows-tv-adaptive'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -67,5 +67,5 @@ jobs:
             --prerelease \
             --latest=false \
             --target "$GITHUB_SHA" \
-            --title "Nuvio Remote (Spyder $sha)" \
+            --title "Nuvio Remote (${{ github.ref_name }} $sha)" \
             --notes "Android remote for Nuvio HTPC. Download NuvioRemote.apk on the phone and open it to install. On the PC, turn on Settings > Keyboard shortcuts > Phone remote."

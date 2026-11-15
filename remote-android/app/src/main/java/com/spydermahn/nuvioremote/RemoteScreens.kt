@@ -213,6 +213,10 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
     var padOverTonight by rememberSaveable { mutableStateOf(false) }
     val tonightOpen = state.tonight != null
     LaunchedEffect(tonightOpen) { if (!tonightOpen) padOverTonight = false }
+    // Live TV's stages (Nov 14) open as their mirror the same way.
+    var padOverLiveTv by rememberSaveable { mutableStateOf(false) }
+    val liveTvOpen = state.liveTv != null
+    LaunchedEffect(liveTvOpen) { if (!liveTvOpen) padOverLiveTv = false }
 
     Column(Modifier.fillMaxSize().imePadding().padding(horizontal = 20.dp)) {
         RemoteHeader(
@@ -220,6 +224,7 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
             status = when {
                 state.sources != null -> "Choosing a source"
                 state.tonight != null -> "Choosing tonight"
+                state.liveTv != null && showing == Showing.Browsing -> "Live TV"
                 showing == Showing.Browsing -> "Connected · browsing"
                 showing == Showing.Film -> "Playing a film"
                 else -> "Playing music"
@@ -237,6 +242,12 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
                         if (padOverTonight) "Tonight" else if (state.padMode == PadMode.Touchpad) "Touchpad" else "D-pad",
                         icon = if (padOverTonight) Icons.Rounded.Movie else Icons.Rounded.CropSquare,
                         onClick = { padOverTonight = !padOverTonight },
+                    )
+                } else if (state.liveTv != null && showing == Showing.Browsing) {
+                    GlassTag(
+                        if (padOverLiveTv) "Live TV" else if (state.padMode == PadMode.Touchpad) "Touchpad" else "D-pad",
+                        icon = if (padOverLiveTv) Icons.Rounded.Movie else Icons.Rounded.CropSquare,
+                        onClick = { padOverLiveTv = !padOverLiveTv },
                     )
                 } else if (showing != Showing.Browsing) {
                     GlassTag(
@@ -266,6 +277,7 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
             sources != null && !padOverSources -> SourcesBody(sources, viewModel, onPad = { padOverSources = true })
             // Only while nothing plays: once a card starts a film, the film screen takes over.
             tonight != null && showing == Showing.Browsing && !padOverTonight -> TonightBody(tonight, viewModel)
+            state.liveTv != null && showing == Showing.Browsing && !padOverLiveTv -> LiveTvBody(state.liveTv, viewModel)
             showing == Showing.Film && playing != null && !padOverPlaying -> FilmBody(
                 playing,
                 state.cover,
@@ -1322,6 +1334,8 @@ private fun MoreSheet(state: UiState, viewModel: RemoteViewModel, onType: () -> 
                 }
                 Spacer(Modifier.size(60.dp))
             }
+
+            LockScreenSection()
 
             GlassLabel("Device")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

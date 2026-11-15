@@ -105,6 +105,8 @@ sealed interface ServerLine {
     data class Continue(val items: List<ResumeItem>) : ServerLine
     /** The TV's Tonight picker as mirrored on the phone; null while it is not on screen. */
     data class Tonight(val screen: TonightScreenInfo?) : ServerLine
+    /** The TV's Live TV stage as mirrored on the phone; null while none is on screen. */
+    data class LiveTv(val screen: LiveTvScreenInfo?) : ServerLine
     /** The source list on the TV; null once it closes. */
     data class Sources(val list: SourceList?) : ServerLine
     /** The film player's audio tracks (the same row type as subtitles; no Off, no groups). */
@@ -141,6 +143,9 @@ sealed interface ServerLine {
 
     /** An AI recap: [state] 0 while it is written, 1 ready, 2 failed ([text] then says why). */
     data class Recap(val state: Int, val heading: String, val text: String?) : ServerLine
+
+    /** fork:live-scores - a favourite team's match event, shown as a notification (ScoreNotifications). */
+    data class Score(val sport: String, val kind: String, val title: String, val text: String) : ServerLine
     data object Other : ServerLine
 
     companion object {
@@ -156,6 +161,7 @@ sealed interface ServerLine {
                 "CONTINUE" -> LibraryLines.parseContinue(line) ?: Other
                 "SOURCES" -> LibraryLines.parseSources(line) ?: Other
                 "TONIGHT" -> LibraryLines.parseTonight(line) ?: Other
+                "LIVETV" -> LibraryLines.parseLiveTv(line) ?: Other
                 "SEARCH_RESULTS" -> LibraryLines.parseSearch(line) ?: Other
                 "QUEUE" -> LibraryLines.parseQueue(line) ?: Other
                 "EPISODES" -> LibraryLines.parseEpisodes(line) ?: Other
@@ -172,6 +178,16 @@ sealed interface ServerLine {
                     broadcasts = parts.getOrNull(2)?.takeUnless { it == "-" }?.split(',')?.filter { it.isNotBlank() }.orEmpty(),
                 )
                 "THEME" -> RemoteTheme.parse(parts)?.let(::Theme) ?: Other
+                "SCORE" -> if (parts.size >= 4) {
+                    Score(
+                        sport = RemoteProtocol.decode(parts[1]),
+                        kind = RemoteProtocol.decode(parts[2]),
+                        title = RemoteProtocol.decode(parts[3]),
+                        text = parts.getOrNull(4)?.takeUnless { it == "-" }?.let(RemoteProtocol::decode).orEmpty(),
+                    )
+                } else {
+                    Other
+                }
                 else -> Other
             }
         }
@@ -337,6 +353,11 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     /** A tap on the phone's mirror of the Tonight picker: [action] as the PC's RemoteTonightAction, [number] a card from 1. */
     fun tonight(action: String, number: Int = 0) = send(if (number > 0) "TONIGHT_DO $action $number" else "TONIGHT_DO $action")
+
+    /** Live TV's stages (Nov 14): another stage, OK on a row or button, or All channels. */
+    fun liveTvStage(name: String) = send("LIVETV_DO stage ${RemoteProtocol.encode(name)}")
+    fun liveTvItem(group: String, index: Int) = send("LIVETV_DO item ${RemoteProtocol.encode(group)} $index")
+    fun liveTvAll() = send("LIVETV_DO all")
 
     /** Plays the source at [number] (from 1) in the list on the TV. The PC answers OPENING or CANT_OPEN. */
     fun pickSource(number: Int) = send("PICK_SOURCE $number")

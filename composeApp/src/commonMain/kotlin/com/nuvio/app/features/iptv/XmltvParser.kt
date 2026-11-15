@@ -15,7 +15,18 @@ class XmltvParser(
     /** Return false to skip a programme (its title is then not read). */
     private val wantsProgramme: (channelId: String, startMs: Long, endMs: Long) -> Boolean,
     private val onProgramme: (channelId: String, startMs: Long, endMs: Long, title: String) -> Unit,
+    /** Each `<category>` of a wanted programme, before its [onProgramme]. Null = categories are not read. */
+    private val onCategory: ((category: String) -> Unit)? = null,
+    /**
+     * fork:live-tv-stage - the other parts of a wanted programme, before its [onProgramme]: `desc`, `sub-title`,
+     * `episode-num` and `date` with their text; `icon` (its `src` in the attributes), `new`, `live` and `premiere`
+     * with null text. Null = none are read.
+     */
+    private val onDetail: ((name: String, attrs: Map<String, String>, text: String?) -> Unit)? = null,
 ) {
+    private var detailTag: String? = null
+    private var detailAttrs: Map<String, String> = emptyMap()
+
     private var capture: StringBuilder? = null // text of the current display-name or title
 
     fun parse(reader: Reader) {
@@ -40,6 +51,12 @@ class XmltvParser(
                 when (tag.name) {
                     "display-name" -> capture?.let { names += decode(it.toString()).trim() }
                     "title" -> capture?.let { if (title == null) title = decode(it.toString()).trim() }
+                    "category" -> capture?.let { text -> onCategory?.invoke(decode(text.toString()).trim()) }
+                    in DETAIL_TEXT, in DETAIL_EMPTY -> if (detailTag == tag.name) {
+                        onDetail?.invoke(tag.name, detailAttrs, capture?.let { decode(it.toString()).trim() })
+                        detailTag = null
+                        capture = null
+                    }
                     "channel" -> {
                         channelId?.let { onChannel(it, names.filter { n -> n.isNotEmpty() }) }
                         channelId = null
@@ -53,7 +70,7 @@ class XmltvParser(
                         title = null
                     }
                 }
-                if (tag.name == "display-name" || tag.name == "title") capture = null
+                if (tag.name == "display-name" || tag.name == "title" || tag.name == "category") capture = null
                 continue
             }
             when (tag.name) {
@@ -74,6 +91,16 @@ class XmltvParser(
                     progEnd = stop ?: 0L
                 }
                 "title" -> if (progChannel != null && title == null && !tag.selfClosing) capture = StringBuilder()
+                "category" -> if (progChannel != null && onCategory != null && !tag.selfClosing) capture = StringBuilder()
+                in DETAIL_TEXT, in DETAIL_EMPTY -> if (progChannel != null && onDetail != null) {
+                    if (tag.selfClosing) {
+                        onDetail.invoke(tag.name, tag.attrs, null)
+                    } else {
+                        detailTag = tag.name
+                        detailAttrs = tag.attrs
+                        capture = if (tag.name in DETAIL_TEXT) StringBuilder() else null
+                    }
+                }
             }
         }
     }
@@ -139,6 +166,9 @@ class XmltvParser(
     }
 
     companion object {
+        private val DETAIL_TEXT = setOf("desc", "sub-title", "episode-num", "date")
+        private val DETAIL_EMPTY = setOf("icon", "new", "live", "premiere")
+
         private val ATTR = Regex("""([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
         private val ENTITY = Regex("""&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);""")
 

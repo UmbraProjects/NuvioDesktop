@@ -217,7 +217,11 @@ object StreamsRepository {
             contentType = type,
         )
         // Scoring turns any automatic pick into a best-score pick; see StreamAutoPlayPolicy.
-        val autoPlayMode = StreamAutoPlayPolicy.effectiveMode(playerSettings.streamAutoPlayMode, scoreProfile)
+        // fork:live-tv-on-demand - a play armed to pick its own source does so even with the picker set.
+        val forcedAuto = !manualSelection && StreamAutoPlayOverride.take(videoId, effectiveVideoId)
+        val autoPlayMode = StreamAutoPlayPolicy.effectiveMode(playerSettings.streamAutoPlayMode, scoreProfile).let { mode ->
+            if (forcedAuto) StreamAutoPlayOverride.modeFor(mode, StreamAutoPlayPolicy.isRegexSelectionConfigured(playerSettings.streamAutoPlayRegex)) else mode
+        }
         val isAutoPlayEnabled = !manualSelection && autoPlayMode != StreamAutoPlayMode.MANUAL &&
             !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
                 !StreamAutoPlayPolicy.isRegexSelectionConfigured(playerSettings.streamAutoPlayRegex))
@@ -256,7 +260,7 @@ object StreamsRepository {
         // Auto-play already skips the local group when it picks.
         val localCopyIsBackup = includeLocalInPicker && !manualSelection &&
             LocalLibraryRepository.routingFor(parentMetaId, effectiveVideoId).ignoresLocalFile
-        val isDirectAutoPlayFlow = (!includeLocalInPicker || localCopyIsBackup) && isAutoPlayEnabled
+        val isDirectAutoPlayFlow = (!includeLocalInPicker || localCopyIsBackup || forcedAuto) && isAutoPlayEnabled
 
         currentCoroutineContext().ensureActive()
         if (isDirectAutoPlayFlow) {

@@ -35,6 +35,17 @@ object IptvPlaybackSession {
         val zapList: List<IptvChannel> = emptyList(),
         /** The channel whose link the portal is being asked for; channel up/down counts from it. */
         val opening: IptvChannel? = null,
+        /**
+         * fork:live-tv-on-now - a channel's other copies in the playlist, by the first copy's [IptvChannel.uid]
+         * ([IptvMergedChannel]). Their URLs follow the channel's own in [candidates], so a copy that will not
+         * open, or keeps dropping, hands over to the next without the viewer leaving the channel.
+         */
+        val alternates: Map<Int, List<IptvChannel>> = emptyMap(),
+        /**
+         * fork:live-tv-on-now - set while [candidates]' first URL is this programme from the provider's
+         * recordings ("start over"); the live URLs follow it. Null once playback is live.
+         */
+        val catchup: IptvEpgEntry? = null,
     ) {
         val current: IptvStreamCandidate get() = candidates[index]
     }
@@ -46,6 +57,51 @@ object IptvPlaybackSession {
         val settings = IptvRepository.settings.value
         val allowed = IptvRepository.contentState(playlist.id).value.content?.account?.allowedFormats.orEmpty()
         return iptvStreamCandidates(playlist, channel, settings.preferredFormat, allowed)
+    }
+
+    /** [channel]'s own URLs, then those of its other copies. A portal's links are asked for one at a time, so it gets none. */
+    private fun withAlternates(
+        playlist: IptvPlaylist,
+        channel: IptvChannel,
+        own: List<IptvStreamCandidate>,
+        alternates: Map<Int, List<IptvChannel>>,
+    ): List<IptvStreamCandidate> {
+        val others = alternates[channel.uid].orEmpty()
+        if (others.isEmpty() || playlist.type == IptvPlaylistType.Stalker) return own
+        return (own + others.flatMap { candidatesFor(playlist, it) }).distinctBy { it.url }
+    }
+
+    /** Whether the playing channel has another copy to hand over to. */
+    fun hasAlternates(): Boolean = _active.value?.let { it.alternates[it.channel.uid].orEmpty().isNotEmpty() } == true
+
+    /**
+     * Starts [entry] on [channel] from its beginning, out of the provider's recordings; null when the provider
+     * keeps none for it. The live URLs follow the recording's, so a recording that will not open plays the
+     * channel live instead, and [finishCatchup] joins the live channel when the recording runs out.
+     */
+    fun launchCatchup(
+        playlist: IptvPlaylist,
+        channel: IptvMergedChannel,
+        entry: IptvEpgEntry,
+        zapList: List<IptvChannel> = emptyList(),
+        alternates: Map<Int, List<IptvChannel>> = emptyMap(),
+    ): PlayerLaunch? {
+        val source = IptvCatchup.source(playlist, channel) ?: return null
+        val zone = IptvRepository.contentState(playlist.id).value.content?.account?.timezone
+        val url = IptvCatchup.url(playlist, source, entry, zone) ?: return null
+        val live = withAlternates(playlist, channel.primary, candidatesFor(playlist, channel.primary), alternates)
+        val launch = launchFor(playlist, channel.primary, zapList, listOf(IptvStreamCandidate(url, IptvStreamFormat.TS)) + live, alternates) ?: return null
+        _active.update { it?.copy(catchup = entry) }
+        return launch.copy(title = entry.title, streamTitle = channel.primary.name.ifBlank { launch.streamTitle })
+    }
+
+    /** The recording ran out: the URL that joins the channel live, or null when nothing was being caught up. */
+    fun finishCatchup(): String? {
+        val current = _active.value ?: return null
+        if (current.catchup == null) return null
+        val next = (current.index + 1).takeIf { it < current.candidates.size } ?: return null
+        _active.value = current.copy(index = next, catchup = null)
+        return current.candidates[next].url
     }
 
     /** Whether opening [channel] means asking its portal for a link first, because links expire. */
@@ -84,9 +140,12 @@ object IptvPlaybackSession {
         channel: IptvChannel,
         zapList: List<IptvChannel> = emptyList(),
         candidates: List<IptvStreamCandidate> = candidatesFor(playlist, channel),
+        alternates: Map<Int, List<IptvChannel>> = emptyMap(),
     ): PlayerLaunch? {
+        @Suppress("NAME_SHADOWING")
+        val candidates = withAlternates(playlist, channel, candidates, alternates)
         if (candidates.isEmpty()) return null
-        _active.value = Active(playlist, channel, candidates, zapList = zapList)
+        _active.value = Active(playlist, channel, candidates, zapList = zapList, alternates = alternates)
         IptvRepository.recordRecent(playlist.id, channel.key)
         val title = channel.name.ifBlank { "#${channel.num}" }
         val id = "iptv:${playlist.id}:${channel.key}"
@@ -119,7 +178,8 @@ object IptvPlaybackSession {
         val failedIndex = current.candidates.indexOfFirst { it.url == failedUrl }.takeIf { it >= 0 } ?: return null
         val next = failedIndex + 1
         if (next >= current.candidates.size) return null
-        _active.value = current.copy(index = next)
+        // Past a recording that would not open, what plays is the live channel.
+        _active.value = current.copy(index = next, catchup = null)
         return current.candidates[next]
     }
 
@@ -137,6 +197,13 @@ object IptvPlaybackSession {
     fun byNumber(number: Int): IptvChannel? {
         val current = _active.value ?: return null
         val all = IptvRepository.contentState(current.playlist.id).value.content?.channels ?: current.zapList
+        // fork:live-tv-lineup - with Your 40 on, a typed number is the lineup's place.
+        val settings = IptvRepository.settings.value
+        val keys = settings.lineup[current.playlist.id]
+        if (settings.lineupOn && !keys.isNullOrEmpty()) {
+            val key = keys.getOrNull(number - 1) ?: return null
+            return all.firstOrNull { it.key == key }
+        }
         return all.firstOrNull { it.num == number }
     }
 
@@ -148,9 +215,9 @@ object IptvPlaybackSession {
     /** Makes [channel] the playing one; returns the URL to open, or null when it has none. */
     fun switchTo(channel: IptvChannel, link: List<IptvStreamCandidate>? = null): String? {
         val current = _active.value ?: return null
-        val candidates = link ?: candidatesFor(current.playlist, channel)
+        val candidates = withAlternates(current.playlist, channel, link ?: candidatesFor(current.playlist, channel), current.alternates)
         if (candidates.isEmpty()) return null
-        _active.value = current.copy(channel = channel, candidates = candidates, index = 0, opening = null)
+        _active.value = current.copy(channel = channel, candidates = candidates, index = 0, opening = null, catchup = null)
         IptvRepository.recordRecent(current.playlist.id, channel.key)
         return candidates.first().url
     }
@@ -174,17 +241,44 @@ object IptvPlaybackRequests {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var linkJob: Job? = null
 
+    /**
+     * fork:live-tv-departure - set while a live channel plays: takes a launch into the running player. The app opens
+     * no second player over the first, so without it a reminder that switches at the start did nothing while another
+     * channel was on.
+     */
+    @Volatile
+    var inPlayer: ((PlayerLaunch) -> Unit)? = null
+
     /** False when the channel has no playable URL. [zapList]: see [IptvPlaybackSession.launchFor]. */
-    fun play(playlist: IptvPlaylist, channel: IptvChannel, zapList: List<IptvChannel> = emptyList()): Boolean {
+    fun play(
+        playlist: IptvPlaylist,
+        channel: IptvChannel,
+        zapList: List<IptvChannel> = emptyList(),
+        /** fork:live-tv-on-now - see [IptvPlaybackSession.Active.alternates]. */
+        alternates: Map<Int, List<IptvChannel>> = emptyMap(),
+    ): Boolean {
         linkJob?.cancel()
         if (IptvPlaybackSession.needsLink(playlist, channel)) {
             linkJob = scope.launch {
                 val candidates = StalkerClient.streamCandidates(playlist, channel)
-                IptvPlaybackSession.launchFor(playlist, channel, zapList, candidates)?.let { _requests.tryEmit(it) }
+                IptvPlaybackSession.launchFor(playlist, channel, zapList, candidates, alternates)?.let { _requests.tryEmit(it) }
             }
             return true
         }
-        val launch = IptvPlaybackSession.launchFor(playlist, channel, zapList) ?: return false
+        val launch = IptvPlaybackSession.launchFor(playlist, channel, zapList, alternates = alternates) ?: return false
+        return _requests.tryEmit(launch)
+    }
+
+    /** fork:live-tv-on-now - [entry] from its beginning (see [IptvPlaybackSession.launchCatchup]); false when it cannot be. */
+    fun playCatchup(
+        playlist: IptvPlaylist,
+        channel: IptvMergedChannel,
+        entry: IptvEpgEntry,
+        zapList: List<IptvChannel> = emptyList(),
+        alternates: Map<Int, List<IptvChannel>> = emptyMap(),
+    ): Boolean {
+        linkJob?.cancel()
+        val launch = IptvPlaybackSession.launchCatchup(playlist, channel, entry, zapList, alternates) ?: return false
         return _requests.tryEmit(launch)
     }
 }

@@ -7,6 +7,10 @@
     <!-- The lock-screen controls (NowPlayingService). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Live-score notifications for favourite teams, and the lock-screen controls on Android 13+. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Poster wallpaper: the lock screen shows what the TV plays (no prompt; Android grants it on install). -->
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
     <application
         android:allowBackup="false"
