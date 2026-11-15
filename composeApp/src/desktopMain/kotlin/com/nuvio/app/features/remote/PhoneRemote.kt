@@ -198,6 +198,11 @@ internal object PhoneRemote {
     private val listener = object : PhoneRemoteListener {
         override fun onKey(key: RemoteKey) = dispatch(key)
 
+        override fun onPoint(dx: Int, dy: Int) = PhoneRemotePointer.move(dx, dy)
+        override fun onPointCentre() = PhoneRemotePointer.centre()
+        override fun onClick(button: PointerButton) = PhoneRemotePointer.click(button)
+        override fun onScroll(notches: Int) = PhoneRemotePointer.scroll(notches)
+
         override fun onText(text: String) {
             text.forEach { char ->
                 when {

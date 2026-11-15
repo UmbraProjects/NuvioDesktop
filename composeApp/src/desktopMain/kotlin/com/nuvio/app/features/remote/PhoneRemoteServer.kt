@@ -80,6 +80,11 @@ internal interface PhoneRemoteListener {
     fun onMenu(target: RemoteMenuTarget, reply: (String) -> Unit) = Unit
     /** A row of that menu: answer with DONE, PLAYLISTS or RECAP lines. */
     fun onMenuAction(target: RemoteMenuTarget, code: String, args: List<String>, reply: (String) -> Unit) = Unit
+    /** fork:phone-remote pointer: move the mouse by ten-thousandths of the screen's width. */
+    fun onPoint(dx: Int, dy: Int) = Unit
+    fun onPointCentre() = Unit
+    fun onClick(button: PointerButton) = Unit
+    fun onScroll(notches: Int) = Unit
 }
 
 /**
@@ -357,6 +362,10 @@ internal class PhoneRemoteServer(
                             is RemoteMessage.LiveTvDo -> listener.onLiveTv(message.action)
                             is RemoteMessage.Menu -> listener.onMenu(message.target, ::trySend)
                             is RemoteMessage.Do -> listener.onMenuAction(message.target, message.code, message.args, ::trySend)
+                            is RemoteMessage.Point -> listener.onPoint(message.dx, message.dy)
+                            RemoteMessage.PointCentre -> listener.onPointCentre()
+                            is RemoteMessage.Click -> listener.onClick(message.button)
+                            is RemoteMessage.Scroll -> listener.onScroll(message.notches)
                             else -> Unit
                         }
                     }

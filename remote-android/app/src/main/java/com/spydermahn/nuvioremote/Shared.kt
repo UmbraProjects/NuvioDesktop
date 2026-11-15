@@ -8,7 +8,15 @@ import android.provider.Settings
 import java.net.HttpURLConnection
 import java.net.URL
 
-enum class PadMode { Touchpad, DPad }
+enum class PadMode(val label: String) {
+    Touchpad("Touchpad"), DPad("D-pad"),
+    /** The phone as an air mouse for the PC's cursor (GyroPointer.kt). */
+    Pointer("Pointer"),
+    ;
+
+    /** The mode the switch in the pad's corner goes to next. */
+    fun next(): PadMode = entries[(ordinal + 1) % entries.size]
+}
 
 /** How bright the phone is in dark mode (the window's own brightness, 0 to 1). */
 enum class DarkLevel(val label: String, val brightness: Float) {
@@ -67,6 +75,13 @@ class PcStore(context: Context) {
             prefs.edit().putString(KEY_PAD, value.name).apply()
         }
 
+    /** How fast the pointer moves the cursor (GyroPointer.kt). */
+    var pointerSpeed: PointerSpeed
+        get() = runCatching { PointerSpeed.valueOf(prefs.getString(KEY_POINTER_SPEED, null) ?: "") }.getOrDefault(PointerSpeed.Normal)
+        set(value) {
+            prefs.edit().putString(KEY_POINTER_SPEED, value.name).apply()
+        }
+
     /** A PC's network cards and broadcast addresses (from its WAKE line), to wake it later. */
     fun wake(address: String): ServerLine.Wake? {
         val saved = prefs.getString("$KEY_WAKE$address", null) ?: return null
@@ -109,6 +124,7 @@ class PcStore(context: Context) {
         const val KEY_LAST = "last_pc"
         const val KEY_THEME = "theme_"
         const val KEY_PAD = "pad_mode"
+        const val KEY_POINTER_SPEED = "pointer_speed"
         const val KEY_DARK = "dark_level"
         const val KEY_WAKE = "wake_"
         const val KEY_POSTER_WALLPAPER = "poster_wallpaper"

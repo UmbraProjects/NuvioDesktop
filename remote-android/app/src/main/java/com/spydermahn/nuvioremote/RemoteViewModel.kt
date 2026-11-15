@@ -76,6 +76,7 @@ data class UiState(
     /** The TV's theme; the phone wears it. */
     val theme: RemoteTheme = RemoteTheme.Default,
     val padMode: PadMode = PadMode.Touchpad,
+    val pointerSpeed: PointerSpeed = PointerSpeed.Normal,
     /** Dark mode: the phone black and dim, gestures anywhere (see DarkModeScreen). */
     val dark: Boolean = false,
     val darkLevel: DarkLevel = DarkLevel.Medium,
@@ -128,6 +129,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
             saved = store.saved(),
             theme = store.last()?.let { store.theme(it.address) } ?: RemoteTheme.Default,
             padMode = store.padMode,
+            pointerSpeed = store.pointerSpeed,
             darkLevel = store.darkLevel,
         ),
     )
@@ -337,6 +339,40 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(padMode = mode) }
     }
 
+    fun setPointerSpeed(speed: PointerSpeed) {
+        store.pointerSpeed = speed
+        _state.update { it.copy(pointerSpeed = speed) }
+    }
+
+    // --- The pointer (GyroPointer.kt) ---
+    // The gyro sends up to a hundred steps a second. They are added up here and the io thread sends what has built up
+    // when it gets to it, so a slow network makes the cursor take bigger steps rather than fall behind the phone.
+    private val pendingX = java.util.concurrent.atomic.AtomicInteger()
+    private val pendingY = java.util.concurrent.atomic.AtomicInteger()
+    private val pointFlushQueued = java.util.concurrent.atomic.AtomicBoolean()
+
+    /** Moves the TV's cursor by [dx], [dy] in POINT units; dropped while not connected (no reconnect per step). */
+    fun point(dx: Int, dy: Int) {
+        pendingX.addAndGet(dx)
+        pendingY.addAndGet(dy)
+        if (pointFlushQueued.getAndSet(true)) return
+        io.execute {
+            pointFlushQueued.set(false)
+            val x = pendingX.getAndSet(0)
+            val y = pendingY.getAndSet(0)
+            if (x == 0 && y == 0) return@execute
+            sendIfConnected { it.point(x, y) }
+        }
+    }
+
+    fun pointCentre() = sendOrReconnect { it.control("POINT_CENTRE") }
+
+    /** `left`, `right` or `middle`. */
+    fun click(button: String) = sendOrReconnect { it.control("CLICK $button") }
+
+    /** Wheel notches, positive is down. */
+    fun scroll(notches: Int) = sendOrReconnect { it.control("SCROLL $notches") }
+
     fun type(text: String) = sendOrReconnect { it.text(text) }
 
     fun backspace(count: Int) = sendOrReconnect { session -> repeat(count) { session.key(RemoteKey.Backspace) } }
@@ -394,6 +430,19 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
                 _state.update { it.copy(link = Link.Offline) }
                 scheduleRetry()
             }
+        }
+    }
+
+    /** On the io thread already: sends only if connected, and never starts a reconnect. */
+    private fun sendIfConnected(action: (RemoteSession) -> Unit) {
+        val current = session ?: return
+        if (!current.isOpen || _state.value.link != Link.Connected) return
+        try {
+            action(current)
+        } catch (_: IOException) {
+            closeSession()
+            _state.update { it.copy(link = Link.Offline) }
+            viewModelScope.launch { reconnect() }
         }
     }
 

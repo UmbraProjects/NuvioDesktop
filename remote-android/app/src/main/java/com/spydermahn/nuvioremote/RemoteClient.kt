@@ -323,6 +323,9 @@ class RemoteSession private constructor(private val socket: Socket) : AutoClosea
 
     fun key(key: RemoteKey) = send("KEY ${key.wire}")
 
+    /** The pointer: move the PC's cursor by ten-thousandths of its screen's width (GyroPointer.kt). */
+    fun point(dx: Int, dy: Int) = send("POINT $dx $dy")
+
     fun text(text: String) {
         if (text.isNotEmpty()) send("TEXT ${RemoteProtocol.encode(text)}")
     }

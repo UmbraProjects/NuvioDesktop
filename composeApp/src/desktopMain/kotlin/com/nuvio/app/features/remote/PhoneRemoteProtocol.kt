@@ -52,6 +52,9 @@ import java.nio.charset.StandardCharsets
  * pc:    SCORE <sport> <kind> <title> <text>   a favourite team's live-score event, as a phone notification
  *              (fork:live-scores; scoreLine, only while Settings > Live TV > Live scores > Notify the phone is on)
  * phone: OPEN <url>                     a link from the phone's share menu
+ * phone: POINT <dx> <dy>                the gyro pointer: move the PC's mouse cursor, in ten-thousandths of the
+ *                                       screen's width (PhoneRemotePointer); POINT_CENTRE puts it mid-screen
+ * phone: CLICK <left|right|middle> | SCROLL <notches, + is down>     the pointer's buttons and wheel
  * pc:    OPENING <what> | CANT_OPEN     (only for OPEN)
  * ```
  * The phone moves the position on by itself while playing; the PC re-sends STATE when anything but the position
@@ -137,6 +140,10 @@ internal object PhoneRemoteProtocol {
     fun discoveryReply(tcpPort: Int, name: String) = "NUVIO_REMOTE $VERSION $tcpPort ${encode(name)}"
 
     private val MENU_CODE = Regex("[a-z_]{1,32}")
+
+    /** One POINT step can cross a screen and a half at most; anything larger is clamped, not refused. */
+    const val MAX_POINT_STEP = 15_000
+    const val MAX_SCROLL = 20
 
     /** `<kind> <type> <id> <ref>` after MENU or DO; ref is `-` for a poster. */
     private fun menuTarget(parts: List<String>): RemoteMenuTarget? {
@@ -227,6 +234,15 @@ internal object PhoneRemoteProtocol {
                     RemoteMessage.Do(target, code, parts.drop(6).take(3).map { decode(it) }.map { if (it == "-") "" else it })
                 }
             }
+            // fork:phone-remote pointer: the phone's gyro (or its touchpad) as the PC's mouse.
+            "POINT" -> if (parts.size >= 3) {
+                val dx = parts[1].toIntOrNull() ?: return null
+                val dy = parts[2].toIntOrNull() ?: return null
+                RemoteMessage.Point(dx.coerceIn(-MAX_POINT_STEP, MAX_POINT_STEP), dy.coerceIn(-MAX_POINT_STEP, MAX_POINT_STEP))
+            } else null
+            "POINT_CENTRE" -> RemoteMessage.PointCentre
+            "CLICK" -> parts.getOrNull(1)?.let(PointerButton::fromWire)?.let { RemoteMessage.Click(it) }
+            "SCROLL" -> parts.getOrNull(1)?.toIntOrNull()?.takeIf { it != 0 }?.let { RemoteMessage.Scroll(it.coerceIn(-MAX_SCROLL, MAX_SCROLL)) }
             "RESUME" -> if (parts.size >= 3) {
                 RemoteMessage.Resume(parentId = decode(parts[1]), videoId = decode(parts[2]))
                     .takeIf { it.parentId.isNotBlank() && it.videoId.isNotBlank() }
@@ -270,6 +286,19 @@ internal sealed interface RemoteMessage {
     data class LiveTvDo(val action: com.nuvio.app.features.remote.RemoteLiveTvDo) : RemoteMessage
     data class Menu(val target: RemoteMenuTarget) : RemoteMessage
     data class Do(val target: RemoteMenuTarget, val code: String, val args: List<String>) : RemoteMessage
+    data class Point(val dx: Int, val dy: Int) : RemoteMessage
+    data object PointCentre : RemoteMessage
+    data class Click(val button: PointerButton) : RemoteMessage
+    data class Scroll(val notches: Int) : RemoteMessage
+}
+
+/** The pointer's mouse buttons. */
+internal enum class PointerButton(val wire: String) {
+    Left("left"), Right("right"), Middle("middle");
+
+    companion object {
+        fun fromWire(wire: String): PointerButton? = entries.firstOrNull { it.wire == wire.lowercase() }
+    }
 }
 
 /** The film and music extras the phone can ask for. [value] is the speed in percent, the sleep minutes (0 off), 0/1, or the repeat mode. */
