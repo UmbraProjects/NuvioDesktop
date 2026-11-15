@@ -30,14 +30,17 @@ queue, and can "sleep" to try Wake. A strip shows what it was sent. This is for 
 **Remote tab**
 - Touchpad (swipe to move a tile, tap for OK), D-pad or **Pointer**, with Back, Home, Search (opens the phone keyboard)
   and More. The tag in the pad's corner switches between them, and the choice is remembered.
-- **Pointer**: the phone as an air mouse for the PC, like a Magic Remote. Point the phone at the TV and turn or tilt it:
-  the real Windows cursor follows, over Nuvio, the player and any other window. Tap to click; hold a finger still for a
-  moment (the phone buzzes) and the left button stays down until you lift, so turning the phone or sliding the finger
-  drags, as holding OK does on a Magic Remote. Drag on the pad to move the cursor by touch (the only way on a phone
-  without a gyroscope). The strip on the right scrolls up and down, the one underneath scrolls sideways (a poster row),
-  and **Right-click** is a tag below. **Centre** puts the cursor in the middle of the TV when the phone and the cursor no longer line up (the
-  phone only ever sends how it moved, never where it points). **Gyro on/off** leaves touch only, and the speed tag
-  cycles Slow, Normal and Fast. The gyro stops whenever the app is not on screen.
+- **Pointer**: the phone as the PC's mouse, like a Magic Remote, made to be used without looking down. The whole
+  Remote tab becomes one touch zone (over What to watch and the Back, Home, Search and More keys), and it never
+  swaps itself for the source list, the What to watch or Live TV mirrors, or the film and music screens: the TV's own
+  screens are driven with the cursor. Point the phone at the TV and turn or tilt it; the real Windows cursor follows,
+  over Nuvio, the player and any other window, and holds still while a finger is on the zone. **Tap** = click.
+  **Drag up or down** = scroll, **left or right** = scroll sideways (a poster row); the first movement picks the
+  direction. **Hold** still until it buzzes, then lift = right-click; hold and **turn the phone** = drag (as holding OK
+  does on a Magic Remote; it buzzes again when the button goes down). **Two fingers** = Back. Tags at the top:
+  **Centre** (puts the cursor mid-screen when it no longer lines up with the phone, which only ever sends how it
+  moved), the speed (Slow, Normal, Fast, remembered) and the way back to the Touchpad. The gyro stops whenever the
+  app is not on screen. A phone without a gyroscope cannot point and says so.
 - Works everywhere in Nuvio, including Settings (arrow keys there show a focus ring in the theme's colour).
 - **During a film:** a Now playing card, Subtitles and Audio tiles (tap for the next track), back 10s / play-pause /
   ahead 10s, Back, Sources, More. **Sources** shows the TV's source list on the phone, in the same order, and tapping

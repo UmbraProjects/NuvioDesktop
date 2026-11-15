@@ -232,7 +232,9 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
             },
             onRetry = viewModel::reconnect,
             trailing = {
-                if (state.sources != null) {
+                if (state.padMode == PadMode.Pointer) {
+                    // Pointer mode is a mouse: there are no panels to swap to.
+                } else if (state.sources != null) {
                     GlassTag(
                         if (padOverSources) "Sources" else state.padMode.label,
                         icon = if (padOverSources) Icons.AutoMirrored.Rounded.List else Icons.Rounded.CropSquare,
@@ -273,6 +275,8 @@ private fun RemoteTab(state: UiState, viewModel: RemoteViewModel) {
         val sources = state.sources
         val tonight = state.tonight
         when {
+            // Pointer mode is the TV's mouse: the whole tab, never swapped for a mirror or the playing screens.
+            state.padMode == PadMode.Pointer -> PointerBody(state, viewModel, Modifier.weight(1f))
             // The TV is showing its source list: pick one here (the pad, from the header tag, still drives the TV).
             sources != null && !padOverSources -> SourcesBody(sources, viewModel, onPad = { padOverSources = true })
             // Only while nothing plays: once a card starts a film, the film screen takes over.
@@ -1178,10 +1182,7 @@ private fun NavPanel(padMode: PadMode, viewModel: RemoteViewModel, modifier: Mod
             GlassTag(padMode.next().label, icon = padMode.next().icon, onClick = { viewModel.setPadMode(padMode.next()) })
         }
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            if (padMode == PadMode.Pointer) {
-                val pointerSpeed = viewModel.state.collectAsState().value.pointerSpeed
-                PointerPad(viewModel, pointerSpeed, compact = compact, modifier = Modifier.fillMaxSize().padding(top = 10.dp))
-            } else if (padMode == PadMode.Touchpad) {
+            if (padMode == PadMode.Touchpad) {
                 Touchpad(onKey = viewModel::press, compact = compact, modifier = Modifier.fillMaxSize())
             } else {
                 BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
