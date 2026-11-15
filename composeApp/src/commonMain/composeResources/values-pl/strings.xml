@@ -4131,6 +4131,7 @@
   <string name="shortcut_player_cycle_color_profile">Przełącz profil kolorów</string>
   <string name="shortcut_player_cycle_anime">Przełącz ulepszenie Anime4K (tylko bieżąca sesja)</string>
   <string name="shortcut_player_toggle_mpv_diagnostics">Pokaż / ukryj nakładkę diagnostyczną MPV</string>
+  <string name="shortcut_player_open_menu">Otwórz menu odtwarzacza</string>
   <string name="shortcut_app_go_home">Przejdź do ekranu głównego</string>
   <string name="shortcut_app_open_search">Otwórz wyszukiwanie</string>
   <string name="shortcut_app_open_library">Otwórz bibliotekę (ponownie, aby wrócić do ekranu głównego)</string>
@@ -4733,7 +4734,7 @@
   <string name="player_hud_video">Wideo</string>
   <string name="player_hud_adjust_custom_color">Dostosuj własny kolor…</string>
   <string name="player_hud_anime_shader">Shader anime</string>
-  <string name="player_hud_advanced_mpv">Zaawansowane (mpv)</string>
+  <string name="player_hud_advanced_mpv">Ustawienia MPV</string>
   <string name="player_hud_tools">Narzędzia</string>
   <string name="player_hud_submit_intro_outro">Prześlij intro / outro</string>
   <string name="player_hud_window">Okno</string>

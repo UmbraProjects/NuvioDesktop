@@ -190,16 +190,21 @@ object AddonRepository {
             }
 
             val existingByUrl = _uiState.value.addons.associateBy(ManagedAddon::manifestUrl)
-            _uiState.value = AddonsUiState(
-                addons = urls.map { url ->
-                    val row = rowsByUrl[url]
-                    existingByUrl[url].toPendingAddon(
-                        manifestUrl = url,
-                        userSetName = row?.name?.takeIf { it.isNotBlank() },
-                        enabled = row?.enabled,
-                    )
-                },
-            )
+            val pulledAddons = urls.map { url ->
+                val row = rowsByUrl[url]
+                existingByUrl[url].toPendingAddon(
+                    manifestUrl = url,
+                    userSetName = row?.name?.takeIf { it.isNotBlank() },
+                    enabled = row?.enabled,
+                )
+            }
+            // The foreground pull runs this on window focus; when nothing changed on the server,
+            // leave the state and the stored list alone.
+            if (initialized && pulledFromServer && pulledAddons == _uiState.value.addons) {
+                log.d { "pullFromServer() — remote matches local, no update needed" }
+                return
+            }
+            _uiState.value = AddonsUiState(addons = pulledAddons)
             persist()
             urls.forEach { url ->
                 val existing = existingByUrl[url]

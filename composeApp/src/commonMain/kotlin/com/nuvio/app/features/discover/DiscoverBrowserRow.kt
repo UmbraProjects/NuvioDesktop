@@ -425,7 +425,7 @@ private fun TmdbFilterMenus(state: DiscoverUiState, onMenuOpenChange: (Boolean) 
     }
 
     if (q.hasFilters) {
-        BrowseFilterIconAction(Icons.Rounded.FilterAltOff, stringResource(Res.string.browse_filter_clear_filters)) { update { it.clearedFilters() } }
+        BrowseFilterIconAction(Icons.Rounded.FilterAltOff, stringResource(Res.string.browse_filter_clear_filters), removesItself = true) { update { it.clearedFilters() } }
     }
     val count = when {
         state.isLoading && state.items.isEmpty() -> "Loading…"

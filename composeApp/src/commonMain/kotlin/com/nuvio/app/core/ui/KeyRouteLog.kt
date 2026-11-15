@@ -59,14 +59,32 @@ object KeyRouteLog {
     /** A menu that said so ([KeyRouteLayer]) is open. Dialogs do not count: they are a [keyLayer] of their own. */
     val popupOpen: Boolean get() = menus.isNotEmpty()
 
+    /**
+     * Any popup or dialog is open, read off the UI thread by the gamepad: its B (Back, sent as Backspace) then goes as
+     * Escape, which every menu and dialog closes on, so B closes what is open instead of doing nothing (2026-11-15).
+     */
+    @Volatile
+    var layerOpen: Boolean = false
+        private set
+
+    /** How many menus the keyboard or a pad opened are open, as Compose state: they dim the screen ([TvMenuBackdrop]). */
+    val openMenus = androidx.compose.runtime.mutableIntStateOf(0)
+    private val keyboardMenus = ArrayList<String>()
+
     internal fun layerOpened(name: String, menu: Boolean) {
         layers += name
         if (menu) menus += name
+        layerOpen = true
+        if (menu && KeyboardInputMode.active) keyboardMenus += name
+        openMenus.intValue = keyboardMenus.size
     }
 
     internal fun layerClosed(name: String, menu: Boolean) {
         layers.remove(name)
         if (menu) menus.remove(name)
+        layerOpen = layers.isNotEmpty()
+        if (menu) keyboardMenus.remove(name)
+        openMenus.intValue = keyboardMenus.size
         // A menu hands focus to nobody when it closes (picked with the mouse): the screen under it takes it back.
         if (menu) KeyLayers.settle("a menu closed")
     }

@@ -168,7 +168,7 @@ class GamepadInputTest {
                 AppShortcutAction.OpenYouTube,
                 // Settings is a top-bar / sidebar entry the D-pad reaches too.
                 AppShortcutAction.OpenSettings,
-                // On a music page the pad's Y (the trailer key) does this; elsewhere the player is a D-pad stop away.
+                // The pad's Y (the trailer key) does this wherever music is playing (Home's trailer gives way to it).
                 AppShortcutAction.FocusMusicPlayer,
                 // The panel ring is not a button's tap: holding the ring button (LB by default,
                 // GamepadSettingsRepository.ringButton) opens it, and it reaches every tab above.
@@ -202,6 +202,8 @@ class GamepadInputTest {
                 // (PlayerEngine.desktop's dispatcher), where the D-pad picks a channel.
                 PlayerShortcutAction.ChannelUp,
                 PlayerShortcutAction.ChannelDown,
+                // Zoom gave the View button to the player menu (2026-11-15), where it is a quick tile.
+                PlayerShortcutAction.CycleZoom,
             ),
             PlayerShortcutAction.entries.toSet() - boundPlayer,
             "player actions with no button",

@@ -653,6 +653,18 @@ private fun PlayerScreenRuntime.BindDiscordRichPresenceEffect() {
     // rather than settling for the still. `MetaDetailsRepository.fetch` is cached and
     // single-flighted, and the details screen that launched playback has almost always warmed it,
     // so this is usually free and never more than one request.
+    // A launch with no logo (a Continue Watching card whose enrichment never brought one, Random Play, a cloud row)
+    // takes the metadata record's, so the startup screen and pause overlay still show it. Peek first: usually free.
+    LaunchedEffect(parentMetaId, parentMetaType, args.logo) {
+        resolvedMetaLogo = null
+        if (!args.logo.isNullOrBlank()) return@LaunchedEffect
+        val metaId = parentMetaId.trim().takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val metaType = parentMetaType.trim().takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val found = MetaDetailsRepository.peekAny(type = metaType, id = metaId)?.logo
+            ?: runCatching { MetaDetailsRepository.fetch(type = metaType, id = metaId)?.logo }.getOrNull()
+        resolvedMetaLogo = found?.trim()?.takeIf { it.isNotBlank() }
+    }
+
     LaunchedEffect(parentMetaId, parentMetaType, poster, discordSettings.showPlaybackPresence) {
         discordMetaPosterUrl = null
         if (!discordSettings.showPlaybackPresence) return@LaunchedEffect

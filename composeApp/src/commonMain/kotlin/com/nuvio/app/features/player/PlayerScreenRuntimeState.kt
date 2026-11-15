@@ -44,7 +44,9 @@ internal class PlayerScreenRuntime(
     val streamSubtitle: String? get() = args.streamSubtitle
     val initialBingeGroup: String? get() = args.initialBingeGroup
     val pauseDescription: String? get() = args.pauseDescription
-    val logo: String? get() = args.logo
+    // The launch's logo, else the one looked up from the title's metadata (resolvedMetaLogo): a Continue Watching
+    // card that never got its logo used to open the player on a startup screen with none.
+    val logo: String? get() = args.logo?.takeIf { it.isNotBlank() } ?: resolvedMetaLogo
     val poster: String? get() = args.poster
     val background: String? get() = args.background
     val seasonNumber: Int? get() = args.seasonNumber
@@ -167,6 +169,7 @@ internal class PlayerScreenRuntime(
      * launched with is unusable for Discord Rich Presence. See `BindDiscordRichPresenceEffect`.
      */
     var discordMetaPosterUrl by mutableStateOf<String?>(null)
+    var resolvedMetaLogo by mutableStateOf<String?>(null)
 
     /**
      * The entry's own Kitsu/AniList poster, for native anime ids only. Resolved unconditionally
@@ -256,6 +259,8 @@ internal class PlayerScreenRuntime(
     var partyBehind by mutableStateOf(false)
     var partyBehindMs by mutableStateOf<Long?>(null)
     var partyRateNudge: Float? = null
+    /** The speed to go back to when a held play/pause key is let go; null when none is held (startHeldSpeed). */
+    var heldSpeedRestore: Float? = null
     var partyPreviousKey: String? = null
     var partyAppInBackground = false
     var playbackSnapshotMark: TimeMark? = null

@@ -35,6 +35,7 @@ object PlayerShortcutsRepository {
         PlayerShortcutAction.NextAudio to KeyEvent.VK_A,
         PlayerShortcutAction.OpenSources to KeyEvent.VK_O,
         PlayerShortcutAction.OpenEpisodes to KeyEvent.VK_E,
+        PlayerShortcutAction.OpenPlayerMenu to KeyEvent.VK_P,
         PlayerShortcutAction.CycleZoom to KeyEvent.VK_C,
         PlayerShortcutAction.SkipInterval to KeyEvent.VK_TAB,
         PlayerShortcutAction.CycleSvp to KeyEvent.VK_F7,

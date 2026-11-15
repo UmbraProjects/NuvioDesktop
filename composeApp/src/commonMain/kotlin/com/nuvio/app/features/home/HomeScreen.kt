@@ -3890,6 +3890,11 @@ fun HomeScreen(
                             }
                             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                             if (appShortcutMatches(AppShortcutAction.ToggleTrailer, event)) {
+                                // With music playing the key (a pad's Y) goes to the music player instead: a trailer
+                                // over the music is rarely wanted, and Home was the one page Y could not reach it from.
+                                if (com.nuvio.app.features.music.MusicKeyboard.playerShowing()) {
+                                    return@onPreviewKeyEvent com.nuvio.app.features.music.MusicKeyboard.togglePlayerFocus()
+                                }
                                 return@onPreviewKeyEvent handleHomeTvKey(HomeTvKey.ToggleTrailer)
                             }
                             if (appShortcutMatches(AppShortcutAction.ToggleTrailerMute, event)) {

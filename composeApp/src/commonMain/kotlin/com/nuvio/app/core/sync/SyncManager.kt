@@ -115,7 +115,20 @@ object SyncManager {
 
     private fun pullForegroundForProfile(profileId: Int) {
         scope.launch {
-            log.i { "pullForegroundForProfile($profileId) — syncing watch progress + watched + library" }
+            log.i { "pullForegroundForProfile($profileId) — syncing addons + collections + watch progress + watched + library" }
+
+            // Warm starts skip pullAllForProfile, so addons and collections added on another
+            // device used to arrive only after a profile switch or a fresh sign-in. One Supabase
+            // request each, no tracking-service calls; both skip applying when nothing changed.
+            launch {
+                runCatching { AddonRepository.pullFromServer(profileId) }
+                    .onFailure { log.e(it) { "Foreground addon pull failed" } }
+            }
+
+            launch {
+                runCatching { CollectionSyncService.pullFromServer(profileId) }
+                    .onFailure { log.e(it) { "Foreground collections pull failed" } }
+            }
 
             launch {
                 runCatching { LibraryRepository.pullFromServer(profileId) }

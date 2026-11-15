@@ -103,7 +103,8 @@ internal object GamepadDefaults {
         ),
         GamepadButton.Back to GamepadBinding(
             browsing = app(AppShortcutAction.DismissOverlay),
-            player = player(PlayerShortcutAction.CycleZoom),
+            // The player's menu: every setting in one place, and Zoom among its quick tiles (2026-11-15: was Zoom).
+            player = player(PlayerShortcutAction.OpenPlayerMenu),
         ),
         GamepadButton.LeftThumb to GamepadBinding(
             browsing = app(AppShortcutAction.ToggleFullscreen),

@@ -36,6 +36,16 @@ internal fun LazyListScope.tonightSettingsContent(isTablet: Boolean) {
                     onCheckedChange = TonightSettingsRepository::setEnabled,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
+                // The same switch as its row in Appearance > Navigation order.
+                val inNav by com.nuvio.app.features.navbar.NavBarLayoutRepository.tonightInNav.collectAsStateWithLifecycle()
+                SettingsSwitchRow(
+                    title = "Show in navigation",
+                    description = "A \"What to watch\" button in the navigation bar opens the picker. It is in the panel ring too while shown. Off, the phone remote and \"Open on Tonight\" still open it.",
+                    checked = inNav,
+                    isTablet = isTablet,
+                    onCheckedChange = com.nuvio.app.features.navbar.NavBarLayoutRepository::setTonightInNav,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
                 SettingsSliderRow(
                     title = stringResource(Res.string.tonight_bedtime),
                     description = stringResource(Res.string.tonight_bedtime_description),

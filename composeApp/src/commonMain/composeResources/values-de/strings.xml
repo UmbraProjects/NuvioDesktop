@@ -4121,6 +4121,7 @@
     <string name="shortcut_player_cycle_color_profile">Farbprofil wechseln</string>
     <string name="shortcut_player_cycle_anime">Anime4K-Verbesserung wechseln (nur aktuelle Sitzung)</string>
     <string name="shortcut_player_toggle_mpv_diagnostics">MPV-Diagnose-Overlay umschalten</string>
+    <string name="shortcut_player_open_menu">Player-Menü öffnen</string>
     <string name="shortcut_app_go_home">Zur Startseite</string>
     <string name="shortcut_app_open_search">Suche öffnen</string>
     <string name="shortcut_app_open_library">Bibliothek öffnen (erneut drücken für Startseite)</string>
@@ -4723,7 +4724,7 @@
     <string name="player_hud_video">Video</string>
     <string name="player_hud_adjust_custom_color">Eigene Farbe anpassen…</string>
     <string name="player_hud_anime_shader">Anime-Shader</string>
-    <string name="player_hud_advanced_mpv">Erweitert (mpv)</string>
+    <string name="player_hud_advanced_mpv">MPV-Einstellungen</string>
     <string name="player_hud_tools">Werkzeuge</string>
     <string name="player_hud_submit_intro_outro">Intro / Outro senden</string>
     <string name="player_hud_window">Fenster</string>

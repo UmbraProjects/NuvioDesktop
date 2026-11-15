@@ -218,6 +218,7 @@ private fun PinKeypad(
     )
 
     Column(
+        modifier = Modifier.pinKeyInput(onDigit, onBackspace),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         keys.forEach { row ->

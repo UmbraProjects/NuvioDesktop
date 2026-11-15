@@ -104,6 +104,60 @@ internal fun tmdbBrowseKeywordParam(query: TmdbBrowseQuery): String? {
     }
 }
 
+/**
+ * Only anime's second search: Japanese-language animation, for the anime TMDB never gave the "anime" keyword
+ * (some 3,000 titles: 10k+ Japanese animated films against 6.9k keyworded, 2026-11-15). Its results are merged
+ * with the keyword search's ([tmdbBrowseParams]). Tags must all match here too, as they must there. Null when
+ * the query rules it out: not Only, another original language picked, or Animation excluded.
+ *
+ * With several genres of which any may match, TMDB cannot also require Animation ("16,28|35" counts only the
+ * first group), so the pipe list goes as it is and the results are checked for Animation ([TMDB_ANIMATION_GENRE]).
+ */
+internal fun tmdbAnimeLanguageParams(
+    query: TmdbBrowseQuery,
+    media: TmdbBrowseMedia,
+    page: Int,
+    region: String,
+    today: LocalDate,
+): Map<String, String>? {
+    if (query.anime != TmdbBrowseAnime.Only) return null
+    if (query.language != null && query.language != "ja") return null
+    if (TMDB_ANIMATION_GENRE in query.withoutGenres) return null
+    val base = query.copy(anime = TmdbBrowseAnime.Include, allKeywords = true, language = "ja")
+    val p = LinkedHashMap(tmdbBrowseParams(base, media, page, region, today))
+    when {
+        query.genres.isEmpty() -> p["with_genres"] = TMDB_ANIMATION_GENRE.toString()
+        query.allGenres || query.genres.size == 1 ->
+            p["with_genres"] = (listOf(TMDB_ANIMATION_GENRE) + query.genres).distinct().joinToString(",")
+        else -> Unit
+    }
+    return p
+}
+
+/** What both Only anime searches find (keyworded *and* Japanese animation), taken off their sum for the total. */
+internal fun tmdbAnimeOverlapParams(
+    query: TmdbBrowseQuery,
+    media: TmdbBrowseMedia,
+    region: String,
+    today: LocalDate,
+): Map<String, String>? {
+    val p = tmdbAnimeLanguageParams(query, media, 1, region, today) ?: return null
+    return p + ("with_keywords" to tmdbBrowseKeywordParam(query)!!)
+}
+
+/** Two lists each already in [order], as one in that order; each keeps its own order among equals. */
+internal fun <T> mergeInOrder(a: List<T>, b: List<T>, order: Comparator<in T>): List<T> {
+    val out = ArrayList<T>(a.size + b.size)
+    var i = 0
+    var j = 0
+    while (i < a.size && j < b.size) {
+        if (order.compare(b[j], a[i]) < 0) out += b[j++] else out += a[i++]
+    }
+    while (i < a.size) out += a[i++]
+    while (j < b.size) out += b[j++]
+    return out
+}
+
 data class TmdbBrowseGenre(val id: Int, val name: String)
 
 data class TmdbBrowseProvider(val id: Int, val name: String, val logoUrl: String?)
@@ -346,26 +400,80 @@ object TmdbBrowse {
 
     suspend fun browse(query: TmdbBrowseQuery, page: Int, region: String, pages: Int = 2): TmdbBrowsePage {
         if (query.media == TmdbBrowseMedia.All) return browseBoth(query, page, region)
-        if (query.sort == TmdbBrowseSort.Trending) return trendingBrowse(query, region)
+        if (query.sort == TmdbBrowseSort.Trending) {
+            // Trending can only offer this week's ~300 trending titles, so a niche tag ("tennis court") matched none
+            // and the page came up empty (reported 2026-11-15). With nothing of the tag trending, its titles by
+            // popularity (TMDB's own short-term measure) stand in.
+            val trending = trendingBrowse(query, region)
+            if (trending.items.isNotEmpty() || query.keywords.isEmpty()) return trending
+            return browse(query.copy(sort = TmdbBrowseSort.Popular), page, region, pages)
+        }
         val media = query.media
         val today = LocalDate.parse(CurrentDateProvider.todayIsoDate())
-        val results = coroutineScope {
-            (0 until pages).map { i ->
-                async { get<TmdbBrowseResponse>("discover/${media.apiName}", tmdbBrowseParams(query, media, page + i, region, today)) }
-            }.awaitAll()
+        val path = "discover/${media.apiName}"
+        // Only anime is two searches merged: the anime keyword, and Japanese animation (tmdbAnimeLanguageParams).
+        val twoSearches = tmdbAnimeLanguageParams(query, media, page, region, today) != null
+        val (results, languageResults, overlap) = coroutineScope {
+            val keyword = (0 until pages).map { i ->
+                async { get<TmdbBrowseResponse>(path, tmdbBrowseParams(query, media, page + i, region, today)) }
+            }
+            val language = if (!twoSearches) emptyList() else (0 until pages).map { i ->
+                async { get<TmdbBrowseResponse>(path, tmdbAnimeLanguageParams(query, media, page + i, region, today)!!) }
+            }
+            val both = if (!twoSearches) null else async { animeOverlapCount(path, tmdbAnimeOverlapParams(query, media, region, today)!!) }
+            Triple(keyword.awaitAll(), language.awaitAll(), both?.await())
         }
+        val keywordItems = results.flatMap { it?.results.orEmpty() }
+        val ordered = if (!twoSearches) keywordItems else mergeInOrder(
+            keywordItems,
+            languageResults.flatMap { it?.results.orEmpty() }.filter { TMDB_ANIMATION_GENRE in it.genreIds },
+            browseOrder(query.sort, media == TmdbBrowseMedia.Tv),
+        )
         val seen = HashSet<Int>()
-        val items = results.flatMap { it?.results.orEmpty() }
+        val items = ordered
             .filter { it.id > 0 && seen.add(it.id) }
             .filter { query.anime != TmdbBrowseAnime.Exclude || !isLikelyAnime(it.genreIds, it.originalLanguage) }
             .map { it.toMetaPreview(media) }
-        val totalPages = results.firstOrNull()?.totalPages ?: 0
+        val keywordFirst = results.firstOrNull()
+        val languageFirst = languageResults.firstOrNull()
+        val totalPages = maxOf(keywordFirst?.totalPages ?: 0, languageFirst?.totalPages ?: 0)
+        val total = if (!twoSearches) keywordFirst?.totalResults ?: 0 else {
+            val k = keywordFirst?.totalResults ?: 0
+            val j = languageFirst?.totalResults ?: 0
+            // Both, less what both found. A failed overlap count leaves the larger of the two, never a double count.
+            overlap?.let { (k + j - it).coerceAtLeast(maxOf(k, j)) } ?: maxOf(k, j)
+        }
         val last = page + pages - 1
         return TmdbBrowsePage(
             items = items,
             nextPage = if (last < minOf(totalPages, 500)) last + 1 else null,
-            total = results.firstOrNull()?.totalResults ?: 0,
+            total = total,
         )
+    }
+
+    private val overlapCounts = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Int>>()
+
+    /** How many titles one search finds (its first page's total), kept an hour: every page of Only anime asks. */
+    private suspend fun animeOverlapCount(path: String, params: Map<String, String>): Int? {
+        val key = "$path:$params"
+        val now = System.currentTimeMillis()
+        overlapCounts[key]?.let { (at, n) -> if (now - at < 3_600_000L) return n }
+        val n = get<TmdbBrowseResponse>(path, params)?.totalResults ?: return null
+        if (overlapCounts.size > 500) overlapCounts.clear()
+        overlapCounts[key] = now to n
+        return n
+    }
+
+    /** The order TMDB returns [sort] in, to merge two searches' pages into one. */
+    private fun browseOrder(sort: TmdbBrowseSort, tv: Boolean): Comparator<TmdbBrowseItem> {
+        fun date(r: TmdbBrowseItem) = (if (tv) r.firstAirDate else r.releaseDate).orEmpty()
+        return when (sort) {
+            TmdbBrowseSort.Popular, TmdbBrowseSort.Trending -> compareByDescending { it.popularity }
+            TmdbBrowseSort.TopRated -> compareByDescending { it.voteAverage }
+            TmdbBrowseSort.MostVoted -> compareByDescending { it.voteCount }
+            TmdbBrowseSort.Newest -> compareByDescending { date(it) }
+            TmdbBrowseSort.Oldest -> compareBy { date(it) }
+        }
     }
 
     /**
@@ -482,15 +590,19 @@ object TmdbBrowse {
                 sort = TmdbBrowseSort.Popular, genres = emptyList(), withoutGenres = emptyList(), language = null,
                 yearFrom = null, yearTo = null, minRating = null, minVotes = null, releasedWithinDays = null,
             )
-            val params = tmdbBrowseParams(q, media, 1, region, today)
-            val matches = cachedList("match:${media.apiName}:$params", 3_600_000L) {
+            suspend fun matchesFor(params: Map<String, String>) = cachedList("match:${media.apiName}:$params", 3_600_000L) {
                 coroutineScope {
                     (1..MATCH_PAGES).map { page ->
                         async { get<TmdbBrowseResponse>("discover/${media.apiName}", params + ("page" to page.toString())) }
                     }.awaitAll()
                 }.flatMap { it?.results.orEmpty() }
             }
-            val allowed = matches.mapTo(HashSet()) { it.id }
+            val matches = matchesFor(tmdbBrowseParams(q, media, 1, region, today))
+            // Only anime: Japanese animation without the keyword counts too, as in browse().
+            val languageMatches = tmdbAnimeLanguageParams(q, media, 1, region, today)
+                ?.let { matchesFor(it) }.orEmpty()
+                .filter { TMDB_ANIMATION_GENRE in it.genreIds }
+            val allowed = (matches + languageMatches).mapTo(HashSet()) { it.id }
             rows = rows.filter { it.id in allowed }
         }
         return TmdbBrowsePage(items = rows.map { it.toMetaPreview(media) }, nextPage = null, total = rows.size)

@@ -54,6 +54,8 @@ internal expect object NavBarLayoutStorage {
     fun saveOrder(value: String?)
     fun loadGamesInNav(): Boolean?
     fun saveGamesInNav(value: Boolean)
+    fun loadTonightInNav(): Boolean?
+    fun saveTonightInNav(value: Boolean)
 }
 
 object NavBarLayoutRepository {
@@ -89,6 +91,17 @@ object NavBarLayoutRepository {
     fun setGamesInNav(enabled: Boolean) {
         NavBarLayoutStorage.saveGamesInNav(enabled)
         _gamesInNav.value = enabled
+    }
+
+    private val _tonightInNav by lazy { MutableStateFlow(NavBarLayoutStorage.loadTonightInNav() ?: true) }
+
+    /** fork:tonight - the "What to watch" entry (Navigation order, or Random play's Tonight section). On by default. */
+    val tonightInNav: StateFlow<Boolean>
+        get() = _tonightInNav.asStateFlow()
+
+    fun setTonightInNav(enabled: Boolean) {
+        NavBarLayoutStorage.saveTonightInNav(enabled)
+        _tonightInNav.value = enabled
     }
 }
 
@@ -127,6 +140,7 @@ fun rememberNavBarEntries(): List<NavBarEntry> {
     val order by remember { NavBarLayoutRepository.order }.collectAsStateWithLifecycle()
     val discover by remember { ThemeSettingsRepository.desktopDiscoverTabVisible }.collectAsStateWithLifecycle()
     val games by remember { NavBarLayoutRepository.gamesInNav }.collectAsStateWithLifecycle()
+    val tonight by remember { NavBarLayoutRepository.tonightInNav }.collectAsStateWithLifecycle()
     val liveTv = com.nuvio.app.features.iptv.rememberLiveTvTabVisible()
     val youTube = com.nuvio.app.features.youtube.rememberYouTubeTabVisible()
     val music = com.nuvio.app.features.music.rememberMusicTabVisible()
@@ -137,7 +151,8 @@ fun rememberNavBarEntries(): List<NavBarEntry> {
             NavBarEntry.YouTube -> youTube
             NavBarEntry.Music -> music
             NavBarEntry.Games -> games
-            NavBarEntry.Home, NavBarEntry.Search, NavBarEntry.Library, NavBarEntry.Tonight -> true
+            NavBarEntry.Tonight -> tonight
+            NavBarEntry.Home, NavBarEntry.Search, NavBarEntry.Library -> true
         }
     }
 }

@@ -4118,6 +4118,7 @@
   <string name="shortcut_player_cycle_color_profile">Ganti profil warna</string>
   <string name="shortcut_player_cycle_anime">Ganti peningkatan Anime4K (hanya sesi ini)</string>
   <string name="shortcut_player_toggle_mpv_diagnostics">Tampilkan/sembunyikan overlay diagnostik MPV</string>
+  <string name="shortcut_player_open_menu">Buka menu pemutar</string>
   <string name="shortcut_app_go_home">Ke Beranda</string>
   <string name="shortcut_app_open_search">Buka Pencarian</string>
   <string name="shortcut_app_open_library">Buka Pustaka (tekan lagi untuk kembali ke Beranda)</string>
@@ -4720,7 +4721,7 @@
   <string name="player_hud_video">Video</string>
   <string name="player_hud_adjust_custom_color">Sesuaikan warna kustom…</string>
   <string name="player_hud_anime_shader">Shader anime</string>
-  <string name="player_hud_advanced_mpv">Lanjutan (mpv)</string>
+  <string name="player_hud_advanced_mpv">Pengaturan MPV</string>
   <string name="player_hud_tools">Alat</string>
   <string name="player_hud_submit_intro_outro">Kirim intro / outro</string>
   <string name="player_hud_window">Jendela</string>

@@ -121,7 +121,7 @@ private class AnchoredCursorPositionProvider(private val rect: Rect) : PopupPosi
             x = anchorBounds.left + rect.left.roundToInt(),
             y = anchorBounds.top + rect.top.roundToInt(),
         )
-        return CursorMenuPositionProvider(cursor)
+        return CursorMenuPositionProvider(cursor, centredForKeyboard = false)
             .calculatePosition(anchorBounds, windowSize, layoutDirection, popupContentSize)
     }
 }

@@ -2,6 +2,9 @@ package com.nuvio.app.features.discover
 
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.focusProperties
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
@@ -29,6 +32,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -218,9 +222,24 @@ fun BrowseFilterCaption(text: String) {
 
 /** An icon that acts straight away ("Clear filters"), named by its tooltip; [on] tints it as the current choice (no dot). */
 @Composable
-fun BrowseFilterIconAction(icon: ImageVector, label: String, on: Boolean = false, onClick: () -> Unit) {
+fun BrowseFilterIconAction(
+    icon: ImageVector,
+    label: String,
+    on: Boolean = false,
+    // For an action that removes itself (Clear filters): pressed from the keyboard, focus first steps to the filter on
+    // its left, so it stays where the user was instead of falling back to the posters (2026-11-15).
+    removesItself: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    var hasFocus by remember { mutableStateOf(false) }
     NuvioPosterHoverTooltip(title = label) {
-        BrowseFilterIconButton(icon = icon, label = label, on = on, open = false, dot = false, onPress = { _, _ -> onClick() })
+        Box(modifier = Modifier.onFocusChanged { hasFocus = it.hasFocus }) {
+            BrowseFilterIconButton(icon = icon, label = label, on = on, open = false, dot = false, onPress = { _, _ ->
+                if (removesItself && hasFocus) focusManager.moveFocus(FocusDirection.Left)
+                onClick()
+            })
+        }
     }
 }
 
@@ -397,17 +416,43 @@ private fun BrowseFilterMenuSurface(maxHeight: Dp, content: @Composable ColumnSc
         modifier = Modifier.widthIn(min = MenuMinWidth, max = MenuMaxWidth),
         shape = MenuShape,
     ) {
-        Column(
-            modifier = Modifier
-                .focusRequester(firstChoice)
-                // The menu is its own window: the arrows (and a pad's D-pad) walk its choices, which Compose Desktop
-                // does not do by itself.
-                .arrowKeyFocusNavigation()
-                .heightIn(max = maxHeight)
-                .verticalScroll(rememberScrollState())
-                .padding(6.dp),
-        ) {
-            content()
+        // A long menu (every addon's catalogs under Catalog) gets a slim glass thumb on its right edge, and the
+        // choices step in from it so it never sits on a label.
+        val scroll = rememberScrollState()
+        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+        Box(modifier = Modifier.heightIn(max = maxHeight)) {
+            Column(
+                modifier = Modifier
+                    .focusRequester(firstChoice)
+                    // A text field at the top (studio and tag search, the From / To years) keeps Up and Down for its
+                    // caret, so they never reached the menu and its results could not be reached from the keyboard
+                    // (2026-11-15). Up and Down are taken first here; Left and Right still move the caret.
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != androidx.compose.ui.input.key.KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        if (!com.nuvio.app.core.ui.TextInputFocusTracker.active.value) return@onPreviewKeyEvent false
+                        when (event.key) {
+                            androidx.compose.ui.input.key.Key.DirectionDown -> { focusManager.moveFocus(FocusDirection.Down); true }
+                            androidx.compose.ui.input.key.Key.DirectionUp -> { focusManager.moveFocus(FocusDirection.Up); true }
+                            else -> false
+                        }
+                    }
+                    // The menu is its own window: the arrows (and a pad's D-pad) walk its choices, which Compose Desktop
+                    // does not do by itself.
+                    .arrowKeyFocusNavigation()
+                    // As wide as its widest row, so a menu of short choices is not a wide box of empty space; rows
+                    // that fill the width (the highlight) stretch to that row, not to the 560dp cap (2026-11-15).
+                    .width(androidx.compose.foundation.layout.IntrinsicSize.Max)
+                    .heightIn(max = maxHeight)
+                    .verticalScroll(scroll)
+                    .padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = if (scroll.maxValue > 0) 14.dp else 6.dp),
+            ) {
+                content()
+            }
+            com.nuvio.app.core.ui.NuvioGlassVerticalScrollbar(
+                state = scroll,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(top = 10.dp, bottom = 10.dp, end = 4.dp)
+                    .then(Modifier.fillMaxHeight()),
+            )
         }
     }
 }
@@ -461,7 +506,8 @@ fun <T> BrowseMenuCheckColumns(
     onToggle: (T) -> Unit,
     label: (T) -> String,
 ) {
-    Column(modifier = Modifier.width(MenuColumnsWidth)) {
+    // Two equal columns as wide as the longest name, rather than a fixed 400dp.
+    Column(modifier = Modifier.width(androidx.compose.foundation.layout.IntrinsicSize.Max)) {
         items.chunked(2).forEach { pair ->
             Row(modifier = Modifier.fillMaxWidth()) {
                 pair.forEach { item ->
@@ -475,7 +521,6 @@ fun <T> BrowseMenuCheckColumns(
     }
 }
 
-private val MenuColumnsWidth = 400.dp
 
 @Composable
 private fun BrowseMenuOption(
@@ -492,10 +537,10 @@ private fun BrowseMenuOption(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = ContextMenuRowHeight)
+            // Opened from the keyboard or a pad (the centred TV sheet): taller rows.
+            .heightIn(min = if (LocalBrowseMenuKeyboardOpened.current) 48.dp else ContextMenuRowHeight)
             .clip(OptionShape)
             .background(if (hovered || focused) Color.White.copy(alpha = 0.10f) else Color.Transparent)
-            .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, OptionShape) else Modifier)
             .hoverable(interaction)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 11.dp),
