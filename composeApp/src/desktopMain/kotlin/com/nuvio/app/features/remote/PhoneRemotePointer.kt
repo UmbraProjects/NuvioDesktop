@@ -30,10 +30,28 @@ internal object PhoneRemotePointer {
         val robot = robot() ?: return
         val at = MouseInfo.getPointerInfo()?.location ?: return
         val screen = screenAt(at) ?: return
-        val (stepX, stepY) = accumulator.step(dx, dy, screen.width)
+        var px = dx * screen.width.coerceAtLeast(1) / UNITS_PER_WIDTH
+        var py = dy * screen.width.coerceAtLeast(1) / UNITS_PER_WIDTH
+        if (aimAssistOn()) {
+            // Speed from this step and the time since the last one; a first step after a pause counts as slow.
+            val now = System.nanoTime()
+            val seconds = ((now - lastMoveNanos) / 1_000_000_000.0).coerceIn(0.004, 0.25)
+            lastMoveNanos = now
+            val scale = screen.width / 1920.0
+            AimTargets.refresh(at, screen, (AimAssist.PULL_RADIUS_PX * scale).toInt())
+            val adjusted = AimAssist.adjust(px, py, at, kotlin.math.hypot(px, py) / seconds, AimTargets.over, AimTargets.near, scale)
+            px = adjusted.first
+            py = adjusted.second
+        }
+        val (stepX, stepY) = accumulator.stepPixels(px, py)
         if (stepX == 0 && stepY == 0) return
         robot.mouseMove(at.x + stepX, at.y + stepY)
     }
+
+    private var lastMoveNanos = 0L
+
+    /** Settings > Keyboard shortcuts > Phone remote > Aim assist (on unless turned off). */
+    private fun aimAssistOn(): Boolean = PhoneRemote.state.value.aimAssist
 
     /** The middle of the screen Nuvio's window is on (else the main screen). */
     @Synchronized
@@ -132,8 +150,13 @@ internal class PointerAccumulator {
 
     fun step(dx: Int, dy: Int, screenWidth: Int): Pair<Int, Int> {
         val scale = screenWidth.coerceAtLeast(1) / UNITS_PER_WIDTH
-        restX += dx * scale
-        restY += dy * scale
+        return stepPixels(dx * scale, dy * scale)
+    }
+
+    /** Whole pixels of a step already in (fractional) pixels, keeping the remainder. */
+    fun stepPixels(px: Double, py: Double): Pair<Int, Int> {
+        restX += px
+        restY += py
         val x = restX.toInt()
         val y = restY.toInt()
         restX -= x

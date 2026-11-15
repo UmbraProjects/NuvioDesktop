@@ -18,6 +18,8 @@ data class PhoneRemoteState(
     val connectedDevices: List<String> = emptyList(),
     /** What the phone will call this PC. */
     val pcName: String = "Nuvio",
+    /** The phone's pointer is drawn toward buttons and posters when moving slowly (PhoneRemoteAim.kt). */
+    val aimAssist: Boolean = true,
 ) {
     /**
      * fork:phone-remote QR pairing — what the QR code in Settings holds: everything the phone would otherwise be told
@@ -55,6 +57,8 @@ expect fun ensurePhoneRemoteLoaded()
 expect fun phoneRemoteState(): StateFlow<PhoneRemoteState>
 
 expect fun setPhoneRemoteEnabled(enabled: Boolean)
+
+expect fun setPhoneRemoteAimAssist(enabled: Boolean)
 
 /** A new pairing code; every phone paired so far has to pair again. */
 expect fun resetPhoneRemotePairing()
