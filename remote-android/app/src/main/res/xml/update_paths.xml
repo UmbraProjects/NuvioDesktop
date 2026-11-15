@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The folder AppUpdate.kt downloads a newer APK into, shared with Android's installer. -->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Poster wallpaper: the lock screen shows what the TV plays (no prompt; Android grants it on install). -->
     <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <!-- The app's own updater (AppUpdate.kt): hands a newer APK to Android's installer, which asks before installing. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:allowBackup="false"
@@ -53,6 +55,17 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- The downloaded update, shared with the installer (AppUpdate.kt). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths" />
+        </provider>
 
         <service
             android:name=".NowPlayingService"

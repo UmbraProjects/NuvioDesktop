@@ -209,11 +209,15 @@ internal val RemoteColors = darkColorScheme(
 private fun RemoteApp(viewModel: RemoteViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     GlassGround {
-    Box(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-        when (val screen = state.screen) {
-            Screen.Pick -> PickScreen(state, viewModel)
-            is Screen.Pair -> PairScreen(screen, state, viewModel)
-            Screen.Remote -> ConnectedScreen(state, viewModel)
+    Column(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+        // A newer build from GitHub, when there is one (AppUpdate.kt).
+        UpdateBanner()
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            when (val screen = state.screen) {
+                Screen.Pick -> PickScreen(state, viewModel)
+                is Screen.Pair -> PairScreen(screen, state, viewModel)
+                Screen.Remote -> ConnectedScreen(state, viewModel)
+            }
         }
     }
     }

@@ -67,5 +67,5 @@ jobs:
             --prerelease \
             --latest=false \
             --target "$GITHUB_SHA" \
-            --title "Nuvio Remote (${{ github.ref_name }} $sha)" \
+            --title "Nuvio Remote build ${{ github.run_number }} (${{ github.ref_name }} $sha)" \
             --notes "Android remote for Nuvio HTPC. Download NuvioRemote.apk on the phone and open it to install. On the PC, turn on Settings > Keyboard shortcuts > Phone remote."

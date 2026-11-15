@@ -26,6 +26,8 @@ android {
         targetSdk = 35
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
         versionName = "0.1.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+        // The repo whose NuvioRemote release the app checks for updates (AppUpdate.kt); empty, so off, on a PC build.
+        buildConfigField("String", "UPDATE_REPO", "\"${System.getenv("GITHUB_REPOSITORY").orEmpty()}\"")
     }
 
     signingConfigs {
@@ -57,6 +59,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -75,4 +78,6 @@ dependencies {
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
     testImplementation("junit:junit:4.13.2")
+    // The real org.json for unit tests: Android's own is a stub off the device (AppUpdate's release parsing).
+    testImplementation("org.json:json:20240303")
 }

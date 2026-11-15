@@ -6,6 +6,11 @@ upstream Nuvio.
 
 - **Download:** the APK in the NuvioRemote release of the repo your desktop build comes from: [UmbraProjects](https://github.com/UmbraProjects/NuvioDesktop/releases/tag/NuvioRemote) or [Spyder's fork](https://github.com/spydermahn1234/NuvioDesktop/releases/tag/NuvioRemote).
   It is rebuilt by `.github/workflows/android-remote.yml` on every push to `Spyder` or `windows-tv-adaptive` that touches `remote-android/` or that workflow.
+- **Updates:** a build from GitHub checks that same release when it opens (and on return, every few hours) and shows
+  **Update available** when a newer build is there. **Update** downloads it and opens Android's installer, which asks
+  first; the first time, Android asks you to allow installs from Nuvio Remote. This needs the release title to carry
+  the build number ("Nuvio Remote build 12 (...)"), which the workflow does, and every build signed with the same key
+  (the `NUVIO_REMOTE_KEYSTORE_*` secrets), or Android refuses to install over the old one.
 - **Needs:** Android 8 or newer, and a Nuvio build from the same branch. Most features need the PC and the phone on
   the same build: an older PC ignores what it does not know, and an older phone never asks for it.
 
