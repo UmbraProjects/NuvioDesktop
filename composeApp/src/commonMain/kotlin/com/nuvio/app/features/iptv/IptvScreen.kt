@@ -190,7 +190,8 @@ fun IptvScreen(
     val onNow = settings.onNow
     // fork:live-tv-lineup - with Your 40 on, the tab opens on the numbered lineup.
     val lineupOn = settings.lineupOn
-    val home = if (lineupOn) IptvLineupRules.SECTION else if (onNow) IptvWall.ON_NOW else IptvSection.ALL
+    // fork:live-tv-polish - with Stage on the old wall sections are left to the stages, so the list starts on Your 40 or All.
+    val home = if (lineupOn) IptvLineupRules.SECTION else if (onNow && !settings.stage) IptvWall.ON_NOW else IptvSection.ALL
     var section by rememberSaveable(playlist.id, onNow, lineupOn) { mutableStateOf(home) }
     // fork:navbar-search - shared with the app bar's Search, which on this tab filters the channels.
     var filter by IptvTopBarSearch::text
@@ -289,7 +290,8 @@ fun IptvScreen(
             if (lineupOn) {
                 add(IptvSidebarItem("section:${IptvLineupRules.SECTION}", "Your 40", count = lineupChannels.size.takeIf { it > 0 }, section = IptvLineupRules.SECTION))
             }
-            if (onNow) {
+            // fork:live-tv-polish - with Stage on, these are on the stages already; the classic list keeps only channels.
+            if (onNow && !stageOn) {
                 add(IptvSidebarItem("section:${IptvWall.ON_NOW}", "On now", section = IptvWall.ON_NOW))
                 add(IptvSidebarItem("section:${IptvWall.SPORT}", "Sport", count = wall?.sport?.size?.takeIf { it > 0 }, section = IptvWall.SPORT))
                 add(IptvSidebarItem("section:${IptvWall.FILMS}", "Films", count = wall?.films?.size?.takeIf { it > 0 }, section = IptvWall.FILMS))

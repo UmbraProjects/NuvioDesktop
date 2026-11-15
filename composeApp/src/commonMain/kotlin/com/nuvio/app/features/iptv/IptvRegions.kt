@@ -134,6 +134,32 @@ object IptvRegions {
             .map { it.key }
 
     /** A flag picture for [region]; the Windows emoji font has no flags to draw it with. */
+    /** fork:live-tv-polish - the countries offered for Settings > Live TV > Home country, in this order. */
+    val HOME_CHOICES = listOf("GB", "IE", "US", "CA", "AU", "NZ", "DE", "FR", "ES", "IT", "NL", "PT", "PL", "IN")
+
+    /** "United Kingdom" for "GB". */
+    fun countryName(region: String): String =
+        runCatching { Locale.Builder().setRegion(region).build().getDisplayCountry(Locale.ENGLISH) }.getOrNull()?.ifBlank { null } ?: region
+
+    /**
+     * fork:live-tv-polish - how much a programme gains in the picks for where its channel is from, given the viewer's
+     * [home] country: home channels rank higher, and news from another country (News 12 Brooklyn, Australian breakfast
+     * news) drops right down. No home, or a channel whose country is unknown: nothing changes.
+     */
+    fun homeBonus(region: String?, home: String?, kind: String?): Int = when {
+        home == null || region == null -> 0
+        region == home -> HOME_BONUS
+        kind == IptvProgrammeKind.NEWS -> -FOREIGN_NEWS_PENALTY
+        else -> 0
+    }
+
+    const val HOME_BONUS = 20
+    const val FOREIGN_NEWS_PENALTY = 40
+
+    /** The home country in use: the one set in Settings, else the triage's only country when it kept just one. */
+    fun effectiveHome(setting: String?, triageRegions: Set<String>?): String? =
+        setting ?: triageRegions?.filter { it.length == 2 }?.singleOrNull()
+
     fun flagUrl(region: String): String = "https://flagcdn.com/w80/${region.lowercase()}.png"
 
     /** The code shown beside a flag: providers' "UK" rather than ISO's "GB". */

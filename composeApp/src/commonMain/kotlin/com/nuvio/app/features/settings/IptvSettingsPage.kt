@@ -28,8 +28,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioModalDialog
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.iptv.IptvBrakeRules
-import com.nuvio.app.features.iptv.IptvStage
-import com.nuvio.app.features.iptv.IptvViewRules
 import com.nuvio.app.features.iptv.IptvWeedRules
 import com.nuvio.app.features.iptv.IptvDecide
 import com.nuvio.app.features.iptv.IptvPlaylist
@@ -191,6 +189,20 @@ internal fun LazyListScope.iptvSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-stage")),
                     onCheckedChange = IptvRepository::setStage,
                 )
+                // fork:live-tv-polish - the home country for the picks.
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsChoiceRow(
+                    title = "Home country",
+                    description = "The picks (the front door, Three things, For you now and the other views) put this country's " +
+                        "channels first and push other countries' news down, so the news you see is yours. " +
+                        "From the triage: uses the triage's country when it kept only one.",
+                    options = listOf(SettingsChoiceOption<String?>(null, "From the triage")) +
+                        com.nuvio.app.features.iptv.IptvRegions.HOME_CHOICES.map { SettingsChoiceOption<String?>(it, com.nuvio.app.features.iptv.IptvRegions.countryName(it)) },
+                    selectedValue = settings.homeRegion,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-home-region")),
+                    onSelected = IptvRepository::setHomeRegion,
+                )
                 // fork:live-tv-front-door
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
@@ -303,31 +315,7 @@ internal fun LazyListScope.iptvSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-live-subtitle-words")),
                     onCheckedChange = IptvRepository::setLiveSubtitleWords,
                 )
-                // fork:live-tv-views - more ways to see everything, each a stage of its own.
-                IptvViewRules.VIEWS.forEach { view ->
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = "View: ${view.label}",
-                        description = when (view) {
-                            IptvStage.Map -> "Needs Stage. Everything on now as blocks by kind (Sport, Films, News...), the busiest " +
-                                "biggest; OK opens a block into what is on in it, Back zooms out again."
-                            IptvStage.Mosaic -> "Needs Stage. Everything on now as one mosaic: big tiles for what you are likeliest " +
-                                "to want (followed, watched to the end before, new), small for the rest."
-                            IptvStage.River -> "Needs Stage. The next three hours as lanes by kind, not by channel: pick a " +
-                                "programme and Nuvio picks the best channel showing it."
-                            IptvStage.Wall -> "Needs Stage. Real pictures from your channels, one still each every few minutes, " +
-                                "taken only while nothing plays. Needs ffmpeg installed (winget install ffmpeg); without it, programme art."
-                            IptvStage.Grid -> "Needs Stage. Tonight by kind and half-hour, darker where more starts; OK on a " +
-                                "cell lists what starts there."
-                            else -> "Needs Stage. One channel at a time, big, with the ones before and after peeking; up and down " +
-                                "flip, a typed number jumps."
-                        },
-                        checked = view.name in settings.views,
-                        isTablet = isTablet,
-                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-view-${view.name.lowercase()}")),
-                        onCheckedChange = { IptvRepository.setView(view, it) },
-                    )
-                }
+                // fork:live-tv-views - the six extra views are always there: the Views chip on Live TV's strip picks one.
                 // fork:live-tv-departure
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(

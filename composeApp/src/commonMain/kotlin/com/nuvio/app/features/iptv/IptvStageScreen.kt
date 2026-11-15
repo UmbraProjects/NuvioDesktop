@@ -145,6 +145,8 @@ internal class IptvStageChannel(val number: Int, val channel: IptvMergedChannel,
 internal class IptvStageModel(
     val total: Int,
     val mergedCount: Int,
+    /** fork:live-tv-polish - merged channels the triage keeps (mergedCount counts every one, kept or not). */
+    val keptMerged: Int = mergedCount,
     val lineup: List<IptvStageChannel>,
     val lineupUids: Set<Int>,
     val usualKeys: Set<String>,
@@ -250,8 +252,15 @@ internal fun buildIptvStage(
     val bedMs = IptvRunningOrder.bedtimeMs(now, TonightSettingsRepository.state.value.bedMinuteOfDay)
     // fork:live-tv-taste - followed, finished before, new rather than a repeat, with a picture and words.
     val taste = settings.titles
+    // fork:live-tv-polish - the home country lifts its own channels and sinks other countries' news.
+    val regionByCategory = IptvRegions.categoryRegions(content)
+    val home = IptvRegions.effectiveHome(settings.homeRegion, settings.triage[playlist.id]?.regions)
     val rank = { p: IptvWallProgramme ->
-        IptvTasteRules.score(p.entry, IptvTasteRules.statOf(taste, p.entry.title), IptvDecide.isFollowed(settings.follows, p.entry.title))
+        val category = categoryNames[p.channel.primary.categoryId].orEmpty()
+        val newsy = p.entry.kind == IptvProgrammeKind.NEWS || category.contains("news", ignoreCase = true) ||
+            p.channel.primary.name.contains("news", ignoreCase = true)
+        IptvTasteRules.score(p.entry, IptvTasteRules.statOf(taste, p.entry.title), IptvDecide.isFollowed(settings.follows, p.entry.title)) +
+            IptvRegions.homeBonus(regionByCategory[p.channel.primary.categoryId], home, if (newsy) IptvProgrammeKind.NEWS else p.entry.kind)
     }
     val three = IptvDecide.three(picks, usuals, inLineup, now, IptvDecide.rotationFor(settings.shuffle, night), endsBy = bedMs, rank = rank)
     val board = IptvDecide.minutes(picks, past, now, settings.minutes, perColumn = 6)
@@ -311,7 +320,10 @@ internal fun buildIptvStage(
     val matchProgrammes = followedMatches.mapNotNull { match -> IptvSportMatch.programmeFor(match, matchPool, now)?.let { match.id to it } }.toMap()
     val followedLive = followedMatches.filter { it.phase == MatchPhase.Live || it.phase == MatchPhase.HalfTime }.mapNotNull { matchProgrammes[it.id] }
     val doorCandidates = IptvDoorRules.candidates(picks, settings.follows, followedLive, lineupUids, usuals, now, rank)
-    val favourites = settings.favourites.asSequence().mapNotNull { byRef[it] }.distinctBy { it.primary.uid }.take(10).map(::stageChannel).toList()
+    // fork:live-tv-polish - two starred channels showing the same thing (the WSL on Sky Sports and Sky One) are one row.
+    val favourites = settings.favourites.asSequence().mapNotNull { byRef[it] }.distinctBy { it.primary.uid }.map(::stageChannel)
+        .distinctBy { c -> c.now?.let { IptvDecide.normalise(it.title) + "@" + it.startMs / 60_000L } ?: "uid:${c.channel.primary.uid}" }
+        .take(10).toList()
     val carryOn = settings.recents.asSequence().mapNotNull { byRef[it] }.firstOrNull()?.let(::stageChannel)
     return IptvStageModel(
         doorCandidates = doorCandidates,
@@ -321,6 +333,7 @@ internal fun buildIptvStage(
         matchProgrammes = matchProgrammes,
         total = if (shownCategories == null) content.channels.size else content.channels.count { shownCategories.keeps(it) },
         mergedCount = merged.size,
+        keptMerged = if (shownCategories == null) merged.size else merged.count { shownCategories.keeps(it) },
         lineup = lineup.mapIndexed { index, channel ->
             val on = guideByUid[channel.primary.uid]
             IptvStageChannel(index + 1, channel, on?.current(now), on?.next(now))
@@ -364,6 +377,11 @@ private const val HOLD_MS = 550L
 private val BedChoices = listOf(22 * 60 + 30, 23 * 60 + 30, 30)
 /** Tonight's "Starts" choices: now, 18:00, 20:00 (as minutes of the day; -1 = now). */
 private val FromChoices = listOf(-1, 18 * 60, 20 * 60)
+/** fork:live-tv-polish - groups whose hold OK does something of its own, so it does not open the programme menu. */
+private val OWN_HOLD_GROUPS = setOf("lineup", "follows", "learned", "doorFavs")
+
+/** fork:live-tv-polish - the strip's one chip for the six views. */
+private const val STRIP_VIEWS = "views"
 private val AskExamples = listOf("a film, an hour", "the football", "news, ten minutes")
 
 private fun digitOf(key: Key): Int? = when (key) {
@@ -413,9 +431,8 @@ internal fun IptvStageScreen(
         requested?.let { stage = it.name }
         IptvStageNav.consume()
     }
-    val shownStages = IptvStage.entries.filter {
-        (it != IptvStage.Week || settings.brakes) && (it !in IptvViewRules.VIEWS || it.name in settings.views)
-    }
+    // fork:live-tv-polish - the six extra views are always there, picked from one Views chip on the strip.
+    val shownStages = IptvStage.entries.filter { it != IptvStage.Week || settings.brakes }
     val current = shownStages.firstOrNull { it.name == stage } ?: IptvStage.Door
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -457,7 +474,7 @@ internal fun IptvStageScreen(
     val matchShape = remember(followedMatches) { followedMatches.map { it.id to it.phase } }
     val model by produceState<IptvStageModel?>(
         null,
-        playlist.id, merged, lineup, guideVersion, now / 60_000L, settings.plays.size, settings.favourites, settings.recents,
+        playlist.id, merged, lineup, guideVersion, now / 60_000L, settings.plays.size, settings.favourites, settings.recents, settings.homeRegion,
         settings.follows, settings.shuffle, settings.minutes, settings.reminders, askText, askSkips, orderExclude, bedMinute, fromChoice,
         aiPick, settings.askAi, keptCategories, liveTeams, settings.teams, settings.teamsDeclined, matchShape,
     ) {
@@ -592,7 +609,9 @@ internal fun IptvStageScreen(
     val earlierDays = remember(m, now) { m?.let { IptvStageRules.byDay(it.earlier, now) }.orEmpty() }
     val earlierRows = earlierDays.getOrNull(earlierDay)?.second.orEmpty()
     val weekRows = remember(m) {
-        m?.follows.orEmpty().flatMap { it.matches }.distinctBy { it.channel.primary.uid to it.entry.startMs }.sortedBy { it.entry.startMs }.take(8)
+        m?.follows.orEmpty().flatMap { it.matches }
+            // fork:live-tv-polish - one showing on several copies of a channel (Sky Witness, its HEVC HB and LB) is one row.
+            .distinctBy { IptvDecide.normalise(it.entry.title) to it.entry.startMs / 60_000L }.sortedBy { it.entry.startMs }.take(8)
     }
     val askPick = m?.ask?.programme
     // fork:live-tv-front-door - the pick holds for a quarter of an hour; "Something else" skips it.
@@ -694,7 +713,11 @@ internal fun IptvStageScreen(
         )
         IptvStage.Dial -> listOf(listOf(IptvStageGroup("dial", dialCards.size)))
     }
-    val strip = shownStages.map { it.name } + "all"
+    // fork:live-tv-polish - the strip: the stages, then one Views chip for the six views, then All channels.
+    val strip = shownStages.filter { it !in IptvViewRules.VIEWS }.map { it.name } + STRIP_VIEWS + "all"
+    fun stripIndexOf(name: String): Int = strip.indexOf(if (IptvStage.entries.any { it.name == name && it in IptvViewRules.VIEWS }) STRIP_VIEWS else name).coerceAtLeast(0)
+    var viewsOpen by remember { mutableStateOf(false) }
+    var viewsIndex by remember { mutableIntStateOf(0) }
     var onStrip by remember { mutableStateOf(false) }
     var stripIndex by remember { mutableIntStateOf(0) }
     var keyboardActive by remember { mutableStateOf(false) }
@@ -797,12 +820,82 @@ internal fun IptvStageScreen(
             onAllChannels()
             return
         }
+        if (name == STRIP_VIEWS) {
+            viewsIndex = IptvViewRules.VIEWS.indexOfFirst { it.name == stage }.coerceAtLeast(0)
+            viewsOpen = true
+            return
+        }
         stage = name
+        focus = null
+    }
+
+    // fork:live-tv-polish - hold OK on any programme: its menu (Watch, Follow, Remind me). Groups whose hold already
+    // does something of its own keep it (Your 40's channel menu, unfollow, unstar, no to a learned team).
+    var progMenuFor by remember { mutableStateOf<IptvWallProgramme?>(null) }
+    var progMenuIndex by remember { mutableIntStateOf(0) }
+    val progMenuActions = remember(progMenuFor, settings.follows, now / 60_000L) {
+        progMenuFor?.let { IptvProgrammeMenu.actions(it, now, IptvDecide.isFollowed(settings.follows, it.entry.title)) }.orEmpty()
+    }
+    fun programmeAt(group: String, index: Int): IptvWallProgramme? {
+        val md = model ?: return null
+        fun onNowOf(channel: IptvMergedChannel) =
+            md.picks.firstOrNull { it.channel.primary.uid == channel.primary.uid }?.current(now)?.let { IptvWallProgramme(channel, it) }
+        return when (group) {
+            "cards" -> listOf(md.three.safe, md.three.soon, md.three.wildcard).getOrNull(index)
+            "departures" -> soonRows.getOrNull(index)
+            "on" -> md.board.alreadyOn.getOrNull(index)?.programme
+            "starting" -> md.board.starting.getOrNull(index)?.programme
+            "catchup" -> md.board.catchUp.getOrNull(index)?.programme
+            "order" -> md.order.getOrNull(index)
+            "earlier" -> earlierRows.getOrNull(index)
+            "week" -> weekRows.getOrNull(index)
+            "suggest" -> md.followSuggestions.getOrNull(index)
+            "askActions" -> askPick
+            "doorPick" -> doorPick?.programme
+            "doorNext" -> doorNext.getOrNull(index)
+            "doorCarry" -> md.carryOn?.let { c -> c.now?.let { IptvWallProgramme(c.channel, it) } }
+            "doorScores" -> scoreRows.getOrNull(index)?.let { md.matchProgrammes[it.id] }
+            "mapTiles" -> mapTiles.getOrNull(index)
+            "mosaicBig" -> mosaic.big.getOrNull(index)
+            "mosaicMid" -> mosaic.mid.getOrNull(index)
+            "mosaicSmall" -> mosaic.small.getOrNull(index)
+            "wall" -> wallChannels.getOrNull(index)?.let(::onNowOf)
+            "gridList" -> gridCells.getOrNull(gridSel)?.programmes?.getOrNull(index)
+            "dial" -> dialCards.getOrNull(index)?.let { c -> c.now?.let { IptvWallProgramme(c.channel, it) } }
+            else -> if (group.startsWith("lane")) riverLanes.getOrNull(group.removePrefix("lane").toIntOrNull() ?: -1)?.items?.getOrNull(index) else null
+        }
+    }
+    fun runProgAction(action: IptvProgrammeAction) {
+        val p = progMenuFor ?: return
+        progMenuFor = null
+        when (action) {
+            IptvProgrammeAction.Watch -> take(p)
+            IptvProgrammeAction.Follow -> follow(IptvProgrammeMenu.followName(p.entry.title))
+            IptvProgrammeAction.Unfollow -> {
+                IptvDecide.followsOf(settings.follows, p.entry.title).forEach(IptvRepository::unfollow)
+                NuvioToastController.show(message = "No longer following ${IptvProgrammeMenu.followName(p.entry.title)}", durationMillis = 3000L)
+            }
+            IptvProgrammeAction.Remind -> remind(p, autoSwitch = false)
+            IptvProgrammeAction.Close -> Unit
+        }
+    }
+
+    fun openView(view: IptvStage) {
+        viewsOpen = false
+        onStrip = false
+        stage = view.name
         focus = null
     }
 
     fun activate(group: String, index: Int, held: Boolean) {
         val md = model ?: return
+        if (held && group !in OWN_HOLD_GROUPS) {
+            programmeAt(group, index)?.let {
+                progMenuFor = it
+                progMenuIndex = 0
+                return
+            }
+        }
         when (group) {
             // fork:live-tv-front-door
             "doorCarry" -> md.carryOn?.let { play(it.channel) }
@@ -985,13 +1078,13 @@ internal fun IptvStageScreen(
                 else -> return false
             }
             // The strip switches stages as the highlight moves over it, like tabs; "All channels" waits for OK.
-            strip[stripIndex].takeIf { it != "all" }?.let { if (it != stage) pickStage(it) }
+            strip[stripIndex].takeIf { it != "all" && it != STRIP_VIEWS }?.let { if (it != stage) pickStage(it) }
             return true
         }
         val start = at ?: run {
             if (key == Key.DirectionUp) {
                 onStrip = true
-                stripIndex = strip.indexOf(stage).coerceAtLeast(0)
+                stripIndex = stripIndexOf(stage)
             }
             return true
         }
@@ -1013,7 +1106,7 @@ internal fun IptvStageScreen(
         val next = IptvStageFocusRules.move(layout, start, move)
         if (next == null) {
             onStrip = true
-            stripIndex = strip.indexOf(stage).coerceAtLeast(0)
+            stripIndex = stripIndexOf(stage)
         } else {
             focus = next
         }
@@ -1036,13 +1129,15 @@ internal fun IptvStageScreen(
                     }
                     return@onPreviewKeyEvent false
                 }
-                val menuOpen = menuChannel != null || onDemandFor != null
+                val menuOpen = menuChannel != null || onDemandFor != null || viewsOpen || progMenuFor != null
                 if (event.key in StageBackKeys) {
                     if (!menuOpen && onStrip) return@onPreviewKeyEvent false
                     // Back acts as the key comes up, as it does across the app.
                     if (event.type == KeyEventType.KeyUp) {
                         when {
                             onDemandFor != null -> onDemandFor = null
+                            viewsOpen -> viewsOpen = false
+                            progMenuFor != null -> progMenuFor = null
                             menuOpen -> menuChannel = null
                             // fork:live-tv-views - Back on the map's inside zooms out to the blocks first.
                             current == IptvStage.Map && mapZoom > 0 -> {
@@ -1051,7 +1146,7 @@ internal fun IptvStageScreen(
                             }
                             else -> {
                                 onStrip = true
-                                stripIndex = strip.indexOf(stage).coerceAtLeast(0)
+                                stripIndex = stripIndexOf(stage)
                             }
                         }
                     }
@@ -1071,6 +1166,30 @@ internal fun IptvStageScreen(
                             Key.DirectionUp -> onDemandIndex = (onDemandIndex - 1).coerceAtLeast(0)
                             Key.DirectionDown -> onDemandIndex = (onDemandIndex + 1).coerceAtMost(onDemandOptions.lastIndex)
                             Key.Enter, Key.NumPadEnter -> onDemandOptions.getOrNull(onDemandIndex)?.first?.let(::onDemandChoose)
+                            else -> Unit
+                        }
+                    }
+                    return@onPreviewKeyEvent navKey in StageKeys
+                }
+                // fork:live-tv-polish - the programme menu: up and down, OK does it.
+                if (progMenuFor != null) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        when (navKey) {
+                            Key.DirectionUp -> progMenuIndex = (progMenuIndex - 1).coerceAtLeast(0)
+                            Key.DirectionDown -> progMenuIndex = (progMenuIndex + 1).coerceAtMost(progMenuActions.lastIndex)
+                            Key.Enter, Key.NumPadEnter -> progMenuActions.getOrNull(progMenuIndex)?.let(::runProgAction)
+                            else -> Unit
+                        }
+                    }
+                    return@onPreviewKeyEvent navKey in StageKeys
+                }
+                // fork:live-tv-polish - the Views picker: up and down, OK opens one.
+                if (viewsOpen) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        when (navKey) {
+                            Key.DirectionUp -> viewsIndex = (viewsIndex - 1).coerceAtLeast(0)
+                            Key.DirectionDown -> viewsIndex = (viewsIndex + 1).coerceAtMost(IptvViewRules.VIEWS.lastIndex)
+                            Key.Enter, Key.NumPadEnter -> openView(IptvViewRules.VIEWS[viewsIndex])
                             else -> Unit
                         }
                     }
@@ -1096,7 +1215,11 @@ internal fun IptvStageScreen(
                             if (!keyboardActive) {
                                 keyboardActive = true
                             } else if (onStrip) {
-                                if (strip[stripIndex] == "all") onAllChannels() else onStrip = false
+                                when (strip[stripIndex]) {
+                                    "all" -> onAllChannels()
+                                    STRIP_VIEWS -> pickStage(STRIP_VIEWS)
+                                    else -> onStrip = false
+                                }
                             } else {
                                 at?.let { f -> layout.getOrNull(f.column)?.getOrNull(f.group)?.let { activate(it.id, f.item, held) } }
                             }
@@ -1127,13 +1250,14 @@ internal fun IptvStageScreen(
                 items = strip.map { name ->
                     when (name) {
                         "all" -> "All channels" to Icons.Rounded.ViewList
+                        STRIP_VIEWS -> (if (current in IptvViewRules.VIEWS) "Views · ${current.label}" else "Views") to Icons.Rounded.Dashboard
                         else -> {
                             val s = IptvStage.valueOf(name)
                             (if (s == IptvStage.Minutes) "${settings.minutes} minutes" else s.label) to stageIcon(s)
                         }
                     }
                 },
-                selected = strip.indexOf(stage),
+                selected = stripIndexOf(stage),
                 focused = if (keyboardActive && onStrip) stripIndex else -1,
                 onPick = { index ->
                     keyboardActive = false
@@ -1210,6 +1334,54 @@ internal fun IptvStageScreen(
                     focused = onDemandIndex,
                     onChoose = { i -> onDemandOptions.getOrNull(i)?.first?.let(::onDemandChoose) },
                 )
+            }
+        }
+        // fork:live-tv-polish - the programme menu over the stage.
+        val progFor = progMenuFor
+        if (progFor != null) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.TopCenter) {
+                Box(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.TopCenter) {
+                    Column(
+                        modifier = Modifier.width(480.dp).iptvGlass(NuvioGlass.Shape).padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(progFor.entry.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = tokens.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "${progFor.channel.primary.name} · ${IptvStageRules.clock(progFor.entry.startMs)} to ${IptvStageRules.clock(progFor.entry.endMs)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tokens.colors.textMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        progMenuActions.forEachIndexed { i, action ->
+                            LineupMenuButton(
+                                label = IptvProgrammeMenu.label(action, progFor, now, IptvStageRules::clock),
+                                focused = i == progMenuIndex,
+                                danger = action == IptvProgrammeAction.Unfollow,
+                                onClick = { runProgAction(action) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        // fork:live-tv-polish - the Views picker over the stage.
+        if (viewsOpen) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.TopCenter) {
+                Box(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.TopCenter) {
+                    Column(
+                        modifier = Modifier.width(420.dp).iptvGlass(NuvioGlass.Shape).padding(24.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("Views", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = tokens.colors.textPrimary)
+                        Text("Other ways to see everything on", style = MaterialTheme.typography.bodySmall, color = tokens.colors.textMuted)
+                        IptvViewRules.VIEWS.forEachIndexed { i, view ->
+                            LineupMenuButton(label = view.label, focused = i == viewsIndex, danger = false, onClick = { openView(view) })
+                        }
+                    }
+                }
             }
         }
         val menuFor = menuChannel
@@ -1414,7 +1586,7 @@ private fun remoteLiveTvScreen(
                     index = i,
                     slot = "SCORE",
                     title = scoreLine(match),
-                    sub = listOfNotNull(scoreState(match), on?.channel?.primary?.name ?: match.competitionName).joinToString(" · "),
+                    sub = listOfNotNull(scoreState(match, now), on?.channel?.primary?.name ?: match.competitionName).joinToString(" · "),
                     picture = null,
                     live = match.phase == MatchPhase.Live || match.phase == MatchPhase.HalfTime,
                     action = if (on != null) "Watch" else null,
@@ -1458,9 +1630,9 @@ private fun remoteLiveTvScreen(
                 val first = result.matches.firstOrNull()
                 items += if (first != null) {
                     item("follows", i, "FOLLOWING", first, if (first.onNow(now)) "Watch" else "Remind me")
-                        .copy(title = result.text, sub = IptvStageRules.foundText(first, now))
+                        .copy(title = IptvDecide.displayFollow(result.text), sub = IptvStageRules.foundText(first, now))
                 } else {
-                    RemoteLiveTvItem("-", i, "FOLLOWING", result.text, "Nothing in the guide yet", null)
+                    RemoteLiveTvItem("-", i, "FOLLOWING", IptvDecide.displayFollow(result.text), "Nothing in the guide yet", null)
                 }
             }
             m.learnedTeams.forEachIndexed { i, team ->
@@ -1576,9 +1748,9 @@ private fun stageHeading(stage: IptvStage, m: IptvStageModel?, settings: IptvSet
             "One evening from $total channels. Approve it once and Nuvio changes channel for you."
         }
         IptvStage.Earlier -> "Earlier today, ready to play" to "Already shown on your channels and still in the provider's catch-up. Each plays from its start."
-        IptvStage.Following -> "Following" to "Star a programme once. Nuvio finds it on whichever of the $total channels has it."
+        IptvStage.Following -> "Following" to "Hold OK on any programme to follow it. Nuvio finds it on whichever of the $total channels has it."
         IptvStage.Ask -> "Just ask" to "Typed or spoken. It answers with one thing, not a list."
-        IptvStage.Lineup -> "Your 40" to "The whole of Live TV, numbered like a television. The other ${m?.let { count((it.mergedCount - it.lineup.size).coerceAtLeast(0)) } ?: ""} are in search."
+        IptvStage.Lineup -> "Your 40" to "The whole of Live TV, numbered like a television. The other ${m?.let { count((it.keptMerged - it.lineup.size).coerceAtLeast(0)) } ?: ""} are in search."
         IptvStage.Week -> "Your week" to "Counted on the player for seven nights. Plain numbers, not a score."
         IptvStage.Map -> "Map" to "Everything on now across $total channels, by kind. OK opens a block; Back zooms out."
         IptvStage.Mosaic -> "For you now" to "Everything on at $clock, the likeliest biggest."
@@ -1669,11 +1841,10 @@ private fun DoorStage(
                     StageRow(
                         lead = null,
                         title = scoreLine(match),
-                        sub = listOfNotNull(scoreState(match), on?.channel?.primary?.name ?: match.competitionName).joinToString(" · "),
+                        sub = listOfNotNull(scoreState(match, now), on?.channel?.primary?.name ?: match.competitionName).joinToString(" · "),
                         trailing = null,
                         focused = isFocused("doorScores", i),
                         live = match.phase == MatchPhase.Live || match.phase == MatchPhase.HalfTime,
-                        dim = on == null,
                         onClick = { act("doorScores", i) },
                     )
                 }
@@ -1714,12 +1885,16 @@ private fun scoreLine(match: LiveMatch): String {
     return if (match.phase == MatchPhase.Before || hs == null || aws == null) "$home v $away" else "$home $hs – $aws $away"
 }
 
-private fun scoreState(match: LiveMatch): String = when (match.phase) {
+private fun scoreState(match: LiveMatch, now: Long): String = when (match.phase) {
     MatchPhase.Live -> match.clock?.takeIf { it.isNotBlank() } ?: "Live"
     MatchPhase.HalfTime -> "Half-time"
     MatchPhase.Finished -> "Full time"
     MatchPhase.Postponed -> "Postponed"
-    MatchPhase.Before -> match.startEpochMs?.let { "Kick-off ${IptvStageRules.clock(it)}" } ?: "Later"
+    // fork:live-tv-polish - a match on another day says which ("Kick-off Tomorrow 12:30", "Kick-off Sat 15:00").
+    MatchPhase.Before -> match.startEpochMs?.let { start ->
+        val day = IptvStageRules.dayLabel(start, now)
+        "Kick-off " + if (day == "Today") IptvStageRules.clock(start) else if (day == "Tomorrow") "tomorrow ${IptvStageRules.clock(start)}" else IptvStageRules.weekLabel(start)
+    } ?: "Later"
 }
 
 /** The front door's one pick: a big picture (a live still when Preview is on), why it is there, Watch and Something else. */
@@ -1752,13 +1927,15 @@ private fun DoorPickCard(
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(Modifier.fillMaxWidth()) {
-            StageArt(p, 236.dp, badges = p?.let { topBadges(it, now) }.orEmpty(), caption = still == null)
+        // fork:live-tv-polish - the picture takes the room the words do not need, so the card has no empty gap.
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val artHeight = maxHeight
+            StageArt(p, artHeight, badges = p?.let { topBadges(it, now) }.orEmpty(), caption = still == null)
             if (still != null) {
                 NuvioAsyncImage(
                     model = still.bytes,
                     contentDescription = p?.channel?.primary?.name,
-                    modifier = Modifier.fillMaxWidth().height(236.dp).clip(RoundedCornerShape(10.dp)),
+                    modifier = Modifier.fillMaxWidth().height(artHeight).clip(RoundedCornerShape(10.dp)),
                     contentScale = ContentScale.Crop,
                 )
                 Row(Modifier.align(Alignment.TopStart).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1770,7 +1947,6 @@ private fun DoorPickCard(
         if (pick == null || p == null) {
             StageLabel("THE PICK")
             StageSentence("Nothing to pick yet. Once the guide is in and you have watched a few channels, the best thing on shows here.")
-            Spacer(Modifier.weight(1f))
             return@Column
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1787,8 +1963,7 @@ private fun DoorPickCard(
         }
         Text(p.entry.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = tokens.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         MetaChips(p)
-        ProgrammeWords(p, lines = 2)
-        Spacer(Modifier.weight(1f))
+        ProgrammeWords(p, lines = 4, fixed = true)
         if (p.onNow(now)) ProgressLine(p.entry.progress(now)) else Spacer(Modifier.height(3.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.Rounded.Star, contentDescription = null, tint = tokens.colors.textSecondary, modifier = Modifier.size(14.dp))
@@ -2003,7 +2178,7 @@ private fun OrderStage(
         StagePanel("Built from", null, Modifier.width(side).fillMaxHeight()) {
             StageInfoRow("Your usuals", "What you watch at each hour", null, icon = Icons.Rounded.Visibility)
             StageDivider()
-            StageInfoRow("Followed", if (follows.isEmpty()) "Nothing yet" else follows.take(3).joinToString(", "), null, icon = Icons.Rounded.Notifications)
+            StageInfoRow("Followed", if (follows.isEmpty()) "Nothing yet" else follows.take(3).joinToString(", ", transform = IptvDecide::displayFollow), null, icon = Icons.Rounded.Notifications)
             StageDivider()
             StageInfoRow("Films", "The best of the evening", null, icon = Icons.Rounded.Star)
             StageDivider()
@@ -2230,7 +2405,7 @@ private fun FollowingStage(
                 StageRow(
                     lead = null,
                     thumb = first, thumbWidth = 80.dp,
-                    title = result.text,
+                    title = IptvDecide.displayFollow(result.text),
                     badges = first?.let { rowBadges(it.entry) }.orEmpty(),
                     sub = first?.let { "Found: " + IptvStageRules.foundText(it, now) + if (!it.entry.title.equals(result.text, true)) ", ${it.entry.title}" else "" }
                         ?: "Nothing in the guide yet",
@@ -2316,7 +2491,8 @@ private fun AskStage(
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // fork:live-tv-polish - no answer yet: the buttons keep their place but are not shown.
+                    Row(Modifier.alpha(if (p == null) 0f else 1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         val primary = when {
                             p == null -> "Watch"
                             p.entry.startMs > now + 60_000L -> "Tune in at ${IptvStageRules.clock(p.entry.startMs)}"
@@ -2376,7 +2552,7 @@ private fun LineupStage(
             fun inLineup(refs: Collection<String>) = m.lineup.count { item -> item.channel.sources.any { IptvRepository.channelRef(playlist.id, it.key) in refs } }
             StageInfoRow("Triage", if (triage == null) "Not done yet" else "${triage.regions.size} countries, ${triage.kinds.size} kinds", null)
             StageDivider()
-            StageInfoRow("Copies merged", "FHD, HD, SD and backups", count((m.total - m.mergedCount).coerceAtLeast(0)))
+            StageInfoRow("Copies merged", "FHD, HD, SD and backups", count((m.total - m.keptMerged).coerceAtLeast(0)))
             StageDivider()
             StageInfoRow("What you watch", "From your viewing", count(inLineup(played.filter { it.startsWith(prefix) })))
             StageDivider()
@@ -2439,7 +2615,7 @@ private fun LineupStage(
             StageDivider()
             StageInfoRow("Loops and shopping", "Kept off the picks", count(m.hiddenFiller), icon = Icons.Rounded.Visibility)
             StageDivider()
-            StageInfoRow("Unwatched", "Still in search", count((m.mergedCount - m.lineup.size).coerceAtLeast(0)), icon = Icons.Rounded.Search)
+            StageInfoRow("Unwatched", "Still in search", count((m.keptMerged - m.lineup.size).coerceAtLeast(0)), icon = Icons.Rounded.Search)
             if (dead.isNotEmpty()) {
                 StageSubheading("Found dead", Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp))
                 val names = content.channels.filter { it.key in dead }.map { it.name }.distinct().take(3)
@@ -2520,13 +2696,15 @@ private fun MetaChips(p: IptvWallProgramme) {
 
 /** The programme's description: the guide's, else TMDB's; a line about it when neither has one. */
 @Composable
-private fun ProgrammeWords(p: IptvWallProgramme, lines: Int) {
+private fun ProgrammeWords(p: IptvWallProgramme, lines: Int, fixed: Boolean = false) {
     val art = rememberProgrammeArt(p)
     val words = p.entry.desc ?: art?.overview
+    // fork:live-tv-polish - fixed: always [lines] tall, so a picture sized by what is left does not move with the words.
+    val min = if (fixed) lines else 1
     if (words != null) {
-        StageSentence(words, lines)
+        StageSentence(words, lines, min)
     } else {
-        StageSentence("${kindLabel(p.entry) ?: "On"} ${p.channel.primary.name}, ${IptvStageRules.clock(p.entry.startMs)} to ${IptvStageRules.clock(p.entry.endMs)}.", lines)
+        StageSentence("${kindLabel(p.entry) ?: "On"} ${p.channel.primary.name}, ${IptvStageRules.clock(p.entry.startMs)} to ${IptvStageRules.clock(p.entry.endMs)}.", lines, min)
     }
 }
 
@@ -2825,7 +3003,10 @@ private fun StageCard(
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        StageArt(programme, 196.dp, badges = programme?.let { topBadges(it, now) }.orEmpty(), caption = true)
+        // fork:live-tv-polish - the picture takes the room the words do not need, so the card has no empty gap.
+        BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            StageArt(programme, maxHeight, badges = programme?.let { topBadges(it, now) }.orEmpty(), caption = true)
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             StageLabel(label)
             Spacer(Modifier.weight(1f))
@@ -2833,12 +3014,10 @@ private fun StageCard(
         }
         if (programme == null) {
             StageSentence(empty)
-            Spacer(Modifier.weight(1f))
         } else {
             Text(programme.entry.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = tokens.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             MetaChips(programme)
-            ProgrammeWords(programme, lines = 3)
-            Spacer(Modifier.weight(1f))
+            ProgrammeWords(programme, lines = 4, fixed = true)
             if (programme.onNow(now)) ProgressLine(programme.entry.progress(now)) else Spacer(Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Rounded.Star, contentDescription = null, tint = tokens.colors.textSecondary, modifier = Modifier.size(14.dp))
@@ -3041,8 +3220,8 @@ private fun StageMeta(text: String) {
 }
 
 @Composable
-private fun StageSentence(text: String, lines: Int = 3) {
-    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.nuvio.colors.textPrimary.copy(alpha = 0.88f), maxLines = lines, overflow = TextOverflow.Ellipsis)
+private fun StageSentence(text: String, lines: Int = 3, minLines: Int = 1) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.nuvio.colors.textPrimary.copy(alpha = 0.88f), maxLines = lines, minLines = minLines.coerceAtMost(lines), overflow = TextOverflow.Ellipsis)
 }
 
 @Composable

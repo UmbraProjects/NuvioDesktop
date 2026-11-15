@@ -95,7 +95,8 @@ internal object IptvViewRules {
 
     /**
      * The tonight grid: a row per lane, a column per half-hour from the one [now] is in, [columns] of them. A cell holds
-     * what starts in its half-hour (the first also what is already on), the likeliest first.
+     * what starts in its half-hour, the likeliest first. fork:live-tv-polish - the first column no longer takes what
+     * began earlier ("Sport at 18:00" listed things from 15:00): the cell says "starting" and means it.
      */
     fun grid(picks: List<IptvChannelNow>, now: Long, rank: (IptvWallProgramme) -> Int, columns: Int = 10): List<IptvGridCell> {
         val first = slotOf(now)
@@ -105,7 +106,7 @@ internal object IptvViewRules {
             val ofKind = found.filter { it.second == kind }.map { it.first }
             (0 until columns).map { col ->
                 val slot = first + col * HALF_HOUR
-                val inSlot = ofKind.filter { p -> if (col == 0) p.entry.startMs < slot + HALF_HOUR else p.entry.startMs in slot until slot + HALF_HOUR }
+                val inSlot = ofKind.filter { p -> p.entry.startMs in slot until slot + HALF_HOUR }
                 IptvGridCell(kind, slot, inSlot.sortedByDescending(rank))
             }
         }

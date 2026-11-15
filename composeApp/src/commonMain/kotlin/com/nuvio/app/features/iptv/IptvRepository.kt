@@ -106,6 +106,8 @@ data class IptvSettings(
     val doorPreview: Boolean = false,
     /** fork:live-tv-front-door - the front door's scores hidden, so it never spoils a result. */
     val doorHideScores: Boolean = false,
+    /** fork:live-tv-polish - the viewer's country (ISO code): its channels rank higher, other countries' news lower. Null = from the triage. */
+    val homeRegion: String? = null,
 ) {
     /** Whether the Live TV entry belongs in the navigation. */
     val tabShown: Boolean
@@ -337,6 +339,12 @@ object IptvRepository {
     fun setDoorPreview(enabled: Boolean) {
         ensureLoaded()
         mutate { it.copy(doorPreview = enabled) }
+    }
+
+    /** fork:live-tv-polish */
+    fun setHomeRegion(region: String?) {
+        ensureLoaded()
+        mutate { it.copy(homeRegion = region) }
     }
 
     /** fork:live-tv-front-door */

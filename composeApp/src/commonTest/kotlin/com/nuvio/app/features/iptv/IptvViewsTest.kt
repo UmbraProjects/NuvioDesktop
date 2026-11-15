@@ -48,13 +48,13 @@ class IptvViewsTest {
     }
 
     @Test
-    fun `the grid counts what starts in each half-hour, the first column also what is on`() {
+    fun `the grid counts only what starts in each half-hour`() {
         val cells = IptvViewRules.grid(picks, now, rank, columns = 4)
         assertEquals(IptvViewRules.LANES.size * 4, cells.size)
         val films = cells.filter { it.kind == IptvChannelKind.Films }
-        assertEquals(listOf(1, 0, 0, 0), films.map { it.programmes.size }, "Late Film starts after the four columns")
+        assertEquals(listOf(0, 0, 0, 0), films.map { it.programmes.size }, "Paddington began before; Late Film starts after the four columns")
         val ent = cells.filter { it.kind == IptvChannelKind.Entertainment }.map { it.programmes.size }
-        assertEquals(listOf(2, 0, 0, 0), ent, "Raymond starts at 20 past, inside the first half-hour")
+        assertEquals(listOf(1, 0, 0, 0), ent, "Raymond starts at 20 past, inside the first half-hour; Frasier began before")
         assertEquals(0, IptvViewRules.shade(0, 5))
         assertEquals(6, IptvViewRules.shade(5, 5))
     }

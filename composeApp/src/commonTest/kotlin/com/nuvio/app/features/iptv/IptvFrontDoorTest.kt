@@ -97,4 +97,65 @@ class IptvFrontDoorTest {
         assertTrue(IptvFirstRun.shouldAsk("door-test"))
         assertFalse(IptvFirstRun.shouldAsk("door-test"))
     }
+
+    @Test
+    fun `the programme menu offers follow or stop following, and a reminder only before it starts`() {
+        val on = IptvWallProgramme(channel(3), entry("Friends", -5, 25))
+        val later = IptvWallProgramme(channel(3), entry("Friends", 30, 60))
+        assertEquals(
+            listOf(IptvProgrammeAction.Watch, IptvProgrammeAction.Follow, IptvProgrammeAction.Close),
+            IptvProgrammeMenu.actions(on, now, followed = false),
+        )
+        assertEquals(
+            listOf(IptvProgrammeAction.Watch, IptvProgrammeAction.Unfollow, IptvProgrammeAction.Remind, IptvProgrammeAction.Close),
+            IptvProgrammeMenu.actions(later, now, followed = true),
+        )
+        assertEquals("Follow Friends", IptvProgrammeMenu.label(IptvProgrammeAction.Follow, on, now) { "x" })
+        assertEquals("Tune in at 20:26", IptvProgrammeMenu.label(IptvProgrammeAction.Watch, later, now) { "20:26" })
+    }
+
+    @Test
+    fun `what gets followed is the title without live marks or episode numbers`() {
+        assertEquals("WSL : Arsenal v London City Lionesses", IptvProgrammeMenu.followName("WSL : Arsenal v London City Lionesses \u1D38\u2071\u1D5B\u1D49"))
+        assertEquals("Hart Broken", IptvProgrammeMenu.followName("Hart Broken - S02E01"))
+        assertEquals("Friends", IptvProgrammeMenu.followName("Friends"))
+    }
+
+    @Test
+    fun `the home country lifts its channels and sinks other countries' news`() {
+        assertEquals(IptvRegions.HOME_BONUS, IptvRegions.homeBonus("GB", "GB", null))
+        assertEquals(-IptvRegions.FOREIGN_NEWS_PENALTY, IptvRegions.homeBonus("US", "GB", IptvProgrammeKind.NEWS))
+        assertEquals(0, IptvRegions.homeBonus("US", "GB", IptvProgrammeKind.FILM))
+        assertEquals(0, IptvRegions.homeBonus(null, "GB", IptvProgrammeKind.NEWS))
+        assertEquals(0, IptvRegions.homeBonus("US", null, IptvProgrammeKind.NEWS))
+        assertEquals("GB", IptvRegions.effectiveHome(null, setOf("GB")))
+        assertNull(IptvRegions.effectiveHome(null, setOf("GB", "US")))
+        assertEquals("IE", IptvRegions.effectiveHome("IE", setOf("GB")))
+        assertEquals("United Kingdom", IptvRegions.countryName("GB"))
+    }
+
+    @Test
+    fun `earlier today keeps two of each title at most`() {
+        val past = (1..6).map { IptvWallProgramme(channel(3), entry("Friends", -30 * it - 30, -30 * it)) } +
+            IptvWallProgramme(channel(2), entry("Countryfile", -120, -60))
+        val list = IptvDecide.earlier(past, emptyList(), now, limit = 10)
+        assertEquals(2, list.count { it.entry.title == "Friends" })
+        assertTrue(list.any { it.entry.title == "Countryfile" })
+    }
+
+    @Test
+    fun `one showing on two channels is one row on the minutes board`() {
+        val board = IptvDecide.minutes(
+            listOf(on(1, entry("5 Minutes", -1, 7)), on(2, entry("5 Minutes", -1, 7)), on(4, entry("Quiz", -10, 15))),
+            emptyList(), now, 60,
+        )
+        assertEquals(listOf("5 Minutes", "Quiz"), board.alreadyOn.map { it.programme.entry.title })
+    }
+
+    @Test
+    fun `follows typed in lower case get capitals`() {
+        assertEquals("Man Utd", IptvDecide.displayFollow("man utd"))
+        assertEquals("Line Of Duty", IptvDecide.displayFollow("line of duty"))
+        assertEquals("BBC News", IptvDecide.displayFollow("BBC News"))
+    }
 }

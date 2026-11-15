@@ -108,16 +108,19 @@ object IptvDecide {
         }
         val on = channels.mapNotNull { c ->
             c.current(now)?.takeIf { it.endMs - now >= 5 * 60_000L }?.let { IptvWallProgramme(c.channel, it) }?.let { fit(it, it.entry.endMs - now) }
-        }.sortedWith(compareBy({ it.overMin > 0 }, { it.programme.entry.endMs })).take(perColumn)
+        }.sortedWith(compareBy({ it.overMin > 0 }, { it.programme.entry.endMs })).distinctBy(::sameShowing).take(perColumn)
         val starting = channels.mapNotNull { c ->
             c.next(now)?.takeIf { it.startMs - now <= 60 * 60_000L && it.endMs - it.startMs >= MIN_LENGTH_MIN * 60_000L }
                 ?.let { IptvWallProgramme(c.channel, it) }?.let { fit(it, it.entry.endMs - now) }
-        }.sortedWith(compareBy({ it.overMin > 0 }, { it.programme.entry.startMs })).take(perColumn)
+        }.sortedWith(compareBy({ it.overMin > 0 }, { it.programme.entry.startMs })).distinctBy(::sameShowing).take(perColumn)
         val earlier = past.filter { it.entry.endMs <= now && it.entry.endMs - it.entry.startMs >= MIN_LENGTH_MIN * 60_000L }
             .mapNotNull { fit(it, it.entry.endMs - it.entry.startMs) }
-            .sortedWith(compareBy({ it.overMin > 0 }, { -it.programme.entry.endMs })).take(perColumn)
+            .sortedWith(compareBy({ it.overMin > 0 }, { -it.programme.entry.endMs })).distinctBy { normalise(it.programme.entry.title) }.take(perColumn)
         return IptvMinutesBoard(on, starting, earlier)
     }
+
+    /** fork:live-tv-polish - one showing on two channels (Euronews twice, TVO and TV Ontario) is one row. */
+    private fun sameShowing(fit: IptvFit): String = normalise(fit.programme.entry.title) + "@" + fit.programme.entry.startMs / 60_000L
 
     fun matchesFollow(follow: String, title: String): Boolean {
         val wanted = normalise(follow)
@@ -137,6 +140,10 @@ object IptvDecide {
     private fun teamWords(text: String) = text.split(' ').filter { it.isNotBlank() }.map { if (it == "utd") "united" else it }
 
     private fun sameWord(a: String, b: String) = a == b || (b.length >= 3 && a.startsWith(b)) || (a.length >= 3 && b.startsWith(a))
+
+    /** fork:live-tv-polish - a follow typed in lower case ("man utd") shown with capitals ("Man Utd"); typed capitals kept. */
+    fun displayFollow(text: String): String =
+        if (text != text.lowercase()) text else text.split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.titlecase() } }
 
     fun isFollowed(follows: List<String>, title: String): Boolean = follows.any { matchesFollow(it, title) }
 
@@ -174,7 +181,16 @@ object IptvDecide {
                     .thenByDescending { rank?.invoke(it) ?: 0 }
                     .thenByDescending { it.entry.endMs },
             )
+            // fork:live-tv-polish - one show must not fill the list (a channel showing Friends all day): at most
+            // [EARLIER_PER_TITLE] of each title, the best of them.
+            .let { sorted ->
+                val seen = HashMap<String, Int>()
+                sorted.filter { p -> seen.merge(normalise(p.entry.title), 1, Int::plus)!! <= EARLIER_PER_TITLE }
+            }
             .take(limit)
+
+    /** fork:live-tv-polish - how many of one title Earlier today keeps. */
+    const val EARLIER_PER_TITLE = 2
 
     private fun programme(p: IptvWallProgramme, tag: String? = null, over: Int = 0) = IptvWallItem.Programme(p, film = false, tag = tag, over = over)
 

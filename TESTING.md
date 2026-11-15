@@ -900,3 +900,19 @@ Settings > Live TV > Stage. Watch a few programmes on Live TV first (each one at
 - [ ] Below the pick on the phone: Favourites now (Carry on first, then the starred channels, even ones with nothing on), Scores (a dot while live; tapping a match on a channel plays it) and Next up (tapping sets the switch at its start)
 - [ ] Hide scores on the phone empties the TV's scores box and the phone's Scores; Show scores brings both back
 - [ ] An older Nuvio Remote build still shows Home as a plain list of rows that work
+
+## Live TV: polish after the first look (Nov 15)
+
+- [ ] Home and Three things: the picture fills the card down to four lines of description, with no empty gap; cards stay the same size whatever the text
+- [ ] Earlier today shows at most two of one show (not a dozen Friends), so other things are in the list
+- [ ] Tonight grid: a cell lists only what starts in that half-hour (no 15:00 starts under 18:00)
+- [ ] Your 40: "Copies merged" counts the merged copies, and "Unwatched" and the heading's "the other N" agree with the channel count
+- [ ] No doubles: I have N minutes (one 5 Minutes, one Abby Hatcher), Following's Coming up (one Brit Cops), Home's favourites (one WSL match)
+- [ ] Scores on Home say the day for a match that is not today ("Kick-off tomorrow 12:30", "Kick-off Sat 15:00") and are no longer greyed out
+- [ ] Follows typed in lower case show with capitals (Man Utd, Line Of Duty)
+- [ ] Just ask: Watch and Not that are hidden until there is an answer, and nothing moves when they appear
+- [ ] The strip has one Views chip instead of six; OK on it opens a picker (Map, For you now, River, Picture wall, Tonight grid, Dial); on a view the chip says "Views · Map"; Back closes the picker
+- [ ] Settings > Live TV no longer has the six View switches
+- [ ] All channels (the classic list) with Stage on: the sidebar has Stages, Your 40, Favourites, Recently watched, All channels and the categories, not On now / Sport / Films / Three things and the rest
+- [ ] Settings > Live TV > Home country (United Kingdom): For you now and the picks put UK channels first, and US/Australian local news drops out of the big tiles; "From the triage" uses the triage's country when it kept one
+- [ ] Hold OK on any programme on the stages (Home's pick and Next up, Three things, Starting soon, Tonight, Earlier, the views): a menu with Watch, Follow <title> (or Stop following), Remind me (before it starts) and Close; Follow shows a toast and the show appears under Following

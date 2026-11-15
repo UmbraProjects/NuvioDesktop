@@ -634,6 +634,13 @@ private fun settingsSearchEntries(
             "Live TV as full-screen stages: Three things, Starting soon, I have N minutes, Tonight, Earlier today, Following, Just ask, Your 40.",
             "General",
         ),
+        // fork:live-tv-polish
+        PlaybackSearchRow(
+            "iptv-home-region",
+            "Home country",
+            "Live TV's picks put your country's channels first and push other countries' news down.",
+            "General",
+        ),
         // fork:live-tv-front-door
         PlaybackSearchRow(
             "iptv-door-preview",
@@ -675,13 +682,6 @@ private fun settingsSearchEntries(
             "Live TV subtitles placed by the words heard (the voice control speech model), not only by when people talk.",
             "General",
         ),
-        // fork:live-tv-views
-        PlaybackSearchRow("iptv-view-map", "View: Map", "A Live TV stage: everything on now by kind, zoom into a block.", "General"),
-        PlaybackSearchRow("iptv-view-mosaic", "View: For you now", "A Live TV stage: one mosaic sized by how likely you are to want each.", "General"),
-        PlaybackSearchRow("iptv-view-river", "View: River", "A Live TV stage: the next three hours by kind, not by channel.", "General"),
-        PlaybackSearchRow("iptv-view-wall", "View: Picture wall", "A Live TV stage: real stills from your channels.", "General"),
-        PlaybackSearchRow("iptv-view-grid", "View: Tonight grid", "A Live TV stage: tonight by kind and half-hour.", "General"),
-        PlaybackSearchRow("iptv-view-dial", "View: Dial", "A Live TV stage: one channel at a time, numbers jump.", "General"),
         // fork:live-tv-ask-ai
         PlaybackSearchRow(
             "iptv-ask-ai",
