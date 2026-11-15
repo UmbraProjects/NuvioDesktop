@@ -4,14 +4,18 @@ package com.nuvio.app.features.iptv
  * fork:live-tv-polish - holding OK on any programme on the stages opens its menu, so following something is one
  * press away wherever it shows. Pure rules here (IptvFrontDoorTest); the menu is drawn in IptvStageScreen.kt.
  */
-enum class IptvProgrammeAction { Watch, Follow, Unfollow, Remind, Close }
+enum class IptvProgrammeAction { Watch, Follow, Unfollow, Remind, Unstar, Close }
 
 object IptvProgrammeMenu {
-    /** What the menu offers for [p]: the one OK action, follow or stop following, a reminder when it has not begun, Close. */
-    fun actions(p: IptvWallProgramme, now: Long, followed: Boolean): List<IptvProgrammeAction> = buildList {
+    /**
+     * What the menu offers for [p]: the one OK action, follow or stop following, a reminder when it has not begun,
+     * Unstar when its channel is a favourite, Close.
+     */
+    fun actions(p: IptvWallProgramme, now: Long, followed: Boolean, starred: Boolean = false): List<IptvProgrammeAction> = buildList {
         add(IptvProgrammeAction.Watch)
         add(if (followed) IptvProgrammeAction.Unfollow else IptvProgrammeAction.Follow)
         if (p.entry.startMs > now + 60_000L) add(IptvProgrammeAction.Remind)
+        if (starred) add(IptvProgrammeAction.Unstar)
         add(IptvProgrammeAction.Close)
     }
 
@@ -25,6 +29,7 @@ object IptvProgrammeMenu {
         IptvProgrammeAction.Follow -> "Follow ${followName(p.entry.title)}"
         IptvProgrammeAction.Unfollow -> "Stop following ${followName(p.entry.title)}"
         IptvProgrammeAction.Remind -> "Remind me at ${clock(p.entry.startMs)}"
+        IptvProgrammeAction.Unstar -> "Unstar ${p.channel.primary.name}"
         IptvProgrammeAction.Close -> "Close"
     }
 

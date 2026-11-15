@@ -67,7 +67,8 @@ private fun ProgrammeTile(
             .clip(TileShape)
             .background(Color.White.copy(alpha = if (focused) 0.10f else 0.04f))
             .border(if (focused) 2.dp else 1.dp, if (focused) tokens.colors.accent else Color.White.copy(alpha = 0.08f), TileShape)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .stageSecondary(onClick),
     ) {
         StageArt(p, artHeight, badges = if (small) emptyList() else rowBadges(p.entry), radius = 0.dp, small = small)
         Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
@@ -264,7 +265,7 @@ internal fun RiverStage(m: IptvStageModel, lanes: List<IptvRiverLane>, fromMs: L
                                         .clip(RoundedCornerShape(7.dp))
                                         .background(if (focused) tokens.colors.accent.copy(alpha = 0.45f) else tokens.colors.accent.copy(alpha = if (p.onNow(now)) 0.22f else 0.12f))
                                         .border(if (focused) 2.dp else 0.dp, if (focused) tokens.colors.accent else Color.Transparent, RoundedCornerShape(7.dp))
-                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { act("lane$l", i) }
+                                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { act("lane$l", i) }.stageSecondary { act("lane$l", i) }
                                         .padding(horizontal = 8.dp, vertical = 5.dp),
                                 ) {
                                     Text(IptvSportTitle.clean(p.entry.title), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = tokens.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -308,7 +309,7 @@ internal fun WallStage(playlist: IptvPlaylist, m: IptvStageModel, channels: List
                 modifier = mod
                     .clip(TileShape)
                     .border(if (focused) 2.dp else 1.dp, if (focused) tokens.colors.accent else Color.White.copy(alpha = 0.08f), TileShape)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { act("wall", i) },
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { act("wall", i) }.stageSecondary { act("wall", i) },
             ) {
                 if (still != null) {
                     NuvioAsyncImage(model = still.bytes, contentDescription = ch.primary.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -410,7 +411,7 @@ internal fun DialStage(cards: List<IptvDialCard>, typed: String, now: Long, isFo
         val c = cards.getOrNull(i) ?: run { Spacer(Modifier.height(54.dp)); return }
         Row(
             Modifier.fillMaxWidth().height(54.dp).alpha(alpha).clip(TileShape).background(Color.White.copy(alpha = 0.04f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { act("dial", i) }
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { act("dial", i) }.stageSecondary { act("dial", i) }
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -427,7 +428,7 @@ internal fun DialStage(cards: List<IptvDialCard>, typed: String, now: Long, isFo
         Row(
             Modifier.fillMaxWidth().height(300.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.07f))
                 .border(2.dp, tokens.colors.accent, RoundedCornerShape(16.dp))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { act("dial", at) },
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { act("dial", at) }.stageSecondary { act("dial", at) },
         ) {
             Box(Modifier.width(500.dp).fillMaxHeight()) { StageArt(c.now?.let { IptvWallProgramme(c.channel, it) }, 300.dp, radius = 0.dp) }
             Column(Modifier.weight(1f).fillMaxHeight().padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

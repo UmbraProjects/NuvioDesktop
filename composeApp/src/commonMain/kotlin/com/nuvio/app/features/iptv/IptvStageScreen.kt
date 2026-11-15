@@ -113,6 +113,7 @@ import com.nuvio.app.features.livescores.LiveScoreTeams
 import com.nuvio.app.features.livescores.LiveTeam
 import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.secondaryClick
 import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.features.settings.settingsSkyBackground
 import com.nuvio.app.features.tonight.TonightSettingsRepository
@@ -378,7 +379,7 @@ private val BedChoices = listOf(22 * 60 + 30, 23 * 60 + 30, 30)
 /** Tonight's "Starts" choices: now, 18:00, 20:00 (as minutes of the day; -1 = now). */
 private val FromChoices = listOf(-1, 18 * 60, 20 * 60)
 /** fork:live-tv-polish - groups whose hold OK does something of its own, so it does not open the programme menu. */
-private val OWN_HOLD_GROUPS = setOf("lineup", "follows", "learned", "doorFavs")
+private val OWN_HOLD_GROUPS = setOf("lineup", "follows", "learned")
 
 /** fork:live-tv-polish - the strip's one chip for the six views. */
 private const val STRIP_VIEWS = "views"
@@ -833,8 +834,11 @@ internal fun IptvStageScreen(
     // does something of its own keep it (Your 40's channel menu, unfollow, unstar, no to a learned team).
     var progMenuFor by remember { mutableStateOf<IptvWallProgramme?>(null) }
     var progMenuIndex by remember { mutableIntStateOf(0) }
-    val progMenuActions = remember(progMenuFor, settings.follows, now / 60_000L) {
-        progMenuFor?.let { IptvProgrammeMenu.actions(it, now, IptvDecide.isFollowed(settings.follows, it.entry.title)) }.orEmpty()
+    val progMenuActions = remember(progMenuFor, settings.follows, settings.favourites, now / 60_000L) {
+        progMenuFor?.let { p ->
+            val starred = p.channel.sources.any { IptvRepository.channelRef(playlist.id, it.key) in settings.favourites }
+            IptvProgrammeMenu.actions(p, now, IptvDecide.isFollowed(settings.follows, p.entry.title), starred)
+        }.orEmpty()
     }
     fun programmeAt(group: String, index: Int): IptvWallProgramme? {
         val md = model ?: return null
@@ -854,6 +858,7 @@ internal fun IptvStageScreen(
             "doorPick" -> doorPick?.programme
             "doorNext" -> doorNext.getOrNull(index)
             "doorCarry" -> md.carryOn?.let { c -> c.now?.let { IptvWallProgramme(c.channel, it) } }
+            "doorFavs" -> md.favourites.getOrNull(index)?.let { c -> c.now?.let { IptvWallProgramme(c.channel, it) } }
             "doorScores" -> scoreRows.getOrNull(index)?.let { md.matchProgrammes[it.id] }
             "mapTiles" -> mapTiles.getOrNull(index)
             "mosaicBig" -> mosaic.big.getOrNull(index)
@@ -876,6 +881,10 @@ internal fun IptvStageScreen(
                 NuvioToastController.show(message = "No longer following ${IptvProgrammeMenu.followName(p.entry.title)}", durationMillis = 3000L)
             }
             IptvProgrammeAction.Remind -> remind(p, autoSwitch = false)
+            IptvProgrammeAction.Unstar -> {
+                IptvRepository.toggleFavourite(playlist.id, p.channel)
+                NuvioToastController.show(message = "${p.channel.primary.name} is no longer a favourite", durationMillis = 3000L)
+            }
             IptvProgrammeAction.Close -> Unit
         }
     }
@@ -1271,7 +1280,9 @@ internal fun IptvStageScreen(
                 if (m == null) {
                     StageMessage("Reading the guide...")
                 } else {
-                    val tap: Act = { group, i -> keyboardActive = false; activate(group, i, false) }
+                    // fork:live-tv-polish - a right click on an item arrives here as a hold (IptvRightClick), so it opens
+                    // the same menus as holding OK.
+                    val tap: Act = { group, i -> keyboardActive = false; activate(group, i, IptvRightClick.take()) }
                     when (current) {
                         IptvStage.Door -> DoorStage(
                             playlist, m, now, side, doorPick, doorNext, scoreRows, settings, ::isFocused,
@@ -1356,9 +1367,9 @@ internal fun IptvStageScreen(
                         )
                         progMenuActions.forEachIndexed { i, action ->
                             LineupMenuButton(
-                                label = IptvProgrammeMenu.label(action, progFor, now, IptvStageRules::clock),
+                                label = if (action == IptvProgrammeAction.Unstar) "Unstar ${progFor.channel.primary.name}" else IptvProgrammeMenu.label(action, progFor, now, IptvStageRules::clock),
                                 focused = i == progMenuIndex,
-                                danger = action == IptvProgrammeAction.Unfollow,
+                                danger = action == IptvProgrammeAction.Unfollow || action == IptvProgrammeAction.Unstar,
                                 onClick = { runProgAction(action) },
                             )
                         }
@@ -1826,7 +1837,7 @@ private fun DoorStage(
                     onClick = { act("doorFavs", i) },
                 )
             }
-            Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)) { StageNoteInline("Hold OK on a favourite to unstar it.") }
+            Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)) { StageNoteInline("Hold OK or right-click for Follow, Remind me and Unstar.") }
         }
 
         DoorPickCard(playlist, m, pick, now, settings.doorPreview, isFocused, act, Modifier.weight(1f).fillMaxHeight())
@@ -2859,6 +2870,7 @@ internal fun StageRow(
             )
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .combinedClickable(interactionSource = interaction, indication = null, onLongClick = onLongClick, onClick = onClick)
+            .stageSecondary(onClick)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -2969,6 +2981,7 @@ internal fun StageButton(
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .combinedClickable(interactionSource = interaction, indication = null, enabled = enabled, onClick = onClick)
+            .stageSecondary(if (enabled) onClick else null)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
@@ -3000,6 +3013,7 @@ private fun StageCard(
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .combinedClickable(interactionSource = interaction, indication = null, enabled = programme != null, onClick = onClick)
+            .stageSecondary(if (programme != null) onClick else null)
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -3133,6 +3147,7 @@ private fun LineupTile(item: IptvStageChannel, now: Long, focused: Boolean, onLo
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .combinedClickable(interactionSource = interaction, indication = null, onLongClick = onLongClick, onClick = onClick)
+            .stageSecondary(onClick)
             .padding(horizontal = 9.dp, vertical = 7.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -3240,3 +3255,22 @@ internal fun StageMessage(text: String) {
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.nuvio.colors.textMuted)
     }
 }
+
+/** fork:live-tv-polish - a right click on a stage item: set just before its click runs, read by the stage's tap. */
+internal object IptvRightClick {
+    private var armedAt = 0L
+
+    fun arm() {
+        armedAt = System.currentTimeMillis()
+    }
+
+    /** True once, right after a right click; an item whose click never reaches the stage cannot leave it set. */
+    fun take(): Boolean = (System.currentTimeMillis() - armedAt < 500L).also { armedAt = 0L }
+}
+
+/** fork:live-tv-polish - right-clicking an item does what holding OK on it does (its menu). */
+internal fun Modifier.stageSecondary(onClick: (() -> Unit)?): Modifier =
+    if (onClick == null) this else secondaryClick {
+        IptvRightClick.arm()
+        onClick()
+    }

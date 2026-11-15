@@ -111,6 +111,10 @@ class IptvFrontDoorTest {
             IptvProgrammeMenu.actions(later, now, followed = true),
         )
         assertEquals("Follow Friends", IptvProgrammeMenu.label(IptvProgrammeAction.Follow, on, now) { "x" })
+        assertEquals(
+            listOf(IptvProgrammeAction.Watch, IptvProgrammeAction.Follow, IptvProgrammeAction.Unstar, IptvProgrammeAction.Close),
+            IptvProgrammeMenu.actions(on, now, followed = false, starred = true),
+        )
         assertEquals("Tune in at 20:26", IptvProgrammeMenu.label(IptvProgrammeAction.Watch, later, now) { "20:26" })
     }
 
