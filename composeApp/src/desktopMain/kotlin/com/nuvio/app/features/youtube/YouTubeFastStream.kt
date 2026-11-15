@@ -36,6 +36,11 @@ import kotlinx.coroutines.flow.asSharedFlow
  * that answers its range requests from the file, waiting for a range that has not arrived yet. If
  * YouTube keeps refusing, the download gives up and the server redirects mpv to the stream itself.
  * Everything is dropped (connections closed, files deleted) with the next video or the player.
+ *
+ * Automatic (Nov 15): the player turns FastStream on by itself when it is needed ([autoWanted]: a speed
+ * above [AUTO_SPEED], or a stream as heavy as 4K), in a window mode: only [WINDOW_CHUNKS] chunks just
+ * ahead of where the player reads, held in memory, so a long 4K video never lands on disk. The watch
+ * page's button still fetches the whole file, as before.
  */
 
 internal actual fun requestYouTubeFastStream(on: Boolean) {
@@ -83,8 +88,36 @@ internal object YouTubeFastStream {
         if (downloads.containsKey(url)) line.removeSuffix(url) + playbackUrl(url) else line
     }
 
+    /**
+     * Whether the player should turn FastStream on by itself for [videoUrl] at [speed]: googlevideo's
+     * pacing holds a single request to about 1x, so anything faster runs dry, and a 4K stream has no
+     * slack even at 1x on a slower line.
+     */
+    fun autoWanted(videoUrl: String, speed: Float): Boolean =
+        eligible(videoUrl) && (speed >= AUTO_SPEED || (estimatedBitrate(videoUrl) ?: 0L) >= AUTO_BITRATE_BPS)
+
+    /** Bits per second from the stream's own size (`clen`) and length (`dur`); null when the URL lacks them. */
+    internal fun estimatedBitrate(url: String): Long? {
+        val bytes = queryParam(url, "clen")?.toLongOrNull()?.takeIf { it > 0L } ?: return null
+        val seconds = queryParam(url, "dur")?.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return null
+        return (bytes * 8 / seconds).toLong()
+    }
+
+    /** At or above this speed the player turns FastStream on by itself. */
+    const val AUTO_SPEED = 1.25f
+
+    /** About what YouTube's 4K streams carry (1440p is roughly 9 to 12 Mbit/s). */
+    const val AUTO_BITRATE_BPS = 14_000_000L
+
+    /** Automatic mode's window ahead of the reader: 64 MiB per stream, on top of mpv's own cache. */
+    const val WINDOW_CHUNKS = 16
+
+    /**
+     * [window]: automatic mode, only [WINDOW_CHUNKS] chunks ahead of the reader, in memory. Without it, the
+     * whole file goes to a temporary file (the watch page's button).
+     */
     @Synchronized
-    fun enable(urls: List<String>, headers: Map<String, String>) {
+    fun enable(urls: List<String>, headers: Map<String, String>, window: Boolean = false) {
         val forwarded = forwardedHeaders(headers)
         urls.filter(::eligible).forEach { url ->
             downloads.getOrPut(url) {
@@ -95,8 +128,9 @@ internal object YouTubeFastStream {
                     file = FastStreamServer.newFile(),
                     connections = if (audio) AUDIO_CONNECTIONS else VIDEO_CONNECTIONS,
                     onChange = ::publish,
+                    windowChunks = if (window) WINDOW_CHUNKS else null,
                 ).also {
-                    log.i { "on for ${if (audio) "audio" else "video"} ${redact(url)}" }
+                    log.i { "on${if (window) " (automatic, windowed)" else ""} for ${if (audio) "audio" else "video"} ${redact(url)}" }
                     it.start()
                 }
             }
@@ -183,10 +217,23 @@ internal class FastStreamDownload(
     private val chunkSize: Int = DEFAULT_CHUNK_BYTES,
     private val client: HttpClient = sharedClient,
     private val backoff: (Int) -> Long = ::backoffMs,
+    /**
+     * Automatic mode: fetch only this many chunks from where the player reads, keep them in memory and
+     * drop what it has passed. Null: the whole file, into [file].
+     */
+    private val windowChunks: Int? = null,
 ) {
     private val log = Logger.withTag("FastStream")
     private val lock = Object()
-    private val channel: FileChannel = RandomAccessFile(file, "rw").channel
+    private val channel: FileChannel by lazy { RandomAccessFile(file, "rw").channel }
+
+    init {
+        // The whole-file mode's file exists from the start, as it always has; the window never opens one.
+        if (windowChunks == null) channel
+    }
+
+    // Window mode's chunks, by index. Guarded by lock.
+    private val memory = HashMap<Int, ByteArray>()
 
     val token: String = UUID.randomUUID().toString().replace("-", "")
 
@@ -238,7 +285,7 @@ internal class FastStreamDownload(
                     ready = true
                     lock.notifyAll()
                 }
-                channel.truncate(size)
+                if (windowChunks == null) channel.truncate(size)
                 repeat(connections) { index ->
                     synchronized(lock) { runningWorkers++ }
                     thread(isDaemon = true, name = "FastStream-$index") { workerLoop() }
@@ -276,14 +323,24 @@ internal class FastStreamDownload(
         try {
             while (true) {
                 val chunk = synchronized(lock) {
-                    if (closed || failed || runningWorkers > allowedConnections) {
-                        runningWorkers--
-                        return
+                    var next: Int? = null
+                    while (next == null) {
+                        if (closed || failed || runningWorkers > allowedConnections) {
+                            runningWorkers--
+                            return
+                        }
+                        next = nextChunkLocked()
+                        if (next == null) {
+                            // The whole file is in: done. A window is never done; it waits for the reader.
+                            if (windowChunks == null) {
+                                runningWorkers--
+                                return
+                            }
+                            lock.wait(500L)
+                        }
                     }
-                    nextChunkLocked()?.also { inFlight.set(it) } ?: run {
-                        runningWorkers--
-                        return
-                    }
+                    inFlight.set(next)
+                    next
                 }
                 val error = runCatching { fetchChunk(chunk) }.exceptionOrNull()
                 var gaveUp = false
@@ -320,6 +377,10 @@ internal class FastStreamDownload(
 
     /** The first chunk still missing from where the player reads onwards, then from the start. */
     private fun nextChunkLocked(): Int? {
+        windowChunks?.let { window ->
+            for (index in focusChunk until minOf(chunkCount, focusChunk + window)) if (!done[index] && !inFlight[index]) return index
+            return null
+        }
         for (index in focusChunk until chunkCount) if (!done[index] && !inFlight[index]) return index
         for (index in 0 until minOf(focusChunk, chunkCount)) if (!done[index] && !inFlight[index]) return index
         return null
@@ -337,9 +398,13 @@ internal class FastStreamDownload(
             val bytes = body.readNBytes(expected)
             if (bytes.size != expected) throw IOException("short read ${bytes.size}/$expected")
             if (closed) return
-            var position = start
-            val buffer = ByteBuffer.wrap(bytes)
-            while (buffer.hasRemaining()) position += channel.write(buffer, position)
+            if (windowChunks != null) {
+                synchronized(lock) { memory[chunk] = bytes }
+            } else {
+                var position = start
+                val buffer = ByteBuffer.wrap(bytes)
+                while (buffer.hasRemaining()) position += channel.write(buffer, position)
+            }
         }
         synchronized(lock) { downloadedBytes += (end - start + 1) }
     }
@@ -378,6 +443,14 @@ internal class FastStreamDownload(
             val chunk = (position / chunkSize).toInt()
             awaitChunk(chunk)
             val chunkEnd = minOf((chunk + 1).toLong() * chunkSize - 1, endInclusive)
+            if (windowChunks != null) {
+                val bytes = synchronized(lock) { memory[chunk] } ?: throw IOException("chunk $chunk dropped")
+                val from = (position - chunk.toLong() * chunkSize).toInt()
+                val length = (chunkEnd - position + 1).toInt()
+                out.write(bytes, from, length)
+                position += length
+                continue
+            }
             while (position <= chunkEnd) {
                 buffer.clear()
                 buffer.limit(minOf(buffer.capacity().toLong(), chunkEnd - position + 1).toInt())
@@ -393,7 +466,15 @@ internal class FastStreamDownload(
     private fun awaitChunk(chunk: Int) {
         synchronized(lock) {
             // Where the player reads is where the connections go next.
-            if (!done[chunk]) focusChunk = chunk
+            if (windowChunks != null) {
+                if (chunk != focusChunk) {
+                    focusChunk = chunk
+                    evictLocked()
+                    lock.notifyAll()
+                }
+            } else if (!done[chunk]) {
+                focusChunk = chunk
+            }
             while (!done[chunk]) {
                 if (closed || failed) throw IOException("FastStream stopped")
                 lock.wait(1_000L)
@@ -401,13 +482,26 @@ internal class FastStreamDownload(
         }
     }
 
+    /** Window mode: drops what the reader has passed (one chunk kept behind) and anything past the window. */
+    private fun evictLocked() {
+        val window = windowChunks ?: return
+        val keep = (focusChunk - 1)..(focusChunk + window)
+        memory.keys.filter { it !in keep }.forEach { index ->
+            memory.remove(index)
+            done.clear(index)
+        }
+    }
+
     fun close() {
         synchronized(lock) {
             closed = true
+            memory.clear()
             lock.notifyAll()
         }
-        runCatching { channel.close() }
-        if (!file.delete()) file.deleteOnExit()
+        if (windowChunks == null) {
+            runCatching { channel.close() }
+            if (!file.delete()) file.deleteOnExit()
+        }
     }
 
     private class RefusedException(status: Int) : IOException("HTTP $status")

@@ -406,6 +406,12 @@ internal class NativePlayerController(
             // surface rebuilds) and ends with the next video.
             com.nuvio.app.features.youtube.YouTubeFastStream.retainOnly(pending.streamUrls)
             val available = pending.streamUrls.all(com.nuvio.app.features.youtube.YouTubeFastStream::eligible)
+            // Automatic: a video opened at a fast speed, or as heavy as 4K, starts on FastStream's window.
+            if (available && !pending.streamUrls.all(com.nuvio.app.features.youtube.YouTubeFastStream::isEnabled) &&
+                com.nuvio.app.features.youtube.YouTubeFastStream.autoWanted(pending.sourceUrl, initialPlaybackSpeed)
+            ) {
+                com.nuvio.app.features.youtube.YouTubeFastStream.enable(pending.streamUrls, pending.headerLines.toHeaderMap(), window = true)
+            }
             com.nuvio.app.features.youtube.YouTubeFastStreamState.update { it.copy(available = available, failed = it.failed && it.active) }
         }
         pendingSource = pending
@@ -1915,7 +1921,7 @@ internal class NativePlayerController(
      * fork:faststream-optin - turns FastStream on or off for the playing source and reopens it where
      * it is (a fresh player, as a surface rebuild does), reading from the download or from YouTube.
      */
-    fun setFastStream(on: Boolean) {
+    fun setFastStream(on: Boolean, window: Boolean = false, speed: Float? = null) {
         if (disposed) return
         val pending = pendingSource?.takeIf { it.fastStreamEligible } ?: return
         val fastStream = com.nuvio.app.features.youtube.YouTubeFastStream
@@ -1925,20 +1931,31 @@ internal class NativePlayerController(
         val positionMs = current?.let { runCatching { NativePlayerBridge.positionMs(it) }.getOrNull() }
             ?.takeIf { it > 0L } ?: pending.initialPositionMs
         val paused = current?.let { runCatching { NativePlayerBridge.isPaused(it) }.getOrNull() } ?: !pending.playWhenReady
+        // The reopened player starts at the speed it was playing at, not the one the video opened with.
+        val playingSpeed = speed ?: current?.let { runCatching { NativePlayerBridge.speed(it) }.getOrNull() }
         if (on) {
             val headers = pending.headerLines.toHeaderMap()
-            fastStream.enable(pending.streamUrls, headers)
+            fastStream.enable(pending.streamUrls, headers, window = window)
         } else {
             fastStream.release(pending.streamUrls)
         }
-        Logger.withTag("FastStream").i { "${if (on) "on" else "off"}: reopening at ${positionMs}ms" }
-        pendingSource = pending.copy(initialPositionMs = positionMs, initialProgressFraction = 0f, playWhenReady = !paused)
+        Logger.withTag("FastStream").i { "${if (on) "on" else "off"}${if (window) " (automatic)" else ""}: reopening at ${positionMs}ms" }
+        val options = playingSpeed?.let { value ->
+            pending.extraMpvOptions.map { if (it.startsWith("speed=")) "speed=${value.coerceIn(0.25f, 4f)}" else it }
+        } ?: pending.extraMpvOptions
+        pendingSource = pending.copy(
+            initialPositionMs = positionMs,
+            initialProgressFraction = 0f,
+            playWhenReady = !paused,
+            extraMpvOptions = options,
+        )
         lastSeekFailureTargetMs = null
         attachPending()
     }
 
     fun dispose() {
         disposed = true
+        autoFastStreamTimer.stop()
         attachGeneration.incrementAndGet()
         pendingSource?.takeIf { it.fastStreamEligible }?.let { closing ->
             com.nuvio.app.features.youtube.YouTubeFastStream.release(closing.streamUrls)
@@ -2123,7 +2140,27 @@ internal class NativePlayerController(
     override fun setPlaybackSpeed(speed: Float) {
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setSpeed(it, speed) }
         applyDesktopBufferPreset(PlayerSettingsRepository.uiState.value.desktopBufferPreset, speed)
+        // fork:faststream-optin - automatic: past 1.25x googlevideo's pacing cannot keep up, so the YouTube
+        // stream moves to FastStream's window (one reopen at the same place and speed, then never again
+        // for this video).
+        // Waits until the speed has stopped changing: the HUD steps 1.1, 1.2, 1.3... and a reopen in the
+        // middle would start the new player at a speed the user has already gone past.
+        requestedSpeed = speed
+        autoFastStreamTimer.restart()
     }
+
+    @Volatile
+    private var requestedSpeed = 1f
+
+    private val autoFastStreamTimer = javax.swing.Timer(AUTO_FASTSTREAM_SETTLE_MS) {
+        val speed = requestedSpeed
+        if (disposed || speed < com.nuvio.app.features.youtube.YouTubeFastStream.AUTO_SPEED) return@Timer
+        val pending = pendingSource?.takeIf { it.fastStreamEligible } ?: return@Timer
+        val fastStream = com.nuvio.app.features.youtube.YouTubeFastStream
+        if (pending.streamUrls.all(fastStream::eligible) && !pending.streamUrls.all(fastStream::isEnabled)) {
+            setFastStream(on = true, window = true, speed = speed)
+        }
+    }.apply { isRepeats = false }
 
     override fun setMuted(muted: Boolean) {
         handle.takeIf { it != 0L }?.let { NativePlayerBridge.setMute(it, muted) }
@@ -2641,6 +2678,9 @@ private const val METERED_PAUSED_PREFETCH_SECS = "1"
 
 /** Minimum buffer ahead of the playhead before pausing is allowed to freeze prefetch. */
 private const val METERED_FREEZE_MIN_BUFFER_MS = 3_000L
+
+/** fork:faststream-optin - how long the speed must stay put before automatic FastStream reopens the player. */
+private const val AUTO_FASTSTREAM_SETTLE_MS = 700
 
 private data class DesktopBufferLimits(
     val readaheadSeconds: Int,
