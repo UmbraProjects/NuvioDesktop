@@ -27,6 +27,12 @@ internal object WhisperNative {
         startRule: String,
     ): String?
 
+    /**
+     * fork:live-tv-subtitles - [samples] (up to 30 s) as words with times: "<start ms>\t<end ms>\t<word>" per line,
+     * from the start of [samples]; null when decoding failed. Throws UnsatisfiedLinkError with an older nuvio_whisper.dll.
+     */
+    external fun nativeTranscribeWords(handle: Long, samples: FloatArray, threads: Int, language: String?): String?
+
     external fun nativeFree(handle: Long)
 
     /**

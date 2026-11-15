@@ -896,45 +896,53 @@ val buildWindowsWhisper = tasks.register("buildWindowsWhisper") {
             output.delete()
             return@doLast
         }
-        checkNotNull(cmake)
-        val buildDir = whisperBuildDir.get().asFile.apply { mkdirs() }
-        val msysBin = nuvioEngineMsys2Root.resolve("bin")
-        fun run(vararg command: String) {
-            val process = ProcessBuilder(*command)
-                .directory(buildDir)
-                .redirectErrorStream(true)
-                .apply { environment()["PATH"] = "${msysBin.absolutePath};${System.getenv("PATH").orEmpty()}" }
-                .start()
-            val log = process.inputStream.bufferedReader().readText()
-            val code = process.waitFor()
-            if (code != 0) {
-                throw GradleException("whisper.cpp build step failed (exit $code): ${command.joinToString(" ")}\n${log.takeLast(6000)}")
+        // fork:live-tv-subtitles - best-effort like the engine: with -Pnuvio.engine.optional=true a failed whisper.cpp
+        // build only warns (voice control and the live subtitle word match are then unavailable) instead of failing the app.
+        try {
+            checkNotNull(cmake)
+            val buildDir = whisperBuildDir.get().asFile.apply { mkdirs() }
+            val msysBin = nuvioEngineMsys2Root.resolve("bin")
+            fun run(vararg command: String) {
+                val process = ProcessBuilder(*command)
+                    .directory(buildDir)
+                    .redirectErrorStream(true)
+                    .apply { environment()["PATH"] = "${msysBin.absolutePath};${System.getenv("PATH").orEmpty()}" }
+                    .start()
+                val log = process.inputStream.bufferedReader().readText()
+                val code = process.waitFor()
+                if (code != 0) {
+                    throw GradleException("whisper.cpp build step failed (exit $code): ${command.joinToString(" ")}\n${log.takeLast(6000)}")
+                }
             }
+            val commonFlags = "-D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -ffunction-sections -fdata-sections"
+            run(
+                cmake.absolutePath,
+                "-S", whisperCMakeProject.asFile.absolutePath,
+                "-B", buildDir.absolutePath,
+                "-G", "Ninja",
+                "-DCMAKE_C_COMPILER=${msysBin.resolve("gcc.exe").absolutePath.replace('\\', '/')}",
+                "-DCMAKE_CXX_COMPILER=${msysBin.resolve("g++.exe").absolutePath.replace('\\', '/')}",
+                "-DCMAKE_MAKE_PROGRAM=${msysBin.resolve("ninja.exe").absolutePath.replace('\\', '/')}",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_C_FLAGS=$commonFlags",
+                "-DCMAKE_CXX_FLAGS=$commonFlags",
+                // Fully static, as the engine: the JVM must not need MSYS2 on PATH to load it.
+                "-DCMAKE_SHARED_LINKER_FLAGS=-static -s -Wl,--dynamicbase,--nxcompat,--high-entropy-va,--gc-sections,--exclude-all-symbols",
+                "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+                "-DNUVIO_WHISPER_ROOT=${whisperSourceDir.absolutePath.replace('\\', '/')}",
+                "-DNUVIO_JNI_INCLUDE_DIR=${nuvioEngineJniIncludeDir.absolutePath.replace('\\', '/')}",
+            )
+            run(cmake.absolutePath, "--build", buildDir.absolutePath, "--parallel", "--target", "nuvio_whisper")
+            val built = buildDir.resolve("nuvio_whisper.dll")
+            check(built.isFile) { "whisper.cpp build finished but ${built.absolutePath} is missing" }
+            output.parentFile.mkdirs()
+            built.copyTo(output, overwrite = true)
+            logger.lifecycle("Whisper DLL: ${output.absolutePath} (${output.length() / 1024} KB)")
+        } catch (failure: Exception) {
+            if (!nuvioEngineOptional) throw failure
+            logger.warn("whisper.cpp build failed; voice control will be unavailable: ${failure.message?.take(4000)}")
+            output.delete()
         }
-        val commonFlags = "-D_WIN32_WINNT=0x0A00 -DWINVER=0x0A00 -ffunction-sections -fdata-sections"
-        run(
-            cmake.absolutePath,
-            "-S", whisperCMakeProject.asFile.absolutePath,
-            "-B", buildDir.absolutePath,
-            "-G", "Ninja",
-            "-DCMAKE_C_COMPILER=${msysBin.resolve("gcc.exe").absolutePath.replace('\\', '/')}",
-            "-DCMAKE_CXX_COMPILER=${msysBin.resolve("g++.exe").absolutePath.replace('\\', '/')}",
-            "-DCMAKE_MAKE_PROGRAM=${msysBin.resolve("ninja.exe").absolutePath.replace('\\', '/')}",
-            "-DCMAKE_BUILD_TYPE=Release",
-            "-DCMAKE_C_FLAGS=$commonFlags",
-            "-DCMAKE_CXX_FLAGS=$commonFlags",
-            // Fully static, as the engine: the JVM must not need MSYS2 on PATH to load it.
-            "-DCMAKE_SHARED_LINKER_FLAGS=-static -s -Wl,--dynamicbase,--nxcompat,--high-entropy-va,--gc-sections,--exclude-all-symbols",
-            "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
-            "-DNUVIO_WHISPER_ROOT=${whisperSourceDir.absolutePath.replace('\\', '/')}",
-            "-DNUVIO_JNI_INCLUDE_DIR=${nuvioEngineJniIncludeDir.absolutePath.replace('\\', '/')}",
-        )
-        run(cmake.absolutePath, "--build", buildDir.absolutePath, "--parallel", "--target", "nuvio_whisper")
-        val built = buildDir.resolve("nuvio_whisper.dll")
-        check(built.isFile) { "whisper.cpp build finished but ${built.absolutePath} is missing" }
-        output.parentFile.mkdirs()
-        built.copyTo(output, overwrite = true)
-        logger.lifecycle("Whisper DLL: ${output.absolutePath} (${output.length() / 1024} KB)")
     }
 }
 

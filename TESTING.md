@@ -872,3 +872,13 @@ Settings > Live TV > Stage. Watch a few programmes on Live TV first (each one at
 - [ ] On a channel with ad breaks: after a break the HUD says "re-synced" and the lines are back in time
 - [ ] When the film ends and the next programme starts, the subtitle goes off; the next film offers its own
 - [ ] News and sport offer no add-on subtitles; playback is never interrupted by the sync (no second connection)
+
+### Matching live subtitles by their words (Nov 15)
+
+- [ ] After `build.cmd`, `out\Nuvio\nuvio_whisper.dll` is there (the build fetched whisper.cpp into `D:\NuvioBuild\whisper.cpp`); Settings > Voice control no longer says the engine is missing
+- [ ] Settings > Live TV has "Match live subtitles by their words" under the subtitles switch; Settings search finds it
+- [ ] With a model downloaded in Settings > Voice control (voice control can stay off) and the switch on, pick an English subtitle on a film: within about a minute the HUD says "synced to the audio" and the lines match the speech
+- [ ] Nativity 3 (or another film with songs): the lines are in time, not thrown off by the singing
+- [ ] On a channel with ads, after a break the lines are back in time within a couple of minutes
+- [ ] A subtitle for a different cut, or for another film, does not lock (stays "timed from the guide")
+- [ ] With the switch off, or no model downloaded, it works as before (speech detection alone); CPU stays reasonable while it listens

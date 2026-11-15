@@ -90,6 +90,8 @@ data class IptvSettings(
     val titles: Map<String, IptvTitleStat> = emptyMap(),
     /** fork:live-tv-subtitles - subtitle add-ons for films and episodes on live channels, synced to the channel; off by default. */
     val liveSubtitles: Boolean = false,
+    /** fork:live-tv-subtitles - match those subtitles by their words with the voice control speech model; off by default. */
+    val liveSubtitleWords: Boolean = false,
     /** fork:live-tv-views - the extra stages switched on in Settings (IptvStage names; see IptvViewRules.VIEWS). */
     val views: Set<String> = emptySet(),
     /** fork:live-tv-learn - the teams in what was watched, by name key (see IptvTeamRules). */
@@ -365,6 +367,12 @@ object IptvRepository {
     fun setLiveSubtitles(enabled: Boolean) {
         ensureLoaded()
         mutate { it.copy(liveSubtitles = enabled) }
+    }
+
+    /** fork:live-tv-subtitles */
+    fun setLiveSubtitleWords(enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(liveSubtitleWords = enabled) }
     }
 
     /** fork:live-tv-views - one extra stage on or off. */

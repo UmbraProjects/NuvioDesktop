@@ -67,9 +67,20 @@ jobs:
         run: |
           C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm"
           # gcc compiles the patched libquickjs.dll (buildWindowsQuickJs); mpv does not pull it in.
-          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv mingw-w64-ucrt-x86_64-ffmpeg mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv mingw-w64-ucrt-x86_64-ffmpeg mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils mingw-w64-ucrt-x86_64-ninja"
           if (-not (Test-Path C:\msys64\ucrt64\bin\libmpv-2.dll)) { throw "libmpv-2.dll missing after install" }
           if (-not (Test-Path C:\msys64\ucrt64\bin\gcc.exe)) { throw "gcc.exe missing after install" }
+
+      # fork:live-tv-subtitles - whisper.cpp beside the checkout, where buildWindowsWhisper looks for it, so the app ships
+      # nuvio_whisper.dll (voice control, and Live TV's subtitle word match). Pinned to the tag build.gradle.kts expects;
+      # a failed whisper build only warns (-Pnuvio.engine.optional=true).
+      - name: Fetch whisper.cpp
+        shell: pwsh
+        run: |
+          $dir = Join-Path (Split-Path $env:GITHUB_WORKSPACE -Parent) "whisper.cpp"
+          if (-not (Test-Path (Join-Path $dir "include/whisper.h"))) {
+            git clone --depth 1 --branch v1.9.5 https://github.com/ggml-org/whisper.cpp $dir
+          }
 
       # WebView2 SDK headers + loader, needed to compile player_bridge.dll.
       - name: Fetch WebView2 SDK
@@ -125,6 +136,7 @@ jobs:
           --tests "com.nuvio.app.features.iptv.IptvSportArtTest"
           --tests "com.nuvio.app.features.iptv.IptvViewsTest"
           --tests "com.nuvio.app.features.player.audiosync.LiveAudioSubtitleSyncTest"
+          --tests "com.nuvio.app.features.player.audiosync.LiveWordMatchTest"
           "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"

@@ -279,6 +279,18 @@ internal fun LazyListScope.iptvSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-live-subtitles")),
                     onCheckedChange = IptvRepository::setLiveSubtitles,
                 )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = "Match live subtitles by their words",
+                    description = "Needs the setting above and a speech model downloaded in Settings > Voice control (voice " +
+                        "control itself can stay off). Nuvio listens to what has already played, writes down the words and " +
+                        "finds them in the subtitle, so it is in time within a minute, songs do not confuse it, and an ad " +
+                        "break is caught by the words that follow. English subtitles only; uses some CPU while it listens.",
+                    checked = settings.liveSubtitleWords,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-live-subtitle-words")),
+                    onCheckedChange = IptvRepository::setLiveSubtitleWords,
+                )
                 // fork:live-tv-views - more ways to see everything, each a stage of its own.
                 IptvViewRules.VIEWS.forEach { view ->
                     SettingsGroupDivider(isTablet = isTablet)

@@ -59,7 +59,27 @@ internal object LiveAudioSubtitleSync {
     class Heard internal constructor(val key: String, val guideOffsetMs: Long) {
         val timeline = SpeechTimeline()
         @Volatile var readUntil = -1L
+        /** Words whisper heard (media time), when the word match is on; [wordsUntil]: media time transcribed up to. */
+        val words = ArrayList<LiveWordMatch.Heard>()
+        @Volatile var wordsUntil = -1L
+
+        @Synchronized fun addWords(heard: List<LiveWordMatch.Heard>, until: Long) {
+            words += heard
+            if (words.size > MAX_WORDS) words.subList(0, words.size - MAX_WORDS).clear()
+            wordsUntil = maxOf(wordsUntil, until)
+        }
+
+        @Synchronized fun wordsFrom(fromMs: Long): List<LiveWordMatch.Heard> = words.filter { it.atMs >= fromMs }
     }
+
+    /** About two hours of talk. */
+    private const val MAX_WORDS = 12_000
+    /** Whisper hears 30 s at a time. */
+    private const val WORD_CHUNK_MS = 28_000L
+    /** After the lock, the words of this long back are matched again to catch an ad break. */
+    private const val RECENT_WORDS_MS = 120_000L
+    /** A recent word match this far from the current placing is a jump (once it repeats). */
+    private const val WORD_JUMP_MS = 1_500.0
 
     private var lastHeard: Heard? = null
 
@@ -86,6 +106,24 @@ internal object LiveAudioSubtitleSync {
     fun unshift(model: SubtitleSyncModel, offsetMs: Long): SubtitleSyncModel =
         SubtitleSyncModel(model.segments.map { it.copy(shiftMs = it.shiftMs - it.scale * offsetMs) })
 
+    /** The opposite of [unshift]: a mapping on the film's own lines as one on lines moved by [offsetMs]. */
+    fun reshift(model: SubtitleSyncModel, offsetMs: Long): SubtitleSyncModel =
+        SubtitleSyncModel(model.segments.map { it.copy(shiftMs = it.shiftMs + it.scale * offsetMs) })
+
+    /**
+     * [current] with [match] from the words heard recently, when they place the film elsewhere (an ad break): a new
+     * piece from where the matched words start; null when [match] agrees with [current] there.
+     */
+    fun jumped(current: SubtitleSyncModel, match: LiveWordMatch.Match): SubtitleSyncModel? {
+        val at = match.fromMediaMs
+        val film = (at - match.shiftMs) / match.scale
+        val segment = current.segmentAt(at)
+        if (kotlin.math.abs(segment.scale * film + segment.shiftMs - at) <= WORD_JUMP_MS) return null
+        val last = current.segments.last()
+        val piece = SubtitleSyncSegment(maxOf(at, last.fromMediaMs + 1_000L), match.scale, match.shiftMs)
+        return SubtitleSyncModel(current.segments + piece)
+    }
+
     /** The guide's guesses at each speed: film time at media time 0 is somewhere from the ads behind to [EARLY_MS] ahead. */
     fun guesses(guideOffsetMs: Long): List<Guess> = SPEEDS.map { (guideOffsetMs * it).toLong() }.distinct().map { onGuide ->
         val behind = LATE_MS + (maxOf(0L, onGuide) * AD_SHARE).toLong().coerceAtMost(MAX_ADS_MS)
@@ -99,7 +137,9 @@ internal object LiveAudioSubtitleSync {
     /**
      * Runs until cancelled. [guideOffsetMs]: film time at media time 0 by the guide. [decode]: 16 kHz mono PCM of media
      * time [startMs, endMs) out of the rewind buffer, or null. [onModel]: a mapping on the film's own lines and whether
-     * it is confirmed (a refinement or a jump after the lock is confirmed too).
+     * it is confirmed (a refinement or a jump after the lock is confirmed too). [transcribe]: when the word match is
+     * on, at most 30 s of PCM as words timed from its start (null when whisper failed); words heard place the lines
+     * at once and catch ad breaks, the speech tracker refines and watches between.
      */
     suspend fun run(
         dialogue: List<Triple<Long, Long, String>>,
@@ -107,6 +147,7 @@ internal object LiveAudioSubtitleSync {
         heard: Heard,
         positionMs: () -> Long,
         decode: suspend (startMs: Long, endMs: Long) -> FloatArray?,
+        transcribe: (suspend (pcm: FloatArray) -> List<LiveWordMatch.Heard>?)? = null,
         onModel: suspend (model: SubtitleSyncModel, confirmed: Boolean, recheck: Boolean) -> Unit,
     ) {
         val timeline = heard.timeline
@@ -120,6 +161,14 @@ internal object LiveAudioSubtitleSync {
             )
         }
         var lockedOffset: Long? = null
+        val script = if (transcribe != null) LiveWordMatch.Script(dialogue) else null
+        /** The placing on the film's own lines last handed out, once confirmed. */
+        var placed: SubtitleSyncModel? = null
+        var pendingJump: LiveWordMatch.Match? = null
+        suspend fun emit(model: SubtitleSyncModel, confirmed: Boolean, recheck: Boolean) {
+            if (confirmed) placed = model
+            onModel(model, confirmed, recheck)
+        }
         var readUntil = heard.readUntil
         log.i { "start lines=${dialogue.size} guideOffsetMs=$guideOffsetMs heard=${(timeline.knownFrameCount() * SpeechTimeline.FRAME_DURATION_MS / 1_000).toLong()}s guesses=${guesses(guideOffsetMs)}" }
         while (true) {
@@ -143,8 +192,53 @@ internal object LiveAudioSubtitleSync {
                     readUntil = from + pcm.size * 1_000L / DesktopAudioSubtitleSync.SAMPLE_RATE
                     heard.readUntil = readUntil
                     log.d { "read ${from / 1_000}s..${readUntil / 1_000}s known=${timeline.knownFrameCount()}" }
+                    if (transcribe != null) {
+                        // Only what was not transcribed before (a rewind reads some audio again).
+                        var chunkFrom = maxOf(from, heard.wordsUntil)
+                        var found = 0
+                        while (chunkFrom < readUntil - 1_000L) {
+                            currentCoroutineContext().ensureActive()
+                            val chunkTo = minOf(readUntil, chunkFrom + WORD_CHUNK_MS)
+                            val a = ((chunkFrom - from) * DesktopAudioSubtitleSync.SAMPLE_RATE / 1_000L).toInt().coerceIn(0, pcm.size)
+                            val b = ((chunkTo - from) * DesktopAudioSubtitleSync.SAMPLE_RATE / 1_000L).toInt().coerceIn(a, pcm.size)
+                            val words = transcribe(pcm.copyOfRange(a, b)) ?: break
+                            val start = chunkFrom
+                            heard.addWords(words.map { it.copy(atMs = start + it.atMs) }, chunkTo)
+                            found += words.size
+                            chunkFrom = chunkTo
+                        }
+                        log.d { "words: $found in ${from / 1_000}s..${readUntil / 1_000}s" }
+                    }
                 } else {
                     log.i { "nothing out of the cache for ${from / 1_000}s..${to / 1_000}s" }
+                }
+            }
+            // The words: they place the lines at once, and catch an ad break after the lock.
+            if (script != null) {
+                if (lockedOffset == null) {
+                    LiveWordMatch.match(script, heard.wordsFrom(Long.MIN_VALUE))?.let { match ->
+                        val model = SubtitleSyncModel(listOf(SubtitleSyncSegment(0L, match.scale, match.shiftMs)))
+                        // The tracker whose speed this is: the film's own, or sped up to 25 frames.
+                        val (guess, tracker) = if (kotlin.math.abs(match.scale - 1.0) < 0.01) trackers.first() else trackers.last()
+                        tracker.adopt(reshift(model, guess))
+                        lockedOffset = guess
+                        log.i { "locked by words (${match.votes} runs, next best ${match.runnerUp}): $model" }
+                        emit(model, true, false)
+                    }
+                } else {
+                    val current = placed
+                    val recent = LiveWordMatch.match(script, heard.wordsFrom(positionMs() - RECENT_WORDS_MS))
+                    val moved = if (current != null && recent != null) jumped(current, recent) else null
+                    val pending = pendingJump
+                    pendingJump = if (moved != null) recent else null
+                    if (moved != null && pending != null && recent != null &&
+                        kotlin.math.abs(pending.shiftMs - recent.shiftMs) <= WORD_JUMP_MS && pending.scale == recent.scale
+                    ) {
+                        pendingJump = null
+                        trackers.first { it.first == lockedOffset }.second.adopt(reshift(moved, lockedOffset!!))
+                        log.i { "jump by words at ${recent.fromMediaMs / 1_000}s: $moved" }
+                        emit(moved, true, true)
+                    }
                 }
             }
             // Every round, not only after a read: speech heard for an earlier subtitle is searched straight away.
@@ -152,16 +246,16 @@ internal object LiveAudioSubtitleSync {
                 for ((guess, tracker) in trackers) {
                     if (lockedOffset != null && guess != lockedOffset) continue
                     when (val outcome = tracker.update(timeline, positionMs())) {
-                        is AudioSyncTracker.Outcome.Provisional -> if (lockedOffset == null) onModel(unshift(outcome.model, guess), false, false)
+                        is AudioSyncTracker.Outcome.Provisional -> if (lockedOffset == null) emit(unshift(outcome.model, guess), false, false)
                         is AudioSyncTracker.Outcome.Locked -> {
                             log.i { "locked at guess $guess: ${outcome.model}" }
                             lockedOffset = guess
-                            onModel(unshift(outcome.model, guess), true, false)
+                            emit(unshift(outcome.model, guess), true, false)
                         }
-                        is AudioSyncTracker.Outcome.Refined -> onModel(unshift(outcome.model, guess), true, true)
+                        is AudioSyncTracker.Outcome.Refined -> emit(unshift(outcome.model, guess), true, true)
                         is AudioSyncTracker.Outcome.Jumped -> {
                             log.i { "jump at ${position / 1_000}s: ${outcome.model}" }
-                            onModel(unshift(outcome.model, guess), true, true)
+                            emit(unshift(outcome.model, guess), true, true)
                         }
                         else -> Unit
                     }

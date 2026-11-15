@@ -662,6 +662,12 @@ private fun settingsSearchEntries(
             "Live TV asks your subtitle add-ons for the film or episode on now and syncs the subtitle to the channel.",
             "General",
         ),
+        PlaybackSearchRow(
+            "iptv-live-subtitle-words",
+            "Match live subtitles by their words",
+            "Live TV subtitles placed by the words heard (the voice control speech model), not only by when people talk.",
+            "General",
+        ),
         // fork:live-tv-views
         PlaybackSearchRow("iptv-view-map", "View: Map", "A Live TV stage: everything on now by kind, zoom into a block.", "General"),
         PlaybackSearchRow("iptv-view-mosaic", "View: For you now", "A Live TV stage: one mosaic sized by how likely you are to want each.", "General"),

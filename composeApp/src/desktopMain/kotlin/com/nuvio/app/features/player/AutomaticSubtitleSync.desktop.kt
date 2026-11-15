@@ -220,6 +220,16 @@ internal actual suspend fun runLiveSubtitleSync(
     ), LiveSubtitleSyncUpdate.Stage.Guide)
     // Without the native calls (macOS) the guide's placing is all there is.
     if (!player.supportsSpeechSpots) return
+    val words = liveWordTranscriber(subtitle)
+    val transcribe: (suspend (FloatArray) -> List<com.nuvio.app.features.player.audiosync.LiveWordMatch.Heard>?)? =
+        if (words == null) null else { pcm ->
+            words.words(pcm)?.flatMap { word ->
+                com.nuvio.app.features.player.audiosync.LiveWordMatch.words(word.text).map {
+                    com.nuvio.app.features.player.audiosync.LiveWordMatch.Heard((word.startMs + word.endMs) / 2, it)
+                }
+            }
+        }
+    try {
     withContext(Dispatchers.Default) {
         com.nuvio.app.features.player.audiosync.LiveAudioSubtitleSync.run(
             dialogue = cues.map { Triple(it.startTimeMs, it.endTimeMs, it.text) },
@@ -227,6 +237,7 @@ internal actual suspend fun runLiveSubtitleSync(
             heard = com.nuvio.app.features.player.audiosync.LiveAudioSubtitleSync.heardFor("$sourceKey@$programmeStartMs", guideOffsetMs),
             positionMs = positionMs,
             decode = { startMs, endMs -> withContext(Dispatchers.IO) { player.decodeCachedAudio(startMs / 1_000.0, endMs / 1_000.0) } },
+            transcribe = transcribe,
         ) { model, confirmed, recheck ->
             apply(
                 model,
@@ -238,6 +249,31 @@ internal actual suspend fun runLiveSubtitleSync(
             )
         }
     }
+    } finally {
+        words?.close()
+    }
+}
+
+/**
+ * fork:live-tv-subtitles - whisper for matching the subtitle by its words, when that setting is on, a speech model is
+ * downloaded (Settings > Voice control) and nuvio_whisper.dll loads; null otherwise (speech detection alone then).
+ * The models offered are English-only, so a subtitle in another language is matched by speech alone.
+ */
+private suspend fun liveWordTranscriber(subtitle: AddonSubtitle): com.nuvio.app.features.voice.WhisperTranscriber? {
+    if (!com.nuvio.app.features.iptv.IptvRepository.settings.value.liveSubtitleWords) return null
+    val language = subtitle.language.trim().lowercase()
+    if (language.isNotEmpty() && !language.startsWith("en")) {
+        log.i { "live sync: words not matched, the subtitle is '$language' and the speech models are English" }
+        return null
+    }
+    val file = com.nuvio.app.features.voice.VoiceControlRepository.downloadedModelFile() ?: run {
+        log.i { "live sync: words not matched, no speech model downloaded (Settings > Voice control)" }
+        return null
+    }
+    return withContext(Dispatchers.IO) { com.nuvio.app.features.voice.WhisperTranscriber.open(file) }
+        .onSuccess { log.i { "live sync: matching words with ${file.name}" } }
+        .onFailure { log.i { "live sync: words not matched: ${it.message}" } }
+        .getOrNull()
 }
 
 /**
