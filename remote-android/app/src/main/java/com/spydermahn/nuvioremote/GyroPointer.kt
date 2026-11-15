@@ -32,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
@@ -314,14 +315,17 @@ fun PointerBody(state: UiState, viewModel: RemoteViewModel, modifier: Modifier =
                             }
                             result
                         }
+                        // Back, as a mouse's back button, once every finger is off. Checks the event already in hand
+                        // first: when both fingers lift together that was the last event, and waiting for another
+                        // one hung the gesture (no Back, and the cursor frozen) until the next touch.
+                        suspend fun AwaitPointerEventScope.backOnLift() {
+                            while (currentEvent.changes.any { it.pressed }) awaitPointerEvent()
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            vm.press(RemoteKey.Back)
+                        }
                         try {
                             when {
-                                twoFingers -> {
-                                    // Wait for every finger to lift, then Back, as a mouse's back button.
-                                    while (awaitPointerEvent().changes.any { it.pressed }) Unit
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    vm.press(RemoteKey.Back)
-                                }
+                                twoFingers -> backOnLift()
                                 start == ZoneStart.Tap -> {
                                     haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     vm.click("left")
@@ -329,8 +333,16 @@ fun PointerBody(state: UiState, viewModel: RemoteViewModel, modifier: Modifier =
                                 start == ZoneStart.Scroll -> {
                                     val sideways = kotlin.math.abs(travelX) > kotlin.math.abs(travelY)
                                     var rest = if (sideways) travelX else travelY
+                                    var scrolled = false
                                     while (true) {
-                                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                                        val event = awaitPointerEvent()
+                                        // A second finger before anything scrolled: the first one slid a little on
+                                        // the way to a two-finger tap. It is Back, not a scroll.
+                                        if (!scrolled && event.changes.count { it.pressed } >= 2) {
+                                            backOnLift()
+                                            break
+                                        }
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
                                         if (!change.pressed) break
                                         val delta = change.positionChange()
                                         change.consume()
@@ -338,6 +350,7 @@ fun PointerBody(state: UiState, viewModel: RemoteViewModel, modifier: Modifier =
                                         val notches = (rest / stepPx).toInt()
                                         if (notches != 0) {
                                             rest -= notches * stepPx
+                                            scrolled = true
                                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             if (sideways) vm.scrollSideways(notches) else vm.scroll(notches)
                                         }
