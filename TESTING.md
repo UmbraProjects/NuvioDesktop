@@ -915,4 +915,5 @@ Settings > Live TV > Stage. Watch a few programmes on Live TV first (each one at
 - [ ] Settings > Live TV no longer has the six View switches
 - [ ] All channels (the classic list) with Stage on: the sidebar has Stages, Your 40, Favourites, Recently watched, All channels and the categories, not On now / Sport / Films / Three things and the rest
 - [ ] Settings > Live TV > Home country (United Kingdom): For you now and the picks put UK channels first, and US/Australian local news drops out of the big tiles; "From the triage" uses the triage's country when it kept one
+- [ ] Menus over Live TV (Views, the programme menu, Your 40's channel menu, From the start) are solid cards in the middle of the screen over a dark backdrop, nothing shows through them, and the highlighted option is filled with the accent
 - [ ] Hold OK on any programme on the stages (Home's pick and Next up, Three things, Starting soon, Tonight, Earlier, the views): a menu with Watch, Follow <title> (or Stop following), Remind me (before it starts) and Close; Follow shows a toast and the show appears under Following

@@ -1321,7 +1321,7 @@ internal fun IptvStageScreen(
         }
         val demandFor = onDemandFor
         if (demandFor != null) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.TopCenter) {
+            Box(Modifier.fillMaxSize().background(IptvDialogScrim), contentAlignment = Alignment.Center) {
                 IptvOnDemandChoice(
                     programme = demandFor,
                     line = IptvOnDemandRules.lateLine(demandFor.entry, now, IptvStageRules::clock),
@@ -1339,10 +1339,10 @@ internal fun IptvStageScreen(
         // fork:live-tv-polish - the programme menu over the stage.
         val progFor = progMenuFor
         if (progFor != null) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.TopCenter) {
-                Box(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.TopCenter) {
+            Box(Modifier.fillMaxSize().background(IptvDialogScrim), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(
-                        modifier = Modifier.width(480.dp).iptvGlass(NuvioGlass.Shape).padding(24.dp),
+                        modifier = Modifier.width(480.dp).iptvDialog(NuvioGlass.Shape).padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
@@ -1368,10 +1368,10 @@ internal fun IptvStageScreen(
         }
         // fork:live-tv-polish - the Views picker over the stage.
         if (viewsOpen) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.TopCenter) {
-                Box(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.TopCenter) {
+            Box(Modifier.fillMaxSize().background(IptvDialogScrim), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(
-                        modifier = Modifier.width(420.dp).iptvGlass(NuvioGlass.Shape).padding(24.dp),
+                        modifier = Modifier.width(420.dp).iptvDialog(NuvioGlass.Shape).padding(24.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
@@ -1386,7 +1386,7 @@ internal fun IptvStageScreen(
         }
         val menuFor = menuChannel
         if (menuFor != null) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.TopCenter) {
+            Box(Modifier.fillMaxSize().background(IptvDialogScrim), contentAlignment = Alignment.Center) {
                 IptvLineupMenu(
                     channelName = menuFor.primary.name.ifBlank { "Channel ${menuFor.primary.num}" },
                     note = IptvLineupRules.position(storedLineup, menuFor).let { if (it >= 0) "Number ${it + 1} in Your 40" else "Not in Your 40" },
@@ -1411,9 +1411,9 @@ private fun IptvOnDemandChoice(
     onChoose: (Int) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    Box(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.TopCenter) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Column(
-            modifier = Modifier.width(480.dp).iptvGlass(NuvioGlass.Shape).padding(24.dp),
+            modifier = Modifier.width(480.dp).iptvDialog(NuvioGlass.Shape).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {

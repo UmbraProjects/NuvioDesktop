@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -42,11 +43,11 @@ internal fun IptvLineupMenu(
     onBack: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    Box(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), contentAlignment = Alignment.TopCenter) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         Column(
             modifier = Modifier
                 .width(420.dp)
-                .iptvGlass(NuvioGlass.Shape)
+                .iptvDialog(NuvioGlass.Shape)
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -83,8 +84,17 @@ internal fun LineupMenuButton(label: String, focused: Boolean, danger: Boolean, 
         modifier = Modifier
             .fillMaxWidth()
             .height(44.dp)
-            .iptvGlass(shape, raised = focused || hovered)
-            .then(if (danger) Modifier.border(1.dp, tokens.colors.danger.copy(alpha = 0.6f), shape) else Modifier)
+            // fork:live-tv-polish - a solid button, and the highlighted one filled with the accent so it reads at a glance.
+            .background(
+                when {
+                    focused -> tokens.colors.accent.copy(alpha = 0.42f)
+                    hovered -> Color.White.copy(alpha = 0.10f)
+                    else -> Color.White.copy(alpha = 0.05f)
+                },
+                shape,
+            )
+            .border(1.dp, if (focused) tokens.colors.accent.copy(alpha = 0.9f) else Color.White.copy(alpha = 0.10f), shape)
+            .then(if (danger && !focused) Modifier.border(1.dp, tokens.colors.danger.copy(alpha = 0.6f), shape) else Modifier)
             .clip(shape)
             .then(if (focused) Modifier.smoothBorder(1.5.dp, tokens.colors.borderFocus, shape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),

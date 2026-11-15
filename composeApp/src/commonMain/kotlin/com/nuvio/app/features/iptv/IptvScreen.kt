@@ -71,6 +71,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -1606,6 +1607,20 @@ internal fun Modifier.iptvGlass(
         shape,
     )
     .border(1.dp, NuvioGlass.Edge, shape)
+
+/**
+ * fork:live-tv-polish - a menu or picker over a stage: a solid dark card (not see-through glass, so nothing behind it
+ * shows through the words) with the glass edge and a deep shadow.
+ */
+internal fun Modifier.iptvDialog(shape: Shape): Modifier = this
+    .shadow(32.dp, shape, clip = false)
+    .background(IptvDialogFill, shape)
+    .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+
+private val IptvDialogFill = Color(0xFF17171C)
+
+/** fork:live-tv-polish - what is behind a menu: dimmed well down, so the menu is the only thing to read. */
+internal val IptvDialogScrim = Color.Black.copy(alpha = 0.72f)
 
 /** fork:navbar-search - the Live TV channel filter, typed in the tab's own box or the app bar's Search on this tab. */
 object IptvTopBarSearch {
