@@ -88,6 +88,13 @@ internal fun PlayerScreenRuntime.BindIptvLiveEffects() {
 
     BindIptvStallReconnect()
 
+    // fork:live-tv-departure - a channel asked for while this player is up (a reminder switching at the start) plays here.
+    DisposableEffect(Unit) {
+        val take: (PlayerLaunch) -> Unit = { launch -> takeIptvLaunch(launch) }
+        com.nuvio.app.features.iptv.IptvPlaybackRequests.inPlayer = take
+        onDispose { if (com.nuvio.app.features.iptv.IptvPlaybackRequests.inPlayer === take) com.nuvio.app.features.iptv.IptvPlaybackRequests.inPlayer = null }
+    }
+
     // fork:live-tv-brakes - a minute counted while it plays; the end card is the engine's call.
     LaunchedEffect(Unit) {
         while (true) {
@@ -459,6 +466,20 @@ private fun PlayerScreenRuntime.zapTo(channel: IptvChannel) {
     iptvLinkJob = scope.launch {
         openIptvChannel(channel, IptvPlaybackSession.switchTo(channel, IptvPlaybackSession.linkCandidates(channel)))
     }
+}
+
+/**
+ * fork:live-tv-departure - [launch] (made by IptvPlaybackSession.launchFor, which already made its channel the active
+ * one) in this player: the same reopen as a channel change.
+ */
+private fun PlayerScreenRuntime.takeIptvLaunch(launch: PlayerLaunch) {
+    iptvLinkJob?.cancel()
+    IptvPlaybackSession.setOpening(null)
+    IptvPlaybackLog.i { "channel change to '${launch.title}' from outside the player" }
+    activeSourceHeaders = sanitizePlaybackHeaders(launch.sourceHeaders)
+    iptvReconnectTimesMs.clear()
+    playbackSourceFailureActive = false
+    reopenIptvSource(launch.sourceUrl)
 }
 
 private fun PlayerScreenRuntime.openIptvChannel(channel: IptvChannel, url: String?) {

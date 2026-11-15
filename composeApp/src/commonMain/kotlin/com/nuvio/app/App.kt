@@ -1460,7 +1460,19 @@ private fun MainAppContent(
         // Live TV plays in the built-in player only: the proxy relay and live reconnects are mpv's.
         LaunchedEffect(navController) {
             com.nuvio.app.features.iptv.IptvPlaybackRequests.requests.collect { launch ->
-                navController.navigateToPlayer(launch)
+                // fork:live-tv-departure - with a player already up, a live channel plays in it, and anything else
+                // (a film) gives way to the channel.
+                if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) {
+                    val running = com.nuvio.app.features.iptv.IptvPlaybackRequests.inPlayer
+                    if (running != null) {
+                        running(launch)
+                    } else {
+                        navController.popBackStack()
+                        navController.navigateToPlayer(launch)
+                    }
+                } else {
+                    navController.navigateToPlayer(launch)
+                }
             }
         }
         val uriHandler = LocalUriHandler.current

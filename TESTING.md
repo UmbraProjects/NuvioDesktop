@@ -711,7 +711,8 @@ Settings > Live TV > Stage. Live TV opens on Three things with a strip of stages
 - [ ] Up from the top of a stage goes to the strip; left and right there change stage as you go; down comes back; Back goes to the strip
 - [ ] All channels (end of the strip, OK) opens the classic Live TV; its "Stages" sidebar item brings the stages back
 - [ ] Three things: three cards the same size, films with a backdrop, others with the channel logo; OK plays one that is on, tunes in for one that starts soon; Deal again works once a night
-- [ ] Starting soon: the chips narrow the departures; the right panel follows the highlighted row; Tune in at switches to the channel at the start; Go to ... now plays it
+- [ ] **BROKEN** Starting soon: the chips narrow the departures; the right panel follows the highlighted row; Tune in at switches to the channel at the start; Go to ... now plays it (2026-11-15): Tune in at did nothing while another channel was playing
+  - [ ] Re-check after the fix (the channel is now changed inside the playing player): Tune in at on Starting soon, keep watching another channel, and at the start time it switches; the same while a film plays (the film closes and the channel opens)
 - [ ] I have N minutes: the dial changes the three columns; nothing runs over except dimmed rows that say how far
 - [ ] Tonight: the running order ends before the bedtime chip; Swap one replaces the highlighted slot; Approve and start switches at each start; Approved: cancel and Not tonight undo it
 - [ ] Earlier today: OK or Play from the start plays a programme from its beginning (Xtream catch-up)

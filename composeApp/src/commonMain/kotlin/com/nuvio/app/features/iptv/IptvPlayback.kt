@@ -241,6 +241,14 @@ object IptvPlaybackRequests {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var linkJob: Job? = null
 
+    /**
+     * fork:live-tv-departure - set while a live channel plays: takes a launch into the running player. The app opens
+     * no second player over the first, so without it a reminder that switches at the start did nothing while another
+     * channel was on.
+     */
+    @Volatile
+    var inPlayer: ((PlayerLaunch) -> Unit)? = null
+
     /** False when the channel has no playable URL. [zapList]: see [IptvPlaybackSession.launchFor]. */
     fun play(
         playlist: IptvPlaylist,
