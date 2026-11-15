@@ -896,4 +896,7 @@ Settings > Live TV > Stage. Watch a few programmes on Live TV first (each one at
 - [ ] Back from the player lands on the front door, whichever stage you left from
 - [ ] First run: on a playlist with no triage yet, Live TV opens on the triage questions; Done (or Back out of them) leads to the front door, and they don't come back by themselves until Nuvio is restarted
 - [ ] Settings > Live TV > Front door picture (with ffmpeg): the pick shows a still of its channel marked LIVE and how old it is; off, the art only
-- [ ] The phone remote's Live TV shows Home with the pick first and the favourites that have something on
+- [ ] The phone remote on Home (new Nuvio Remote build): the pick is one big card with its picture, why it was picked, Watch and Something else; Watch plays it on the TV and Something else changes it on both
+- [ ] Below the pick on the phone: Favourites now (Carry on first, then the starred channels, even ones with nothing on), Scores (a dot while live; tapping a match on a channel plays it) and Next up (tapping sets the switch at its start)
+- [ ] Hide scores on the phone empties the TV's scores box and the phone's Scores; Show scores brings both back
+- [ ] An older Nuvio Remote build still shows Home as a plain list of rows that work

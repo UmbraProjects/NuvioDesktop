@@ -73,7 +73,9 @@ queue, and can "sleep" to try Wake. A strip shows what it was sent. This is for 
 - **Live TV:** while the TV shows Live TV's stages (Settings > Live TV > Stage), the Remote tab mirrors the stage on
   screen: its heading, a chip for every stage (and All channels), its programmes as cards with a picture and progress,
   and its buttons (Deal again, Approve and start, Not that, the minutes). A tap does what OK does on the TV; the tag in
-  the header swaps to the pad.
+  the header swaps to the pad. On the TV's front door (Home) the phone has its own layout: the pick as one big card
+  with **Watch** and **Something else**, then Favourites now (Carry on first), the scores of the teams you follow (tap
+  one on a channel to watch it) and Next up, with **Hide scores** at the bottom.
 - **Send to Nuvio:** share a YouTube or YouTube Music link from any app and it plays on the TV.
 - **Wake:** when the PC is asleep or off, the app offers to wake it with Wake-on-LAN. The PC sends its network card and
   broadcast addresses while connected. Wake-on-LAN must be on in the PC's BIOS and network adapter settings.

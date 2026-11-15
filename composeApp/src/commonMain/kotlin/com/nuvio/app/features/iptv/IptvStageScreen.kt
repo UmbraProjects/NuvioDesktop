@@ -947,8 +947,8 @@ internal fun IptvStageScreen(
             RemoteLiveTvDo.All -> onAllChannels()
         }
     }
-    val remoteScreen = remember(m, current, soonRows, earlierRows, earlierDay, now / 60_000L, shownStages, settings.minutes, doorPick?.key) {
-        m?.let { remoteLiveTvScreen(current, it, settings, now, shownStages, soonRows, earlierRows, earlierDays.getOrNull(earlierDay)?.first, doorPick) }
+    val remoteScreen = remember(m, current, soonRows, earlierRows, earlierDay, now / 60_000L, shownStages, settings.minutes, doorPick?.key, doorNext, scoreRows, settings.doorHideScores) {
+        m?.let { remoteLiveTvScreen(current, it, settings, now, shownStages, soonRows, earlierRows, earlierDays.getOrNull(earlierDay)?.first, doorPick, doorNext, scoreRows) }
     }
     LaunchedEffect(remoteScreen) {
         remoteScreen?.let { screen -> RemoteLiveTv.publish(remoteOwner, screen) { remoteAct.value(it) } }
@@ -1350,6 +1350,8 @@ private fun remoteLiveTvScreen(
     earlierRows: List<IptvWallProgramme>,
     earlierDay: String?,
     doorPick: IptvDoorPick? = null,
+    doorNext: List<IptvWallProgramme> = emptyList(),
+    doorScores: List<LiveMatch> = emptyList(),
 ): RemoteLiveTvScreen {
     fun clock(ms: Long) = IptvStageRules.clock(ms)
     fun progress(p: IptvWallProgramme): Int {
@@ -1380,9 +1382,46 @@ private fun remoteLiveTvScreen(
     when (stage) {
         // fork:live-tv-front-door - the pick, then the favourites with something on. Scores stay on the TV.
         IptvStage.Door -> {
+            // fork:live-tv-front-door - the phone's Home: the pick (its slot carries the rule, its line the reason), then
+            // Carry on and the favourites, the scores and Next up, each told apart by its slot.
             val pick = doorPick ?: m.doorCandidates.firstOrNull()
-            if (pick != null) items += item("doorPick", 0, "THE PICK", pick.programme)
-            m.favourites.forEachIndexed { i, c -> c.now?.let { items += item("doorFavs", i, "FAVOURITE", IptvWallProgramme(c.channel, it), action = "Watch") } }
+            if (pick != null) {
+                val p = pick.programme
+                val number = m.lineup.firstOrNull { it.channel.primary.uid == p.channel.primary.uid }?.number
+                val finished = IptvTasteRules.finishText(IptvTasteRules.statOf(m.taste, p.entry.title))
+                items += item("doorPick", 0, IptvDoorRules.label(pick.reason), p, action = if (p.entry.startMs <= now + 60_000L) "Watch" else "Watch · starts ${clock(p.entry.startMs)}")
+                    .copy(sub = "${p.channel.primary.name} · " + IptvDoorRules.why(pick, now, number, finished))
+                buttons += RemoteLiveTvButton("doorPick", 1, "Something else")
+            }
+            fun channelItem(group: String, i: Int, slot: String, c: IptvStageChannel) = RemoteLiveTvItem(
+                group = group,
+                index = i,
+                slot = slot,
+                title = c.now?.title ?: c.channel.primary.name,
+                sub = c.channel.primary.name + (c.now?.let { " · ${IptvStageRules.length(it.endMs - now)} left" }
+                    ?: c.next?.let { " · ${it.title} at ${clock(it.startMs)}" } ?: ""),
+                picture = c.now?.image ?: c.channel.primary.logo,
+                live = c.now != null,
+                progress = c.now?.let { progress(IptvWallProgramme(c.channel, it)) } ?: -1,
+                action = "Watch",
+            )
+            m.carryOn?.let { items += channelItem("doorCarry", 0, "CARRY ON", it) }
+            m.favourites.forEachIndexed { i, c -> items += channelItem("doorFavs", i, "FAVOURITE", c) }
+            doorScores.forEachIndexed { i, match ->
+                val on = m.matchProgrammes[match.id]
+                items += RemoteLiveTvItem(
+                    group = if (on != null) "doorScores" else "-",
+                    index = i,
+                    slot = "SCORE",
+                    title = scoreLine(match),
+                    sub = listOfNotNull(scoreState(match), on?.channel?.primary?.name ?: match.competitionName).joinToString(" · "),
+                    picture = null,
+                    live = match.phase == MatchPhase.Live || match.phase == MatchPhase.HalfTime,
+                    action = if (on != null) "Watch" else null,
+                )
+            }
+            doorNext.forEachIndexed { i, p -> items += item("doorNext", i, "NEXT UP", p) }
+            buttons += RemoteLiveTvButton("doorScoresToggle", 0, if (settings.doorHideScores) "Show scores" else "Hide scores")
             if (items.isEmpty()) empty = "Nothing to pick yet: star a few channels in All channels."
         }
         IptvStage.Three -> {
