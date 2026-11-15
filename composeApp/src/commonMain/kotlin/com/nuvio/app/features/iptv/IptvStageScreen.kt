@@ -1330,6 +1330,10 @@ internal fun IptvStageScreen(
                 }
             }
         }
+        // fork:live-tv-front-door - the pick's live picture steps aside while a menu is up.
+        val anyMenu = onDemandFor != null || progMenuFor != null || viewsOpen || menuChannel != null
+        LaunchedEffect(anyMenu) { IptvPreviewCover.set(anyMenu) }
+        DisposableEffect(Unit) { onDispose { IptvPreviewCover.set(false) } }
         val demandFor = onDemandFor
         if (demandFor != null) {
             Box(Modifier.fillMaxSize().background(IptvDialogScrim), contentAlignment = Alignment.Center) {
@@ -1908,7 +1912,7 @@ private fun scoreState(match: LiveMatch, now: Long): String = when (match.phase)
     } ?: "Later"
 }
 
-/** The front door's one pick: a big picture (a live still when Preview is on), why it is there, Watch and Something else. */
+/** The front door's one pick: a big picture (the channel itself, muted, when Preview is on), why it is there, Watch and Something else. */
 @Composable
 private fun DoorPickCard(
     playlist: IptvPlaylist,
@@ -1923,14 +1927,21 @@ private fun DoorPickCard(
     val tokens = MaterialTheme.nuvio
     val shape = NuvioGlass.Shape
     val p = pick?.programme
-    // fork:live-tv-front-door - Preview: a still of the pick's channel, taken only while nothing plays.
-    val previewChannel = p?.channel?.takeIf { preview && p.onNow(now) }
-    val stills by IptvStills.stills.collectAsStateWithLifecycle()
-    LaunchedEffect(playlist.id, previewChannel?.primary?.uid) {
-        if (previewChannel != null) IptvStills.want(playlist, listOf(previewChannel)) else IptvStills.stop()
+    // fork:live-tv-front-door - Preview: the pick's channel playing, muted, while nothing else plays and no menu covers
+    // the stage (the picture is a native window and would sit on top of it).
+    val playingNow by IptvPlaybackSession.active.collectAsStateWithLifecycle()
+    val covered by IptvPreviewCover.covered.collectAsStateWithLifecycle()
+    val previewChannel = p?.channel?.takeIf { preview && p.onNow(now) && playingNow == null && !covered }
+    val previewSource = remember(playlist.id, previewChannel?.primary?.uid) {
+        previewChannel?.let { c ->
+            val settings = IptvRepository.settings.value
+            val allowed = IptvRepository.contentState(playlist.id).value.content?.account?.allowedFormats.orEmpty()
+            iptvStreamCandidates(playlist, c.primary, settings.preferredFormat, allowed).firstOrNull()
+                ?.url?.takeIf { it.startsWith("http", ignoreCase = true) }
+                ?.let { it to (IPTV_DEFAULT_HEADERS + c.primary.requestHeaders()) }
+        }
     }
-    DisposableEffect(Unit) { onDispose { IptvStills.stop() } }
-    val still = previewChannel?.let { stills[it.primary.uid] }
+    var live by remember(previewSource?.first) { mutableStateOf(false) }
     Column(
         modifier = modifier
             .iptvGlass(shape, raised = isFocused("doorPick", 0) || isFocused("doorPick", 1))
@@ -1941,19 +1952,13 @@ private fun DoorPickCard(
         // fork:live-tv-polish - the picture takes the room the words do not need, so the card has no empty gap.
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             val artHeight = maxHeight
-            StageArt(p, artHeight, badges = p?.let { topBadges(it, now) }.orEmpty(), caption = still == null)
-            if (still != null) {
-                NuvioAsyncImage(
-                    model = still.bytes,
-                    contentDescription = p?.channel?.primary?.name,
-                    modifier = Modifier.fillMaxWidth().height(artHeight).clip(RoundedCornerShape(10.dp)),
-                    contentScale = ContentScale.Crop,
-                )
-                Row(Modifier.align(Alignment.TopStart).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StageBadgeView(StageBadge("LIVE", BadgeKind.Live))
-                    StageBadgeView(StageBadge("PICTURE ${((now - still.at) / 60_000L).let { if (it < 1) "NOW" else "$it MIN AGO" }}", BadgeKind.Dark))
-                }
-            }
+            StageArt(p, artHeight, badges = p?.let { topBadges(it, now) }.orEmpty(), caption = !live)
+            IptvLivePreview(
+                url = previewSource?.first,
+                headers = previewSource?.second.orEmpty(),
+                modifier = Modifier.fillMaxWidth().height(artHeight),
+                onShowing = { live = it },
+            )
         }
         if (pick == null || p == null) {
             StageLabel("THE PICK")

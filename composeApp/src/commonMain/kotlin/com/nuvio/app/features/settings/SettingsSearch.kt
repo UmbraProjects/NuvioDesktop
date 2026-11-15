@@ -645,7 +645,7 @@ private fun settingsSearchEntries(
         PlaybackSearchRow(
             "iptv-door-preview",
             "Front door picture",
-            "Live TV's front door shows a still from the pick's channel, taken only while nothing plays.",
+            "Live TV's front door plays the pick's channel, muted, while nothing else plays.",
             "General",
         ),
         // fork:live-tv-on-demand

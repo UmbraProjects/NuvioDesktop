@@ -207,8 +207,8 @@ internal fun LazyListScope.iptvSettingsContent(
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(
                     title = "Front door picture",
-                    description = "The front door's pick shows a still from its channel instead of the programme's art, " +
-                        "taken every few minutes and only while nothing is playing (it needs ffmpeg). Off: the art only.",
+                    description = "The front door's pick plays its channel, muted, instead of the programme's art, " +
+                        "only while nothing else is playing. It uses a connection to your provider while it shows. Off: the art only.",
                     checked = settings.doorPreview,
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-door-preview")),
