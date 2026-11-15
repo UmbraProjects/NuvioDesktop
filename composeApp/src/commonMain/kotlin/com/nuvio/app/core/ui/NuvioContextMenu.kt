@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
@@ -208,9 +209,14 @@ internal fun NuvioContextMenu(
         properties = PopupProperties(focusable = true),
     ) {
         KeyRouteLayer("context menu")
+        // Opened from the keyboard or a pad: the centred TV sheet. From the mouse: the menu at the pointer.
+        val tv = remember { openedByKeyboard || KeyboardInputMode.active }
         NuvioGlassMenuSurface(
             modifier = Modifier
-                .widthIn(min = ContextMenuMinWidth, max = ContextMenuMaxWidth)
+                .widthIn(
+                    min = if (tv) TvMenuMinWidth else ContextMenuMinWidth,
+                    max = if (tv) TvMenuMaxWidth else ContextMenuMaxWidth,
+                )
                 .width(IntrinsicSize.Max)
                 .graphicsLayer {
                     alpha = fadeIn.value
@@ -254,7 +260,7 @@ internal fun NuvioContextMenu(
                         }
                     }
                     .focusable()
-                    .padding(6.dp),
+                    .padding(if (tv) 10.dp else 6.dp),
             ) {
                 frozenActions.forEachIndexed { index, action ->
                     if (index > 0 && action.group != frozenActions[index - 1].group) {
@@ -267,6 +273,7 @@ internal fun NuvioContextMenu(
                         )
                     }
                     ContextMenuRow(
+                        tv = tv,
                         action = action,
                         focusRequester = rowFocus[index],
                         pointerEngaged = { pointerEngaged },
@@ -287,6 +294,7 @@ internal fun NuvioContextMenu(
 
 @Composable
 private fun ContextMenuRow(
+    tv: Boolean,
     action: PosterZoomOverlayAction,
     focusRequester: FocusRequester,
     pointerEngaged: () -> Boolean,
@@ -314,10 +322,10 @@ private fun ContextMenuRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(ContextMenuRowHeight)
+            .height(if (tv) TvMenuRowHeight else ContextMenuRowHeight)
             .background(
-                color = if (highlighted) Color.White.copy(alpha = 0.10f) else Color.Transparent,
-                shape = RoundedCornerShape(7.dp),
+                color = if (highlighted) Color.White.copy(alpha = if (tv) 0.14f else 0.10f) else Color.Transparent,
+                shape = RoundedCornerShape(if (tv) 14.dp else 7.dp),
             )
             // Hovering moves keyboard focus too, so arrow keys continue from under the pointer
             // and only one row is ever lit.
@@ -344,20 +352,22 @@ private fun ContextMenuRow(
             // A disabled clickable is also not focusable, so arrow keys and Tab pass over it.
             .clickable(interactionSource = interactionSource, indication = null, enabled = enabled, onClick = onClick)
             .secondaryClick(onSecondaryClick?.takeIf { enabled })
-            .padding(horizontal = 11.dp),
+            .padding(horizontal = if (tv) 18.dp else 11.dp),
         verticalAlignment = Alignment.CenterVertically,
+        // TV-style menus: a settings sheet's rows, icon and label centred together, larger.
+        horizontalArrangement = if (tv) Arrangement.Center else Arrangement.Start,
     ) {
         Icon(
             imageVector = action.icon,
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(if (tv) 22.dp else 18.dp),
             tint = iconTint,
         )
         Text(
             text = action.label,
-            modifier = Modifier.padding(start = 11.dp, end = 6.dp),
+            modifier = Modifier.padding(start = if (tv) 14.dp else 11.dp, end = 6.dp),
             color = labelColor,
-            style = MaterialTheme.typography.bodyMedium,
+            style = if (tv) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -370,6 +380,14 @@ private fun ContextMenuRow(
  */
 internal class CursorMenuPositionProvider(
     private val cursor: IntOffset,
+    /** False for menus that belong beside what they act on whatever opened them (a text field's Cut / Copy / Paste). */
+    private val centredForKeyboard: Boolean = true,
+    /**
+     * Whether the keyboard or a pad opened the menu, taken when it opens (KeyboardInputMode is on after a key, off
+     * after the mouse): then it sits in the middle of the window, a TV-style sheet; opened with the mouse it sits at
+     * the pointer. Taken once, so moving the mouse afterwards does not make the open menu jump (2026-11-15).
+     */
+    private val openedByKeyboard: Boolean = KeyboardInputMode.active,
 ) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
@@ -377,6 +395,12 @@ internal class CursorMenuPositionProvider(
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize,
     ): IntOffset {
+        if (centredForKeyboard && openedByKeyboard) {
+            return IntOffset(
+                x = ((windowSize.width - popupContentSize.width) / 2).coerceAtLeast(0),
+                y = ((windowSize.height - popupContentSize.height) / 2).coerceAtLeast(0),
+            )
+        }
         val margin = 8
         val x = if (cursor.x + popupContentSize.width + margin <= windowSize.width) {
             cursor.x
@@ -406,6 +430,10 @@ internal fun NuvioGlassMenuSurface(
     shape: Shape = ContextMenuShape,
     content: @Composable () -> Unit,
 ) {
+    // A menu the keyboard or a pad opened is the TV sheet, rounder (see CursorMenuPositionProvider).
+    val keyboardOpened = remember { KeyboardInputMode.active }
+    @Suppress("NAME_SHADOWING")
+    val shape = if (keyboardOpened) TvMenuShape else shape
     val colors = MaterialTheme.nuvio.colors
     Surface(
         modifier = modifier
@@ -422,6 +450,11 @@ internal fun NuvioGlassMenuSurface(
 }
 
 internal val ContextMenuShape = RoundedCornerShape(12.dp)
+/** A menu opened from the keyboard or a pad (the TV sheet) takes this rounder panel. */
+internal val TvMenuShape = RoundedCornerShape(24.dp)
+private val TvMenuMinWidth = 340.dp
+private val TvMenuMaxWidth = 480.dp
+private val TvMenuRowHeight = 52.dp
 private val ContextMenuMinWidth = 220.dp
 private val ContextMenuMaxWidth = 380.dp
 internal val ContextMenuRowHeight = 38.dp

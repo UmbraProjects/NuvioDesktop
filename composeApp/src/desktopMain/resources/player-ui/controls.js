@@ -658,6 +658,10 @@ let sourceVirtualRenderRaf = 0;
 let selectedEpisodeSeason = null;
 let episodeStreamFilterId = "";
 let keyboardPanelMode = "";
+// Which input last acted on the HUD ("keyboard" or "pointer"): menus opened by keys open centred (setMenuStyleForInput).
+let lastHudInput = "pointer";
+// The player menu was opened by its key (window.nuvioOpenPlayerMenu): Escape then closes it and the key navigation.
+let playerMenuOpenedByKey = false;
 let keyboardSourceIndex = 0;
 // True while the Sources list sits at its top. Providers answer one at a time and every answer
 // re-sorts the list; a list the user has not scrolled keeps showing its (new) top instead of
@@ -2687,8 +2691,9 @@ const positionDockPanel = () => {
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   const scale = currentPanelScale();
-  const leftSide = root.classList.contains("official-hud");
-  const pills = root.classList.contains("minimal-hud") && root.classList.contains("minimal-pills")
+  const tvMenus = root.classList.contains("tv-menus");
+  const leftSide = !tvMenus && root.classList.contains("official-hud");
+  const pills = !tvMenus && root.classList.contains("minimal-hud") && root.classList.contains("minimal-pills")
     && Boolean(state.dockPanelFromBarEnabled);
   const toolPill = pills ? root.querySelector(".desktop-control-row .action-row") : null;
   const toolRect = toolPill ? toolPill.getBoundingClientRect() : null;
@@ -2719,10 +2724,13 @@ const positionDockPanel = () => {
     rootStyle.setProperty("--dock-left", "auto");
     rootStyle.setProperty("--dock-right", px(Math.max(integrated ? 0 : 8, viewportWidth - anchorRect.right)));
   }
-  dockMaxSize = {
-    width: Math.max(300, (viewportWidth - 24) / scale),
-    height: Math.max(200, (top - 16) / scale),
-  };
+  dockMaxSize = tvMenus
+    // Centred (opened from the keyboard or a pad, CSS .tv-menus): most of the screen, not just what is above the controls.
+    ? { width: Math.max(300, (viewportWidth * 0.9) / scale), height: Math.max(200, (viewportHeight * 0.86) / scale) }
+    : {
+      width: Math.max(300, (viewportWidth - 24) / scale),
+      height: Math.max(200, (top - 16) / scale),
+    };
   // Grown from the pill, the panel is exactly the pill's width (only its height drags).
   dockFixedWidth = integrated ? toolRect.width / scale : null;
   applyDockPanelSize();
@@ -2916,8 +2924,19 @@ const closePlayerModal = (notifyDismiss = false, animated = true) => {
   renderChrome();
 };
 
+// Menus follow the input that opened them (2026-11-15): from the keyboard or a pad (whose buttons arrive as keys, or
+// as the app's own keyboard panel calls) the panels and the right-click menu open centred as a TV-style sheet over a
+// scrim (CSS .tv-menus); from the mouse they open at the pointer or docked by the controls, as before.
+document.addEventListener("keydown", () => { lastHudInput = "keyboard"; }, true);
+document.addEventListener("pointerdown", () => { lastHudInput = "pointer"; }, true);
+const setMenuStyleForInput = input => {
+  root.classList.toggle("tv-menus", (input || lastHudInput) === "keyboard");
+};
+
 const openPlayerModal = modal => {
   const targetModal = modalByName[modal];
+  // A panel switch inside an open panel keeps the style it opened with.
+  if (!activeModal) setMenuStyleForInput();
   if (!targetModal) {
     closePlayerModal(false);
     return;
@@ -3047,11 +3066,8 @@ const contextMenuItems = [
   {
     label: "Playback", textKey: "player_hud_playback",
     children: [
-      { label: "Play / Pause", textKey: "player_hud_play_pause", action: "send:toggle", shortcut: "K" },
       // Labels carry the configured step, so they are rewritten by refreshSeekStepLabels()
       // whenever the setting changes rather than baked in at build time.
-      { label: "Seek back 10 seconds", textKey: "player_hud_seek_back_10_seconds", labelKey: "seekBack", action: "send:seekBack", shortcut: "←" },
-      { label: "Seek forward 10 seconds", textKey: "player_hud_seek_forward_10_seconds", labelKey: "seekForward", action: "send:seekForward", shortcut: "→" },
       { label: "Playback speed", textKey: "player_hud_playback_speed", children: playbackSpeedMenuItems },
       { label: "Previous episode", textKey: "player_hud_previous_episode", action: "send:previousEpisode", youTube: false },
       { label: "Next episode", textKey: "player_hud_next_episode", action: "send:nextEpisode", youTube: false },
@@ -3128,10 +3144,9 @@ const contextMenuItems = [
     ],
   },
   {
-    label: "Audio", textKey: "player_hud_audio",
+    // None (muted) first, then the tracks themselves, one level (2026-11-15: Mute and a nested track list before).
+    label: "Audio", textKey: "player_hud_audio", dynamicKey: "audioTracks",
     children: [
-      { label: "Audio tracks", textKey: "player_hud_audio_tracks", dynamicKey: "audioTracks", children: [] },
-      { label: "Mute", textKey: "player_hud_mute", action: "send:keyboardToggleMute", toggleKey: "localMuted" },
     ],
   },
   {
@@ -3158,11 +3173,8 @@ const contextMenuItems = [
         { label: "Adjust custom color…", textKey: "player_hud_adjust_custom_color", action: "colorGradePanel" },
       ] },
       { label: "Anime shader", textKey: "player_hud_anime_shader", dynamicKey: "animeShaders", children: [] },
-      { label: "SVP interpolation", textKey: "player_hud_svp_interpolation", action: "send:keyboardCycleAnimeSvp", toggleKey: "svpInChain" },
       // This session only; the saved defaults stay in Settings > Playback. Neither runs with SVP.
-      { label: "RTX Super Resolution", textKey: "player_hud_rtx_super_resolution", action: "send:toggleRtxVsr", toggleKey: "rtxVsrEnabled" },
-      { label: "RTX True HDR", textKey: "player_hud_rtx_true_hdr", action: "send:toggleRtxTrueHdr", toggleKey: "rtxTrueHdrEnabled" },
-      { label: "Advanced (mpv)", textKey: "player_hud_advanced_mpv", dynamicKey: "mpvOptions", children: [] },
+      { label: "MPV settings", textKey: "player_hud_advanced_mpv", dynamicKey: "mpvOptions", children: [] },
       { label: "UI scale", textKey: "player_hud_ui_scale", children: uiScalePresetItems },
       { label: "Controls layout", textKey: "player_hud_controls_layout", children: hudLayoutItems },
     ],
@@ -3183,9 +3195,6 @@ const contextMenuItems = [
     ],
   },
   { label: "Copy stream link", textKey: "player_hud_copy_stream_link", action: "copyStreamUrl" },
-  { label: "Stream failover", textKey: "player_hud_stream_failover", action: "toggleStreamFailover", toggleKey: "streamFailoverEnabled", youTube: false },
-  { label: "MPV diagnostics", textKey: "player_hud_mpv_diagnostics", action: "toggleMpvDiagnostics", toggleKey: "mpvDiagnosticsEnabled" },
-  { label: "Close menu after selecting", textKey: "player_hud_close_menu_after_selecting", action: "toggleCloseOnSelect", toggleKey: "closeMenuOnSelect" },
 ];
 
 let contextMenuOpen = false;
@@ -3327,7 +3336,15 @@ const setContextMenuDynamicItems = (key, items) => {
         action: "send:selectBuiltInSubtitleTrack:-1",
         selected: !normalized.some(item => Boolean(item.selected)),
       }, ...normalized]
-    : normalized;
+    : key === "audioTracks"
+      // None mutes; picking a track plays it (and unmutes). Only one of them is ticked.
+      ? [{ label: state.noneLabel || "None", action: "audioNone", selected: localMuted },
+        ...normalized.map((item, index) => ({
+          ...item,
+          action: `audioTrack:${Number(item.index ?? index)}`,
+          selected: !localMuted && Boolean(item.selected),
+        }))]
+      : normalized;
   // Track and colour lists are pushed on every player tick, not only when they change. Rebuilding
   // the DOM under the cursor tore the hovered row out from under a :hover-driven flyout, which is
   // what made an open submenu collapse mid-interaction. Only touch the DOM when it would differ.
@@ -3368,6 +3385,8 @@ const setContextMenuDynamicItems = (key, items) => {
 const closeContextMenu = () => {
   if (!contextMenuOpen) return;
   contextMenuOpen = false;
+  playerMenuOpenedByKey = false;
+  resetMenuPages();
   clearOpenContextMenuGroups();
   if (contextMenu) contextMenu.hidden = true;
   // The menu suppressed chrome auto-hide while open; resume normal fading now.
@@ -3576,6 +3595,23 @@ const executeContextAction = action => {
     window.nuvioToggleMpvDiagnostics();
     return;
   }
+  if (kind === "audioNone") {
+    if (!localMuted) {
+      localMuted = true;
+      syncPlayerVolumeControl();
+      send("keyboardToggleMute", 0);
+    }
+    return;
+  }
+  if (kind === "audioTrack") {
+    if (localMuted) {
+      localMuted = false;
+      syncPlayerVolumeControl();
+      send("keyboardToggleMute", 0);
+    }
+    send("selectAudioTrack", Number(parts.shift() || 0));
+    return;
+  }
   if (kind === "toggleStreamFailover") {
     // state.streamFailoverEnabled was already flipped optimistically; forward it to Kotlin, which
     // persists the setting and pushes the corrected value back.
@@ -3730,6 +3766,8 @@ const buildContextMenu = (items, parent) => {
     button.type = "button";
     button.className = "context-menu-item";
     button.setAttribute("role", "menuitem");
+    // A row that both picks (2x) and leads on (2.1x ...): Enter picks it, Right goes on (pressBarNavElement).
+    if (item.action) button.dataset.hasAction = "1";
     if (item.toggleKey) button.dataset.toggleKey = item.toggleKey;
     if (item.labelKey) button.dataset.labelKey = item.labelKey;
     if (item.selectedField) {
@@ -3802,9 +3840,236 @@ const buildContextMenu = (items, parent) => {
   });
 };
 
+// Quick actions at the foot of the player menu, in both its forms (2026-11-15): the bar's cycle features (each press
+// steps to the next setting, shown on the tile and in the app's pill) and the switches that sat awkwardly among the
+// settings rows (RTX, failover, diagnostics, closing the menu). Pressing one keeps the menu open, so a feature can be
+// stepped through; the keys bound to them still work for those who know them.
+// [label, run, (unused), toggle key | null, hidden for a YouTube video]. A switch that is on is lit; what a press
+// changed shows in the app's pill, so the tiles carry no value line (2026-11-15).
+const QUICK_TILES = [
+  // Three by four, in rows: picture shape and sound; picture colour; motion and upscaling; about the stream.
+  // Through the menu's own Aspect ratio rows (Fit, Fill, Zoom, Auto crop), so the setting moves at once.
+  ["Aspect", () => {
+    const labels = resizeModeLabels();
+    const current = labels.indexOf(state.resizeModeLabel);
+    executeContextAction(`resizeMode:${(current + 1) % labels.length}`);
+  }, "resizeModeLabel", null],
+  ["Speed", () => send("keyboardSpeedToggle", 1), "playbackSpeedValue", null],
+  ["Audio", () => send("keyboardNextAudio", 0), null, null],
+  ["Color", () => send("keyboardCycleColorProfile", 0), "desktopColorProfileLabel", null],
+  ["HDR", () => send("keyboardCycleHdrMode", 0), "desktopHdrModeLabel", null],
+  ["Shader", () => send("keyboardCycleAnimeMode", 0), null, null],
+  ["SVP", () => send("keyboardCycleAnimeSvp", 0), null, "svpInChain"],
+  ["RTX HDR", () => send("toggleRtxTrueHdr", 0), null, "rtxTrueHdrEnabled"],
+  ["RTX VSR", () => send("toggleRtxVsr", 0), null, "rtxVsrEnabled"],
+  ["Info", () => {
+    if (root.classList.contains("tv-menus")) {
+      openMenuStreamInfo();
+      return;
+    }
+    closeContextMenu();
+    const info = document.getElementById("streamInfoButton");
+    if (info) info.click();
+  }, null, null],
+  ["Stats", () => executeContextAction("toggleMpvDiagnostics"), null, "mpvDiagnosticsEnabled"],
+  // The failover action sends what state already says, as the menu row flipped it before calling it: flip it here.
+  ["Failover", () => {
+    state = { ...state, streamFailoverEnabled: !state.streamFailoverEnabled };
+    executeContextAction("toggleStreamFailover");
+  }, null, "streamFailoverEnabled", true],
+];
+const buildQuickTiles = parent => {
+  const row = document.createElement("div");
+  row.className = "context-menu-quick";
+  const title = document.createElement("div");
+  title.className = "context-menu-quick-title";
+  title.textContent = "Quick actions";
+  row.appendChild(title);
+  QUICK_TILES.forEach(([label, run, valueField, toggleKey, youTubeHidden]) => {
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "context-menu-item context-menu-quick-tile";
+    tile.setAttribute("role", "menuitem");
+    if (toggleKey) tile.dataset.quickToggle = toggleKey;
+    if (youTubeHidden) tile.dataset.youtubeHidden = "true";
+    const name = document.createElement("span");
+    name.className = "context-menu-quick-name";
+    name.textContent = label;
+    tile.appendChild(name);
+    tile.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      // A quick action never closes the menu itself, whatever "Close" says; "Close" itself flips that setting
+      // (it used to be forced off first, so it could only ever turn on).
+      if (toggleKey === "closeMenuOnSelect") {
+        run();
+      } else {
+        const keep = closeMenuOnSelect;
+        closeMenuOnSelect = false;
+        run();
+        closeMenuOnSelect = keep;
+      }
+      refreshQuickTiles();
+      // Values come back from the app a moment later.
+      setTimeout(refreshQuickTiles, 250);
+      noteChromeActivity(true);
+      tile.blur();
+    });
+    row.appendChild(tile);
+  });
+  parent.appendChild(row);
+};
+const refreshQuickTiles = () => {
+  if (!contextMenu) return;
+  contextMenu.querySelectorAll(".context-menu-quick-tile").forEach(tile => {
+    const toggleKey = tile.dataset.quickToggle;
+    if (toggleKey) tile.classList.toggle("is-on", Boolean(contextMenuValue(toggleKey)));
+  });
+};
+
+// ---- The player menu as pages, for the keys and a pad (.tv-menus) ----
+// A row that leads on opens its choices as the menu's whole page, under a "‹ Name" row that goes back; Escape, a
+// pad's B and Left go back too. The mouse menu keeps its flyouts (2026-11-15).
+const menuPageStack = [];
+let menuPageHead = null;
+const menuRowName = row => (row.querySelector(".context-menu-label") || row).textContent.trim();
+const applyMenuPages = () => {
+  if (!contextMenu) return;
+  contextMenu.querySelectorAll(".drill-path, .drill-path-sub, .drill-page")
+    .forEach(element => element.classList.remove("drill-path", "drill-path-sub", "drill-page"));
+  contextMenu.classList.toggle("drilled", menuPageStack.length > 0);
+  menuPageStack.forEach((entry, index) => {
+    if (entry.group) entry.group.classList.add("drill-path");
+    entry.submenu.classList.add(index === menuPageStack.length - 1 ? "drill-page" : "drill-path-sub");
+  });
+  if (!menuPageHead) {
+    menuPageHead = document.createElement("button");
+    menuPageHead.type = "button";
+    menuPageHead.className = "context-menu-item context-menu-page-back";
+    menuPageHead.setAttribute("role", "menuitem");
+    menuPageHead.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      leaveMenuPage();
+    });
+    contextMenu.insertBefore(menuPageHead, contextMenu.firstChild);
+  }
+  const top = menuPageStack[menuPageStack.length - 1];
+  menuPageHead.textContent = top ? `‹  ${top.title || menuRowName(top.row)}` : "";
+};
+const enterMenuRow = row => {
+  const submenu = menuRowSubmenu(row);
+  if (!submenu) return;
+  if (!root.classList.contains("tv-menus")) {
+    // The mouse menu (reached by keys only by accident): its flyout, as hovering does.
+    openMenuRowForKeys(row);
+    setTimeout(() => {
+      const first = barNavCandidates(submenu)[0];
+      if (first) setBarNavFocus(first);
+    }, 30);
+    return;
+  }
+  menuPageStack.push({ row, group: row.parentElement, submenu });
+  applyMenuPages();
+  submenu.scrollTop = 0;
+  setTimeout(() => {
+    const list = barNavCandidates(submenu);
+    const target = barNavDefault(submenu, list);
+    if (target) setBarNavFocus(target);
+  }, 20);
+};
+// Stream info as a page of the keys' and pad's menu (2026-11-15), filled from the same state the panel shows.
+let menuInfoPage = null;
+const menuStreamInfoOpen = () => Boolean(menuInfoPage) && menuPageStack.some(entry => entry.submenu === menuInfoPage);
+const renderMenuStreamInfo = () => {
+  if (!menuInfoPage) return;
+  const info = state.streamInfo && typeof state.streamInfo === "object" ? state.streamInfo : null;
+  menuInfoPage.replaceChildren();
+  const sections = info && Array.isArray(info.sections) ? info.sections : [];
+  if (sections.length === 0) {
+    const waiting = document.createElement("div");
+    waiting.className = "stream-info-row";
+    waiting.textContent = "Loading…";
+    menuInfoPage.appendChild(waiting);
+    return;
+  }
+  sections.forEach(section => {
+    const title = document.createElement("div");
+    title.className = "stream-info-section-title";
+    title.textContent = section.title || "";
+    menuInfoPage.appendChild(title);
+    (Array.isArray(section.rows) ? section.rows : []).forEach(row => {
+      const line = document.createElement("div");
+      line.className = "stream-info-row";
+      const label = document.createElement("span");
+      label.className = "stream-info-label";
+      label.textContent = row.label || "";
+      const value = document.createElement("span");
+      value.className = "stream-info-value";
+      value.textContent = row.value || "";
+      line.appendChild(label);
+      line.appendChild(value);
+      menuInfoPage.appendChild(line);
+    });
+  });
+};
+const openMenuStreamInfo = () => {
+  if (!contextMenu) return;
+  if (!menuInfoPage) {
+    menuInfoPage = document.createElement("div");
+    menuInfoPage.className = "context-menu-info";
+    // Focusable, so the arrows land somewhere on the page and Escape / B / Left still go back.
+    menuInfoPage.setAttribute("tabindex", "0");
+    contextMenu.appendChild(menuInfoPage);
+  }
+  const tile = Array.from(contextMenu.querySelectorAll(".context-menu-quick-tile"))
+    .find(element => element.textContent.trim() === "Info");
+  menuPageStack.push({ row: tile || menuInfoPage, group: null, submenu: menuInfoPage, title: "Info" });
+  applyMenuPages();
+  renderMenuStreamInfo();
+  send("streamInfoOpened", 0);
+  setTimeout(() => setBarNavFocus(menuInfoPage), 20);
+};
+
+const leaveMenuPage = () => {
+  const left = menuPageStack.pop();
+  if (left && left.submenu === menuInfoPage) send("streamInfoClosed", 0);
+  applyMenuPages();
+  if (left) setTimeout(() => setBarNavFocus(left.row), 20);
+};
+const resetMenuPages = () => {
+  if (menuStreamInfoOpen()) send("streamInfoClosed", 0);
+  menuPageStack.length = 0;
+  applyMenuPages();
+};
+
+// The player menu from its key (P by default) or a pad's View button: the menu centred, the arrows walking it and
+// its flyouts, Enter / A picking, Escape / B closing. Pressed again, it closes.
+window.nuvioOpenPlayerMenu = () => {
+  lastHudInput = "keyboard";
+  if (contextMenuOpen) {
+    closeContextMenu();
+    if (keyboardPanelMode === "controls") exitBarNav();
+    return;
+  }
+  if (state.isLocked || state.postShowInput || playbackErrorText() || isHeroTrailerSurface || state.heroTrailerMode) return;
+  if (activeModal) closePlayerModal(false);
+  if (keyboardPanelMode && keyboardPanelMode !== "controls") {
+    keyboardPanelMode = "";
+    send("keyboardPanelClosed", 0);
+  }
+  openContextMenu({ button: -1, clientX: 0, clientY: 0, preventDefault() {}, stopPropagation() {} });
+  if (!contextMenuOpen) return;
+  playerMenuOpenedByKey = true;
+  if (keyboardPanelMode !== "controls") enterBarNav();
+  setTimeout(syncBarNavScope, 40);
+};
+
 if (contextMenu) {
   buildContextMenu(contextMenuItems, contextMenu);
+  buildQuickTiles(contextMenu);
   refreshContextMenuIndicators();
+  refreshQuickTiles();
   refreshSeekStepLabels();
   contextMenu.addEventListener("contextmenu", event => event.preventDefault());
 }
@@ -3963,9 +4228,20 @@ const openContextMenu = event => {
     send("fetchAddonSubtitles", 0);
   }
   refreshSubtitleStyleContextSubmenus();
+  resetMenuPages();
+  refreshQuickTiles();
   send("openAnimeShaderContextMenu", 0);
   send("openMpvOptionsContextMenu", 0);
   const margin = 8;
+  // A right-click is the mouse: the menu at the pointer. The keyboard's menu key (no pointer) gets the TV sheet.
+  setMenuStyleForInput(event.button === 2 ? "pointer" : "keyboard");
+  if (root.classList.contains("tv-menus")) {
+    // In the middle of the screen; its submenus open to the right of it.
+    contextMenu.classList.remove("context-menu-left");
+    contextMenu.style.left = `${Math.max(margin, Math.round((window.innerWidth - contextMenu.offsetWidth) / 2))}px`;
+    contextMenu.style.top = `${Math.max(margin, Math.round((window.innerHeight - contextMenu.offsetHeight) / 2))}px`;
+    return;
+  }
   const x = Math.min(event.clientX, Math.max(margin, window.innerWidth - contextMenu.offsetWidth - margin));
   const y = Math.min(event.clientY, Math.max(margin, window.innerHeight - contextMenu.offsetHeight - margin));
   contextMenu.style.left = `${Math.max(margin, x)}px`;
@@ -5609,6 +5885,7 @@ const renderActiveModal = () => {
   if (activeModal === "p2pConsent") renderP2pConsentModal();
   if (activeModal === "party") renderPartyModal();
   if (activeModal === "streamInfo") renderStreamInfoModal();
+  if (menuStreamInfoOpen()) renderMenuStreamInfo();
 };
 
 window.nuvioNativeViewportChanged = () => {
@@ -6976,6 +7253,7 @@ const shortcutCommandForEvent = event => {
     cycle_color_profile: "keyboardCycleColorProfile",
     cycle_anime: "keyboardCycleAnimeMode",
     toggle_mpv_diagnostics: "keyboardToggleMpvDiagnostics",
+    open_player_menu: "keyboardOpenPlayerMenu",
   }[configuredAction];
   if (configuredCommand) return configuredCommand;
   switch (event.code) {
@@ -8245,10 +8523,25 @@ const barNavCandidates = scope =>
   Array.from(scope.querySelectorAll("button, [tabindex='0'], input[type='range'], [role='menuitem'], #timeline"))
     .filter(element => barNavUsable(element, scope));
 
+// The keys reaching a row of the player menu do what hovering it does: its flyout opens, a sibling's closes.
+const openMenuRowForKeys = element => {
+  if (!element || !contextMenu || !contextMenu.contains(element)) return;
+  const group = element.parentElement;
+  if (!group || !group.classList.contains("context-menu-group")) return;
+  openContextMenuGroup(group);
+  if (group.querySelector(":scope > .context-menu-submenu")) positionSubmenu(group);
+};
+const menuRowSubmenu = element => {
+  const group = element && element.parentElement;
+  if (!group || !group.classList.contains("context-menu-group")) return null;
+  return group.querySelector(":scope > .context-menu-submenu");
+};
+
 const setBarNavFocus = element => {
   if (barNavElement && barNavElement !== element) barNavElement.classList.remove("kbd-nav-focus");
   barNavElement = element || null;
   if (barNavElement) {
+    openMenuRowForKeys(barNavElement);
     barNavElement.classList.add("kbd-nav-focus");
     if (barNavScope() !== root) barNavElement.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
@@ -8363,7 +8656,18 @@ const pressBarNavElement = element => {
     return;
   }
   if (element.id === "timeline") return;
+  // A menu row that leads on (and does not pick something itself): into its page, onto its first row.
+  const submenu = menuRowSubmenu(element);
+  if (submenu && !element.dataset.hasAction) {
+    enterMenuRow(element);
+    return;
+  }
+  if (element.classList.contains("context-menu-page-back")) {
+    leaveMenuPage();
+    return;
+  }
   element.click();
+  if (contextMenu && contextMenu.contains(element)) refreshQuickTiles();
   // A panel or menu it opened is drawn a moment later; move the ring into it then.
   setTimeout(syncBarNavScope, 80);
 };
@@ -8371,6 +8675,17 @@ const pressBarNavElement = element => {
 const handleBarNavKey = code => {
   touchBarNav();
   if (code === "Escape") {
+    // On a page of the player menu, Escape (a pad's B) goes back up a level first.
+    if (contextMenuOpen && menuPageStack.length > 0) {
+      leaveMenuPage();
+      return;
+    }
+    // The player menu opened by its key: Escape closes it and the key navigation with it.
+    if (contextMenuOpen && playerMenuOpenedByKey) {
+      closeContextMenu();
+      exitBarNav();
+      return;
+    }
     if (contextMenuOpen) closeContextMenu();
     else if (colorGradePanelOpen) setColorGradePanelOpen(false);
     else if (activeModal) closePlayerModal(true);
@@ -8387,6 +8702,20 @@ const handleBarNavKey = code => {
   if (!current) return;
   if (code === "Enter") {
     pressBarNavElement(current);
+    return;
+  }
+  if (current === menuInfoPage && (code === "ArrowUp" || code === "ArrowDown")) {
+    menuInfoPage.scrollBy({ top: code === "ArrowDown" ? 80 : -80 });
+    return;
+  }
+  // Right goes on into a row's choices, even one that picks something itself (2x leads on to 2.1x ...).
+  if (code === "ArrowRight" && menuRowSubmenu(current)) {
+    enterMenuRow(current);
+    return;
+  }
+  // Left on a page of the player menu goes back up a level.
+  if (code === "ArrowLeft" && contextMenuOpen && menuPageStack.length > 0 && !current.closest(".context-menu-quick")) {
+    leaveMenuPage();
     return;
   }
   const horizontal = code === "ArrowLeft" || code === "ArrowRight";
@@ -8411,6 +8740,8 @@ const handleBarNavKey = code => {
 document.addEventListener("mousedown", () => exitBarNav(), true);
 
 window.nuvioOpenKeyboardPanel = panel => {
+  // The app opens these for a key or pad button the HUD never saw (it went to the app window).
+  lastHudInput = "keyboard";
   if (panel === "controls") {
     if (keyboardPanelMode === "controls") handleBarNavKey("Enter");
     else if (!keyboardPanelMode) enterBarNav();
@@ -8979,7 +9310,7 @@ window.playerControls = nextState => {
   // itself). A token for the same reason as openSourcesToken.
   const partyPanelToken = Number(currentParty().openPanelToken) || 0;
   // A stream swap rebuilds this HUD with every panel closed; let Kotlin stop building stream info.
-  if (state.streamInfo && activeModal !== "streamInfo") send("streamInfoClosed", 0);
+  if (state.streamInfo && activeModal !== "streamInfo" && !menuStreamInfoOpen()) send("streamInfoClosed", 0);
   if (!isFirstPlayerControls && partyPanelToken !== previousPartyPanelToken && activeModal !== "party") {
     openPartyModal();
   }
@@ -9571,6 +9902,12 @@ document.addEventListener("keydown", event => {
     if (!event.repeat) send("voiceCommand", 0);
     return;
   }
+  // While the keys drive a panel or the player menu, Space (a pad's A in the player) picks, as Enter does.
+  if (keyboardPanelMode && event.code === "Space" && !isTextEntryTarget(event.target)) {
+    event.preventDefault();
+    if (!event.repeat) window.nuvioHandleKeyboardPanelKey("Enter");
+    return;
+  }
   // In the channel search box Left/Right move the caret; Up/Down/Enter still walk the list.
   const caretKey = isTextEntryTarget(event.target) && (event.code === "ArrowLeft" || event.code === "ArrowRight");
   if (keyboardPanelMode && !caretKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "NumpadEnter"].includes(event.code)) {
@@ -9582,13 +9919,7 @@ document.addEventListener("keydown", event => {
     return;
   }
   const command = shortcutCommandForEvent(event);
-  // Enter with no binding of its own starts the control navigation (see handleBarNavKey).
-  if (!command && (event.code === "Enter" || event.code === "NumpadEnter") &&
-      !event.ctrlKey && !event.altKey && !event.metaKey && !event.repeat) {
-    event.preventDefault();
-    window.nuvioOpenKeyboardPanel("controls");
-    return;
-  }
+  // Enter no longer starts walking the control bar (2026-11-15): the player menu (P, a pad's View) reaches everything.
   // Live TV: a digit with no binding of its own starts or extends a channel number.
   const digitMatch = /^(?:Digit|Numpad)([0-9])$/.exec(event.code);
   if (state.iptv && !command && digitMatch && !event.ctrlKey && !event.altKey && !event.metaKey) {
@@ -9608,6 +9939,28 @@ document.addEventListener("keydown", event => {
   if (state.iptv && (command === "keyboardOpenSources" || command === "keyboardOpenEpisodes")) {
     event.preventDefault();
     openIptvPanel(true);
+    return;
+  }
+  // Holding play/pause while playing plays at 2x until it is let go; a tap still pauses, on release.
+  // Paused, it plays at once. The AWT dispatcher does the same when the app has the keyboard.
+  if (command === "keyboardToggle") {
+    event.preventDefault();
+    if (event.repeat || playHoldCode) return;
+    focusShortcutRoot();
+    noteChromeActivity();
+    if (state.isPlaying && !state.isLocked) {
+      const code = event.code;
+      playHoldCode = code;
+      playHoldActive = false;
+      clearTimeout(playHoldTimer);
+      playHoldTimer = setTimeout(() => {
+        if (playHoldCode !== code) return;
+        playHoldActive = true;
+        send("holdSpeedStart", 0);
+      }, PLAY_HOLD_DELAY_MS);
+      return;
+    }
+    send(command, 0);
     return;
   }
   event.preventDefault();
@@ -9645,9 +9998,37 @@ document.addEventListener("keydown", event => {
   } else if (command === "keyboardToggleMpvDiagnostics") {
     window.nuvioToggleMpvDiagnostics();
     return;
+  } else if (command === "keyboardOpenPlayerMenu") {
+    if (!event.repeat) window.nuvioOpenPlayerMenu();
+    return;
   }
   send(command, 0);
 });
+
+// The play/pause hold (see the keydown handler): let go of the key, or lose the keyboard mid-hold.
+const PLAY_HOLD_DELAY_MS = 350;
+let playHoldCode = "";
+let playHoldActive = false;
+let playHoldTimer = null;
+const finishPlayHold = tapped => {
+  if (!playHoldCode) return;
+  clearTimeout(playHoldTimer);
+  playHoldTimer = null;
+  playHoldCode = "";
+  if (playHoldActive) {
+    playHoldActive = false;
+    send("holdSpeedEnd", 0);
+  } else if (tapped) {
+    send("keyboardToggle", 0);
+  }
+};
+document.addEventListener("keyup", event => {
+  if (playHoldCode && event.code === playHoldCode) {
+    event.preventDefault();
+    finishPlayHold(true);
+  }
+});
+window.addEventListener("blur", () => finishPlayHold(false));
 
 setProgress(0, 0);
 window.addEventListener("resize", updateViewportUiScale, { passive: true });

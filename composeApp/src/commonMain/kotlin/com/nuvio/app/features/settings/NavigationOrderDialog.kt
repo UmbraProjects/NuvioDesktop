@@ -153,6 +153,7 @@ private fun rememberNavEntrySwitches(): Map<NavBarEntry, NavEntrySwitch> {
         MusicLibraryRepository.state
     }.collectAsStateWithLifecycle()
     val games by remember { NavBarLayoutRepository.gamesInNav }.collectAsStateWithLifecycle()
+    val tonight by remember { NavBarLayoutRepository.tonightInNav }.collectAsStateWithLifecycle()
     val iptv by remember {
         com.nuvio.app.features.iptv.IptvRepository.ensureLoaded()
         com.nuvio.app.features.iptv.IptvRepository.settings
@@ -165,13 +166,14 @@ private fun rememberNavEntrySwitches(): Map<NavBarEntry, NavEntrySwitch> {
             MusicLibraryRepository.updateSettings(MusicLibraryRepository.state.value.settings.copy(tabEnabled = on))
         },
         NavBarEntry.Games to NavEntrySwitch(games, NavBarLayoutRepository::setGamesInNav),
+        NavBarEntry.Tonight to NavEntrySwitch(tonight, NavBarLayoutRepository::setTonightInNav),
     )
 }
 
 private fun NavBarEntry.navDescription(): String = when (this) {
     NavBarEntry.Home -> "Your home rows. Always shown."
     NavBarEntry.Search -> "Search across your addons. Always shown."
-    NavBarEntry.Tonight -> "What to watch: the Tonight picker, for when nobody can choose. Always shown."
+    NavBarEntry.Tonight -> "What to watch: the Tonight picker, for when nobody can choose."
     NavBarEntry.Discover -> "Browse catalogs by genre, year and more."
     NavBarEntry.Library -> "Your saved titles and collections. Always shown."
     NavBarEntry.LiveTv -> "Shown while a Live TV playlist is added (Settings > Live TV)."

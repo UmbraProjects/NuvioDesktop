@@ -590,10 +590,15 @@ object GamepadInput {
             VoiceControlRepository.toggleListening()
             return
         }
-        if (holdsUntilRelease(target)) {
-            GamepadKeyInjector.press(target)?.let { keyCode -> heldKeys[button] = keyCode }
+        // B over an open menu or dialog closes it: those close on Escape (the pad's View button), not on the Back key
+        // B sends while browsing, so B used to do nothing there (2026-11-15).
+        val sent = if (target == GamepadTarget.AppAction(AppShortcutAction.GoBack) &&
+            com.nuvio.app.core.ui.KeyRouteLog.layerOpen
+        ) GamepadTarget.AppAction(AppShortcutAction.DismissOverlay) else target
+        if (holdsUntilRelease(sent)) {
+            GamepadKeyInjector.press(sent)?.let { keyCode -> heldKeys[button] = keyCode }
         } else {
-            GamepadKeyInjector.send(target)
+            GamepadKeyInjector.send(sent)
         }
     }
 

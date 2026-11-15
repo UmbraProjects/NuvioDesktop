@@ -4251,6 +4251,7 @@
     <string name="shortcut_player_cycle_color_profile">Cycle color profile</string>
     <string name="shortcut_player_cycle_anime">Cycle Anime4K enhancement (current session only)</string>
     <string name="shortcut_player_toggle_mpv_diagnostics">Toggle MPV diagnostics overlay</string>
+    <string name="shortcut_player_open_menu">Open player menu</string>
     <string name="shortcut_app_go_home">Go to Home</string>
     <string name="shortcut_app_open_search">Open Search</string>
     <string name="shortcut_app_open_library">Open Library (toggle back to Home)</string>
@@ -4858,7 +4859,7 @@
     <string name="player_hud_video">Video</string>
     <string name="player_hud_adjust_custom_color">Adjust custom color…</string>
     <string name="player_hud_anime_shader">Anime shader</string>
-    <string name="player_hud_advanced_mpv">Advanced (mpv)</string>
+    <string name="player_hud_advanced_mpv">MPV settings</string>
     <string name="player_hud_tools">Tools</string>
     <string name="player_hud_submit_intro_outro">Submit intro / outro</string>
     <string name="player_hud_window">Window</string>
@@ -5147,7 +5148,7 @@
     <string name="panel_ring_settings_section">Panel ring</string>
     <string name="panel_ring_settings_note">One key, button or mouse hold for every panel: aim at one and let go to switch.</string>
     <string name="panel_ring_pad_button">Controller button</string>
-    <string name="panel_ring_pad_button_description">Hold it to open the ring and aim with either stick; a quick tap still does the button\'s own action.</string>
+    <string name="panel_ring_pad_button_description">Hold it to open the ring and aim with either stick; a quick tap still does the button's own action.</string>
     <string name="panel_ring_off">Off</string>
     <string name="panel_ring_mouse">Hold the middle mouse button</string>
     <string name="panel_ring_mouse_description">Opens the ring at the pointer; drag towards a panel and let go.</string>
@@ -5161,7 +5162,7 @@
     <string name="panel_ring_hint_gamepad">Let go of %1$s to switch · B closes</string>
     <string name="panel_ring_search_description">Switch panels from a ring: R, hold LB or hold the middle mouse button</string>
     <string name="gamepad_rebind_title">%1$s button</string>
-    <string name="gamepad_rebind_hint">Choose what this button does. Held, the panel ring\'s button still opens the ring.</string>
+    <string name="gamepad_rebind_hint">Choose what this button does. Held, the panel ring's button still opens the ring.</string>
     <string name="gamepad_rebind_browsing">While browsing</string>
     <string name="gamepad_rebind_player">During playback</string>
     <string name="gamepad_rebind_changed">Changed</string>

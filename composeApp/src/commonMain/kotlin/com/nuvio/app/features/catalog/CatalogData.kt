@@ -15,6 +15,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 const val CATALOG_PAGE_SIZE = 100
+/** A catalog that does not say it pages is tried for a second page when its first held at least this many. */
+const val CATALOG_PROBE_MIN_ITEMS = 10
 private const val DUPLICATE_CATALOG_PAGE_ADVANCE_LIMIT = 3
 
 data class CatalogPage(

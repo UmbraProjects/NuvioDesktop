@@ -4120,6 +4120,7 @@
   <string name="shortcut_player_cycle_color_profile">Renk profilleri arasında geç</string>
   <string name="shortcut_player_cycle_anime">Anime4K iyileştirmesi arasında geç (yalnızca bu oturum)</string>
   <string name="shortcut_player_toggle_mpv_diagnostics">MPV tanılama katmanını aç / kapat</string>
+  <string name="shortcut_player_open_menu">Oynatıcı menüsünü aç</string>
   <string name="shortcut_app_go_home">Ana sayfaya git</string>
   <string name="shortcut_app_open_search">Aramayı aç</string>
   <string name="shortcut_app_open_library">Kitaplığı aç (Ana sayfaya geri dönmek için tekrar bas)</string>
@@ -4722,7 +4723,7 @@
   <string name="player_hud_video">Video</string>
   <string name="player_hud_adjust_custom_color">Özel rengi ayarla…</string>
   <string name="player_hud_anime_shader">Anime shader</string>
-  <string name="player_hud_advanced_mpv">Gelişmiş (mpv)</string>
+  <string name="player_hud_advanced_mpv">MPV ayarları</string>
   <string name="player_hud_tools">Araçlar</string>
   <string name="player_hud_submit_intro_outro">Intro / outro gönder</string>
   <string name="player_hud_window">Pencere</string>
@@ -5001,7 +5002,7 @@
     <string name="panel_ring_hint_keyboard">Bir sayıya basın · Esc kapatır</string>
     <string name="panel_ring_hint_mouse">Geçmek için bırakın</string>
     <string name="panel_ring_hint_gamepad">Geçmek için %1$s düğmesini bırakın · B kapatır</string>
-    <string name="panel_ring_search_description">Panelleri bir halkadan değiştirin: R, LB\'yi basılı tutun veya orta fare düğmesini basılı tutun</string>
+    <string name="panel_ring_search_description">Panelleri bir halkadan değiştirin: R, LB'yi basılı tutun veya orta fare düğmesini basılı tutun</string>
     <string name="gamepad_rebind_title">%1$s düğmesi</string>
     <string name="gamepad_rebind_hint">Bu düğmenin ne yapacağını seçin. Basılı tutulduğunda halka düğmesi yine halkayı açar.</string>
     <string name="gamepad_rebind_browsing">Gezinirken</string>

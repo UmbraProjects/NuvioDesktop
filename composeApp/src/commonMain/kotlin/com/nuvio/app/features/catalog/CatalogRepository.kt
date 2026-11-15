@@ -207,15 +207,19 @@ object CatalogRepository {
                     } else {
                         mergeCatalogItems(_uiState.value.items, page.items)
                     }
-                    val supportsPagination = request.target.supportsPagination || page.rawItemCount >= CATALOG_PAGE_SIZE
+                    val declaredPagination = request.target.supportsPagination || page.rawItemCount >= CATALOG_PAGE_SIZE
+                    // Plenty of addons page with skip without saying so in their manifest, and serve less than 100 a
+                    // page, so See more stopped at the first page (2026-11-15). Such a catalog is asked for one more
+                    // page; it keeps paging while pages bring new titles and stops at the first that brings none.
+                    val probingPagination = !declaredPagination && page.rawItemCount >= CATALOG_PROBE_MIN_ITEMS
                     val loadedNewItems = reset || mergedItems.size > current.items.size
                     val paginationState = nextCatalogPaginationState(
-                        supportsPagination = supportsPagination,
+                        supportsPagination = declaredPagination || probingPagination,
                         requestedSkip = requestedSkip,
                         page = page,
                         loadedNewItems = loadedNewItems,
                         consecutiveDuplicatePages = if (reset) 0 else current.consecutiveDuplicatePages,
-                    )
+                    ).let { if (probingPagination && !loadedNewItems) CatalogPaginationState(nextSkip = null) else it }
                     _uiState.value = CatalogUiState(
                         items = mergedItems,
                         isLoading = false,

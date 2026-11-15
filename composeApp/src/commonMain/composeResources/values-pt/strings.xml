@@ -4121,6 +4121,7 @@
   <string name="shortcut_player_cycle_color_profile">Percorrer perfis de cor</string>
   <string name="shortcut_player_cycle_anime">Percorrer melhorias Anime4K (apenas na sessão atual)</string>
   <string name="shortcut_player_toggle_mpv_diagnostics">Mostrar/ocultar sobreposição de diagnóstico do MPV</string>
+  <string name="shortcut_player_open_menu">Abrir menu do player</string>
   <string name="shortcut_app_go_home">Ir para o Início</string>
   <string name="shortcut_app_open_search">Abrir Pesquisa</string>
   <string name="shortcut_app_open_library">Abrir Biblioteca (alterna de volta ao Início)</string>
@@ -4723,7 +4724,7 @@
   <string name="player_hud_video">Vídeo</string>
   <string name="player_hud_adjust_custom_color">Ajustar cor personalizada…</string>
   <string name="player_hud_anime_shader">Shader de anime</string>
-  <string name="player_hud_advanced_mpv">Avançado (mpv)</string>
+  <string name="player_hud_advanced_mpv">Configurações do MPV</string>
   <string name="player_hud_tools">Ferramentas</string>
   <string name="player_hud_submit_intro_outro">Submeter intro / outro</string>
   <string name="player_hud_window">Janela</string>

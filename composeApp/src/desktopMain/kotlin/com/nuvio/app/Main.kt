@@ -1163,11 +1163,11 @@ fun main(args: Array<String>) {
                                     com.nuvio.app.features.panelring.PanelRingInput.openFromKeyboard()
                                 AppShortcutAction.FocusMusicPlayer ->
                                     com.nuvio.app.features.music.MusicKeyboard.togglePlayerFocus()
-                                // Home takes the trailer key itself; reaching here on a music page it has no trailer to
-                                // toggle, so it (a pad's Y) moves to and from the player instead.
+                                // A page with a trailer takes the trailer key itself; anywhere else, with music
+                                // playing, it (a pad's Y) moves to and from the music player. It used to on music
+                                // pages only, so a pad could not reach the bar from the rest of the app (2026-11-15).
                                 AppShortcutAction.ToggleTrailer ->
-                                    com.nuvio.app.features.music.MusicKeyboard.pageShowing() &&
-                                        com.nuvio.app.features.music.MusicKeyboard.togglePlayerFocus()
+                                    com.nuvio.app.features.music.MusicKeyboard.togglePlayerFocus()
                                 AppShortcutAction.GoBack -> {
                                     DesktopNavigationGestureBridge.requestBack()
                                     true
@@ -1237,7 +1237,9 @@ fun main(args: Array<String>) {
                     // Above the app so it covers whatever screen owns the focused field, and hosted
                     // here rather than inside App() because it is desktop-only.
                     // Over the app and under the on-screen keyboard: the panel ring (R, hold LB, hold the middle button).
+                    com.nuvio.app.core.ui.TvMenuBackdrop()
                     com.nuvio.app.features.panelring.PanelRingOverlay(window)
+                    com.nuvio.app.features.panelring.PanelRingHint()
                     com.nuvio.app.features.input.OnScreenKeyboardOverlay()
                     com.nuvio.app.core.ui.FrameCadenceTelemetry()
                     com.nuvio.app.core.ui.FrameBudgetTelemetry()

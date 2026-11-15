@@ -1759,6 +1759,8 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "volumeSet" -> playerController?.setVolume((value.toFloat() / 100f).coerceIn(0f, playerController?.maxVolumeFraction ?: 1f))
         "keyboardSpeedStep" -> adjustPlaybackSpeedStep(if (value < 0.0) -1 else 1, showFeedback = false)
         "keyboardSpeedToggle" -> togglePlaybackSpeed(showFeedback = false)
+        "holdSpeedStart" -> startHeldSpeed()
+        "holdSpeedEnd" -> endHeldSpeed()
         "keyboardNextSubtitle" -> cycleSubtitleTrackFromKeyboard()
         "keyboardNextAudio" -> cycleAudioTrackFromKeyboard()
         "selectResizeMode" -> setPlayerResizeMode(

@@ -1408,6 +1408,9 @@ internal class NativePlayerController(
         NativePlayerBridge.runJavaScript(current, "window.nuvioIptvDigit && window.nuvioIptvDigit(${digit.coerceIn(0, 9)})")
     }
 
+    /** A keyboard panel or the player menu is being driven by the keys (the HUD says so). */
+    val isKeyboardPanelOpen: Boolean get() = keyboardPanelOpen
+
     fun dispatchKeyboardPanelKey(code: String): Boolean {
         if (!keyboardPanelOpen) return false
         val current = handle.takeIf { it != 0L } ?: return false
@@ -1560,7 +1563,7 @@ internal class NativePlayerController(
         // Both the AWT key dispatcher and the HUD (its speed button and the step/toggle keys, which
         // this page owns whenever the WebView holds focus) route relative speed changes here, so the
         // Kotlin rules run against mpv's live speed either way and the pill is raised in one place.
-        if (type == "keyboardSpeedStep" || type == "keyboardSpeedToggle") {
+        if (type == "keyboardSpeedStep" || type == "keyboardSpeedToggle" || type == "holdSpeedStart" || type == "holdSpeedEnd") {
             onEvent(type, value)
             showPlaybackSpeedPillFromNative()
             return
@@ -2101,6 +2104,12 @@ internal class NativePlayerController(
      * the `mpv-diagnostics` chrome class, and the confirmation pill stay in sync — the HUD owns
      * that state and forwards the resulting `toggleMpvDiagnostics` event back to Kotlin.
      */
+    /** The player's menu, centred for the keyboard or pad, its rows walked with the arrows (controls.js). */
+    fun openPlayerMenu() {
+        val current = handle.takeIf { it != 0L } ?: return
+        NativePlayerBridge.runJavaScript(current, "window.nuvioOpenPlayerMenu && window.nuvioOpenPlayerMenu()")
+    }
+
     fun toggleMpvDiagnosticsOverlay() {
         val current = handle.takeIf { it != 0L } ?: return
         NativePlayerBridge.runJavaScript(

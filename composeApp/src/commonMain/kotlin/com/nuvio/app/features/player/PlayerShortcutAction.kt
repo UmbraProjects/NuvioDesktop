@@ -32,6 +32,8 @@ enum class PlayerShortcutAction(
     NextAudio("next_audio", Res.string.shortcut_player_next_audio, PlayerShortcutSection.TracksAndPanels),
     OpenSources("open_sources", Res.string.shortcut_player_open_sources, PlayerShortcutSection.TracksAndPanels),
     OpenEpisodes("open_episodes", Res.string.shortcut_player_open_episodes, PlayerShortcutSection.TracksAndPanels),
+    /** The player's menu (the right-click menu) centred, with the arrows walking it and quick tiles at its foot. */
+    OpenPlayerMenu("open_player_menu", Res.string.shortcut_player_open_menu, PlayerShortcutSection.TracksAndPanels),
     CycleZoom("cycle_zoom", Res.string.shortcut_player_cycle_zoom, PlayerShortcutSection.TracksAndPanels),
     SkipInterval("skip_interval", Res.string.shortcut_player_skip_interval, PlayerShortcutSection.TracksAndPanels),
     CycleSvp("cycle_svp", Res.string.shortcut_player_cycle_svp, PlayerShortcutSection.VideoEnhancement),

@@ -308,6 +308,26 @@ internal fun PlayerScreenRuntime.adjustPlaybackSpeedStep(direction: Int, showFee
     if (showFeedback) showGestureMessage(formatPlaybackSpeedLabel(next))
 }
 
+/**
+ * Holding the play/pause key while playing: double speed until it is let go, then back to the speed before
+ * (asked for on Discord, 2026-11-15). Already at 2x or faster, holding does nothing.
+ */
+internal fun PlayerScreenRuntime.startHeldSpeed() {
+    if (partyBlocksControl() || heldSpeedRestore != null) return
+    val current = playbackSnapshot.playbackSpeed
+    if (current >= PlayerHeldSpeed - 0.01f) return
+    heldSpeedRestore = current
+    applyUserPlaybackSpeed(PlayerHeldSpeed)
+}
+
+internal fun PlayerScreenRuntime.endHeldSpeed() {
+    val restore = heldSpeedRestore ?: return
+    heldSpeedRestore = null
+    applyUserPlaybackSpeed(restore)
+}
+
+internal const val PlayerHeldSpeed = 2f
+
 /** A speed the viewer chose (not a party sync nudge), shared with the party when there is one. */
 internal fun PlayerScreenRuntime.applyUserPlaybackSpeed(speed: Float) {
     partyRateNudge = null

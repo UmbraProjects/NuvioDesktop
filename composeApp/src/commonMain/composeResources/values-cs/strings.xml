@@ -4131,6 +4131,7 @@
   <string name="shortcut_player_cycle_color_profile">Přepnout barevný profil</string>
   <string name="shortcut_player_cycle_anime">Přepnout vylepšení Anime4K (jen aktuální relace)</string>
   <string name="shortcut_player_toggle_mpv_diagnostics">Přepnout diagnostické překrytí MPV</string>
+  <string name="shortcut_player_open_menu">Otevřít nabídku přehrávače</string>
   <string name="shortcut_app_go_home">Přejít na Domů</string>
   <string name="shortcut_app_open_search">Otevřít Hledání</string>
   <string name="shortcut_app_open_library">Otevřít Knihovnu (opakovaně zpět na Domů)</string>
@@ -4733,7 +4734,7 @@
   <string name="player_hud_video">Video</string>
   <string name="player_hud_adjust_custom_color">Upravit vlastní barvu…</string>
   <string name="player_hud_anime_shader">Anime shader</string>
-  <string name="player_hud_advanced_mpv">Pokročilé (mpv)</string>
+  <string name="player_hud_advanced_mpv">Nastavení MPV</string>
   <string name="player_hud_tools">Nástroje</string>
   <string name="player_hud_submit_intro_outro">Odeslat intro / outro</string>
   <string name="player_hud_window">Okno</string>

@@ -4121,6 +4121,7 @@
   <string name="shortcut_player_cycle_color_profile">Κυκλική εναλλαγή προφίλ χρώματος</string>
   <string name="shortcut_player_cycle_anime">Κυκλική εναλλαγή βελτίωσης Anime4K (μόνο για την τρέχουσα συνεδρία)</string>
   <string name="shortcut_player_toggle_mpv_diagnostics">Εναλλαγή επικάλυψης διαγνωστικών MPV</string>
+  <string name="shortcut_player_open_menu">Άνοιγμα μενού αναπαραγωγής</string>
   <string name="shortcut_app_go_home">Μετάβαση στην Αρχική</string>
   <string name="shortcut_app_open_search">Άνοιγμα Αναζήτησης</string>
   <string name="shortcut_app_open_library">Άνοιγμα Βιβλιοθήκης (εναλλαγή πίσω στην Αρχική)</string>
@@ -4723,7 +4724,7 @@
   <string name="player_hud_video">Βίντεο</string>
   <string name="player_hud_adjust_custom_color">Προσαρμογή προσαρμοσμένου χρώματος…</string>
   <string name="player_hud_anime_shader">Anime shader</string>
-  <string name="player_hud_advanced_mpv">Σύνθετες (mpv)</string>
+  <string name="player_hud_advanced_mpv">Ρυθμίσεις MPV</string>
   <string name="player_hud_tools">Εργαλεία</string>
   <string name="player_hud_submit_intro_outro">Υποβολή intro / outro</string>
   <string name="player_hud_window">Παράθυρο</string>

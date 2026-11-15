@@ -69,6 +69,9 @@ internal object MusicKeyboard {
 
     fun pageShowing(): Boolean = roots.any { it.takesFocus && !it.covered && !it.isPlayer }
 
+    /** Whether a music player (bar, dock or card) is on screen to take focus. */
+    fun playerShowing(): Boolean = roots.any { it.isPlayer && !it.covered }
+
     /**
      * The player shortcut: into the player's controls, or, from there, back to the control on the page that had focus
      * before. Returns whether it did anything (there is no player on screen when nothing plays).

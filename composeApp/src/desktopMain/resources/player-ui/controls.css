@@ -5563,15 +5563,17 @@ svg {
   width: auto;
   min-height: 0;
 }
-/* The .time-cluster hop in these selectors is deliberate: the hud-compact/hud-small width tiers
-   set the slider's width and the control's gap at (0,5,1)/(0,4,1), and the slide-out below
-   has to beat them or a narrow window would pin the slider open. */
-.player.minimal-hud .time-cluster .player-volume-control { gap: 0; }
+/* The :not(.legacy-hud) and .time-cluster hops in these selectors are deliberate: the
+   hud-compact/hud-small width tiers set the slider's width and the control's gap at (0,6,0), and
+   the slide-out below has to tie them (and win on source order) or a narrow window keeps the
+   hidden slider's width and the pill never shrinks. Minimal and legacy are exclusive, so the
+   :not() costs nothing. */
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control { gap: 0; }
 /* YouTube-style slide-out: the slider is collapsed to nothing beside the mute button and grows
    out on hover, keyboard focus, or while a drag is in flight (the .dragging class from
    controls.js, since a vertical wobble mid-drag leaves the hover area). Width and margin animate
    together so the time readout glides right instead of jumping. */
-.player.minimal-hud .time-cluster .player-volume-control .player-volume {
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control .player-volume {
   width: 0;
   margin-left: 0;
   opacity: 0;
@@ -5581,9 +5583,9 @@ svg {
     margin-left 200ms cubic-bezier(.4, 0, .2, 1),
     opacity 140ms ease;
 }
-.player.minimal-hud .time-cluster .player-volume-control:hover .player-volume,
-.player.minimal-hud .time-cluster .player-volume-control:focus-within .player-volume,
-.player.minimal-hud .time-cluster .player-volume-control.dragging .player-volume {
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control:hover .player-volume,
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control:focus-within .player-volume,
+.player.minimal-hud:not(.legacy-hud) .time-cluster .player-volume-control.dragging .player-volume {
   width: calc(var(--user-scale) * 84px);
   margin-left: calc(var(--user-scale) * 10px);
   opacity: 1;
@@ -8379,4 +8381,238 @@ svg {
 :is(#submitIntroModal, #partyModal, #streamInfoModal) .dock-body > :is(.intro-form, .stream-info-body, .party-body, .party-chat, .party-tabs) {
   padding-left: var(--dock-inset);
   padding-right: var(--dock-inset);
+}
+
+/* ---- TV-style menus (Settings > Appearance > TV-style menus) ----------------------------------------
+ * The docked panels open in the middle of the screen over the modal scrim, and the right-click menu
+ * opens centred (controls.js) with the screen dimmed around it, as a TV's settings do. */
+.player.tv-menus :is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal).dock-modal {
+  background-color: rgba(0, 0, 0, .54);
+}
+.player.tv-menus .modal-layer.dock-modal.modal-visible { pointer-events: auto; }
+.player.tv-menus .dock-modal .dock-frame {
+  left: 50%;
+  top: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+}
+.player.tv-menus :is(#audioModal, #subtitleModal, #submitIntroModal, #partyModal, #streamInfoModal) .track-panel.dock-panel {
+  transform-origin: 50% 50%;
+}
+/* The right-click menu as a TV settings sheet: larger type and rows, labels centred, a rounded glass
+ * panel over the dimmed screen. Its flyouts take the same rows. */
+.player.tv-menus .context-menu {
+  min-width: calc(var(--panel-scale) * 380px);
+  max-width: calc(var(--panel-scale) * 480px);
+  padding: calc(var(--panel-scale) * 10px);
+  border-radius: 24px;
+  border-color: rgba(255, 255, 255, .14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 40%),
+    rgba(12, 13, 18, .94);
+  font-size: calc(var(--panel-scale) * 17px);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .5), 0 24px 70px rgba(0, 0, 0, .6);
+}
+.player.tv-menus .context-menu-submenu {
+  border-radius: 20px;
+  padding: calc(var(--panel-scale) * 8px);
+  font-size: calc(var(--panel-scale) * 16px);
+}
+.player.tv-menus .context-menu-item {
+  min-height: calc(var(--panel-scale) * 50px);
+  padding: calc(var(--panel-scale) * 10px) calc(var(--panel-scale) * 18px);
+  border-radius: 14px;
+}
+.player.tv-menus .context-menu > .context-menu-group > .context-menu-item .context-menu-label,
+.player.tv-menus .context-menu > .context-menu-item .context-menu-label {
+  text-align: center;
+}
+.player.tv-menus .context-menu-item:hover,
+.player.tv-menus .context-menu-item:focus-visible {
+  background: rgba(255, 255, 255, .14);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .22);
+}
+
+/* The player menu's quick actions (controls.js QUICK_TILES), at its foot in both forms: a compact grid in the mouse
+ * menu, larger tiles on the centred sheet the keys or a pad open. A switch that is on is lit. */
+.context-menu-quick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(var(--panel-scale) * 3px);
+  margin-top: calc(var(--panel-scale) * 4px);
+  padding-top: calc(var(--panel-scale) * 6px);
+  border-top: 1px solid rgba(255, 255, 255, .12);
+}
+.context-menu-quick-title {
+  grid-column: 1 / -1;
+  padding: 0 calc(var(--panel-scale) * 4px) calc(var(--panel-scale) * 2px);
+  color: rgba(255, 255, 255, .5);
+  font-size: calc(var(--panel-scale) * clamp(9.5px, .7vw, 11px));
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.context-menu-item.context-menu-quick-tile {
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  min-height: calc(var(--panel-scale) * clamp(36px, 2.8vw, 44px));
+  padding: calc(var(--panel-scale) * 4px);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .05);
+  text-align: center;
+  white-space: normal;
+  line-height: 1.15;
+}
+.context-menu-quick-name { font-size: calc(var(--panel-scale) * clamp(10.5px, .8vw, 12.5px)); }
+.context-menu-quick-value {
+  color: rgba(255, 255, 255, .55);
+  font-size: calc(var(--panel-scale) * clamp(9px, .66vw, 10.5px));
+}
+.context-menu-quick-value:empty { display: none; }
+.context-menu-quick-tile.is-on { background: rgba(255, 255, 255, .14); }
+.context-menu-quick-tile.is-on .context-menu-quick-value { color: #fff; }
+.youtube-video .context-menu-quick-tile[data-youtube-hidden] { display: none; }
+
+.player.tv-menus .context-menu-quick {
+  gap: calc(var(--panel-scale) * 6px);
+  margin-top: calc(var(--panel-scale) * 8px);
+  padding-top: calc(var(--panel-scale) * 10px);
+}
+.player.tv-menus .context-menu-quick-title {
+  font-size: calc(var(--panel-scale) * 12px);
+  text-align: center;
+}
+.player.tv-menus .context-menu-item.context-menu-quick-tile {
+  min-height: calc(var(--panel-scale) * 58px);
+  padding: calc(var(--panel-scale) * 8px);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .06);
+}
+.player.tv-menus .context-menu-quick-name { font-size: calc(var(--panel-scale) * 15px); }
+.player.tv-menus .context-menu-quick-value { font-size: calc(var(--panel-scale) * 12.5px); }
+.player.tv-menus .context-menu-quick-tile.is-on { background: rgba(255, 255, 255, .16); }
+
+/* The keys' and pad's menu shows one level at a time (controls.js enterMenuRow): no flyouts; a row that leads on
+ * opens its choices as the page, under a "‹ Name" row that goes back. */
+.context-menu-page-back { display: none; }
+.player.tv-menus .context-menu .context-menu-submenu { display: none !important; }
+.player.tv-menus .context-menu.drilled > .context-menu-page-back {
+  display: flex;
+  justify-content: center;
+  margin-bottom: calc(var(--panel-scale) * 6px);
+  color: rgba(255, 255, 255, .7);
+  font-weight: 600;
+}
+.player.tv-menus .context-menu.drilled > .context-menu-group:not(.drill-path),
+.player.tv-menus .context-menu.drilled > .context-menu-quick,
+.player.tv-menus .context-menu.drilled .drill-path > .context-menu-item,
+.player.tv-menus .context-menu.drilled .context-menu-submenu.drill-path-sub > .context-menu-group:not(.drill-path) {
+  display: none !important;
+}
+.player.tv-menus .context-menu.drilled .context-menu-submenu.drill-path-sub,
+.player.tv-menus .context-menu.drilled .context-menu-submenu.drill-page {
+  display: block !important;
+  position: static !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.player.tv-menus .context-menu.drilled .context-menu-submenu.drill-page {
+  max-height: 62vh !important;
+  overflow-y: auto !important;
+}
+
+/* ---- Stream info as a page of the keys' and pad's menu ---- */
+.context-menu-info { display: none; }
+.player.tv-menus .context-menu.drilled > .context-menu-info.drill-page {
+  display: block;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 0 calc(var(--panel-scale) * 8px) calc(var(--panel-scale) * 8px);
+  outline: none;
+  font-size: calc(var(--panel-scale) * 15px);
+}
+.player.tv-menus .context-menu-info .stream-info-section-title { margin-top: calc(var(--panel-scale) * 12px); }
+
+/* ---- Black glass (2026-11-15): the mouse's right-click menu and the sources and episodes panels match the P menu
+ * and the docked panels. */
+.context-menu,
+#sourceModal .track-panel,
+#episodesModal .track-panel {
+  border: 1px solid rgba(255, 255, 255, .12) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 40%),
+    rgba(10, 10, 13, .94) !important;
+}
+.context-menu { border-radius: 12px; }
+.context-menu-submenu {
+  border: 1px solid rgba(255, 255, 255, .12) !important;
+  border-radius: 12px !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, 0) 40%),
+    rgba(10, 10, 13, .96) !important;
+}
+.context-menu-item { border-radius: 8px; }
+
+/* ---- One quiet highlight for the option the keys or a pad are on (2026-11-15): a soft fill and a thin accent bar at
+ * the row's start, no ring. The ring was cut off by scrolling lists and fought the rounded rows. Nothing moves. */
+.kbd-nav-focus {
+  outline: none !important;
+  background-color: rgba(255, 255, 255, .14) !important;
+  border-radius: 10px;
+}
+.context-menu-item.kbd-nav-focus,
+.track-row.kbd-nav-focus,
+.context-menu-quick-tile.kbd-nav-focus {
+  box-shadow: none !important;
+}
+#timeline.kbd-nav-focus {
+  background-color: transparent !important;
+  outline: 1px solid rgba(255, 255, 255, .35) !important;
+  outline-offset: 8px;
+}
+.context-menu-info.kbd-nav-focus { background-color: transparent !important; }
+.track-row.keyboard-focused,
+.track-row.keyboard-focused.selected {
+  outline: none;
+  background: rgba(255, 255, 255, .14);
+  box-shadow: none;
+}
+.player.tv-menus .context-menu-item:hover,
+.player.tv-menus .context-menu-item:focus-visible {
+  box-shadow: none;
+}
+
+/* The mouse menu and its flyouts as wide as their widest row needs, plus a little air, rather than a fixed band
+ * (2026-11-15). The quick actions' grid follows: its three columns share that width. */
+.player:not(.tv-menus) .context-menu,
+.player:not(.tv-menus) .context-menu-submenu {
+  width: max-content;
+  min-width: 0;
+  max-width: calc(var(--panel-scale) * 420px);
+}
+.player:not(.tv-menus) .context-menu-item { padding-right: calc(var(--panel-scale) * 16px); }
+.player:not(.tv-menus) .context-menu-quick { grid-template-columns: repeat(3, max-content); justify-content: stretch; }
+.player:not(.tv-menus) .context-menu-quick-tile { min-width: calc(var(--panel-scale) * 64px); padding-left: 8px; padding-right: 8px; }
+
+/* The P menu never runs off the screen (2026-11-15): at most most of the window's height, scrolling inside; the
+ * keys keep the ringed row in view (setBarNavFocus scrolls it). It has no flyouts to clip in this form. */
+.player.tv-menus .context-menu {
+  max-height: 84vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .3) transparent;
 }

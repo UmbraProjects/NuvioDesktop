@@ -4121,6 +4121,7 @@
   <string name="shortcut_player_cycle_color_profile">Bla gjennom fargeprofil</string>
   <string name="shortcut_player_cycle_anime">Bla gjennom Anime4K-forbedring (kun denne økten)</string>
   <string name="shortcut_player_toggle_mpv_diagnostics">Vis/skjul MPV-diagnostikkoverlegg</string>
+  <string name="shortcut_player_open_menu">Åpne spillermenyen</string>
   <string name="shortcut_app_go_home">Gå til Hjem</string>
   <string name="shortcut_app_open_search">Åpne Søk</string>
   <string name="shortcut_app_open_library">Åpne Bibliotek (bytt tilbake til Hjem)</string>
@@ -4723,7 +4724,7 @@
   <string name="player_hud_video">Video</string>
   <string name="player_hud_adjust_custom_color">Juster egendefinert farge…</string>
   <string name="player_hud_anime_shader">Anime-shader</string>
-  <string name="player_hud_advanced_mpv">Avansert (mpv)</string>
+  <string name="player_hud_advanced_mpv">MPV-innstillinger</string>
   <string name="player_hud_tools">Verktøy</string>
   <string name="player_hud_submit_intro_outro">Send inn intro / outro</string>
   <string name="player_hud_window">Vindu</string>
