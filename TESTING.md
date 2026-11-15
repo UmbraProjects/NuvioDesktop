@@ -865,6 +865,7 @@ Settings > Live TV > Stage. Watch a few programmes on Live TV first (each one at
   - [ ] Re-check after the fix (films the guide does not mark as films are now recognised by their channel or category, so they are not looked up as the TV series of the same name): 21 Jump Street or Mission: Impossible on a Sky Cinema channel lists Subsense subtitles
 - [ ] Pick one: the HUD says "timed from the guide", and the lines are roughly right straight away
 - [ ] Within a few minutes the HUD says "synced to the audio (+x.xs)" and the lines match the speech
+- [ ] On a channel with ads (Film4, ITV), tuned in well after the film started: it still syncs, even when the film is many minutes behind the guide (it used to give up past a minute)
 - [ ] A film shown sped up (most UK film channels): still in time half an hour later
 - [ ] Rewind with the buffer, then Go live: the subtitles stay in time
 - [ ] On a channel with ad breaks: after a break the HUD says "re-synced" and the lines are back in time

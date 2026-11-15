@@ -14,9 +14,11 @@ import kotlin.math.min
  * which estimates, locks, refines and notices a jump (an ad break) as it does for films.
  *
  * Media time starts when the channel was tuned in, so the lines (timed to the film) are first moved by the guide's
- * offset, film time at media time 0, before the tracker sees them: its search reaches a minute either way, not the
- * forty minutes a film can be in. The offset is tried as it is and as a 25-frame broadcast of a 24-frame film runs
- * (4% fast, so forty minutes in it is already a minute and a half out); whichever locks first wins.
+ * offset, film time at media time 0, before the tracker sees them. The guide is only a rough start: a channel with ads
+ * is behind it by every break so far (a quarter of the time on air, at worst) and a film can start minutes late or
+ * early, so the tracker searches that whole stretch ([Guess]), not the minute either way a downloaded file needs, and
+ * after the lock looks up to [JUMP_AHEAD_MS] ahead for the next ad break. The offset is tried as it is and as a
+ * 25-frame broadcast of a 24-frame film runs (4% fast); whichever locks first wins.
  */
 internal object LiveAudioSubtitleSync {
     private val log = Logger.withTag("LiveSubSync")
@@ -32,6 +34,24 @@ internal object LiveAudioSubtitleSync {
     private const val SEARCH_EVERY_MS = 30_000L
     private const val WATCH_EVERY_MS = 90_000L
 
+    /** A film started up to this long after the guide said, and [EARLY_MS] before it. */
+    private const val LATE_MS = 5 * 60_000L
+    private const val EARLY_MS = 5 * 60_000L
+    /** The ads so far: at most this share of the time on air, and never more than [MAX_ADS_MS]. */
+    private const val AD_SHARE = 0.25
+    private const val MAX_ADS_MS = 40 * 60_000L
+    /** Room past the ends of the search, so a film exactly at an end is not taken for a peak at the search's edge. */
+    private const val EDGE_MS = 30_000L
+    /** How far after the lock an ad break may move the film at once. */
+    const val JUMP_AHEAD_MS = 10 * 60_000.0
+
+    /**
+     * One guess for the tracker: the lines moved by [offsetMs], the earliest film time at media time 0 that is
+     * plausible, so every line still to be heard stays in (none falls before 0); the true place is then a shift of
+     * [minShiftMs]..0 from there.
+     */
+    data class Guess(val offsetMs: Long, val minShiftMs: Double, val maxShiftMs: Double)
+
     /** The lines as the tracker should see them for one guess: film time minus [offsetMs]; what falls before 0 goes. */
     fun shifted(dialogue: List<Triple<Long, Long, String>>, offsetMs: Long): List<Triple<Long, Long, String>> =
         dialogue.mapNotNull { (start, end, text) -> if (end - offsetMs <= 0) null else Triple(maxOf(0L, start - offsetMs), end - offsetMs, text) }
@@ -43,8 +63,15 @@ internal object LiveAudioSubtitleSync {
     fun unshift(model: SubtitleSyncModel, offsetMs: Long): SubtitleSyncModel =
         SubtitleSyncModel(model.segments.map { it.copy(shiftMs = it.shiftMs - it.scale * offsetMs) })
 
-    /** The guide's guesses: film time at media time 0 at each speed. */
-    fun guesses(guideOffsetMs: Long): List<Long> = SPEEDS.map { (guideOffsetMs * it).toLong() }.distinct()
+    /** The guide's guesses at each speed: film time at media time 0 is somewhere from the ads behind to [EARLY_MS] ahead. */
+    fun guesses(guideOffsetMs: Long): List<Guess> = SPEEDS.map { (guideOffsetMs * it).toLong() }.distinct().map { onGuide ->
+        val behind = LATE_MS + (maxOf(0L, onGuide) * AD_SHARE).toLong().coerceAtMost(MAX_ADS_MS)
+        Guess(
+            offsetMs = onGuide - behind,
+            minShiftMs = -(behind + EARLY_MS + EDGE_MS).toDouble(),
+            maxShiftMs = EDGE_MS.toDouble(),
+        )
+    }
 
     /**
      * Runs until cancelled. [guideOffsetMs]: film time at media time 0 by the guide. [decode]: 16 kHz mono PCM of media
@@ -60,10 +87,17 @@ internal object LiveAudioSubtitleSync {
     ) {
         val timeline = SpeechTimeline()
         val analyzer = SpeechAnalyzer(SileroVad(DesktopAudioSubtitleSync.weights()), timeline)
-        val trackers = guesses(guideOffsetMs).map { offset -> offset to AudioSyncTracker(SubtitleSpeechTrack.fromCues(shifted(dialogue, offset))) }
+        val trackers = guesses(guideOffsetMs).map { guess ->
+            guess.offsetMs to AudioSyncTracker(
+                track = SubtitleSpeechTrack.fromCues(shifted(dialogue, guess.offsetMs)),
+                searchMinShiftMs = guess.minShiftMs,
+                searchMaxShiftMs = guess.maxShiftMs,
+                jumpAheadMs = JUMP_AHEAD_MS,
+            )
+        }
         var lockedOffset: Long? = null
         var readUntil = -1L
-        log.i { "start lines=${dialogue.size} guideOffsetMs=$guideOffsetMs guesses=${trackers.map { it.first }}" }
+        log.i { "start lines=${dialogue.size} guideOffsetMs=$guideOffsetMs guesses=${guesses(guideOffsetMs)}" }
         while (true) {
             currentCoroutineContext().ensureActive()
             val position = positionMs()

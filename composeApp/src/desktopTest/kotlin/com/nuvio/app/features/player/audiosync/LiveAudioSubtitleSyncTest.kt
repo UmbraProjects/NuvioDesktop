@@ -1,8 +1,10 @@
 package com.nuvio.app.features.player.audiosync
 
 import kotlin.math.abs
+import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class LiveAudioSubtitleSyncTest {
@@ -19,11 +21,57 @@ class LiveAudioSubtitleSyncTest {
     }
 
     @Test
-    fun `the guesses are the guide's offset at the film's speed and sped up to 25 frames`() {
+    fun `the guesses cover the guide's offset at the film's speed and sped up to 25 frames`() {
         val guesses = LiveAudioSubtitleSync.guesses(2_400_000L)
         assertEquals(2, guesses.size)
-        assertEquals(2_400_000L, guesses[0])
-        assertTrue(abs(guesses[1] - 2_502_502L) <= 1, guesses.toString())
+        for ((guess, onGuide) in guesses.zip(listOf(2_400_000L, 2_502_502L))) {
+            // The guide's own offset and an hour's worth of late start and ads behind it are both in the search.
+            val plain = guess.offsetMs - onGuide
+            assertTrue(plain <= 0 && guess.minShiftMs <= plain - 5 * 60_000 && guess.maxShiftMs >= 0, guess.toString())
+            assertTrue(guess.offsetMs - (onGuide - 15 * 60_000L) >= guess.minShiftMs.toLong(), "15 min of ads: $guess")
+        }
+    }
+
+    @Test
+    fun `the search reaches far more than a minute once a film has been on a while`() {
+        val guess = LiveAudioSubtitleSync.guesses(60 * 60_000L).first()
+        // An hour in: a 5-minute late start plus up to 15 minutes of ads behind the guide, 5 minutes ahead of it.
+        assertTrue(-guess.minShiftMs >= 25 * 60_000.0, guess.toString())
+        // Every line still to be heard stays in: nothing plausible is before the moved lines' 0.
+        assertTrue(guess.offsetMs <= 60 * 60_000L - 20 * 60_000L, guess.toString())
+    }
+
+    @Test
+    fun `a film twelve minutes behind the guide locks`() {
+        // Speech exactly where the lines say, 12 minutes behind the guide's guess (ad breaks before tuning in).
+        val guideOffset = 45 * 60_000L
+        val truth = guideOffset - 12 * 60_000L
+        val random = Random(7)
+        var at0 = 0L
+        val film = (0 until 700).map { i ->
+            at0 += 2_500L + random.nextLong(9_000L)
+            Triple(at0, at0 + 1_200L + random.nextLong(2_500L), "line $i")
+        }
+        val guess = LiveAudioSubtitleSync.guesses(guideOffset).first()
+        val tracker = AudioSyncTracker(
+            track = SubtitleSpeechTrack.fromCues(LiveAudioSubtitleSync.shifted(film, guess.offsetMs)),
+            searchMinShiftMs = guess.minShiftMs,
+            searchMaxShiftMs = guess.maxShiftMs,
+            jumpAheadMs = LiveAudioSubtitleSync.JUMP_AHEAD_MS,
+        )
+        val timeline = SpeechTimeline()
+        val frameMs = SpeechTimeline.FRAME_DURATION_MS
+        val heardMs = 4 * 60_000L
+        val probabilities = FloatArray((heardMs / frameMs).toInt()) { f ->
+            val filmMs = truth + (f * frameMs).toLong()
+            if (film.any { (a, b, _) -> filmMs in a until b }) 0.95f else 0.05f
+        }
+        probabilities.forEachIndexed { frame, p -> timeline.record(frame, p) }
+        var locked: SubtitleSyncModel? = null
+        repeat(4) { if (locked == null) (tracker.update(timeline, heardMs) as? AudioSyncTracker.Outcome.Locked)?.let { locked = it.model } }
+        val model = LiveAudioSubtitleSync.unshift(assertNotNull(locked), guess.offsetMs)
+        val at = model.mediaTimeUs((truth + 60_000L) * 1_000L)!!
+        assertTrue(abs(at - 60_000_000L) <= 200_000L, "line a minute in shows at ${at / 1_000} ms")
     }
 
     @Test
