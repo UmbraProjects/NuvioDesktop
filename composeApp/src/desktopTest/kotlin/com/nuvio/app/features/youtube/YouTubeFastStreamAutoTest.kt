@@ -95,6 +95,24 @@ class YouTubeFastStreamAutoTest {
     }
 
     @Test
+    fun theButtonTurnsTheWindowIntoTheWholeVideoInPlace() {
+        val download = windowed(window = 3)
+        val url = FastStreamServer.urlFor(download)
+        assertContentEquals(file.copyOfRange(0, 1_500), fetch(url, "bytes=0-1499").inputStream.readBytes())
+        assertTrue(download.windowed)
+        download.downloadWhole()
+        assertFalse(download.windowed)
+        val deadline = System.currentTimeMillis() + 5_000
+        while (fetchedChunks().size < 20 && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertEquals((0 until 20).toSet(), fetchedChunks())
+        // The same address goes on serving, now from the file, start to end.
+        assertContentEquals(file, fetch(url, "bytes=0-").inputStream.readBytes())
+        assertTrue(java.io.File(dir, "w0.part").exists())
+        download.close()
+        assertFalse(java.io.File(dir, "w0.part").exists())
+    }
+
+    @Test
     fun aSeekMovesTheWindowAndAnySpanReadsBack() {
         val download = windowed(window = 3)
         val url = FastStreamServer.urlFor(download)

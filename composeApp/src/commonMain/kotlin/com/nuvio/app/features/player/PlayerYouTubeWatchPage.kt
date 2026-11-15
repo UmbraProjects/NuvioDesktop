@@ -467,13 +467,16 @@ private fun WatchActions(current: YouTubeVideo, details: YouTubeVideoDetails?, s
                     when {
                         !fastStream.active -> "FastStream: download the whole video quickly"
                         fastStream.failed -> "FastStream stopped (YouTube refused); streaming normally. Click to turn off"
+                        // fork:faststream-optin - on by itself for a fast speed or 4K: the button is the optional
+                        // whole-video download (Deigue), not an off switch.
+                        fastStream.windowed -> "FastStream is on for fast playback. Click to download the whole video too"
                         fastStream.throttled -> "FastStream (slowed by YouTube). Click to turn off"
                         else -> "FastStream on. Click to turn off"
                     },
-                    on = fastStream.active && !fastStream.failed,
+                    on = fastStream.active && !fastStream.failed && !fastStream.windowed,
                     badge = fastStream.percent?.let { "$it%" },
                 ) {
-                    requestYouTubeFastStream(!fastStream.active)
+                    requestYouTubeFastStream(!fastStream.active || fastStream.windowed)
                 }
             }
             WatchIconButton(TheaterIcon, if (theater) "Default view" else "Theater mode", on = theater) {

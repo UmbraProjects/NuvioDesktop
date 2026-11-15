@@ -26,9 +26,14 @@ internal data class YouTubeFastStreamStatus(
     val throttled: Boolean = false,
     /** FastStream gave up; the player went back to streaming straight from YouTube. */
     val failed: Boolean = false,
+    /**
+     * On by itself (a fast speed or a 4K stream): only what plays next, in memory. The button then offers the
+     * whole video as a download instead of turning FastStream off.
+     */
+    val windowed: Boolean = false,
 ) {
     val percent: Int?
-        get() = if (active && totalBytes > 0L) ((downloadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100) else null
+        get() = if (active && !windowed && totalBytes > 0L) ((downloadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100) else null
 }
 
 internal object YouTubeFastStreamState {

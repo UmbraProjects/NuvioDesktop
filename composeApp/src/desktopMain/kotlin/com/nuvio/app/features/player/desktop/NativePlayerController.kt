@@ -1926,6 +1926,11 @@ internal class NativePlayerController(
         val pending = pendingSource?.takeIf { it.fastStreamEligible } ?: return
         val fastStream = com.nuvio.app.features.youtube.YouTubeFastStream
         if (!pending.streamUrls.all(fastStream::eligible)) return
+        // The button over automatic mode: the whole video as a download, without a reopen.
+        if (on && !window && pending.streamUrls.all(fastStream::isEnabled) && pending.streamUrls.any(fastStream::isWindowed)) {
+            fastStream.downloadWhole(pending.streamUrls)
+            return
+        }
         if (on == pending.streamUrls.all(fastStream::isEnabled)) return
         val current = synchronized(handleLock) { handle }.takeIf { it != 0L }
         val positionMs = current?.let { runCatching { NativePlayerBridge.positionMs(it) }.getOrNull() }

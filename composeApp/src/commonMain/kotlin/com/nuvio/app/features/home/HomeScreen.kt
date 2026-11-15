@@ -63,6 +63,7 @@ import com.nuvio.app.core.ui.rememberHoldToSelectState
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.Modifier
@@ -3802,6 +3803,21 @@ fun HomeScreen(
                                     // jumps to another row under the menu.
                                     if (browseFilterMenuOpen) return@onPointerEvent
                                     val change = event.changes.firstOrNull() ?: return@onPointerEvent
+                                    // Sideways (a tilt wheel, a trackpad, or Shift with the wheel, which
+                                    // is what the phone remote's sideways scroll sends): over the shelf
+                                    // the row scrolls itself and has consumed it; anywhere else it walks
+                                    // along the one row on screen, as Left and Right do.
+                                    val sideways = change.scrollDelta.x != 0f || event.keyboardModifiers.isShiftPressed
+                                    if (sideways) {
+                                        if (change.isConsumed) return@onPointerEvent
+                                        val delta = if (change.scrollDelta.x != 0f) change.scrollDelta.x else change.scrollDelta.y
+                                        val step = delta.compareTo(0f)
+                                        if (step != 0 && tvRows.isNotEmpty()) {
+                                            change.consume()
+                                            handleHomeTvKey(if (step > 0) HomeTvKey.Right else HomeTvKey.Left)
+                                        }
+                                        return@onPointerEvent
+                                    }
                                     val direction = change.scrollDelta.y.compareTo(0f)
                                     if (direction != 0) {
                                         change.consume()

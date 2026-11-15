@@ -138,6 +138,16 @@ internal object YouTubeFastStream {
         publish()
     }
 
+    /** The watch page's button while automatic mode is on: the same downloads go on to fetch the whole file. */
+    @Synchronized
+    fun downloadWhole(urls: Collection<String>) {
+        urls.mapNotNull(downloads::get).forEach { it.downloadWhole() }
+        log.i { "whole-video download asked for over automatic mode" }
+        publish()
+    }
+
+    fun isWindowed(url: String): Boolean = downloads[url]?.windowed == true
+
     /** Drops every download but those for [urls] (the next video's streams are never among them). */
     @Synchronized
     fun retainOnly(urls: Collection<String>) {
@@ -163,17 +173,18 @@ internal object YouTubeFastStream {
         val done = all.sumOf { it.downloadedBytes }
         val failed = all.any { it.failed }
         val throttled = all.any { it.throttled }
+        val windowed = all.any { it.windowed }
         val percent = if (total > 0L) ((done * 100L) / total).toInt() else 0
         val current = YouTubeFastStreamState.status.value
         // A chunk lands several times a second: only a new percent (or state) reaches the page.
         if (current.active == all.isNotEmpty() && percent == lastPercent && current.failed == failed &&
-            current.throttled == throttled && current.totalBytes == total
+            current.throttled == throttled && current.totalBytes == total && current.windowed == windowed
         ) {
             return
         }
         lastPercent = percent
         YouTubeFastStreamState.update {
-            it.copy(active = all.isNotEmpty(), downloadedBytes = done, totalBytes = total, throttled = throttled, failed = failed)
+            it.copy(active = all.isNotEmpty(), downloadedBytes = done, totalBytes = total, throttled = throttled, failed = failed, windowed = windowed)
         }
     }
 
@@ -221,8 +232,14 @@ internal class FastStreamDownload(
      * Automatic mode: fetch only this many chunks from where the player reads, keep them in memory and
      * drop what it has passed. Null: the whole file, into [file].
      */
-    private val windowChunks: Int? = null,
+    windowChunks: Int? = null,
 ) {
+    @Volatile
+    private var windowChunks: Int? = windowChunks
+
+    /** Automatic mode, only what plays next in memory (until [downloadWhole]). */
+    val windowed: Boolean get() = windowChunks != null
+
     private val log = Logger.withTag("FastStream")
     private val lock = Object()
     private val channel: FileChannel by lazy { RandomAccessFile(file, "rw").channel }
@@ -398,9 +415,15 @@ internal class FastStreamDownload(
             val bytes = body.readNBytes(expected)
             if (bytes.size != expected) throw IOException("short read ${bytes.size}/$expected")
             if (closed) return
-            if (windowChunks != null) {
-                synchronized(lock) { memory[chunk] = bytes }
-            } else {
+            val storedInMemory = synchronized(lock) {
+                if (windowChunks != null) {
+                    memory[chunk] = bytes
+                    true
+                } else {
+                    false
+                }
+            }
+            if (!storedInMemory) {
                 var position = start
                 val buffer = ByteBuffer.wrap(bytes)
                 while (buffer.hasRemaining()) position += channel.write(buffer, position)
@@ -443,8 +466,10 @@ internal class FastStreamDownload(
             val chunk = (position / chunkSize).toInt()
             awaitChunk(chunk)
             val chunkEnd = minOf((chunk + 1).toLong() * chunkSize - 1, endInclusive)
-            if (windowChunks != null) {
-                val bytes = synchronized(lock) { memory[chunk] } ?: throw IOException("chunk $chunk dropped")
+            val held = synchronized(lock) { if (windowChunks != null) memory[chunk] ?: DROPPED else null }
+            if (held === DROPPED) throw IOException("chunk $chunk dropped")
+            if (held != null) {
+                val bytes = held
                 val from = (position - chunk.toLong() * chunkSize).toInt()
                 val length = (chunkEnd - position + 1).toInt()
                 out.write(bytes, from, length)
@@ -482,6 +507,24 @@ internal class FastStreamDownload(
         }
     }
 
+    /**
+     * Turns a window into the whole-file download, in place: what is in memory goes to the file, the
+     * workers go on to fetch every other chunk, and the player keeps reading the same address.
+     */
+    fun downloadWhole() {
+        synchronized(lock) {
+            if (windowChunks == null || closed || failed) return
+            memory.forEach { (index, bytes) ->
+                val buffer = ByteBuffer.wrap(bytes)
+                var position = index.toLong() * chunkSize
+                while (buffer.hasRemaining()) position += channel.write(buffer, position)
+            }
+            memory.clear()
+            windowChunks = null
+            lock.notifyAll()
+        }
+    }
+
     /** Window mode: drops what the reader has passed (one chunk kept behind) and anything past the window. */
     private fun evictLocked() {
         val window = windowChunks ?: return
@@ -498,7 +541,8 @@ internal class FastStreamDownload(
             memory.clear()
             lock.notifyAll()
         }
-        if (windowChunks == null) {
+        // A window that became a whole-file download (downloadWhole) has a file to delete too.
+        if (windowChunks == null || file.exists()) {
             runCatching { channel.close() }
             if (!file.delete()) file.deleteOnExit()
         }
@@ -508,6 +552,7 @@ internal class FastStreamDownload(
 
     companion object {
         const val DEFAULT_CHUNK_BYTES = 4 * 1024 * 1024
+        private val DROPPED = ByteArray(0)
         private const val READ_BUFFER_BYTES = 256 * 1024
         private const val REQUEST_TIMEOUT_SECONDS = 30L
         private const val READY_TIMEOUT_MS = 20_000L
