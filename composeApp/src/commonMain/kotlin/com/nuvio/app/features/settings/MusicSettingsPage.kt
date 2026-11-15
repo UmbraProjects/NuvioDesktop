@@ -19,12 +19,6 @@ import com.nuvio.app.features.music.library.addonLinks
 import com.nuvio.app.features.preroll.PreshowSettings
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_music_album_notes
-import nuvio.composeapp.generated.resources.settings_music_album_lenses
-import nuvio.composeapp.generated.resources.settings_music_album_lenses_description
-import nuvio.composeapp.generated.resources.settings_music_artist_stage
-import nuvio.composeapp.generated.resources.settings_music_artist_stage_description
-import nuvio.composeapp.generated.resources.settings_music_home
-import nuvio.composeapp.generated.resources.settings_music_home_description
 import nuvio.composeapp.generated.resources.settings_music_album_notes_description
 import com.nuvio.app.features.music.library.LibraryView
 import nuvio.composeapp.generated.resources.settings_music_section_views
@@ -113,7 +107,7 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
             val settings = state.settings
             SettingsGroup(
                 isTablet = isTablet,
-                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion", "music-album-lenses", "music-artist-stage", "music-album-notes", "music-home"),
+                modifier = Modifier.settingsSearchAnchors("music-show-tab", "music-reduced-motion", "music-album-lenses", "music-artist-stage", "music-album-notes"),
             ) {
                 SettingsSwitchRow(
                     title = stringResource(Res.string.settings_music_show_tab),
@@ -141,31 +135,6 @@ internal fun LazyListScope.musicSettingsContent(isTablet: Boolean) {
                     checked = settings.albumNotes,
                     isTablet = isTablet,
                     onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(albumNotes = it)) },
-                )
-                // fork: the album page, artist page and music home switches (upstream removed all three on Nov 11-12 2026).
-                SettingsGroupDivider(isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_music_album_lenses),
-                    description = stringResource(Res.string.settings_music_album_lenses_description),
-                    checked = settings.albumLenses,
-                    isTablet = isTablet,
-                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(albumLenses = it)) },
-                )
-                SettingsGroupDivider(isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_music_artist_stage),
-                    description = stringResource(Res.string.settings_music_artist_stage_description),
-                    checked = settings.artistStage,
-                    isTablet = isTablet,
-                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(artistStage = it)) },
-                )
-                SettingsGroupDivider(isTablet)
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_music_home),
-                    description = stringResource(Res.string.settings_music_home_description),
-                    checked = settings.musicHome,
-                    isTablet = isTablet,
-                    onCheckedChange = { MusicLibraryRepository.updateSettings(settings.copy(musicHome = it)) },
                 )
             }
         }

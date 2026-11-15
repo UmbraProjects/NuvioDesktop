@@ -3,6 +3,7 @@ package com.nuvio.app.features.music
 
 import com.nuvio.app.features.music.library.musicKeyFocusRing
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.layout.layout
 import com.nuvio.app.features.music.library.musicGlass
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Close
@@ -298,6 +299,10 @@ private fun MusicNowPlayingScreen(
     val fadeQueue = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.fadeQueue
     val lyricStyle = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricStyle
     val lyricsOn = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.lyricsOn
+    // Tap to sync, shared by the lyric pane and the sync strip at the top right under a video.
+    val lyricTap = remember(syncKey) { mutableStateOf(false) }
+    // Stage options > Side box: off, the right-hand column (the box and the artist cut-out) goes and the middle takes its room.
+    val sideBoxShown = MusicLibraryRepository.state.collectAsStateWithLifecycle().value.settings.stageBoxShown
     // fork:booklet - the album's sleeve notes for the third panel of a wide Stage.
     val bookletUi = rememberBookletUi(album, libraryArtist)
     // fork:visualiser - the playing track's map, from the player surface's background analysis (null for another load).
@@ -333,11 +338,11 @@ private fun MusicNowPlayingScreen(
         // The view is its own player (NowPlayingControls); the bar, dock and card step aside, so nothing is kept for them.
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 860.dp
-            val cutout = identity?.cutoutUrl.takeIf { wide }
+            val cutout = identity?.cutoutUrl.takeIf { wide && sideBoxShown }
             // fork:stage - three panels (player, lyrics, booklet over the artist) when there is room; each keeps to its own.
             // The layout depends on the window only, never on whether the liner notes have anything to show: nothing on this page
             // may move or resize when the notes are missing (user rule, Nov 3 2026). A missing booklet leaves its slot empty.
-            val threePanels = wide && stageUsesThreePanels(maxWidth.value)
+            val threePanels = wide && sideBoxShown && stageUsesThreePanels(maxWidth.value)
             // The video, lyrics and sync controls sit in the middle of the space right of the player column, except when the
             // full-height cut-out stands beside the lyrics and they keep to the left of it.
             val centredMiddle = threePanels || realVideo || cutout == null
@@ -401,25 +406,42 @@ private fun MusicNowPlayingScreen(
                         Spacer(Modifier.height(8.dp))
                         val artistRefs = (track?.artists?.takeIf { it.isNotEmpty() } ?: album?.artists.orEmpty())
                         val albumId = track?.albumBrowseId ?: album?.browseId
-                        // Each part leads somewhere: an artist to their page, the album to its page, a genre to a ladder.
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(0.dp, Alignment.CenterHorizontally),
-                            verticalArrangement = Arrangement.Center,
+                        // Each part leads somewhere: an artist to their page, the album to its page, a genre to a ladder. Two lines
+                        // of one line each (the artists; the album and year), cut short rather than wrapped, so a long album name
+                        // never breaks the line into pieces.
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             artistRefs.forEachIndexed { i, ref ->
-                                StageLink(ref.name + if (i < artistRefs.lastIndex) ", " else "", enabled = true) {
+                                StageLink(
+                                    ref.name + if (i < artistRefs.lastIndex) ", " else "",
+                                    enabled = true,
+                                    modifier = Modifier.weight(1f, fill = false),
+                                ) {
                                     scope.launch {
                                         val id = ref.browseId ?: com.nuvio.app.features.music.library.rungArtist(catalog, ref.name)?.browseId
                                         if (id != null) { onClose(); onOpenArtist(id) }
                                     }
                                 }
                             }
-                            val albumName = state.albumTitle
-                            if (!albumName.isNullOrBlank()) {
-                                StageLinkText(if (artistRefs.isNotEmpty()) " · " else "")
-                                StageLink(albumName, enabled = !albumId.isNullOrBlank()) { albumId?.let { onClose(); onOpenAlbum(it) } }
+                        }
+                        val albumName = state.albumTitle
+                        val year = state.album?.year
+                        if (!albumName.isNullOrBlank() || year != null) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 2.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (!albumName.isNullOrBlank()) {
+                                    StageLink(albumName, enabled = !albumId.isNullOrBlank(), modifier = Modifier.weight(1f, fill = false), dim = true) {
+                                        albumId?.let { onClose(); onOpenAlbum(it) }
+                                    }
+                                }
+                                year?.let { StageLinkText(if (!albumName.isNullOrBlank()) " · $it" else it, dim = true) }
                             }
-                            state.album?.year?.let { StageLinkText(" · $it") }
                         }
                         val chips = listOfNotNull(libraryArtist?.mood) + libraryArtist?.genres.orEmpty().take(2)
                         if (chips.isNotEmpty()) {
@@ -468,20 +490,23 @@ private fun MusicNowPlayingScreen(
                         // Under a video the column is centred: the picture, then the lyric strip beneath it.
                         horizontalAlignment = if (centredMiddle) Alignment.CenterHorizontally else Alignment.Start,
                     ) {
-                    // With a video: as large as the column allows, and four lines of lyrics under it.
-                    if (realVideo) InlineVideoSlot()
-                    LyricsPane(
-                        shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
-                        if (realVideo) Modifier.fillMaxWidth() else Modifier.weight(1f).fillMaxWidth(),
-                        compact = realVideo,
-                        style = lyricStyle,
-                        syncState = syncState,
-                        onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
-                        onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
-                        onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
-                        centredSync = centredMiddle,
-                        visible = lyricsOn,
-                    )
+                    val lyricsPane: @Composable (Modifier) -> Unit = { paneModifier ->
+                        LyricsPane(
+                            shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
+                            paneModifier,
+                            style = lyricStyle,
+                            syncState = syncState,
+                            onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
+                            onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
+                            onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
+                            centredSync = centredMiddle,
+                            visible = lyricsOn,
+                            showSync = false,
+                            tapState = lyricTap,
+                        )
+                    }
+                    // With a video: the picture as large as the column's width allows, the lyrics in the room left under it.
+                    if (realVideo) VideoAndLyrics(lyricsOn, lyricsPane) else lyricsPane(Modifier.weight(1f).fillMaxWidth())
                     }
                     if (threePanels) {
                         // The right panel: the booklet in glass, and under it the artist, so the cut-out cannot reach the lyrics.
@@ -534,18 +559,22 @@ private fun MusicNowPlayingScreen(
                     Spacer(Modifier.height(12.dp))
                     NowPlayingControls(state, player)
                     Spacer(Modifier.height(12.dp))
-                    if (realVideo) InlineVideoSlot()
-                    LyricsPane(
-                        shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
-                        if (realVideo) Modifier.fillMaxWidth() else Modifier.weight(1f).fillMaxWidth(),
-                        compact = realVideo,
-                        style = lyricStyle,
-                        syncState = syncState,
-                        onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
-                        onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
-                        onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
-                        visible = lyricsOn,
-                    )
+                    val lyricsPane: @Composable (Modifier) -> Unit = { paneModifier ->
+                        LyricsPane(
+                            shownLyrics, state.positionMs, state.isPlaying, onSeek, reduced,
+                            paneModifier,
+                            style = lyricStyle,
+                            syncState = syncState,
+                            onNudge = { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
+                            onResetSync = { syncKey?.let { MusicLyricSync.reset(it) } },
+                            onTapSync = { lineTimeMs, positionMs -> syncKey?.let { MusicLyricSync.tapSync(it, lineTimeMs, positionMs) } },
+                            visible = lyricsOn,
+                            showSync = false,
+                            tapState = lyricTap,
+                        )
+                    }
+                    // With a video: the picture as large as the column's width allows, the lyrics in the room left under it.
+                    if (realVideo) VideoAndLyrics(lyricsOn, lyricsPane) else lyricsPane(Modifier.weight(1f).fillMaxWidth())
                 }
             }
         }
@@ -584,6 +613,18 @@ private fun MusicNowPlayingScreen(
             },
             onFullscreen = { MusicPlayback.setVideoView(MusicVideoView.Fullscreen) },
             modifier = Modifier.align(Alignment.TopStart),
+            // fork:stage - the lyric sync controls, on the Stage and under a video alike, while synced lyrics are shown.
+            syncPill = ((shownLyrics as? LyricsUi.Ready)?.lyrics as? Lyrics.Synced)?.takeIf { lyricsOn }?.let { synced ->
+                {
+                    var tapping by lyricTap
+                    LyricSyncPill(
+                        syncState, tapping, { tapping = !tapping },
+                        { delta -> syncKey?.let { MusicLyricSync.nudge(it, delta) } },
+                        { syncKey?.let { MusicLyricSync.reset(it) } },
+                        note = synced.sourceNote(),
+                    )
+                }
+            },
         )
         state.notice?.let { note ->
             Text(
@@ -614,6 +655,8 @@ private fun StageTopBar(
     onCycleLyricStyle: () -> Unit = {},
     lyricsOn: Boolean = true,
     onToggleLyrics: () -> Unit = {},
+    /** The lyric sync pill, left of the Stage / Video switch; null while there are no synced lyrics. */
+    syncPill: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -637,6 +680,8 @@ private fun StageTopBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        // The sync pill sits close beside the switch (4 dp, where the bar's other items are 8 dp apart).
+        syncPill?.let { pill -> Box(Modifier.padding(end = 0.dp).offset(x = 4.dp)) { pill() } }
         MusicSegmented(
             options = listOf(StageView.Stage to "Stage", StageView.Video to "Video"),
             selected = view,
@@ -680,22 +725,24 @@ private val StageLinkStyle = 16.sp
 
 /** The plain separators and year beside the links in the line under the title. */
 @Composable
-private fun StageLinkText(text: String) {
-    Text(text, color = Color.White.copy(alpha = 0.8f), fontSize = StageLinkStyle)
+private fun StageLinkText(text: String, dim: Boolean = false) {
+    Text(text, color = Color.White.copy(alpha = if (dim) 0.6f else 0.8f), fontSize = StageLinkStyle, maxLines = 1, softWrap = false)
 }
 
 /** A name in the line under the title that opens its page; underlined on hover would need more, so it is brighter and focusable. */
 @Composable
-private fun StageLink(text: String, enabled: Boolean, onClick: () -> Unit) {
+private fun StageLink(text: String, enabled: Boolean, modifier: Modifier = Modifier, dim: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(6.dp)
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     Text(
         text,
-        color = Color.White.copy(alpha = if (enabled && hovered) 1f else 0.8f),
+        color = Color.White.copy(alpha = if (enabled && hovered) 1f else if (dim) 0.6f else 0.8f),
         fontSize = StageLinkStyle,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         textDecoration = if (enabled && hovered) androidx.compose.ui.text.style.TextDecoration.Underline else null,
-        modifier = Modifier
+        modifier = modifier
             .clip(shape)
             .then(
                 if (enabled) Modifier.hoverable(source).musicKeyFocusRing(shape).clickable(interactionSource = source, indication = null, onClick = onClick)
@@ -869,9 +916,14 @@ private fun LyricsPane(
     centredSync: Boolean = false,
     /** fork:stage - the Options menu's lyrics switch: off shows nothing here. */
     visible: Boolean = true,
+    /** fork:stage - false under a video: the sync strip is drawn at the top right instead, and no room is kept for it here. */
+    showSync: Boolean = true,
+    /** Tap to sync, shared with a sync strip drawn elsewhere ([showSync] false); null keeps it here. */
+    tapState: androidx.compose.runtime.MutableState<Boolean>? = null,
 ) {
     // Tap to sync: the next line tapped is the one being heard, not a seek.
-    var tapping by remember { mutableStateOf(false) }
+    val ownTap = remember { mutableStateOf(false) }
+    var tapping by (tapState ?: ownTap)
     if (!visible) {
         Box(modifier)
         return
@@ -916,14 +968,14 @@ private fun LyricsPane(
                     }
                     when (style) {
                         LyricStyle.Calm -> PosterLyrics(lyrics.lines, positionMs, playing, reduced, tapping, onSeek, onTap)
-                        LyricStyle.Loud -> LoudLyrics(lyrics.lines, positionMs, playing, reduced, tapping, onSeek, onTap)
+                        LyricStyle.Loud -> LoudLyrics(lyrics.lines, positionMs, playing, reduced, tapping, onSeek, onTap, stripBandDp = if (showSync) LOUD_STRIP_BAND_DP else 0f)
                         // The list stops above the source note and sync buttons at the pane's foot and fades out into that edge,
                         // so the last visible line is never printed over them.
-                        LyricStyle.Scroll -> Box(Modifier.fillMaxSize().padding(bottom = SCROLL_SYNC_BAND).fadeBottomEdge(SCROLL_FADE)) {
+                        LyricStyle.Scroll -> Box(Modifier.fillMaxSize().padding(bottom = if (showSync) SCROLL_SYNC_BAND else 0.dp).fadeBottomEdge(if (showSync) SCROLL_FADE else SCROLL_FADE / 2)) {
                             SyncedLyrics(lyrics.lines, positionMs, playing, onSeek, reduced, tapping = tapping, onTapLine = onTap)
                         }
                     }
-                    LyricSyncStrip(
+                    if (showSync) LyricSyncStrip(
                         syncState, tapping, { tapping = !tapping }, onNudge, onResetSync,
                         // Down at the pane's foot, apart from the lines, so it does not read as one of them. On the left, under
                         // where the lines start: the right-hand corner is the artist's cut-out and logo, which swallowed it.
@@ -996,6 +1048,64 @@ private fun LyricSyncStrip(
     }
 }
 
+/**
+ * fork:stage - the lyric sync controls as a glass pill in the top bar, the same height and glass as the Stage / Video switch
+ * beside it. What the timing is doing (the offset, "Syncing…", the source) hangs centred under the pill, outside the bar's
+ * layout, so it never moves the bar.
+ */
+@Composable
+private fun LyricSyncPill(
+    state: LyricSyncState,
+    tapping: Boolean,
+    onToggleTap: () -> Unit,
+    onNudge: (Long) -> Unit,
+    onReset: () -> Unit,
+    note: String? = null,
+) {
+    val offset = state.offsetMs()
+    val label = when {
+        tapping -> "Click the line being sung"
+        state is LyricSyncState.Checking -> "Syncing\u2026"
+        state is LyricSyncState.Unsure -> "Couldn't auto-sync"
+        offset != 0L -> formatLyricOffset(offset)
+        else -> note
+    }
+    Box {
+        Row(
+            Modifier.height(SYNC_PILL_HEIGHT).musicGlass(RoundedCornerShape(percent = 50)).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SyncIcon(
+                if (tapping) Icons.Rounded.Close else Icons.Rounded.Sync,
+                if (tapping) "Cancel" else "Sync to a line: click the line being sung",
+                active = tapping,
+                onClick = onToggleTap,
+            )
+            SyncIcon(Icons.Rounded.FastRewind, "Lyrics 0.5 s earlier") { onNudge(-LYRIC_NUDGE_MS) }
+            SyncIcon(Icons.Rounded.FastForward, "Lyrics 0.5 s later") { onNudge(LYRIC_NUDGE_MS) }
+            if (offset != 0L) SyncIcon(Icons.Rounded.RestartAlt, "Reset the lyric timing", onClick = onReset)
+        }
+        if (!label.isNullOrEmpty()) {
+            Text(
+                label,
+                color = Color.White.copy(alpha = if (tapping) 0.9f else 0.65f),
+                fontSize = 12.sp,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.align(Alignment.BottomCenter).layout { measurable, _ ->
+                    // Measured at its own width and placed centred under the pill, taking no room: the box stays the
+                    // pill's size, so the pill sits right beside the Stage / Video switch.
+                    val p = measurable.measure(androidx.compose.ui.unit.Constraints())
+                    layout(0, 0) { p.place(-p.width / 2, 4.dp.roundToPx()) }
+                },
+            )
+        }
+    }
+}
+
+/** The Stage / Video switch's own height (its text and padding), so the sync pill sits level with it. */
+private val SYNC_PILL_HEIGHT = 36.dp
+
 @Composable
 private fun Message(text: String) {
     Text(text, color = Color.White.copy(alpha = 0.6f), fontSize = 22.sp, fontWeight = FontWeight.Medium)
@@ -1036,11 +1146,18 @@ private fun SyncedLyrics(
     val chorus = remember(lines) { chorusLineIndices(lines) }
     val listState = rememberLazyListState()
     // Keep the sung line a third of the way down: far enough from the top to see what is coming.
+    val shortPanePx = with(LocalDensity.current) { SHORT_LYRIC_PANE.roundToPx() }
     LaunchedEffect(active, lines) {
         if (active >= 0) {
-            val height = listState.layoutInfo.viewportSize.height
-            if (reduced) listState.scrollToItem(active, scrollOffset = -(height / 3))
-            else listState.animateScrollToItem(active, scrollOffset = -(height / 3))
+            val info = listState.layoutInfo
+            val height = info.viewportSize.height
+            // A tall pane (the Stage) keeps its look: the line under the list's top padding, plus a third. A short one
+            // (under a video) gets its top padding taken back out, so the sung line sits about a third of the way down
+            // rather than near the foot.
+            val short = height in 1 until shortPanePx
+            val offset = if (short) info.beforeContentPadding - (height * 0.3f).toInt() else -(height / 3)
+            if (reduced) listState.scrollToItem(active, scrollOffset = offset)
+            else listState.animateScrollToItem(active, scrollOffset = offset)
         }
     }
     // fork:stage - centred, and each line set as large as fits the pane in two rows (32 sp down to 22 sp); only a line that
@@ -1059,7 +1176,7 @@ private fun SyncedLyrics(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 220.dp),
+            contentPadding = PaddingValues(vertical = minOf(220.dp, maxHeight / 2)),
         ) {
             itemsIndexed(lines) { index, line ->
                 val target = when {
@@ -1130,6 +1247,9 @@ private fun SyncedLyrics(
     }
 }
 
+/** A lyric pane shorter than this is the strip under a video: the sung line is placed for a short pane. */
+private val SHORT_LYRIC_PANE = 480.dp
+
 /** Ideal and smallest size of a line in the scrolling list; each line is fitted between them (two rows at most). */
 private const val SCROLL_LYRIC_SP = 32f
 private const val SCROLL_LYRIC_MIN_SP = 22f
@@ -1143,10 +1263,10 @@ private const val WIDGET_IDLE_MS = 6_000L
  * ([MusicPlayback.inlineVideoFrame]); the player moves its video surface onto it.
  */
 @Composable
-private fun ColumnScope.InlineVideoSlot() {
+private fun InlineVideoSlot(modifier: Modifier) {
     // With the player's own bezel over the picture the rim drawn here would show through it.
     val bezel by MusicPlayback.inlineBezel.collectAsStateWithLifecycle()
-    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+    BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         // Room is kept all round for the glass rim that frames the picture (see below).
         val width = minOf(maxWidth - VIDEO_RIM * 2, (maxHeight - VIDEO_RIM * 2) * (16f / 9f)).coerceAtLeast(1.dp)
         Box(
@@ -1200,6 +1320,33 @@ private val VIDEO_RIM = 9.dp
 
 /** The lyric strip under a video: four line slots and the sync controls. */
 private val COMPACT_LYRICS_HEIGHT = 284.dp
+
+/**
+ * The middle column under a video: the picture as large as the column's width allows (16:9 with its rim), but never so tall
+ * that the lyrics under it get less than [MIN_VIDEO_LYRICS]; with the lyrics off the picture has the whole column. The
+ * lyrics, in the Stage's own design, take whatever is left.
+ */
+@Composable
+private fun ColumnScope.VideoAndLyrics(lyricsOn: Boolean, lyrics: @Composable (Modifier) -> Unit) {
+    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+        val gap = 24.dp
+        // The sync strip is at the top right while a video plays (MusicNowPlayingScreen), so no band is kept for it here.
+        val syncBand = 0.dp
+        val fullWidth = (maxWidth - VIDEO_RIM * 2) * (9f / 16f) + VIDEO_RIM * 2
+        val videoHeight = if (!lyricsOn) {
+            maxHeight
+        } else {
+            minOf(fullWidth, (maxHeight - MIN_VIDEO_LYRICS - gap - syncBand).coerceAtLeast(maxHeight * 0.4f))
+        }
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            InlineVideoSlot(Modifier.height(videoHeight))
+            if (lyricsOn) lyrics(Modifier.weight(1f).fillMaxWidth().padding(top = gap, bottom = syncBand))
+        }
+    }
+}
+
+/** The least height the lyrics keep under a video. */
+private val MIN_VIDEO_LYRICS = 280.dp
 
 /**
  * Four lines around the sung one: the line before, the sung line (lit, up to two lines tall), the next two. Each slot

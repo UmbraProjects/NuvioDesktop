@@ -1779,11 +1779,6 @@ private fun MainAppContent(
         if (tab == AppScreenTab.Discover && !discoverTabVisible) return
         if (tab == AppScreenTab.LiveTv && !liveTvTabVisible) return
         if (tab == AppScreenTab.YouTube && !youTubeTabVisible) return // fork:youtube-mode
-        // fork:music-home - with the music home on, Search on the Music tab goes to the home's own search line.
-        if (tab == AppScreenTab.Search && selectedTab == AppScreenTab.Music && com.nuvio.app.features.music.MusicTabState.homeOwnsSearch()) {
-            com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
-            return
-        }
         // fork:navbar-search - on Music, YouTube and Live TV, Search searches that tab: the bar's box opens over it.
         if (tab == AppScreenTab.Search && barSearchScopeFor(selectedTab) != BarSearchScope.Media) {
             searchOverlayActive = true
@@ -2076,14 +2071,6 @@ private fun MainAppContent(
     LaunchedEffect(navController) {
         AppShortcutBridge.events.collect { action ->
             if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) return@collect
-            // fork:music-home - with the music home on, the search key on the Music tab goes to the home's own search line.
-            if (action == AppShortcutAction.OpenSearch && selectedTab == AppScreenTab.Music &&
-                navController.currentDestination?.hasRoute<TabsRoute>() == true &&
-                com.nuvio.app.features.music.MusicTabState.homeOwnsSearch()
-            ) {
-                com.nuvio.app.features.music.MusicTopBarSearch.requestFocus()
-                return@collect
-            }
             // fork:navbar-search - on Music, YouTube and Live TV the search key opens the bar's box, which searches the tab.
             if (action == AppShortcutAction.OpenSearch && barSearchScopeFor(selectedTab) != BarSearchScope.Media &&
                 navController.currentDestination?.hasRoute<TabsRoute>() == true

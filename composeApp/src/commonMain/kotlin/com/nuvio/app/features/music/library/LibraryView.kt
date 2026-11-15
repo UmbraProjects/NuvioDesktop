@@ -26,9 +26,9 @@ internal enum class LibraryView(val label: String, val icon: ImageVector, val su
     Playlists("Playlists", Icons.Rounded.QueueMusic, "Your playlists"),
 }
 
-/** The views switched on, in header order; never empty (with every one hidden, Crates still shows). */
+/** The views switched on, in header order; never empty (with every one hidden, Shelf still shows). */
 internal fun MusicLibrarySettings.visibleLibraryViews(): List<LibraryView> =
-    LibraryView.entries.filter { it.name !in hiddenLibraryViews }.ifEmpty { listOf(LibraryView.Crates) } // fork: the three-panel browser is this fork's Shelf
+    LibraryView.entries.filter { it.name !in hiddenLibraryViews }.ifEmpty { listOf(LibraryView.Shelf) }
 
 /** [current] if it is still switched on, else the first view that is. */
 internal fun MusicLibrarySettings.shownLibraryView(current: LibraryView): LibraryView =

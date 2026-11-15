@@ -151,9 +151,6 @@ internal object MusicTabState {
      */
     var submitted by mutableStateOf("")
 
-    /** fork:music-home - true while the music home is the Music tab's first screen: it has its own search line. */
-    fun homeOwnsSearch(): Boolean = MusicLibraryRepository.state.value.settings.musicHome
-
     /** Puts [text] in the box and searches it now. */
     fun search(text: String) {
         typed = text
@@ -278,22 +275,6 @@ fun MusicTabScreen(
             onRequest = { ladder = it },
             modifier = modifier,
             topChromePadding = if (MusicTabState.barHosted) (topChromePadding - BAR_HOSTED_TRIM).coerceAtLeast(0.dp) else topChromePadding,
-        )
-        return
-    }
-
-    // fork:music-home - the quick-play first screen, when chosen in Music settings (upstream removed it on Nov 11 2026;
-    // this fork keeps it). It has its own search line and runs its own searches, so with it on the app bar's Search
-    // goes to that line (App.kt) and upstream's rows search below is not used. Ladders still open over it (above).
-    if (MusicLibraryRepository.state.collectAsState().value.settings.musicHome) {
-        com.nuvio.app.features.music.home.MusicHomeScreen(
-            onAlbumClick = onAlbumClick,
-            onArtistClick = onArtistClick,
-            onPlaylistClick = onPlaylistClick,
-            onOpenLadder = { ladder = it },
-            modifier = modifier,
-            topChromePadding = topChromePadding,
-            catalog = catalog,
         )
         return
     }

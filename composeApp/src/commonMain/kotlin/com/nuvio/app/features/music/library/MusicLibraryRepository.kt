@@ -22,9 +22,6 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** fork: the Library views that start switched off here (names of [LibraryView]); Settings > Music turns them on. */
-internal val FORK_HIDDEN_LIBRARY_VIEWS: Set<String> = setOf("Shelf", "Constellation", "Eras")
-
 /** Keys for the artwork sources that want one. Both are optional: without them the library still fills from the other sources. */
 @kotlinx.serialization.Serializable
 data class MusicLibrarySettings(
@@ -76,23 +73,19 @@ data class MusicLibrarySettings(
     val lrcMuxLyrics: Boolean = false,
     /** Word-by-word lyrics from LyricsPlus, a third-party service that relays Apple Music's lyrics. Off until chosen. */
     val lyricsPlusLyrics: Boolean = false,
-    /** fork:lenses - the redesigned album page (header cover, lens tabs, mirrored side panels). Off until chosen. (Upstream made it the only page on Nov 12 2026; this fork keeps its own pages and the switch.) */
+    /** fork:lenses - the redesigned album page (header cover, lens tabs, mirrored side panels). Off until chosen. */
+    /** No longer read: the lens album page is the only one (Nov 12 2026). Kept so saved settings still load. */
     val albumLenses: Boolean = false,
-    /** fork:artist-stage - the redesigned artist page (photo hero, then three panels with lens tabs). Off until chosen. (Still read here, as above.) */
+    /** fork:artist-stage - the redesigned artist page (photo hero, then three panels with lens tabs). Off until chosen. */
+    /** No longer read: the new artist page is the only one (Nov 12 2026). Kept so saved settings still load. */
     val artistStage: Boolean = false,
-    /** fork:music-home - the quick-play first screen (search line, letter strip, three result panels). Off until chosen. Upstream removed it (Nov 11 2026); kept in this fork. */
-    val musicHome: Boolean = false,
-    /**
-     * The Library views switched off (by [LibraryView] name). fork: the classic Shelf, the Constellation and Eras came
-     * back from upstream on Nov 13 2026; they were retired here on Nov 7, so they start switched off (upstream: all on).
-     */
-    val hiddenLibraryViews: Set<String> = FORK_HIDDEN_LIBRARY_VIEWS,
+    /** The Library views switched off (by [LibraryView] name). Empty shows them all. */
+    val hiddenLibraryViews: Set<String> = emptySet(),
     /**
      * Album notes and facts: the sleeve notes on the Stage, song stories, trivia, "Start here", the In brief card and the
-     * background facts filler. With it off none of them is looked up or shown. fork: on by default (upstream: off), so
-     * the notes and facts this fork already shows do not vanish after the merge.
+     * background facts filler. Off by default: with it off none of them is looked up or shown.
      */
-    val albumNotes: Boolean = true,
+    val albumNotes: Boolean = false,
     /** The Stage's side box (the liner notes or the visualiser). Off removes the right-hand column (and the artist cut-out): the video and lyrics widen into it. */
     val stageBoxShown: Boolean = true,
     /** The artist page's Singles tab: leave out singles whose song is also on one of the artist's albums or EPs. */
