@@ -118,30 +118,46 @@ internal fun IptvTriageScreen(
     onClose: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    // fork:live-tv-reminder-banner - no reminder banner over the questions; one that comes up waits until they close.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val release = IptvReminderEngine.hold()
+        onDispose { release() }
+    }
     val saved = settings.triage[playlist.id]
     var step by remember { mutableIntStateOf(0) }
     var regions by remember { mutableStateOf(saved?.regions ?: emptySet()) }
     var kinds by remember { mutableStateOf(saved?.kinds ?: IptvChannelKind.DEFAULT_ON.mapTo(HashSet()) { it.name }) }
+    // fork:live-tv-triage - languages: the chosen countries' own until the question is answered.
+    var languages by remember { mutableStateOf(saved?.languages.orEmpty()) }
+    var languagesTouched by remember { mutableStateOf(saved?.languages?.isNotEmpty() == true) }
     // Starred in the third question, by the channel's first copy; null until something is changed there.
     var picked by remember { mutableStateOf<Set<Int>?>(null) }
 
     val regionOptions = remember(content, categoryRegions) { IptvTriageRules.regionOptions(content, categoryRegions) }
+    val languageOptions = remember(content, categoryRegions, regions) { IptvTriageRules.languageOptions(content, categoryRegions, regions) }
+    val liveLanguages = remember(languages, languagesTouched, regions, languageOptions) {
+        (if (languagesTouched) languages else IptvTriageRules.defaultLanguages(regions)).intersect(languageOptions.mapTo(HashSet()) { it.id })
+    }
     val kindOptions = remember(content, categoryRegions, regions) { IptvTriageRules.kindOptions(content, categoryRegions, regions) }
     // A kind ticked earlier that the chosen countries do not have counts for nothing.
     val liveKinds = remember(kinds, kindOptions) { kinds.intersect(kindOptions.mapTo(HashSet()) { it.id }) }
-    val kept = remember(content, categoryRegions, regions, liveKinds) {
-        IptvTriageRules.keptCategories(content, IptvTriage(regions, liveKinds), categoryRegions)
+    val kept = remember(content, categoryRegions, regions, liveKinds, liveLanguages) {
+        IptvTriageRules.keptCategories(content, IptvTriage(regions, liveKinds, liveLanguages), categoryRegions)
     }
     val total = content.channels.size
-    val left = if (step == 0) regionOptions.filter { it.id in regions }.sumOf { it.channels } else IptvTriageRules.channelCount(content, kept)
+    val left = when (step) {
+        0 -> regionOptions.filter { it.id in regions }.sumOf { it.channels }
+        1 -> languageOptions.filter { it.id in liveLanguages }.sumOf { it.channels }
+        else -> IptvTriageRules.channelCount(content, kept)
+    }
 
-    // Only worked out for the third question: folding thousands of channels on every tick of the first two would lag.
-    val candidates = remember(step == 2, kept, settings.plays, settings.favourites) {
-        if (step != 2) {
+    // Only worked out for the last question: folding thousands of channels on every tick of the others would lag.
+    val candidates = remember(step == 3, kept, settings.plays, settings.favourites) {
+        if (step != 3) {
             emptyList()
         } else {
             IptvTriageRules.firstTenCandidates(
-                channels = IptvChannelMerge.merge(content.channels.filter { it.categoryId in kept }) { categoryRegions[it.categoryId] },
+                channels = IptvChannelMerge.merge(content.channels.filter { kept.keeps(it) }) { categoryRegions[it.categoryId] },
                 refOf = { IptvRepository.channelRef(playlist.id, it.key) },
                 plays = settings.plays.map { it.ref },
                 favourites = settings.favourites,
@@ -158,7 +174,10 @@ internal fun IptvTriageScreen(
         0 -> regionOptions.map { option ->
             TriageTile(option.id, iptvRegionName(option.id), count(option.channels), option.id.takeIf { it != IptvTriageRules.NO_REGION }, option.id in regions)
         }
-        1 -> kindOptions.map { option ->
+        1 -> languageOptions.map { option ->
+            TriageTile(option.id, IptvLanguages.label(option.id), count(option.channels), null, option.id in liveLanguages)
+        }
+        2 -> kindOptions.map { option ->
             TriageTile(option.id, IptvChannelKind.byName(option.id)?.label ?: option.id, count(option.channels), null, option.id in liveKinds)
         }
         else -> candidates.map { channel ->
@@ -169,14 +188,18 @@ internal fun IptvTriageScreen(
     // As many columns as fit, so a narrow window gets fewer, wider tiles instead of cut-off names.
     var gridWidth by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
-    val mostColumns = if (step == 2) 5 else 3
-    val narrowestTile = if (step == 2) 150.dp else 180.dp
+    val mostColumns = if (step == 3) 5 else 3
+    val narrowestTile = if (step == 3) 150.dp else 180.dp
     val columns = if (gridWidth == 0.dp) mostColumns else (gridWidth / narrowestTile).toInt().coerceIn(1, mostColumns)
 
     fun toggle(tile: TriageTile) {
         when (step) {
             0 -> regions = if (tile.id in regions) regions - tile.id else regions + tile.id
-            1 -> kinds = if (tile.id in liveKinds) liveKinds - tile.id else liveKinds + tile.id
+            1 -> {
+                languages = if (tile.id in liveLanguages) liveLanguages - tile.id else liveLanguages + tile.id
+                languagesTouched = true
+            }
+            2 -> kinds = if (tile.id in liveKinds) liveKinds - tile.id else liveKinds + tile.id
             else -> {
                 val uid = tile.id.toIntOrNull() ?: return
                 // Already full: a channel can be taken off, not added.
@@ -189,7 +212,7 @@ internal fun IptvTriageScreen(
     val latestToggle by rememberUpdatedState<(String) -> Unit> { id -> tiles.firstOrNull { it.id == id }?.let { toggle(it) } }
 
     fun finish() {
-        IptvRepository.setTriage(playlist.id, IptvTriage(regions, liveKinds))
+        IptvRepository.setTriage(playlist.id, IptvTriage(regions, liveKinds, liveLanguages))
         candidates.forEach { channel ->
             val uid = channel.primary.uid
             if ((uid in starredBefore) != (uid in chosen)) IptvRepository.toggleFavourite(playlist.id, channel)
@@ -212,13 +235,17 @@ internal fun IptvTriageScreen(
                     },
                 )
             }
-            add(TriageButton("Next: kinds", enabled = regions.isNotEmpty(), accent = true) { step = 1 })
+            add(TriageButton("Next: languages", enabled = regions.isNotEmpty(), accent = true) { step = 1 })
         }
         1 -> listOf(
             TriageButton("Back") { step = 0 },
-            TriageButton("Next: your first ten", enabled = kept.isNotEmpty(), accent = true) { step = 2 },
+            TriageButton("Next: kinds", enabled = liveLanguages.isNotEmpty(), accent = true) { step = 2 },
         )
-        else -> listOf(TriageButton("Back") { step = 1 }, TriageButton("Done", accent = true) { finish() })
+        2 -> listOf(
+            TriageButton("Back") { step = 1 },
+            TriageButton("Next: your first ten", enabled = kept.isNotEmpty(), accent = true) { step = 3 },
+        )
+        else -> listOf(TriageButton("Back") { step = 2 }, TriageButton("Done", accent = true) { finish() })
     }
     // Clicks and Enter go through the buttons of the latest composition. A button view that Compose did not redraw
     // would otherwise keep an action from before the last tick (Done once saved the first ten as they stood when the
@@ -279,13 +306,15 @@ internal fun IptvTriageScreen(
 
     val question = when (step) {
         0 -> "Which countries do you watch?"
-        1 -> "Which of these would you ever watch?"
+        1 -> "Which languages do you watch in?"
+        2 -> "Which of these would you ever watch?"
         else -> "Your first ten"
     }
     val under = when (step) {
-        0 -> "Question 1 of 3. Anything left out is still there in search."
-        1 -> "Question 2 of 3. Anything left out is still there in search."
-        else -> "Question 3 of 3. Star up to ten to start your favourites, or skip it with Done."
+        0 -> "Question 1 of 4. Anything left out is still there in search."
+        1 -> "Question 2 of 4. Channel by channel: Univision goes even from a US category."
+        2 -> "Question 3 of 4. Anything left out is still there in search."
+        else -> "Question 4 of 4. Star up to ten to start your favourites, or skip it with Done."
     }
 
     Column(
@@ -329,19 +358,23 @@ internal fun IptvTriageScreen(
             TriagePanel("So far", null, Modifier.width(side).fillMaxHeight()) {
                 val regionNames = regionOptions.filter { it.id in regions }.map { iptvRegionName(it.id) }
                 val kindNames = kindOptions.filter { it.id in liveKinds }.map { IptvChannelKind.byName(it.id)?.label ?: it.id }
+                val languageNames = languageOptions.filter { it.id in liveLanguages }.map { IptvLanguages.label(it.id) }
                 TriageStepLine("Countries", listed(regionNames), current = step == 0, done = step > 0)
-                TriageStepLine("Kinds", if (step == 0) "Next" else listed(kindNames), current = step == 1, done = step > 1)
-                TriageStepLine("Your first ten", if (step < 2) "Last" else "${chosen.size} starred", current = step == 2, done = false)
+                TriageStepLine("Languages", if (step == 0) "Next" else listed(languageNames), current = step == 1, done = step > 1)
+                TriageStepLine("Kinds", if (step < 2) "Then" else listed(kindNames), current = step == 2, done = step > 2)
+                TriageStepLine("Your first ten", if (step < 3) "Last" else "${chosen.size} starred", current = step == 3, done = false)
             }
             TriagePanel(
                 title = when (step) {
                     0 -> "Countries"
-                    1 -> "Kinds of channel"
+                    1 -> "Languages"
+                    2 -> "Kinds of channel"
                     else -> "Channels"
                 },
                 note = when (step) {
                     0 -> "pick any, with the channels in each"
-                    1 -> "pick any, counted in your countries"
+                    1 -> "pick any, counted channel by channel in your countries"
+                    2 -> "pick any, counted in your countries"
                     else -> "${chosen.size} of $FIRST_TEN starred · the most watched first"
                 },
                 modifier = Modifier.weight(1f).fillMaxHeight(),
@@ -400,7 +433,8 @@ internal fun IptvTriageScreen(
                 Text(
                     text = when (step) {
                         0 -> "Tick the countries whose channels you watch. \"No country marked\" is everything the playlist files without one."
-                        1 -> "Copies of one channel (FHD, HD, SD) are still counted separately here."
+                        1 -> "Read from each channel's name, then its category's, then its country's language. \"Other or unknown\" is where nothing gives it away."
+                        2 -> "Copies of one channel (FHD, HD, SD) are still counted separately here."
                         else -> "These are what Live TV shows from now on: its sidebar, All channels and On now."
                     },
                     style = MaterialTheme.typography.bodySmall,

@@ -88,6 +88,12 @@ data class IptvSettings(
     val askAi: Boolean = false,
     /** fork:live-tv-taste - what was watched and finished, per programme title (see IptvTasteRules). */
     val titles: Map<String, IptvTitleStat> = emptyMap(),
+    /** fork:live-tv-views - the extra stages switched on in Settings (IptvStage names; see IptvViewRules.VIEWS). */
+    val views: Set<String> = emptySet(),
+    /** fork:live-tv-learn - the teams in what was watched, by name key (see IptvTeamRules). */
+    val teams: Map<String, IptvTeamStat> = emptyMap(),
+    /** fork:live-tv-learn - teams the viewer said no to following; Following does not ask about them again. */
+    val teamsDeclined: Set<String> = emptySet(),
     /** fork:live-tv-brakes - the honest tally, one entry per night (key: the night's number). */
     val tally: Map<String, IptvNight> = emptyMap(),
     /** fork:live-tv-brakes - the night the zap-budget card was last offered. */
@@ -353,6 +359,12 @@ object IptvRepository {
         mutate { it.copy(askAi = enabled) }
     }
 
+    /** fork:live-tv-views - one extra stage on or off. */
+    fun setView(stage: IptvStage, enabled: Boolean) {
+        ensureLoaded()
+        mutate { it.copy(views = if (enabled) it.views + stage.name else it.views - stage.name) }
+    }
+
     fun setBrakes(enabled: Boolean) {
         ensureLoaded()
         mutate { it.copy(brakes = enabled) }
@@ -368,13 +380,24 @@ object IptvRepository {
     fun noteWatch(entry: IptvEpgEntry, event: IptvWatchEvent, now: Long = System.currentTimeMillis()) {
         if (event == IptvWatchEvent.None) return
         ensureLoaded()
-        mutate { it.copy(titles = IptvTasteRules.note(it.titles, entry, event, now)) }
+        mutate {
+            it.copy(
+                titles = IptvTasteRules.note(it.titles, entry, event, now),
+                teams = IptvTeamRules.note(it.teams, entry, event, now),
+            )
+        }
+    }
+
+    /** fork:live-tv-learn - "Not interested" on a learned team: never offered again. */
+    fun declineTeam(key: String) {
+        ensureLoaded()
+        mutate { it.copy(teamsDeclined = it.teamsDeclined + key) }
     }
 
     /** fork:live-tv-taste - forget what was watched. */
     fun forgetWatched() {
         ensureLoaded()
-        mutate { it.copy(titles = emptyMap()) }
+        mutate { it.copy(titles = emptyMap(), teams = emptyMap(), teamsDeclined = emptySet()) }
     }
 
     fun brakeOffered(night: Long) {

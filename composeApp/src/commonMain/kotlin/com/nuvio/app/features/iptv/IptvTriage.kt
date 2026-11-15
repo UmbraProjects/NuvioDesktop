@@ -12,10 +12,29 @@ import kotlinx.serialization.Serializable
 
 /**
  * What a playlist's triage kept: [regions] are ISO country codes plus [IptvTriageRules.NO_REGION], [kinds] are
- * [IptvChannelKind] names. A category is shown when both its country and its kind are in.
+ * [IptvChannelKind] names. A category is shown when both its country and its kind are in. [languages] are
+ * [IptvLanguages] codes; a channel in another language is left out even inside a kept category (Univision in
+ * "US | Entertainment"). Empty means every language (a triage saved before the question existed).
  */
 @Serializable
-data class IptvTriage(val regions: Set<String> = emptySet(), val kinds: Set<String> = emptySet())
+data class IptvTriage(val regions: Set<String> = emptySet(), val kinds: Set<String> = emptySet(), val languages: Set<String> = emptySet())
+
+/**
+ * What a triage keeps: the categories (it is that set, so every page that asks "is this category in?" still works)
+ * and the channels inside them left out for their language, by channel key. Ask [keeps] about a channel.
+ */
+class IptvKept(val categories: Set<String>, val dropped: Set<String>) : Set<String> by categories {
+    override fun equals(other: Any?): Boolean = other is Set<*> && categories == other && (other !is IptvKept || other.dropped == dropped)
+    override fun hashCode(): Int = categories.hashCode()
+    override fun toString(): String = "IptvKept(${categories.size} categories, ${dropped.size} channels left out)"
+}
+
+/** Whether the triage [this] (null = no triage) keeps [channel]: its category is in and its language is not left out. */
+fun Set<String>?.keeps(channel: IptvChannel): Boolean =
+    this == null || (channel.categoryId in this && (this !is IptvKept || channel.key !in dropped))
+
+/** A merged channel is kept when any of its copies is. */
+fun Set<String>?.keeps(channel: IptvMergedChannel): Boolean = this == null || channel.sources.any { keeps(it) }
 
 /** What a provider category is for, read off its name. */
 enum class IptvChannelKind(val label: String) {
@@ -100,13 +119,44 @@ object IptvTriageRules {
         return IptvChannelKind.entries.mapNotNull { kind -> counts[kind]?.takeIf { it > 0 }?.let { Option(kind.name, it) } }
     }
 
-    /** The ids of the categories [triage] keeps. */
-    fun keptCategories(content: IptvPlaylistContent, triage: IptvTriage, categoryRegions: Map<String, String>): Set<String> =
-        content.categories.filter { regionOf(it, categoryRegions) in triage.regions && kindOf(it.name).name in triage.kinds }
-            .mapTo(HashSet()) { it.id }
+    /** The language of each channel in [categories], by channel key. */
+    private fun languagesIn(content: IptvPlaylistContent, categories: List<IptvCategory>, categoryRegions: Map<String, String>): Map<String, String> {
+        val out = HashMap<String, String>()
+        categories.forEach { category ->
+            val region = categoryRegions[category.id]
+            content.byCategory[category.id].orEmpty().forEach { channel -> out[channel.key] = IptvLanguages.ofChannel(channel.name, category.name, region) }
+        }
+        return out
+    }
 
-    /** How many channels sit in [categories]. */
-    fun channelCount(content: IptvPlaylistContent, categories: Set<String>): Int = categories.sumOf { content.byCategory[it]?.size ?: 0 }
+    /** The languages question: every language in the chosen [regions], with its channels, English first. */
+    fun languageOptions(content: IptvPlaylistContent, categoryRegions: Map<String, String>, regions: Set<String>): List<Option> {
+        val inRegions = content.categories.filter { regionOf(it, categoryRegions) in regions }
+        val counts = languagesIn(content, inRegions, categoryRegions).values.groupingBy { it }.eachCount()
+        val order = IptvLanguages.LABELS.keys.toList()
+        return counts.map { (code, n) -> Option(code, n) }
+            .sortedWith(compareBy<Option> { if (it.id == IptvLanguages.OTHER) 1 else 0 }.thenByDescending { it.channels }.thenBy { order.indexOf(it.id) })
+    }
+
+    /** Ticked when the languages question is first asked: the chosen countries' own languages. */
+    fun defaultLanguages(regions: Set<String>): Set<String> = regions.mapNotNullTo(HashSet()) { IptvLanguages.ofCountry(it) }.ifEmpty { setOf("en") }
+
+    /**
+     * The categories [triage] keeps, with the channels in them left out for their language. A category whose every
+     * channel is left out goes too ("US | Latino" leaves the sidebar).
+     */
+    fun keptCategories(content: IptvPlaylistContent, triage: IptvTriage, categoryRegions: Map<String, String>): IptvKept {
+        val categories = content.categories.filter { regionOf(it, categoryRegions) in triage.regions && kindOf(it.name).name in triage.kinds }
+        if (triage.languages.isEmpty()) return IptvKept(categories.mapTo(HashSet()) { it.id }, emptySet())
+        val languages = languagesIn(content, categories, categoryRegions)
+        val dropped = languages.filterValues { it !in triage.languages }.keys.toHashSet()
+        val kept = categories.filter { category -> content.byCategory[category.id].orEmpty().any { it.key !in dropped } }
+        return IptvKept(kept.mapTo(HashSet()) { it.id }, dropped)
+    }
+
+    /** How many channels sit in [categories] (less those its triage leaves out for their language). */
+    fun channelCount(content: IptvPlaylistContent, categories: Set<String>): Int =
+        categories.sumOf { id -> content.byCategory[id].orEmpty().count { categories.keeps(it) } }
 
     /**
      * The channels offered for "your first ten": what is left after the questions, the ones already watched most

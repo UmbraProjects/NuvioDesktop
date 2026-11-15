@@ -306,7 +306,12 @@ fun IptvScreen(
             add(IptvSidebarItem("section:${IptvSection.RECENT}", recentLabel, section = IptvSection.RECENT))
             fun shown(categoryId: String) =
                 (keptCategories == null || categoryId in keptCategories) && (region == null || categoryRegions[categoryId] == region)
-            val allCount = if (merged != null) merged.count { shown(it.primary.categoryId) } else content?.channels?.count { shown(it.categoryId) }
+            // fork:live-tv-triage - counted without the channels left out for their language.
+            val allCount = if (merged != null) {
+                merged.count { shown(it.primary.categoryId) && keptCategories.keeps(it) }
+            } else {
+                content?.channels?.count { shown(it.categoryId) && keptCategories.keeps(it) }
+            }
             add(IptvSidebarItem("section:${IptvSection.ALL}", allLabel, count = allCount, section = IptvSection.ALL))
             content?.categories
                 ?.filter { (region == null || categoryRegions[it.id] == region) && (keptCategories == null || it.id in keptCategories) }
@@ -315,7 +320,7 @@ fun IptvScreen(
                         IptvSidebarItem(
                             key = "section:${category.id}",
                             label = if (category.id == IptvPlaylistContent.OTHER_CATEGORY) other else category.name,
-                            count = content.byCategory[category.id]?.size,
+                            count = content.byCategory[category.id]?.let { list -> if (keptCategories == null) list.size else list.count { keptCategories.keeps(it) } },
                             section = category.id,
                         ),
                     )
@@ -744,6 +749,7 @@ fun IptvScreen(
             topChromePadding = topChromePadding,
             onAllChannels = { stageOpen = false },
             onTriage = { triageOpen = true },
+            keptCategories = keptCategories,
         )
         return
     }
@@ -1002,7 +1008,14 @@ private fun channelsFor(
     val needle = filter.trim()
     val all = IptvGroups.channels(content, section, settings)
     // All channels shows what the triage kept, but a search there still reaches every channel.
-    val base = if (keptCategories != null && section == IptvSection.ALL && needle.isEmpty()) all.filter { it.categoryId in keptCategories } else all
+    // fork:live-tv-triage - a kept category opens without the channels its triage left out for their language.
+    val base = when {
+        keptCategories == null || needle.isNotEmpty() -> all
+        section == IptvSection.ALL -> all.filter { keptCategories.keeps(it) }
+        section == IptvSection.FAVOURITES || section == IptvSection.RECENT -> all
+        keptCategories is IptvKept -> all.filter { it.key !in keptCategories.dropped }
+        else -> all
+    }
     // Favourites and Recents are the viewer's own lists; only All is narrowed to the region (a
     // category already belongs to one).
     val regional = if (region != null && section == IptvSection.ALL) {

@@ -123,8 +123,20 @@ object IptvDecide {
         val wanted = normalise(follow)
         val seen = normalise(title)
         if (wanted.isEmpty() || seen.isEmpty()) return false
-        return seen == wanted || (wanted.length >= 4 && seen.contains(wanted))
+        if (seen == wanted || (wanted.length >= 4 && seen.contains(wanted))) return true
+        // fork:live-tv-learn - a name of two words or more by any spelling: "Manchester United" finds "Man Utd v
+        // Chelsea" and "Man United" finds "Manchester United v Spurs", word by word, each a short form of the other.
+        val followWords = teamWords(wanted)
+        if (followWords.size < 2) return false
+        val titleWords = teamWords(seen)
+        return (0..titleWords.size - followWords.size).any { at ->
+            followWords.indices.all { j -> sameWord(followWords[j], titleWords[at + j]) }
+        }
     }
+
+    private fun teamWords(text: String) = text.split(' ').filter { it.isNotBlank() }.map { if (it == "utd") "united" else it }
+
+    private fun sameWord(a: String, b: String) = a == b || (b.length >= 3 && a.startsWith(b)) || (a.length >= 3 && b.startsWith(a))
 
     fun isFollowed(follows: List<String>, title: String): Boolean = follows.any { matchesFollow(it, title) }
 

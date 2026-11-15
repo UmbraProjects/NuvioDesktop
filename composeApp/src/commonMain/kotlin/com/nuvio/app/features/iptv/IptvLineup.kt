@@ -34,7 +34,7 @@ object IptvLineupRules {
         keptCategories: Set<String>?,
         limit: Int = LIMIT,
     ): List<String> {
-        val allowed = visible(merged, never).filter { keptCategories == null || it.primary.categoryId in keptCategories }
+        val allowed = visible(merged, never).filter { keptCategories.keeps(it) }
         val watched = plays.groupingBy { it }.eachCount()
         val starred = favourites.toHashSet()
         fun playCount(channel: IptvMergedChannel) = channel.sources.sumOf { watched[refOf(it)] ?: 0 }

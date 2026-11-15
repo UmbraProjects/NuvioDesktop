@@ -49,6 +49,22 @@ class IptvEveningTest {
     }
 
     @Test
+    fun `swapping never empties the order: wider channels, then a gap jump, then the oldest swap comes back`() {
+        val own = listOf(p(1, "Mine", 0, 60))
+        val wide = listOf(p(9, "Kept Elsewhere", 0, 60))
+        val bed = now + 300 * minute
+        // Own channel swapped out: the triage's other channels fill the slot.
+        val one = setOf(IptvDecide.normalise("Mine"))
+        assertEquals("Kept Elsewhere", IptvRunningOrder.build(own, emptyList(), emptySet(), now, bed, one, wider = { wide }).first().entry.title)
+        // Both swapped out: the one swapped longest ago comes back rather than an empty list.
+        val both = linkedSetOf(IptvDecide.normalise("Mine"), IptvDecide.normalise("Kept Elsewhere"))
+        assertEquals("Mine", IptvRunningOrder.build(own, emptyList(), emptySet(), now, bed, both, wider = { wide }).first().entry.title)
+        // A gap in the guide does not end the evening: it jumps to the next thing that starts.
+        val gappy = listOf(p(1, "Early", 0, 60), p(2, "After A Gap", 120, 180))
+        assertEquals(listOf("Early", "After A Gap"), IptvRunningOrder.build(gappy, emptyList(), emptySet(), now, bed).map { it.entry.title })
+    }
+
+    @Test
     fun `no title twice and nothing after bedtime when there is no room`() {
         val guide = listOf(p(1, "Soap", 0, 30), p(2, "Soap", 30, 60))
         val order = IptvRunningOrder.build(guide, emptyList(), emptySet(), now, now + 45 * minute)

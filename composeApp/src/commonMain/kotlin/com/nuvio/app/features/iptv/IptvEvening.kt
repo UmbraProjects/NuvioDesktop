@@ -41,6 +41,10 @@ object IptvRunningOrder {
     /**
      * One evening, in order: from now to [bedMs], each slot the best programme starting within a quarter of an hour of
      * the last one's end. Whatever would run past bedtime is left out (it is for tomorrow, not trimmed).
+     *
+     * It never runs dry while there is anything left in the guide: when the viewer's own channels have nothing for a
+     * slot it looks at [wider] (every channel the triage kept); when swaps have used everything up, the title swapped
+     * out longest ago comes back; and when nothing starts within the quarter hour it jumps to the next thing that does.
      */
     fun build(
         guide: List<IptvWallProgramme>,
@@ -48,30 +52,46 @@ object IptvRunningOrder {
         usualKeys: Set<String>,
         now: Long,
         bedMs: Long,
-        /** fork:live-tv-stage - titles swapped out with "Swap one". */
+        /** fork:live-tv-stage - titles swapped out with "Swap one", oldest first. */
         exclude: Set<String> = emptySet(),
         taste: Map<String, IptvTitleStat> = emptyMap(),
+        /** Every channel the triage kept, read only when the viewer's own channels run out. */
+        wider: () -> List<IptvWallProgramme> = { emptyList() },
     ): List<IptvWallProgramme> {
-        val pool = guide.filter {
-            val length = (it.entry.endMs - it.entry.startMs) / MINUTE
-            IptvDecide.normalise(it.entry.title) !in exclude && length >= MIN_LENGTH_MIN && it.entry.endMs <= bedMs && it.entry.endMs > now
+        fun fits(p: IptvWallProgramme): Boolean {
+            val length = (p.entry.endMs - p.entry.startMs) / MINUTE
+            return length >= MIN_LENGTH_MIN && p.entry.endMs <= bedMs && p.entry.endMs > now
         }
+        val own = guide.filter(::fits)
+        val wide by lazy { wider().filter(::fits) }
+        val swappedAt = exclude.withIndex().associate { (i, title) -> title to i }
+        val byScore = compareByDescending<IptvWallProgramme> { score(it, follows, usualKeys, taste) }.thenBy { it.entry.startMs }
+
         val slots = ArrayList<IptvWallProgramme>()
         var cursor = now
         val seen = HashSet<String>()
         while (slots.size < MAX_SLOTS) {
             val first = slots.isEmpty()
-            val options = pool.filter { p ->
-                IptvDecide.normalise(p.entry.title) !in seen && if (first) {
-                    val left = (p.entry.endMs - maxOf(now, p.entry.startMs)) / MINUTE
-                    left >= MIN_LEFT_MIN && p.entry.startMs <= now + HOP_MS
-                } else {
-                    p.entry.startMs >= cursor && p.entry.startMs <= cursor + HOP_MS
-                }
+            fun fresh(p: IptvWallProgramme) = IptvDecide.normalise(p.entry.title) !in seen
+            fun allowed(p: IptvWallProgramme) = IptvDecide.normalise(p.entry.title) !in swappedAt
+            fun inWindow(p: IptvWallProgramme) = if (first) {
+                val left = (p.entry.endMs - maxOf(now, p.entry.startMs)) / MINUTE
+                left >= MIN_LEFT_MIN && p.entry.startMs <= now + HOP_MS
+            } else {
+                p.entry.startMs >= cursor && p.entry.startMs <= cursor + HOP_MS
             }
-            val pick = options.sortedWith(
-                compareByDescending<IptvWallProgramme> { score(it, follows, usualKeys, taste) }.thenBy { it.entry.startMs },
-            ).firstOrNull() ?: break
+            fun List<IptvWallProgramme>.best() = filter { fresh(it) && allowed(it) && inWindow(it) }.sortedWith(byScore).firstOrNull()
+            // Swapped out longest ago comes back first once nothing new is left for the slot.
+            fun List<IptvWallProgramme>.recycled() = filter { fresh(it) && !allowed(it) && inWindow(it) }
+                .sortedWith(compareBy<IptvWallProgramme> { swappedAt[IptvDecide.normalise(it.entry.title)] ?: 0 }.then(byScore))
+                .firstOrNull()
+            // Nothing in the quarter hour: the next thing to start, best of those within a quarter hour of it.
+            fun List<IptvWallProgramme>.later(): IptvWallProgramme? {
+                val after = filter { fresh(it) && allowed(it) && it.entry.startMs >= cursor }
+                val earliest = after.minOfOrNull { it.entry.startMs } ?: return null
+                return after.filter { it.entry.startMs <= earliest + HOP_MS }.sortedWith(byScore).firstOrNull()
+            }
+            val pick = own.best() ?: wide.best() ?: own.recycled() ?: wide.recycled() ?: own.later() ?: wide.later() ?: break
             slots.add(pick)
             seen.add(IptvDecide.normalise(pick.entry.title))
             cursor = pick.entry.endMs
@@ -346,5 +366,12 @@ object IptvProgrammeLine {
             else -> "starts ${clock(entry.startMs)} · ends ${clock(entry.endMs)}"
         }
         return "$channel · $when_" + if (over > 0) " · $over min over" else ""
+    }
+
+    /** fork:live-tv-sport-art - " · also on Sky Sports Main Event", or " · also on A and 2 more". */
+    fun alsoOn(channels: List<String>): String = when (channels.size) {
+        0 -> ""
+        1 -> " · also on ${channels[0]}"
+        else -> " · also on ${channels[0]} and ${channels.size - 1} more"
     }
 }

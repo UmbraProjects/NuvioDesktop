@@ -28,6 +28,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioModalDialog
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.iptv.IptvBrakeRules
+import com.nuvio.app.features.iptv.IptvStage
+import com.nuvio.app.features.iptv.IptvViewRules
 import com.nuvio.app.features.iptv.IptvWeedRules
 import com.nuvio.app.features.iptv.IptvDecide
 import com.nuvio.app.features.iptv.IptvPlaylist
@@ -263,6 +265,31 @@ internal fun LazyListScope.iptvSettingsContent(
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-brakes")),
                     onCheckedChange = IptvRepository::setBrakes,
                 )
+                // fork:live-tv-views - more ways to see everything, each a stage of its own.
+                IptvViewRules.VIEWS.forEach { view ->
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = "View: ${view.label}",
+                        description = when (view) {
+                            IptvStage.Map -> "Needs Stage. Everything on now as blocks by kind (Sport, Films, News...), the busiest " +
+                                "biggest; OK opens a block into what is on in it, Back zooms out again."
+                            IptvStage.Mosaic -> "Needs Stage. Everything on now as one mosaic: big tiles for what you are likeliest " +
+                                "to want (followed, watched to the end before, new), small for the rest."
+                            IptvStage.River -> "Needs Stage. The next three hours as lanes by kind, not by channel: pick a " +
+                                "programme and Nuvio picks the best channel showing it."
+                            IptvStage.Wall -> "Needs Stage. Real pictures from your channels, one still each every few minutes, " +
+                                "taken only while nothing plays. Needs ffmpeg installed (winget install ffmpeg); without it, programme art."
+                            IptvStage.Grid -> "Needs Stage. Tonight by kind and half-hour, darker where more starts; OK on a " +
+                                "cell lists what starts there."
+                            else -> "Needs Stage. One channel at a time, big, with the ones before and after peeking; up and down " +
+                                "flip, a typed number jumps."
+                        },
+                        checked = view.name in settings.views,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("iptv-view-${view.name.lowercase()}")),
+                        onCheckedChange = { IptvRepository.setView(view, it) },
+                    )
+                }
                 // fork:live-tv-departure
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSwitchRow(

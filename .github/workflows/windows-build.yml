@@ -67,7 +67,7 @@ jobs:
         run: |
           C:\msys64\usr\bin\bash.exe -lc "pacman -Sy --noconfirm"
           # gcc compiles the patched libquickjs.dll (buildWindowsQuickJs); mpv does not pull it in.
-          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils"
+          C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-mpv mingw-w64-ucrt-x86_64-ffmpeg mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils"
           if (-not (Test-Path C:\msys64\ucrt64\bin\libmpv-2.dll)) { throw "libmpv-2.dll missing after install" }
           if (-not (Test-Path C:\msys64\ucrt64\bin\gcc.exe)) { throw "gcc.exe missing after install" }
 
@@ -119,6 +119,11 @@ jobs:
           --tests "com.nuvio.app.features.iptv.IptvAskAiTest"
           --tests "com.nuvio.app.features.iptv.IptvOnDemandTest"
           --tests "com.nuvio.app.features.iptv.IptvOnDemandEpisodeTest"
+          --tests "com.nuvio.app.features.iptv.IptvRegionsTest"
+          --tests "com.nuvio.app.features.iptv.IptvLanguagesTest"
+          --tests "com.nuvio.app.features.iptv.IptvTeamsTest"
+          --tests "com.nuvio.app.features.iptv.IptvSportArtTest"
+          --tests "com.nuvio.app.features.iptv.IptvViewsTest"
           "-Pnuvio.innertubex=true"
           "-Pnuvio.webview2.dir=C:/libs/webview2"
           "-Pnuvio.windows.libmpv.runtimeDir=C:/msys64/ucrt64/bin"
@@ -218,6 +223,20 @@ jobs:
           if (-not $dll) { $dll = Get-ChildItem composeApp\build\compose\binaries -Recurse -Filter player_bridge.dll | Select-Object -First 1 }
           if (-not $dll) { throw "player_bridge.dll not found in distributable" }
           ./scripts/verify-windows-runtime.ps1 -AppDir $dll.Directory.FullName
+
+      # fork:live-tv-views - ffmpeg and ffprobe beside Nuvio.exe for Live TV's picture wall (and casting's remux). They run
+      # on the avcodec/avformat DLLs already bundled for mpv; started once from there with MSYS2 off the PATH to prove it.
+      # Not blocking: without them the wall shows programme art.
+      - name: Bundle ffmpeg
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem composeApp\build\compose\binaries -Recurse -Filter player_bridge.dll | Select-Object -First 1
+          if (-not $dll) { throw "player_bridge.dll not found in distributable" }
+          foreach ($exe in 'ffmpeg.exe', 'ffprobe.exe') { Copy-Item (Join-Path 'C:\msys64\ucrt64\bin' $exe) $dll.Directory.FullName -Force }
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike '*msys64*' }) -join ';'
+          & (Join-Path $dll.Directory.FullName 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw "ffmpeg.exe does not start from the app folder" }
 
       # fork:local-addons - Node 24, Redis 8 and pinned AIOStreams/AIOMetadata builds, run by Nuvio in the background when
       # Settings > Addons > "Run them inside Nuvio" is on. Built by scripts/local-addons/build-bundle.sh, cached by that

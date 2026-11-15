@@ -27,6 +27,13 @@ enum class IptvStage(val label: String) {
     Lineup("Your 40"),
     /** fork:live-tv-brakes - the honest tally; on the strip only with Brakes on. */
     Week("Your week"),
+    /** fork:live-tv-views - the extra ways to see everything, each on the strip only when switched on in Settings. */
+    Map("Map"),
+    Mosaic("For you now"),
+    River("River"),
+    Wall("Picture wall"),
+    Grid("Tonight grid"),
+    Dial("Dial"),
 }
 
 /** What the departure board can be narrowed to. */

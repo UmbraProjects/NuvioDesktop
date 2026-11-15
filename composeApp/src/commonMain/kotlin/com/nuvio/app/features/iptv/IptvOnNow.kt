@@ -110,13 +110,27 @@ object IptvOnNow {
         return titleYear.replace(text, "").trim() to year
     }
 
-    /** One programme per title: on now beats about to start, then the better copy of the channel. */
-    private fun dedupe(found: List<IptvWallProgramme>, now: Long): List<IptvWallProgramme> =
-        found.groupBy { filmQuery(it.entry.title).first.lowercase() }.values.map { same ->
+    /**
+     * Every copy of each programme, the best first: on now beats about to start, then the copy marked live
+     * (fork:live-tv-sport-art: "ᴸⁱᵛᵉ" and "(Live)" do not make another programme), then the better copy of the channel.
+     */
+    private fun copies(found: List<IptvWallProgramme>, now: Long): List<List<IptvWallProgramme>> =
+        found.groupBy { IptvSportTitle.sameKey(filmQuery(it.entry.title).first) }.values.map { same ->
             same.sortedWith(
                 compareByDescending<IptvWallProgramme> { it.onNow(now) }
+                    .thenByDescending { IptvSportTitle.markedLive(it.entry.title) }
                     .thenByDescending { IptvChannelMerge.rank(it.channel.primary.name) },
-            ).first()
+            )
+        }
+
+    /** One programme per title (see [copies]). */
+    private fun dedupe(found: List<IptvWallProgramme>, now: Long): List<IptvWallProgramme> = copies(found, now).map { it.first() }
+
+    /** fork:live-tv-sport-art - for each sport programme [sport] lists, the other channels showing it, by name. */
+    fun sportCopies(channels: List<IptvChannelNow>, now: Long): Map<IptvWallProgramme, List<String>> =
+        copies(gather(channels, now, ::isSport), now).associate { same ->
+            val best = same.first()
+            best to same.drop(1).map { it.channel.primary.name }.filter { it.isNotBlank() && it != best.channel.primary.name }.distinct()
         }
 
     private fun gather(channels: List<IptvChannelNow>, now: Long, wanted: (IptvEpgEntry, IptvChannelNow) -> Boolean): List<IptvWallProgramme> =
@@ -291,6 +305,8 @@ sealed interface IptvWallItem {
         val tag: String? = null,
         /** fork:live-tv-decide - minutes the programme runs over what was dialled (shown dimmed); 0 = fits. */
         val over: Int = 0,
+        /** fork:live-tv-sport-art - other channels showing the same programme, by name. */
+        val alsoOn: List<String> = emptyList(),
     ) : IptvWallItem {
         override val key: String get() = "programme:${programme.channel.primary.uid}:${programme.entry.startMs}:${tag.orEmpty()}"
     }
@@ -398,7 +414,11 @@ object IptvWall {
             .sortedWith(compareBy<LiveMatch> { if (it.phase == MatchPhase.Before) 1 else 0 }.thenBy { it.startEpochMs ?: Long.MAX_VALUE })
             .map { IptvWallItem.Match(it, IptvSportMatch.programmeFor(it, candidates, now)) }
         val taken = current.mapNotNullTo(HashSet()) { it.programme }
-        val sport = current + sportProgrammes.filter { it !in taken }.take(MAX_SPORT).map { IptvWallItem.Programme(it, film = false) }
+        // fork:live-tv-sport-art - a match's other copies are not listed again under it.
+        val takenKeys = taken.mapTo(HashSet()) { IptvSportTitle.sameKey(it.entry.title) }
+        val alsoOn = IptvOnNow.sportCopies(channels, now)
+        val sport = current + sportProgrammes.filter { it !in taken && IptvSportTitle.sameKey(it.entry.title) !in takenKeys }
+            .take(MAX_SPORT).map { IptvWallItem.Programme(it, film = false, alsoOn = alsoOn[it].orEmpty()) }
         val films = IptvOnNow.films(channels, now).take(MAX_FILMS).map { IptvWallItem.Programme(it, film = true) }
         val usualItems = usuals.map { IptvWallItem.Channel(it, byUid[it.primary.uid]?.current(now)) }
         return IptvWallModel(sport, films, usualItems, matchCount = current.size, soon = soon, sections = sections)

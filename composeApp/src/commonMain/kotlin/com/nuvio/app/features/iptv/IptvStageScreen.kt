@@ -37,6 +37,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.Dialpad
+import androidx.compose.material.icons.rounded.GridOn
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.PhotoLibrary
+import androidx.compose.material.icons.rounded.Timeline
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
@@ -98,6 +104,9 @@ import com.nuvio.app.core.ui.NuvioAsyncImage
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.NuvioToastController
+import com.nuvio.app.features.livescores.LiveScoreSettingsRepository
+import com.nuvio.app.features.livescores.LiveScoreTeams
+import com.nuvio.app.features.livescores.LiveTeam
 import com.nuvio.app.core.ui.navigationKey
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.core.ui.smoothBorder
@@ -144,6 +153,8 @@ internal class IptvStageModel(
     val followSuggestions: List<IptvWallProgramme>,
     /** fork:live-tv-taste - why each suggestion is there ("You keep watching", or null for "on your channels"). */
     val suggestionWhy: List<String?>,
+    /** fork:live-tv-learn - teams watched often enough that Following asks whether to follow them. */
+    val learnedTeams: List<IptvLearnedTeam> = emptyList(),
     /** fork:live-tv-taste - what was watched and finished, per title. */
     val taste: Map<String, IptvTitleStat>,
     val order: List<IptvWallProgramme>,
@@ -157,6 +168,9 @@ internal class IptvStageModel(
     val askByAi: Boolean,
     /** Channels kept off the picks: 24/7 loops, radio, shopping, adult, religious (unless on the lineup). */
     val hiddenFiller: Int,
+    /** fork:live-tv-views - every programme on the kept channels (filler out) and the taste rank, for the extra views. */
+    val picks: List<IptvChannelNow> = emptyList(),
+    val rank: (IptvWallProgramme) -> Int = { 0 },
     /** Shopping slots on now or within the hour, kept off the picks. */
     val hiddenShopping: Int,
 )
@@ -175,10 +189,14 @@ internal fun buildIptvStage(
     orderFrom: Long,
     /** fork:live-tv-ask-ai - the AI's answer to [askText], when there is one. */
     aiPick: IptvAiPick? = null,
+    /** fork:live-tv-triage - the categories the triage kept; null = all. The viewer's own channels are never left out. */
+    shownCategories: Set<String>? = null,
+    /** fork:live-tv-learn - the Live Scores team list, to tell "Man Utd" and "Manchester United" are one team. */
+    liveTeams: List<LiveTeam> = emptyList(),
 ): IptvStageModel {
     IptvLogos.placeholders = IptvLogos.placeholdersOf(content.channels)
     val categoryNames = content.categoryNames
-    val channels = merged.mapNotNull { channel ->
+    val everyChannel = merged.mapNotNull { channel ->
         val around = iptvGuideEntries(playlist, channel).filter { it.endMs > now - 5 * 60_000L && it.startMs < now + 12 * 3_600_000L }
         if (around.isEmpty()) null else IptvChannelNow(channel, around, categoryNames[channel.primary.categoryId].orEmpty())
     }
@@ -192,6 +210,12 @@ internal fun buildIptvStage(
     val inLineup: ((IptvMergedChannel) -> Boolean)? = lineupUids.takeIf { it.isNotEmpty() }?.let { uids -> { channel: IptvMergedChannel -> channel.primary.uid in uids } }
     val ownUids = if (lineupUids.isNotEmpty()) lineupUids else (usuals + (settings.favourites + settings.recents).mapNotNull { byRef[it] }).mapTo(HashSet()) { it.primary.uid }
     val own = merged.filter { it.primary.uid in ownUids }
+    // fork:live-tv-triage - every pick (Three things, Starting soon, Tonight...) comes from what the triage kept,
+    // plus the viewer's own channels (lineup, usuals, starred, recent) wherever they sit.
+    val keepUids = ownUids + usuals.map { it.primary.uid } + (settings.favourites + settings.recents).mapNotNull { byRef[it]?.primary?.uid }
+    val channels = if (shownCategories == null) everyChannel else everyChannel.filter { on ->
+        on.channel.primary.uid in keepUids || shownCategories.keeps(on.channel)
+    }
 
     // Filler never reaches the picks unless the viewer put the channel on the lineup themselves.
     fun filler(on: IptvChannelNow) = on.channel.primary.uid !in lineupUids &&
@@ -241,7 +265,15 @@ internal fun buildIptvStage(
         iptvGuideEntries(playlist, channel).filter { it.endMs > orderFrom && it.startMs < bedMs + 3 * 3_600_000L && !IptvGuideText.isShopping(it.title) }
             .map { IptvWallProgramme(channel, it) }
     }
-    val order = IptvRunningOrder.build(ownGuide, settings.follows, usualKeys, orderFrom, bedMs, orderExclude, taste)
+    // When the viewer's own channels run out (after a few swaps), the rest of what the triage kept fills in.
+    val wideGuide = {
+        picks.asSequence().map { it.channel }.filter { it.primary.uid !in ownUids }.flatMap { channel ->
+            iptvGuideEntries(playlist, channel).asSequence()
+                .filter { it.endMs > orderFrom && it.startMs < bedMs && !IptvGuideText.isShopping(it.title) }
+                .map { IptvWallProgramme(channel, it) }
+        }.toList()
+    }
+    val order = IptvRunningOrder.build(ownGuide, settings.follows, usualKeys, orderFrom, bedMs, orderExclude, taste, wideGuide)
     val allGuide = picks.flatMap { on -> on.entries.filter { it.startMs <= now + IptvOnNow.SOON_MS && it.endMs > now }.map { IptvWallProgramme(on.channel, it) } }
     // fork:live-tv-ask-ai - the AI's picks first, then the rules carry on with the presses of Not that left over.
     val askCandidates = if (askText.isBlank() || !settings.askAi) emptyList() else IptvAskAiRules.candidates(allGuide, now, rank)
@@ -252,7 +284,7 @@ internal fun buildIptvStage(
     )
     val guideByUid = channels.associateBy { it.channel.primary.uid }
     return IptvStageModel(
-        total = content.channels.size,
+        total = if (shownCategories == null) content.channels.size else content.channels.count { shownCategories.keeps(it) },
         mergedCount = merged.size,
         lineup = lineup.mapIndexed { index, channel ->
             val on = guideByUid[channel.primary.uid]
@@ -260,6 +292,8 @@ internal fun buildIptvStage(
         },
         lineupUids = lineupUids,
         usualKeys = usualKeys,
+        picks = picks,
+        rank = rank,
         three = three,
         canReshuffle = IptvDecide.canReshuffle(settings.shuffle, night),
         board = board,
@@ -268,6 +302,7 @@ internal fun buildIptvStage(
         follows = follows,
         followSuggestions = suggestions,
         suggestionWhy = suggestionPairs.map { it.second },
+        learnedTeams = IptvTeamRules.learned(settings.teams, liveTeams, settings.follows, settings.teamsDeclined, now),
         taste = taste,
         order = order,
         orderApproved = IptvRunningOrder.approved(playlist.id, order, settings.reminders),
@@ -284,7 +319,7 @@ internal fun buildIptvStage(
 
 private fun count(n: Int): String = NumberFormat.getIntegerInstance(Locale.UK).format(n)
 
-private val StageSidePanel = 296.dp
+internal val StageSidePanel = 296.dp
 private val StageRowHeight = 64.dp
 private val StageBackKeys = setOf(Key.Escape, Key.Back, Key.Backspace)
 private val StageKeys = setOf(
@@ -331,6 +366,8 @@ internal fun IptvStageScreen(
     topChromePadding: Dp? = null,
     onAllChannels: () -> Unit,
     onTriage: () -> Unit,
+    /** fork:live-tv-triage - the categories the triage kept; null = all. */
+    keptCategories: Set<String>? = null,
 ) {
     val tokens = MaterialTheme.nuvio
     var stage by rememberSaveable(playlist.id) { mutableStateOf(IptvStage.Three.name) }
@@ -340,7 +377,9 @@ internal fun IptvStageScreen(
         requested?.let { stage = it.name }
         IptvStageNav.consume()
     }
-    val shownStages = IptvStage.entries.filter { it != IptvStage.Week || settings.brakes }
+    val shownStages = IptvStage.entries.filter {
+        (it != IptvStage.Week || settings.brakes) && (it !in IptvViewRules.VIEWS || it.name in settings.views)
+    }
     val current = shownStages.firstOrNull { it.name == stage } ?: IptvStage.Three
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -374,14 +413,16 @@ internal fun IptvStageScreen(
     val aiState by IptvAskAiEngine.state.collectAsStateWithLifecycle()
     val aiPick = aiPicked?.takeIf { settings.askAi && it.question.trim().equals(askText.trim(), ignoreCase = true) }
 
+    // fork:live-tv-learn - ESPN's team lists (kept for the session), so every spelling of a team counts as one.
+    val liveTeams by produceState(emptyList<LiveTeam>()) { value = runCatching { LiveScoreTeams.all() }.getOrDefault(emptyList()) }
     val model by produceState<IptvStageModel?>(
         null,
         playlist.id, merged, lineup, guideVersion, now / 60_000L, settings.plays.size, settings.favourites, settings.recents,
         settings.follows, settings.shuffle, settings.minutes, settings.reminders, askText, askSkips, orderExclude, bedMinute, fromChoice,
-        aiPick, settings.askAi,
+        aiPick, settings.askAi, keptCategories, liveTeams, settings.teams, settings.teamsDeclined,
     ) {
         value = withContext(Dispatchers.Default) {
-            buildIptvStage(playlist, content, merged, lineup, settings, System.currentTimeMillis(), askText, askSkips, orderExclude, orderFrom, aiPick)
+            buildIptvStage(playlist, content, merged, lineup, settings, System.currentTimeMillis(), askText, askSkips, orderExclude, orderFrom, aiPick, keptCategories, liveTeams)
         }
     }
 
@@ -453,6 +494,20 @@ internal fun IptvStageScreen(
         IptvRepository.follow(title)
         NuvioToastController.show(message = "Following $title", durationMillis = 3000L)
     }
+    /** fork:live-tv-learn - yes to a learned team: followed here and a favourite in Live Scores. */
+    fun followTeam(learned: IptvLearnedTeam) {
+        IptvRepository.follow(learned.name)
+        learned.team?.let {
+            LiveScoreSettingsRepository.ensureLoaded()
+            LiveScoreSettingsRepository.addFavourite(it)
+        }
+        val also = if (learned.team != null) " · added to Live Scores" else ""
+        NuvioToastController.show(message = "Following ${learned.name}$also", durationMillis = 3500L)
+    }
+    fun declineTeam(learned: IptvLearnedTeam) {
+        IptvRepository.declineTeam(learned.key)
+        NuvioToastController.show(message = "Won't ask about ${learned.name} again", durationMillis = 3000L)
+    }
     /** What follows [p] on its channel, for "then ... at ...". */
     fun nextOf(p: IptvWallProgramme): IptvEpgEntry? =
         iptvGuideEntries(playlist, p.channel).firstOrNull { it.startMs >= p.entry.endMs - 60_000L && it.startMs > p.entry.startMs }
@@ -461,10 +516,12 @@ internal fun IptvStageScreen(
     var menuChannel by remember { mutableStateOf<IptvMergedChannel?>(null) }
     var menuIndex by remember { mutableIntStateOf(0) }
     var typed by remember { mutableStateOf("") }
+    // fork:live-tv-views - on the Dial a typed number moves the dial to it instead of playing.
+    var dialJump by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(typed) {
         if (typed.isEmpty()) return@LaunchedEffect
         delay(1_200)
-        model?.lineup?.getOrNull(typed.toInt() - 1)?.let { play(it.channel) }
+        if (current == IptvStage.Dial) dialJump = typed.toInt() else model?.lineup?.getOrNull(typed.toInt() - 1)?.let { play(it.channel) }
         typed = ""
     }
     val storedLineup = settings.lineup[playlist.id].orEmpty()
@@ -496,6 +553,21 @@ internal fun IptvStageScreen(
         m?.follows.orEmpty().flatMap { it.matches }.distinctBy { it.channel.primary.uid to it.entry.startMs }.sortedBy { it.entry.startMs }.take(8)
     }
     val askPick = m?.ask?.programme
+    // fork:live-tv-views - what the extra stages show, worked out from the model as it stands (only for the one open).
+    var mapZoom by remember { mutableIntStateOf(0) }
+    var mapBlock by remember { mutableIntStateOf(0) }
+    var gridSel by remember { mutableIntStateOf(0) }
+    val mapBlocks = remember(m, current) { if (m != null && current == IptvStage.Map) IptvViewRules.blocks(m.picks, now, m.rank) else emptyList() }
+    val mapTiles = mapBlocks.getOrNull(mapBlock)?.programmes?.take(MAP_TILES).orEmpty()
+    val mosaic = remember(m, current) {
+        if (m != null && current == IptvStage.Mosaic) IptvViewRules.mosaic(m.picks, now, m.rank, smallCount = 18) else IptvMosaic(emptyList(), emptyList(), emptyList())
+    }
+    val riverFrom = remember(m) { now - 30 * 60_000L }
+    val riverTo = riverFrom + 210 * 60_000L
+    val riverLanes = remember(m, current) { if (m != null && current == IptvStage.River) IptvViewRules.river(m.picks, riverFrom, riverTo, m.rank) else emptyList() }
+    val wallChannels = remember(m, current) { if (m != null && current == IptvStage.Wall) IptvViewRules.wall(m.lineup, m.picks, m.usualKeys) else emptyList() }
+    val gridCells = remember(m, current) { if (m != null && current == IptvStage.Grid) IptvViewRules.grid(m.picks, now, m.rank, GRID_COLUMNS) else emptyList() }
+    val dialCards = remember(m, current) { if (m != null && current == IptvStage.Dial) IptvViewRules.dial(m.lineup, m.picks, now) else emptyList() }
     val layout: List<List<IptvStageGroup>> = when (current) {
         IptvStage.Three -> listOf(listOf(IptvStageGroup("cards", 3, columns = 3), IptvStageGroup("deal", 1)))
         IptvStage.Soon -> listOf(
@@ -523,7 +595,7 @@ internal fun IptvStageScreen(
             listOf(IptvStageGroup("earlierActions", if (earlierRows.isEmpty()) 0 else 2)),
         )
         IptvStage.Following -> listOf(
-            listOf(IptvStageGroup("followInput", 1), IptvStageGroup("suggest", m?.followSuggestions?.size ?: 0)),
+            listOf(IptvStageGroup("followInput", 1), IptvStageGroup("learned", m?.learnedTeams?.size ?: 0), IptvStageGroup("suggest", m?.followSuggestions?.size ?: 0)),
             listOf(IptvStageGroup("follows", m?.follows?.size ?: 0)),
             listOf(IptvStageGroup("week", weekRows.size)),
         )
@@ -542,6 +614,25 @@ internal fun IptvStageScreen(
             listOf(IptvStageGroup("keptOut", 0)),
         )
         IptvStage.Week -> listOf(listOf(IptvStageGroup("weekTonight", 0)), listOf(IptvStageGroup("weekBars", 0)), listOf(IptvStageGroup("weekTotals", 0)))
+        IptvStage.Map -> if (mapZoom == 0) {
+            listOf(listOf(IptvStageGroup("mapBlocks", mapBlocks.size, columns = 3)))
+        } else {
+            listOf(listOf(IptvStageGroup("mapTiles", mapTiles.size, columns = 4)))
+        }
+        IptvStage.Mosaic -> listOf(
+            listOf(
+                IptvStageGroup("mosaicBig", mosaic.big.size, columns = 2),
+                IptvStageGroup("mosaicMid", mosaic.mid.size, columns = 3),
+                IptvStageGroup("mosaicSmall", mosaic.small.size, columns = 6),
+            ),
+        )
+        IptvStage.River -> listOf(riverLanes.mapIndexed { l, lane -> IptvStageGroup("lane$l", lane.items.size, columns = lane.items.size.coerceAtLeast(1)) })
+        IptvStage.Wall -> listOf(listOf(IptvStageGroup("wall", wallChannels.size, columns = 4)))
+        IptvStage.Grid -> listOf(
+            listOf(IptvStageGroup("grid", gridCells.size, columns = GRID_COLUMNS)),
+            listOf(IptvStageGroup("gridList", gridCells.getOrNull(gridSel)?.programmes?.size ?: 0)),
+        )
+        IptvStage.Dial -> listOf(listOf(IptvStageGroup("dial", dialCards.size)))
     }
     val strip = shownStages.map { it.name } + "all"
     var onStrip by remember { mutableStateOf(false) }
@@ -577,7 +668,25 @@ internal fun IptvStageScreen(
             IptvStage.Ask -> md.ask?.programme
             IptvStage.Lineup -> md.lineup.getOrNull(focusedIn("lineup") ?: 0)?.let { item -> item.now?.let { IptvWallProgramme(item.channel, it) } }
             IptvStage.Week -> null
+            IptvStage.Map -> if (mapZoom == 0) mapBlocks.getOrNull(focusedIn("mapBlocks") ?: 0)?.programmes?.firstOrNull() else mapTiles.getOrNull(focusedIn("mapTiles") ?: 0)
+            IptvStage.Mosaic -> focusedIn("mosaicBig")?.let { mosaic.big.getOrNull(it) } ?: focusedIn("mosaicMid")?.let { mosaic.mid.getOrNull(it) }
+                ?: focusedIn("mosaicSmall")?.let { mosaic.small.getOrNull(it) } ?: mosaic.big.firstOrNull()
+            IptvStage.River -> riverLanes.withIndex().firstNotNullOfOrNull { (l, lane) -> focusedIn("lane$l")?.let { lane.items.getOrNull(it) } }
+            IptvStage.Wall -> wallChannels.getOrNull(focusedIn("wall") ?: 0)?.let { ch ->
+                md.picks.firstOrNull { it.channel.primary.uid == ch.primary.uid }?.current(now)?.let { IptvWallProgramme(ch, it) }
+            }
+            IptvStage.Grid -> gridCells.getOrNull(gridSel)?.programmes?.let { it.getOrNull(focusedIn("gridList") ?: 0) ?: it.firstOrNull() }
+            IptvStage.Dial -> dialCards.getOrNull(focusedIn("dial") ?: 0)?.let { c -> c.now?.let { IptvWallProgramme(c.channel, it) } }
         }
+    }
+    LaunchedEffect(dialJump) {
+        val number = dialJump ?: return@LaunchedEffect
+        IptvViewRules.dialIndexOf(dialCards, number)?.let {
+            focus = IptvStageFocus(0, 0, it)
+            keyboardActive = true
+            onStrip = false
+        }
+        dialJump = null
     }
 
     var editing by remember { mutableStateOf<String?>(null) }
@@ -653,7 +762,11 @@ internal fun IptvStageScreen(
                     md.order.firstOrNull()?.takeIf { it.onNow(t) }?.let { play(it.channel) }
                     NuvioToastController.show(message = "Approved: Nuvio changes channel at each start", durationMillis = 3500L)
                 }
-                1 -> md.order.getOrNull(orderSel)?.let { orderExclude = orderExclude + IptvDecide.normalise(it.entry.title) }
+                1 -> md.order.getOrNull(orderSel)?.let {
+                    // Moved to the end, so a title that came back and is swapped again waits longest to return.
+                    val title = IptvDecide.normalise(it.entry.title)
+                    orderExclude = orderExclude - title + title
+                }
                 else -> {
                     md.order.forEach { IptvRepository.removeReminder(IptvRunningOrder.reminderId(playlist.id, it)) }
                     IptvBrakeEngine.orderApproved(null)
@@ -672,6 +785,8 @@ internal fun IptvStageScreen(
                 editing = "follow"
                 runCatching { followFocus.requestFocus() }
             }
+            "learned" -> md.learnedTeams.getOrNull(index)?.let { if (held) declineTeam(it) else followTeam(it) }
+            "learnedNo" -> md.learnedTeams.getOrNull(index)?.let(::declineTeam)
             "suggest" -> md.followSuggestions.getOrNull(index)?.let { follow(it.entry.title) }
             "follows" -> md.follows.getOrNull(index)?.let { result ->
                 val first = result.matches.firstOrNull()
@@ -694,6 +809,21 @@ internal fun IptvStageScreen(
                 IptvRepository.rememberAsk(it)
             }
             "lineupActions" -> onTriage()
+            // fork:live-tv-views
+            "mapBlocks" -> if (index in mapBlocks.indices) {
+                mapBlock = index
+                mapZoom = 1
+                focus = null
+            }
+            "mapTiles" -> mapTiles.getOrNull(index)?.let(::take)
+            "mosaicBig" -> mosaic.big.getOrNull(index)?.let(::take)
+            "mosaicMid" -> mosaic.mid.getOrNull(index)?.let(::take)
+            "mosaicSmall" -> mosaic.small.getOrNull(index)?.let(::take)
+            "wall" -> wallChannels.getOrNull(index)?.let(::play)
+            "grid" -> if (index in gridCells.indices) gridSel = index
+            "gridList" -> gridCells.getOrNull(gridSel)?.programmes?.getOrNull(index)?.let(::take)
+            "dial" -> dialCards.getOrNull(index)?.let { play(it.channel) }
+            in riverLanes.indices.map { "lane$it" } -> riverLanes.getOrNull(group.removePrefix("lane").toInt())?.items?.getOrNull(index)?.let(::take)
             "lineup" -> md.lineup.getOrNull(index)?.let { item ->
                 if (held) {
                     menuChannel = item.channel
@@ -813,6 +943,11 @@ internal fun IptvStageScreen(
                         when {
                             onDemandFor != null -> onDemandFor = null
                             menuOpen -> menuChannel = null
+                            // fork:live-tv-views - Back on the map's inside zooms out to the blocks first.
+                            current == IptvStage.Map && mapZoom > 0 -> {
+                                mapZoom = 0
+                                focus = IptvStageFocus(0, 0, mapBlock)
+                            }
                             else -> {
                                 onStrip = true
                                 stripIndex = strip.indexOf(stage).coerceAtLeast(0)
@@ -821,7 +956,7 @@ internal fun IptvStageScreen(
                     }
                     return@onPreviewKeyEvent true
                 }
-                if (current == IptvStage.Lineup && event.type == KeyEventType.KeyDown) {
+                if ((current == IptvStage.Lineup || current == IptvStage.Dial) && event.type == KeyEventType.KeyDown) {
                     digitOf(event.key)?.let { digit ->
                         if (typed.length < 3 && !(typed.isEmpty() && digit == 0)) typed += digit
                         return@onPreviewKeyEvent true
@@ -944,6 +1079,12 @@ internal fun IptvStageScreen(
                             act = tap,
                         )
                         IptvStage.Week -> WeekStage(settings, now, side)
+                        IptvStage.Map -> MapStage(m, mapBlocks, mapZoom, mapBlock, now, side, ::isFocused, tap)
+                        IptvStage.Mosaic -> MosaicStage(mosaic, now, ::isFocused, tap)
+                        IptvStage.River -> RiverStage(m, riverLanes, riverFrom, riverTo, now, ::isFocused, tap)
+                        IptvStage.Wall -> WallStage(playlist, m, wallChannels, now, ::isFocused, tap)
+                        IptvStage.Grid -> GridStage(gridCells, GRID_COLUMNS, gridSel, now, side, ::isFocused, tap)
+                        IptvStage.Dial -> DialStage(dialCards, typed, now, ::isFocused, tap)
                     }
                 }
             }
@@ -1160,6 +1301,10 @@ private fun remoteLiveTvScreen(
                     RemoteLiveTvItem("-", i, "FOLLOWING", result.text, "Nothing in the guide yet", null)
                 }
             }
+            m.learnedTeams.forEachIndexed { i, team ->
+                items += RemoteLiveTvItem("learned", i, "LEARNED", "Follow ${team.name}?", learnedSub(team), null)
+                buttons += RemoteLiveTvButton("learnedNo", i, "Not ${team.name}")
+            }
             m.followSuggestions.forEachIndexed { i, p ->
                 items += item("suggest", i, if (m.suggestionWhy.getOrNull(i) != null) "YOU KEEP WATCHING" else "ON YOUR CHANNELS", p, "Follow")
             }
@@ -1189,6 +1334,33 @@ private fun remoteLiveTvScreen(
             empty = "Your 40 is empty."
         }
         IptvStage.Week -> empty = IptvBrakeRules.weekLine(IptvBrakeRules.week(settings.tally, IptvDecide.nightOf(now))) + "."
+        // fork:live-tv-views - the phone gets the list-shaped ones; the map, river and grid are for the big screen.
+        IptvStage.Mosaic -> {
+            val mo = IptvViewRules.mosaic(m.picks, now, m.rank, smallCount = 18)
+            mo.big.forEachIndexed { i, p -> items += item("mosaicBig", i, "FOR YOU", p) }
+            mo.mid.forEachIndexed { i, p -> items += item("mosaicMid", i, "ON NOW", p) }
+            mo.small.forEachIndexed { i, p -> items += item("mosaicSmall", i, "ALSO ON", p) }
+            empty = "Nothing on right now."
+        }
+        IptvStage.Dial -> {
+            IptvViewRules.dial(m.lineup, m.picks, now).take(200).forEachIndexed { i, c ->
+                items += RemoteLiveTvItem(
+                    group = "dial", index = i, slot = c.number.toString(), title = c.channel.primary.name,
+                    sub = c.now?.title ?: "No guide", picture = c.channel.primary.logo, live = c.now != null,
+                    progress = c.now?.let { e -> (((now - e.startMs) * 1000L) / (e.endMs - e.startMs).coerceAtLeast(1L)).toInt().coerceIn(0, 1000) } ?: -1,
+                    action = "Watch",
+                )
+            }
+            empty = "No channels."
+        }
+        IptvStage.Wall -> {
+            IptvViewRules.wall(m.lineup, m.picks, m.usualKeys).forEachIndexed { i, ch ->
+                val on = m.picks.firstOrNull { it.channel.primary.uid == ch.primary.uid }?.current(now)
+                items += RemoteLiveTvItem(group = "wall", index = i, slot = "", title = ch.primary.name, sub = on?.title ?: "No guide", picture = ch.primary.logo, live = on != null, progress = -1, action = "Watch")
+            }
+            empty = "No channels."
+        }
+        IptvStage.Map, IptvStage.River, IptvStage.Grid -> empty = "This view is on the TV."
     }
     return RemoteLiveTvScreen(
         stage = stage.name,
@@ -1211,6 +1383,12 @@ private fun stageIcon(stage: IptvStage): ImageVector = when (stage) {
     IptvStage.Ask -> Icons.Rounded.AutoAwesome
     IptvStage.Lineup -> Icons.Rounded.Tv
     IptvStage.Week -> Icons.Rounded.BarChart
+    IptvStage.Map -> Icons.Rounded.Map
+    IptvStage.Mosaic -> Icons.Rounded.Dashboard
+    IptvStage.River -> Icons.Rounded.Timeline
+    IptvStage.Wall -> Icons.Rounded.PhotoLibrary
+    IptvStage.Grid -> Icons.Rounded.GridOn
+    IptvStage.Dial -> Icons.Rounded.Dialpad
 }
 
 private fun hiddenLine(m: IptvStageModel): String? {
@@ -1238,13 +1416,19 @@ private fun stageHeading(stage: IptvStage, m: IptvStageModel?, settings: IptvSet
         IptvStage.Ask -> "Just ask" to "Typed or spoken. It answers with one thing, not a list."
         IptvStage.Lineup -> "Your 40" to "The whole of Live TV, numbered like a television. The other ${m?.let { count((it.mergedCount - it.lineup.size).coerceAtLeast(0)) } ?: ""} are in search."
         IptvStage.Week -> "Your week" to "Counted on the player for seven nights. Plain numbers, not a score."
+        IptvStage.Map -> "Map" to "Everything on now across $total channels, by kind. OK opens a block; Back zooms out."
+        IptvStage.Mosaic -> "For you now" to "Everything on at $clock, the likeliest biggest."
+        IptvStage.River -> "River" to "The next three hours by kind, not by channel. Nuvio picks the channel."
+        IptvStage.Wall -> "Picture wall" to "What your channels show, a still every few minutes, taken only while nothing plays."
+        IptvStage.Grid -> "Tonight grid" to "When the good things start, by kind and half-hour."
+        IptvStage.Dial -> "Dial" to "One channel at a time. Up and down flip; type a number to jump."
     }
 }
 
 // ---- The stages ----------------------------------------------------------------------------------------------
 
-private typealias Focused = (String, Int) -> Boolean
-private typealias Act = (String, Int) -> Unit
+internal typealias Focused = (String, Int) -> Boolean
+internal typealias Act = (String, Int) -> Unit
 
 @Composable
 private fun ThreeStage(m: IptvStageModel, now: Long, isFocused: Focused, act: Act) {
@@ -1626,6 +1810,19 @@ private fun FollowingStage(
                 onEditing = onEditing,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
+            // fork:live-tv-learn - asks once per team; hold OK for no.
+            if (m.learnedTeams.isNotEmpty()) {
+                StageSubheading("Learned from what you watch", Modifier.padding(start = 16.dp, top = 12.dp, bottom = 2.dp))
+                m.learnedTeams.forEachIndexed { i, team ->
+                    if (i > 0) StageDivider()
+                    StageRow(
+                        lead = null, title = "Follow ${team.name}?", sub = learnedSub(team),
+                        trailing = "Follow", trailingIcon = Icons.Rounded.Star, focused = isFocused("learned", i),
+                        onLongClick = { act("learnedNo", i) },
+                    ) { act("learned", i) }
+                }
+                StageNote("Hold OK if you're not interested; it won't ask again.")
+            }
             StageSubheading(
                 if (m.suggestionWhy.firstOrNull() != null) "You keep watching" else "On your channels",
                 Modifier.padding(start = 16.dp, top = 12.dp, bottom = 2.dp),
@@ -1668,6 +1865,9 @@ private fun FollowingStage(
         }
     }
 }
+
+private fun learnedSub(team: IptvLearnedTeam): String =
+    "You watched ${team.games} of their games" + if (team.team != null) " · also adds them to Live Scores" else ""
 
 @Composable
 private fun AskStage(
@@ -1865,11 +2065,11 @@ private fun LineupStage(
 
 // ---- Pieces ---------------------------------------------------------------------------------------------------
 
-private enum class BadgeKind { Live, New, Plain, Dark }
+internal enum class BadgeKind { Live, New, Plain, Dark }
 
-private class StageBadge(val text: String, val kind: BadgeKind)
+internal class StageBadge(val text: String, val kind: BadgeKind)
 
-private fun kindLabel(entry: IptvEpgEntry): String? = when (entry.kind) {
+internal fun kindLabel(entry: IptvEpgEntry): String? = when (entry.kind) {
     IptvProgrammeKind.FILM -> "Film"
     IptvProgrammeKind.SPORT -> "Sport"
     IptvProgrammeKind.NEWS -> "News"
@@ -1878,7 +2078,7 @@ private fun kindLabel(entry: IptvEpgEntry): String? = when (entry.kind) {
 }
 
 /** The marks a row carries after its title: the episode, New, Live, Film. */
-private fun rowBadges(entry: IptvEpgEntry, live: Boolean = true): List<StageBadge> = buildList {
+internal fun rowBadges(entry: IptvEpgEntry, live: Boolean = true): List<StageBadge> = buildList {
     entry.episode?.let { add(StageBadge(it, BadgeKind.Plain)) }
     if (entry.isNew) add(StageBadge("NEW", BadgeKind.New))
     if (live && entry.isLive) add(StageBadge("LIVE", BadgeKind.Live))
@@ -1897,7 +2097,7 @@ private fun topBadges(p: IptvWallProgramme, now: Long): List<StageBadge> = build
 }
 
 @Composable
-private fun StageBadgeView(badge: StageBadge) {
+internal fun StageBadgeView(badge: StageBadge) {
     val tokens = MaterialTheme.nuvio
     val (bg, fg) = when (badge.kind) {
         BadgeKind.Live -> tokens.colors.accent to Color.White
@@ -1948,7 +2148,8 @@ private fun ProgrammeWords(p: IptvWallProgramme, lines: Int) {
 @Composable
 private fun AmbientLight(programme: IptvWallProgramme?) {
     val art = rememberProgrammeArt(programme)
-    val picture = art?.picture ?: IptvLogos.good(programme?.channel?.primary?.logo)
+    val sport = rememberSportArt(rememberSportInfo(programme?.entry?.title, programme?.entry?.kind))
+    val picture = art?.picture ?: sport?.sides?.firstNotNullOfOrNull { it.picture } ?: IptvLogos.good(programme?.channel?.primary?.logo)
     Crossfade(targetState = picture, animationSpec = tween(700), label = "stage-ambient") { url ->
         if (url != null) {
             NuvioAsyncImage(
@@ -1977,7 +2178,7 @@ private fun StageStrip(items: List<Pair<String, ImageVector>>, selected: Int, fo
 
 /** A glass section card with a heading, like a settings section; the body fills the rest. */
 @Composable
-private fun StagePanel(title: String, note: String?, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun StagePanel(title: String, note: String?, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
     val tokens = MaterialTheme.nuvio
     Column(modifier = modifier.iptvGlass(NuvioGlass.Shape).clip(NuvioGlass.Shape)) {
         Row(
@@ -2027,7 +2228,7 @@ private fun DetailPanel(
 
 /** A list of fixed-height rows with a hairline between them, scrolled to keep the highlight in view. */
 @Composable
-private fun ColumnScope.StageList(size: Int, focusedIndex: Int?, empty: String, row: @Composable (Int) -> Unit) {
+internal fun ColumnScope.StageList(size: Int, focusedIndex: Int?, empty: String, row: @Composable (Int) -> Unit) {
     if (size == 0) {
         StageNote(empty)
         Spacer(Modifier.weight(1f))
@@ -2052,12 +2253,12 @@ private fun ColumnScope.StageList(size: Int, focusedIndex: Int?, empty: String, 
 }
 
 @Composable
-private fun StageDivider() {
+internal fun StageDivider() {
     Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(Color.White.copy(alpha = 0.08f)))
 }
 
 @Composable
-private fun StageRow(
+internal fun StageRow(
     lead: String?,
     title: String,
     sub: String?,
@@ -2181,7 +2382,7 @@ private fun StageChip(
 }
 
 @Composable
-private fun StageButton(
+internal fun StageButton(
     label: String,
     accent: Boolean,
     focused: Boolean,
@@ -2274,7 +2475,7 @@ private fun StageCard(
  * else the channel's name. Always the same height, with any marks laid over its top corner.
  */
 @Composable
-private fun StageArt(
+internal fun StageArt(
     programme: IptvWallProgramme?,
     height: Dp,
     badges: List<StageBadge> = emptyList(),
@@ -2289,6 +2490,8 @@ private fun StageArt(
     val art = if (programme != null && programme.entry.title.isNotEmpty()) rememberProgrammeArt(programme) else null
     val picture = art?.picture
     val logo = IptvLogos.good(programme?.channel?.primary?.logo)
+    // fork:live-tv-sport-art - a fixture with no picture of its own shows its two sides instead of the channel's logo.
+    val sport = rememberSportArt(rememberSportInfo(programme?.entry?.title, programme?.entry?.kind))
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -2311,6 +2514,8 @@ private fun StageArt(
                     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent, Color.Black.copy(alpha = 0.45f)))))
                 }
             }
+            sport != null && (sport.anyPicture || logo == null) ->
+                IptvMatchup(sport, crest = if (small) height * 0.5f else (height * 0.36f).coerceAtMost(120.dp), names = !small && height >= 140.dp)
             logo != null -> NuvioAsyncImage(
                 model = logo,
                 contentDescription = null,
@@ -2440,7 +2645,7 @@ private fun StageLabel(text: String) {
 }
 
 @Composable
-private fun StageSubheading(text: String, modifier: Modifier = Modifier) {
+internal fun StageSubheading(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier = modifier, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.nuvio.colors.textPrimary)
 }
 
@@ -2455,7 +2660,7 @@ private fun StageSentence(text: String, lines: Int = 3) {
 }
 
 @Composable
-private fun StageNote(text: String) {
+internal fun StageNote(text: String) {
     Text(text, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.nuvio.colors.textMuted)
 }
 
@@ -2465,7 +2670,7 @@ private fun StageNoteInline(text: String) {
 }
 
 @Composable
-private fun StageMessage(text: String) {
+internal fun StageMessage(text: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.nuvio.colors.textMuted)
     }

@@ -812,3 +812,48 @@ Settings > Live TV > Stage. Watch a few programmes on Live TV first (each one at
 - [ ] Without My picture: after stopping, the lock screen goes back to matching the home screen
 - [ ] Turning Poster off while something plays puts the normal picture back straight away
 - [x] The poster is sharp, not blurry, on the phone's screen (2026-11-14); layout and darkness kept as they are (the clock and media card sit over it)
+
+## Live TV: triage languages and countries (Nov 15)
+
+- [ ] Redo the triage: countries written out ("Germany | TV", "Costa Rica | TV", "Czech | TV") have their own tiles, not "No country marked"
+- [ ] A second question asks about languages; with United Kingdom and United States ticked only English starts ticked
+- [ ] With English only: Univision, Telemundo and ESPN Deportes are gone from the US categories, and an all-Spanish US category leaves the sidebar
+- [ ] The sidebar counts and All channels match what is left; search still finds a Spanish channel
+- [ ] Three things never offers a channel from a country or language the triage left out (the Wildcard included)
+
+## Live TV: Tonight never runs dry (Nov 15)
+
+- [ ] On Tonight, press Swap ten times or more: the running order keeps filling, never stopping half way
+- [ ] A programme swapped out comes back only after the others are used up
+
+## Live TV: learned teams (Nov 15)
+
+- [ ] After watching three matches of one team in six weeks (two to the end), Following shows "Follow <team>?" under Learned from what you watch
+- [ ] OK follows it and the toast says it was added to Live Scores; the team is in Settings > Live scores favourites
+- [ ] Hold OK on it: it goes and is not offered again
+- [ ] A team followed as "Manchester United" also finds "Man Utd v ..." listings
+
+## Live TV: sport badges and merged copies (Nov 15)
+
+- [ ] Sport tiles show the competition and round on top, "Team v Team" as the title and both badges beside it
+- [ ] Premier League, rugby, NHL and NBA teams get badges; teams not found show their initials, never a wrong sport's badge
+- [ ] A boxing live-score tile shows the fight night on top and the fighters' names (with photos where found)
+- [ ] A match listed twice (once with "ᴸⁱᵛᵉ") is one tile, with "also on" when the other channel has another name
+- [ ] On the stages, a fixture with no picture shows the two badges instead of the channel logo
+
+## Live TV: reminder banner (Nov 15)
+
+- [ ] A reminder comes as a solid banner at the top centre: picture, title, channel, a countdown and a filling bar; nothing shows through it
+- [ ] Left, right and OK pick Switch now / At the start / Not now; Back is Not now
+- [ ] A reminder due while the triage questions are open waits and shows when they close
+
+## Live TV: more views (Nov 15)
+
+- [ ] Settings > Live TV has six "View:" switches; each adds its stage to the strip, and off takes it away
+- [ ] Map: blocks by kind; OK opens one into tiles with the highlighted one on the right; Back zooms out
+- [ ] For you now: big tiles are what you would pick first; OK plays or tunes in
+- [ ] River: lanes by kind with the now line; left/right moves along a lane; OK on a later one sets a switching reminder
+- [ ] Picture wall: tiles turn from art to real stills one by one ("waiting", then minutes); none are taken while a channel plays
+- [ ] Tonight grid: darker cells where more starts; OK on a cell lists them on the right; OK on one plays or tunes in
+- [ ] Dial: up/down flip one channel at a time with two peeking above and below; typing a number jumps there; OK plays
+- [ ] The phone remote shows For you now, Dial and Picture wall as lists, and says the other three are on the TV

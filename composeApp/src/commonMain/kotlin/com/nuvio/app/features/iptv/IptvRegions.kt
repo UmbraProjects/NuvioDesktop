@@ -1,5 +1,6 @@
 package com.nuvio.app.features.iptv
 
+import java.text.Normalizer
 import java.util.Locale
 
 /**
@@ -39,13 +40,72 @@ object IptvRegions {
     /** Words that look like a country code at the start of a category but are not one. */
     private val notRegions = setOf("TV", "HD", "SD", "VIP", "PPV", "VOD", "NEW", "THE", "ALL", "MY", "NO", "IN", "TO", "ON", "IS")
 
-    private val isoCountries: Set<String> = Locale.getISOCountries().toHashSet() + "EU"
+    private val isoCountries: Set<String> = Locale.getISOCountries().toHashSet() + "EU" + "XK"
+
+    /** Lower case, accents and punctuation gone: "Côte d'Ivoire" -> "cote d ivoire". */
+    private fun plain(text: String): String =
+        Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+            .replace("&", " and ").replace(Regex("[^a-z0-9 ]"), " ").replace(Regex("\\s+"), " ").trim()
+
+    /**
+     * fork:live-tv-triage - countries written out ("Germany | TV", "Costa Rica | TV"): every ISO country's English
+     * name, and what providers call the ones whose official name they do not use.
+     */
+    private val names: Map<String, String> by lazy {
+        val out = HashMap<String, String>()
+        for (iso in Locale.getISOCountries()) {
+            val name = runCatching { Locale.Builder().setRegion(iso).build().getDisplayCountry(Locale.ENGLISH) }.getOrNull() ?: continue
+            out[plain(name)] = iso
+            // "Hong Kong SAR China", "Myanmar (Burma)", "Congo - Kinshasa": the first part alone too, when free.
+            plain(name.substringBefore(" SAR").substringBefore("(").substringBefore(" - ")).takeIf { it.isNotBlank() }?.let { out.putIfAbsent(it, iso) }
+        }
+        out += mapOf(
+            "usa" to "US", "united states of america" to "US", "america" to "US", "us" to "US",
+            "uk" to "GB", "great britain" to "GB", "britain" to "GB", "england" to "GB", "scotland" to "GB", "wales" to "GB",
+            "northern ireland" to "GB", "czech" to "CZ", "czech republic" to "CZ", "holland" to "NL", "korea" to "KR",
+            "south korea" to "KR", "north korea" to "KP", "russia" to "RU", "turkey" to "TR", "turkiye" to "TR",
+            "ivory coast" to "CI", "hong kong" to "HK", "macau" to "MO", "palestine" to "PS", "bosnia" to "BA",
+            "bosnia and herzegovina" to "BA", "macedonia" to "MK", "north macedonia" to "MK", "uae" to "AE", "emirates" to "AE",
+            "saudi" to "SA", "saudi arabia" to "SA", "burma" to "MM", "myanmar" to "MM", "cape verde" to "CV", "vatican" to "VA",
+            "kosovo" to "XK", "taiwan" to "TW", "vietnam" to "VN", "iran" to "IR", "syria" to "SY", "laos" to "LA",
+            "moldova" to "MD", "latvia" to "LV", "slovakia" to "SK", "slovenia" to "SI", "dominican rep" to "DO",
+        )
+        out
+    }
+
+    /** Country names that are also ordinary words, only taken as a country before a separator ("Jersey | TV"). */
+    private val wordLike = setOf("jersey", "georgia", "jordan", "chad", "turkey", "guernsey", "niger", "guinea", "america", "us", "uk", "man")
+
+    // The text before the first separator: "Costa Rica" of "Costa Rica | TV", "Mexico" of "[Mexico] Cine".
+    private val lead = Regex("""^\s*[|\[(]?\s*([^|\[\]():\-–•/]+?)\s*(?:[|\]):\-–•/]|$)""")
+
+    /** fork:live-tv-triage - the country a category name spells out, if it starts with one. */
+    fun regionByName(categoryName: String): String? {
+        val match = lead.find(categoryName)
+        val before = match?.groupValues?.get(1)?.let(::plain).orEmpty()
+        // Written before a separator: the whole of it must be a country.
+        if (match != null && match.value.trimEnd().let { v -> v.isNotEmpty() && v.last() in "|]):-–•/" }) {
+            names[before]?.let { return it }
+        }
+        // The whole name is a country ("Germany").
+        if (before.isNotEmpty() && before == plain(categoryName) && before !in wordLike) names[before]?.let { return it }
+        // Space-separated ("Germany Sports"): the longest run of leading words that is a country, not an ordinary word.
+        val words = plain(categoryName).split(' ').filter { it.isNotEmpty() }
+        for (n in minOf(4, words.size - 1) downTo 1) {
+            val candidate = words.take(n).joinToString(" ")
+            if (candidate.length < 4 || candidate in wordLike) continue
+            names[candidate]?.let { return it }
+        }
+        return null
+    }
 
     // "|UK| News", "[UK] News", "(UK) News", "UK | News", "UK: News", "UK - News", "UK News".
     private val prefix = Regex("""^\s*[|\[(]?\s*([A-Za-z]{2,3})\s*([|\]):\-–•/]|\s)""")
 
-    /** The ISO alpha-2 region a category name starts with, if any. */
-    fun regionOf(categoryName: String): String? {
+    /** The ISO alpha-2 region a category name starts with, if any: a country written out, or a code. */
+    fun regionOf(categoryName: String): String? = regionByName(categoryName) ?: regionByCode(categoryName)
+
+    private fun regionByCode(categoryName: String): String? {
         val match = prefix.find(categoryName) ?: return null
         val raw = match.groupValues[1]
         val separated = match.groupValues[2].isNotBlank() || categoryName.trimStart().startsWith("|") ||
@@ -60,9 +120,11 @@ object IptvRegions {
 
     /** Category id to region, for the categories of [content] that have one. */
     fun categoryRegions(content: IptvPlaylistContent): Map<String, String> {
-        val found = content.categories.mapNotNull { category -> regionOf(category.name)?.let { category.id to it } }
-        val counts = found.groupingBy { it.second }.eachCount()
-        return found.filter { (counts[it.second] ?: 0) >= MIN_CATEGORIES }.toMap()
+        // A country written out is sure on its own ("Costa Rica | TV" may be its only category); a bare code needs company.
+        val named = content.categories.mapNotNull { category -> regionByName(category.name)?.let { category.id to it } }.toMap()
+        val coded = content.categories.filter { it.id !in named }.mapNotNull { category -> regionByCode(category.name)?.let { category.id to it } }
+        val counts = (named.values + coded.map { it.second }).groupingBy { it }.eachCount()
+        return named + coded.filter { (counts[it.second] ?: 0) >= MIN_CATEGORIES }
     }
 
     /** The regions of [content], most categories first. */

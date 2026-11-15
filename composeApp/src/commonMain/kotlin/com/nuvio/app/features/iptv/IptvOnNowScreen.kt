@@ -162,7 +162,7 @@ internal fun buildIptvWall(
 ): IptvWallModel {
     val categoryNames = content.categoryNames
     val channels = merged.mapNotNull { channel ->
-        if (shownCategories != null && channel.sources.none { it.categoryId in shownCategories }) return@mapNotNull null
+        if (!shownCategories.keeps(channel)) return@mapNotNull null
         val around = iptvGuideEntries(playlist, channel).filter { it.endMs > now - 5 * 60_000L && it.startMs < now + 12 * 3_600_000L }
         if (around.isEmpty()) null else IptvChannelNow(channel, around, categoryNames[channel.primary.categoryId].orEmpty())
     }
@@ -408,7 +408,7 @@ private fun IptvWallTile(playlist: IptvPlaylist, item: IptvWallItem, now: Long, 
             is IptvWallItem.Programme -> if (item.film) {
                 FilmTile(item.programme, now, canStartOver = IptvCatchup.available(playlist, item.programme.channel, item.programme.entry, now))
             } else {
-                SportProgrammeTile(item.programme, now, item.tag, item.over)
+                SportProgrammeTile(item.programme, now, item.tag, item.over, item.alsoOn)
             }
             is IptvWallItem.Channel -> ChannelTile(item)
             is IptvWallItem.Action -> ActionTile(item)
@@ -444,9 +444,11 @@ private fun matchState(match: LiveMatch): Pair<String, Boolean> = when (match.ph
 }
 
 @Composable
-private fun ScoreLine(name: String, score: Int?) {
+private fun ScoreLine(name: String, score: Int?, side: IptvSportSide? = null) {
     val tokens = MaterialTheme.nuvio
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // fork:live-tv-sport-art - the team's badge or the fighter's photo.
+        if (side != null) IptvCrest(side, 24.dp)
         Text(
             text = name,
             modifier = Modifier.weight(1f),
@@ -496,13 +498,17 @@ private fun MatchTile(item: IptvWallItem.Match, now: Long) {
     val match = item.match
     val (state, live) = matchState(match)
     val showScore = match.phase != MatchPhase.Before && match.phase != MatchPhase.Postponed
+    // fork:live-tv-sport-art - badges (or fighters' photos), and a fight night's name kept off the fighter's.
+    val info = remember(match.id, match.home.name, match.away.name) { IptvSportTitle.ofMatch(match) }
+    val art = rememberSportArt(info)
+    val fight = info.people
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 11.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        TileTopLine(match.competitionName ?: match.sport.label, state, live)
-        ScoreLine(match.home.shortName, match.homeScore.takeIf { showScore })
-        ScoreLine(match.away.shortName, match.awayScore.takeIf { showScore })
+        TileTopLine(info.competition ?: match.competitionName ?: match.sport.label, state, live)
+        ScoreLine(if (fight) info.sides[0] else match.home.shortName, match.homeScore.takeIf { showScore }, art?.sides?.getOrNull(0))
+        ScoreLine(if (fight) info.sides[1] else match.away.shortName, match.awayScore.takeIf { showScore }, art?.sides?.getOrNull(1))
         Text(
             text = item.programme?.channel?.primary?.name ?: "Not found in the guide",
             style = MaterialTheme.typography.bodySmall,
@@ -514,33 +520,49 @@ private fun MatchTile(item: IptvWallItem.Match, now: Long) {
 }
 
 @Composable
-private fun SportProgrammeTile(programme: IptvWallProgramme, now: Long, tag: String? = null, over: Int = 0) {
+private fun SportProgrammeTile(programme: IptvWallProgramme, now: Long, tag: String? = null, over: Int = 0, alsoOn: List<String> = emptyList()) {
     val tokens = MaterialTheme.nuvio
     val entry = programme.entry
     // fork:live-tv-stage - every programme tile has the same four lines: a label, the title, one metadata line, a progress bar.
-    val label = (tag ?: entry.kind ?: "Live TV").uppercase()
+    // fork:live-tv-sport-art - a fixture reads as competition and round on top, the two sides as the title, their badges beside.
+    val info = rememberSportInfo(entry.title, entry.kind)
+    val art = rememberSportArt(info)
+    val label = (tag ?: info?.label ?: entry.kind ?: "Live TV").uppercase()
     Column(
         modifier = Modifier.fillMaxSize().alpha(if (over > 0) 0.6f else 1f).padding(horizontal = 16.dp, vertical = 13.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                color = tokens.colors.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (info?.live == true) {
+                LiveDot()
+                Text("LIVE", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = tokens.colors.textPrimary)
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = info?.headline ?: IptvSportTitle.clean(entry.title),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = tokens.colors.textPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (art != null) IptvMatchup(art, crest = 40.dp)
+        }
         Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp,
-            color = tokens.colors.textMuted,
-            maxLines = 1,
-        )
-        Text(
-            text = entry.title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = tokens.colors.textPrimary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = IptvProgrammeLine.text(programme.channel.primary.name.ifBlank { "Channel ${programme.channel.primary.num}" }, entry, now, over, ::formatTime),
+            text = IptvProgrammeLine.text(programme.channel.primary.name.ifBlank { "Channel ${programme.channel.primary.num}" }, entry, now, over, ::formatTime) +
+                IptvProgrammeLine.alsoOn(alsoOn),
             style = MaterialTheme.typography.bodySmall,
             color = tokens.colors.textMuted,
             maxLines = 1,
