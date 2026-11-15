@@ -24,7 +24,7 @@ class IptvLanguagesTest {
     }
 
     @Test
-    fun `English-only US: Spanish channels go, even from an English category, and an all-Spanish category goes too`() {
+    fun `English-only US - Spanish channels go, even from an English category, and an all-Spanish category goes too`() {
         val categories = listOf(IptvCategory("us-ent", "US | Entertainment"), IptvCategory("us-lat", "US | Latino"), IptvCategory("us-news", "US | News"))
         val channels = listOf(
             IptvChannel(uid = 1, key = "a", num = 1, name = "US: ABC", categoryId = "us-ent"),

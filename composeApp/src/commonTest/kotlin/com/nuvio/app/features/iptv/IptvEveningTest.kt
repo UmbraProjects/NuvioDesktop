@@ -49,7 +49,7 @@ class IptvEveningTest {
     }
 
     @Test
-    fun `swapping never empties the order: wider channels, then a gap jump, then the oldest swap comes back`() {
+    fun `swapping never empties the order - wider channels, then a gap jump, then the oldest swap comes back`() {
         val own = listOf(p(1, "Mine", 0, 60))
         val wide = listOf(p(9, "Kept Elsewhere", 0, 60))
         val bed = now + 300 * minute
