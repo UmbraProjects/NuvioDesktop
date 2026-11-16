@@ -62,6 +62,24 @@ class SimklWatchingSeedActivitiesStampTest {
     )
 
     @Test
+    fun `an episode marked on a show already being watched changes the stamp`() {
+        // Only `all` moves: the show stays in the watching list, so no status stamp does.
+        fun at(all: String) = SimklActivities(
+            tvShows = SimklCategoryActivity(all = all, watching = "2026-09-01T10:00:00Z"),
+        )
+        val before = simklWatchingSeedActivitiesStamp(at("2026-09-01T10:00:00Z"))
+        val after = simklWatchingSeedActivitiesStamp(at("2026-11-15T01:35:00Z"))
+        assertNotEquals(before, after)
+        assertFalse(
+            shouldReuseSimklWatchingSeedCache(
+                latestActivitiesAt = after,
+                savedActivitiesAt = before,
+                hasLoadedWatchingSeeds = true,
+            ),
+        )
+    }
+
+    @Test
     fun `anime progress changes the stamp even when tv shows are untouched`() {
         val before = simklWatchingSeedActivitiesStamp(
             activities(showsWatching = "2026-09-01T10:00:00Z", animeWatching = "2026-09-01T10:00:00Z"),

@@ -629,6 +629,11 @@ internal fun withoutSuppressedSimklSeeds(
 internal fun simklWatchingSeedActivitiesStamp(activities: SimklActivities?): String? {
     if (activities == null) return null
     val parts = listOf(
+        // Any change to a show or anime, an episode marked included. An episode watched on a show already in the
+        // watching list need not move any status stamp below, and the list was then never re-read: the details page
+        // showed the episode watched (the history read gates on `all`) while Next up never got the show (Nov 16).
+        "shows.all" to activities.tvShows?.all,
+        "anime.all" to activities.anime?.all,
         "shows.watching" to activities.tvShows?.watching,
         "shows.completed" to activities.tvShows?.completed,
         "shows.hold" to activities.tvShows?.hold,
