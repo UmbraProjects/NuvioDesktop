@@ -53,15 +53,17 @@ internal fun PhoneRemoteSection(isTablet: Boolean) {
             if (state.enabled) {
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsActionRow(
-                    title = "Aim assist for the pointer: ${state.aimStrength.label}",
+                    title = "Aim assist for the pointer",
                     description = "With the phone's Pointer, a slow movement over a button, poster or row slows down a little, " +
                         "and one heading toward it is drawn onto it, so small targets are easier to land on. Quick movements, " +
-                        "and movements away from a target, are left alone. Light, Medium or Strong; Off turns it off. " +
+                        "and movements away from a target, are left alone. The button shows the strength in use; " +
+                        "press it for the next (Off, Light, Medium, Strong). " +
                         "Nuvio's own screens only: not the player's controls.",
                     isTablet = isTablet,
                 ) {
                     SettingsGlassButton(
-                        text = state.aimStrength.next().label,
+                        // The strength in use, like the other pickers here; a press steps to the next.
+                        text = state.aimStrength.label,
                         onClick = { setPhoneRemoteAimStrength(state.aimStrength.next()) },
                     )
                 }

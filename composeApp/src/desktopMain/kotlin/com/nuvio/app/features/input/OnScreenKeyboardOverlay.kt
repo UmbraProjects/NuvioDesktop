@@ -110,10 +110,13 @@ internal fun OnScreenKeyboardOverlay() {
             .collect { (focused, padAvailable, mouseKeyboard) ->
                 // usedRecently keeps the panel away from someone who clicked into a settings field
                 // with the mouse while a controller happens to be plugged in — unless they asked
-                // for exactly that, because a mouse is all they have on the couch.
+                // for exactly that, because a mouse is all they have on the couch. The phone remote's
+                // pointer counts as a controller: its clicks are real mouse clicks, but whoever made
+                // them is on the couch with no keyboard.
                 OnScreenKeyboard.onTextFocusChanged(
                     focused,
-                    mouseKeyboard || (padAvailable && GamepadInput.usedRecently()),
+                    mouseKeyboard || (padAvailable && GamepadInput.usedRecently()) ||
+                        com.nuvio.app.features.remote.PhoneRemotePointer.usedRecently(),
                 )
             }
     }

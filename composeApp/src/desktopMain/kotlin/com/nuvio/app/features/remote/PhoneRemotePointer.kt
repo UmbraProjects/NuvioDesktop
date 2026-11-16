@@ -25,8 +25,25 @@ internal object PhoneRemotePointer {
     private var robot: Robot? = null
     private var unavailable = false
 
+    @Volatile
+    private var lastUseMs = 0L
+
+    /**
+     * Whether the phone pointed or clicked lately: the on-screen keyboard opens for a text field clicked this way, as
+     * it does for a controller, since the mouse it moved is not a keyboard user's.
+     */
+    fun usedRecently(withinMs: Long = 60_000L, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val last = lastUseMs
+        return last != 0L && nowMs - last <= withinMs
+    }
+
+    private fun used() {
+        lastUseMs = System.currentTimeMillis()
+    }
+
     @Synchronized
     fun move(dx: Int, dy: Int) {
+        used()
         val robot = robot() ?: return
         val at = MouseInfo.getPointerInfo()?.location ?: return
         val screen = screenAt(at) ?: return
@@ -63,6 +80,7 @@ internal object PhoneRemotePointer {
 
     @Synchronized
     fun click(button: PointerButton) {
+        used()
         val robot = robot() ?: return
         if (button in held) release(button)
         robot.mousePress(button.mask)
@@ -72,6 +90,7 @@ internal object PhoneRemotePointer {
     /** Holds [button] down for a drag, until [release] (or [releaseAll] when the phone goes away). */
     @Synchronized
     fun press(button: PointerButton) {
+        used()
         val robot = robot() ?: return
         if (!held.add(button)) return
         robot.mousePress(button.mask)
