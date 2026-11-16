@@ -160,7 +160,10 @@ fun LibraryItem.toMetaPreview(): MetaPreview {
         logo = logo.takeIfProviderArt()
             ?: imdbId?.let { "https://images.metahub.space/logo/medium/$it/img" }
             ?: logo,
-        posterShape = posterShape,
+        // The Library is a wall of portrait posters. A title saved from an addon row of landscape (or square)
+        // cards kept that row's shape and art (Nov 16: Lupin, wide among portraits); it shows as a portrait
+        // poster here, its art chosen by resolveLibraryPosterUrl.
+        posterShape = PosterShape.Poster,
         description = description,
         releaseInfo = releaseInfo,
         runtime = runtime,
@@ -198,7 +201,18 @@ private fun String?.takeIfProviderArt(): String? = this?.takeIf { url ->
  * supported for other poster services.
  */
 private fun LibraryItem.resolveLibraryPosterUrl(): String? =
-    (resolveLibraryPosterServiceUrl(CustomPosterShape.Portrait) ?: basePoster()).withPosterRefreshToken(posterRefreshToken)
+    (resolveLibraryPosterServiceUrl(CustomPosterShape.Portrait) ?: portraitArtForWideItem() ?: basePoster())
+        .withPosterRefreshToken(posterRefreshToken)
+
+/**
+ * A title saved with a landscape or square card: its saved art is that shape, so the portrait poster for its IMDb id
+ * stands in. Null for a portrait item, or one with no IMDb id (its own art then, cropped, beats a blank card).
+ */
+private fun LibraryItem.portraitArtForWideItem(): String? {
+    if (posterShape == PosterShape.Poster) return null
+    val imdb = imdbId?.takeIf { it.startsWith("tt") } ?: id.takeIf { it.startsWith("tt") }?.substringBefore(':') ?: return null
+    return "https://images.metahub.space/poster/medium/$imdb/img"
+}
 
 /**
  * The item's own poster, minus one that is a poster service's image rather than the title's art.
