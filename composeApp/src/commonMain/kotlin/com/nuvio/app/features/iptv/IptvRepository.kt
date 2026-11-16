@@ -281,7 +281,9 @@ object IptvRepository {
         username = p.username?.trim()?.takeIf { it.isNotEmpty() }?.let { username ->
             if (p.type == IptvPlaylistType.Stalker) StalkerIdentity.normalizeMac(username) ?: username else username
         },
-        password = p.password?.takeIf { it.isNotEmpty() },
+        // Not trimmed (a password may have spaces), but never a line break: a pasted one kept a trailing newline,
+        // which became %0A in every stream URL and the server refused them all (Nov 16).
+        password = p.password?.withoutLineBreaks()?.takeIf { it.isNotEmpty() },
         url = p.url?.trim()?.takeIf { it.isNotEmpty() },
         epgUrl = p.epgUrl?.trim()?.takeIf { it.isNotEmpty() },
         serial = p.serial?.trim()?.takeIf { it.isNotEmpty() },

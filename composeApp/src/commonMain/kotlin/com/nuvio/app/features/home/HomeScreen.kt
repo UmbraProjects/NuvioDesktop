@@ -261,6 +261,7 @@ import kotlinx.coroutines.CancellationException
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import com.nuvio.app.core.i18n.localizedString
 
@@ -2774,6 +2775,8 @@ fun HomeScreen(
     }
 
     val tvSectionCount = (if (heroFocusable) 1 else 0) + tvRows.size
+    // Basic and Adaptive only: TV Mode's wheel already steps a row per notch.
+    val snapScrollActive = isDesktop && !tvModeEnabled && homeSettingsUiState.snapScrollingEnabled
     val homeSelectHold = rememberHoldToSelectState()
     LaunchedEffect(tvRows.size) {
         setImmersiveRowIndex(getImmersiveRowIndex().coerceIn(0, (tvRows.size - 1).coerceAtLeast(0)))
@@ -2799,6 +2802,36 @@ fun HomeScreen(
                 scrollOffset = target.scrollOffset,
             )
         }
+    }
+
+    /**
+     * Snap scroll steps from the row on screen, not from wherever focus was last left: the user
+     * may have dragged the scrollbar, used the keyboard elsewhere or hovered another row since.
+     * Leaves focus alone when the focused section is already where a step would have put it.
+     */
+    fun syncTvFocusSectionToScroll() {
+        val visible = currentListState.layoutInfo.visibleItemsInfo
+        if (visible.isEmpty() || tvSectionCount == 0) return
+        fun distance(section: Int): Int? {
+            val target = homeTvLazyScrollTarget(
+                sectionIndex = section,
+                heroFocusable = heroFocusable,
+                adaptiveHeroHeightPx = adaptiveHeroScrollClearancePx,
+            )
+            val item = visible.firstOrNull { it.index == target.itemIndex } ?: return null
+            return abs(item.offset + target.scrollOffset)
+        }
+        val current = distance(tvFocus.sectionIndex)
+        if (current != null && current <= SNAP_WHEEL_ALIGNED_PX) return
+        val nearest = (0 until tvSectionCount)
+            .mapNotNull { section -> distance(section)?.let { section to it } }
+            .minByOrNull { it.second }
+            ?.first
+            ?: return
+        val carriedItemIndex = tvFocus.itemIndex
+        tvFocus.sectionIndex = nearest
+        tvFocus.itemIndex = carriedItemIndex
+            .coerceIn(0, (tvItemCountForSection(nearest) - 1).coerceAtLeast(0))
     }
 
     fun syncImmersiveTvFocusSection() {
@@ -3835,6 +3868,31 @@ fun HomeScreen(
                                                 immersiveWheelLocked = false
                                             }
                                         }
+                                    }
+                                }
+                            } else if (snapScrollActive) {
+                                // Snap scroll (Basic/Adaptive): one notch is one Up/Down step, so a
+                                // row always lands where the keyboard would put it (in Adaptive,
+                                // just under the hero instead of half under it). Initial pass, so the
+                                // list's own wheel scrolling never sees the notch; sideways and
+                                // Shift deltas are left to the rows.
+                                Modifier.onPointerEvent(PointerEventType.Scroll, PointerEventPass.Initial) { event ->
+                                    if (browseFilterMenuOpen) return@onPointerEvent
+                                    val change = event.changes.firstOrNull() ?: return@onPointerEvent
+                                    if (event.keyboardModifiers.isShiftPressed) return@onPointerEvent
+                                    val delta = change.scrollDelta
+                                    if (abs(delta.y) < abs(delta.x)) return@onPointerEvent
+                                    val direction = delta.y.compareTo(0f)
+                                    if (direction == 0 || tvSectionCount == 0) return@onPointerEvent
+                                    change.consume()
+                                    if (immersiveWheelLocked) return@onPointerEvent
+                                    immersiveWheelLocked = true
+                                    syncTvFocusSectionToScroll()
+                                    withCarriedTvItemIndex { tvFocus.moveSection(direction, tvSectionCount) }
+                                    scrollToFocusedTvSection()
+                                    tvCoroutineScope.launch {
+                                        delay(SNAP_WHEEL_LOCK_MS)
+                                        immersiveWheelLocked = false
                                     }
                                 }
                             } else {
@@ -5019,6 +5077,7 @@ fun HomeScreen(
                             // menu owns the wheel, or its list can never scroll.
                             enabled = isDesktop &&
                                 homeSettingsUiState.smoothScrollingEnabled &&
+                                !snapScrollActive &&
                                 !browseFilterMenuOpen,
                         ),
                     horizontalPadding = 0.dp,
@@ -5053,6 +5112,7 @@ fun HomeScreen(
                         // the page should not move under it anyway.
                         enabled = isDesktop &&
                             homeSettingsUiState.smoothScrollingEnabled &&
+                            !snapScrollActive &&
                             !browseFilterMenuOpen,
                     ),
                 horizontalPadding = 0.dp,
@@ -6797,3 +6857,8 @@ internal suspend fun resolveFocusedHeroItem(
     )
     return enriched to "searchLibraryEnrich"
 }
+
+/** Snap scroll: how long one notch holds off the next (about one row step's scroll). */
+private const val SNAP_WHEEL_LOCK_MS = 260L
+/** A row this close to where a step would leave it counts as "on screen" for snap scroll. */
+private const val SNAP_WHEEL_ALIGNED_PX = 24

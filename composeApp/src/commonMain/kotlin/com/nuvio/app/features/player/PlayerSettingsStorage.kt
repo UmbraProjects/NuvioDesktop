@@ -35,6 +35,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopAlwaysShowClockEnabled(enabled: Boolean)
     fun loadDesktopPauseOverlaySourceEnabled(): Boolean?
     fun saveDesktopPauseOverlaySourceEnabled(enabled: Boolean)
+    fun loadDesktopPauseOverlayEnabled(): Boolean?
+    fun saveDesktopPauseOverlayEnabled(enabled: Boolean)
     fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean?
     fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean)
     /** The wheel-only switch zones began as; read to migrate it to [loadDesktopPlayerZoneInput]. */
@@ -219,6 +221,8 @@ internal expect object PlayerSettingsStorage {
     fun saveSkipAutoAcceptMode(mode: String)
     fun loadSkipMovieCreditsToPostCredits(): Boolean?
     fun saveSkipMovieCreditsToPostCredits(enabled: Boolean)
+    fun loadSkipAutoAcceptOutros(): Boolean?
+    fun saveSkipAutoAcceptOutros(enabled: Boolean)
     fun loadStripSdhSubtitles(): Boolean?
     fun saveStripSdhSubtitles(enabled: Boolean)
     fun loadAutomaticSubtitleSyncEnabled(): Boolean?

@@ -49,6 +49,16 @@ object GamepadSettingsRepository {
     private const val KEY_RING_BUTTON = "panel_ring_pad_button"
     private const val KEY_RING_SIZE = "panel_ring_size"
     private const val KEY_RING_MOUSE = "panel_ring_middle_mouse"
+    private const val KEY_CURSOR_BUTTON = "gamepad_cursor_button"
+    private const val KEY_CURSOR_SPEED = "gamepad_cursor_speed"
+    private const val KEY_CURSOR_DEFAULT = "gamepad_cursor_default"
+    private const val KEY_CURSOR_HINT = "gamepad_cursor_hint"
+
+    /** Hold this to turn the left stick into the mouse pointer; a tap still does the button's own action. */
+    val DEFAULT_CURSOR_BUTTON: GamepadButton? = GamepadButton.RightThumb
+
+    /** The stick clicks: the face buttons and D-pad are in use while pointing. */
+    val CURSOR_BUTTON_CHOICES: List<GamepadButton> = listOf(GamepadButton.RightThumb, GamepadButton.LeftThumb)
 
     /** Hold this to open the panel ring; a tap still does the button's own action. */
     val DEFAULT_RING_BUTTON: GamepadButton? = GamepadButton.LeftShoulder
@@ -118,6 +128,29 @@ object GamepadSettingsRepository {
     private val _ringSizeState = MutableStateFlow(PanelRingSize.Medium)
     val ringSizeState: StateFlow<PanelRingSize> = _ringSizeState.asStateFlow()
 
+    @Volatile
+    var cursorButton: GamepadButton? = DEFAULT_CURSOR_BUTTON
+        private set
+    private val _cursorButtonState = MutableStateFlow(DEFAULT_CURSOR_BUTTON)
+    val cursorButtonState: StateFlow<GamepadButton?> = _cursorButtonState.asStateFlow()
+
+    @Volatile
+    var cursorSpeed: ControllerCursorSpeed = ControllerCursorSpeed.Medium
+        private set
+    private val _cursorSpeedState = MutableStateFlow(ControllerCursorSpeed.Medium)
+    val cursorSpeedState: StateFlow<ControllerCursorSpeed> = _cursorSpeedState.asStateFlow()
+
+    /** The stick is the pointer whenever Nuvio is in front; the D-pad still moves focus. */
+    @Volatile
+    var cursorByDefault: Boolean = false
+        private set
+    private val _cursorByDefaultState = MutableStateFlow(false)
+    val cursorByDefaultState: StateFlow<Boolean> = _cursorByDefaultState.asStateFlow()
+
+    /** The pill naming the pointer's buttons while it is unlocked. */
+    private val _cursorHintState = MutableStateFlow(true)
+    val cursorHintState: StateFlow<Boolean> = _cursorHintState.asStateFlow()
+
     private val _ringMouseState = MutableStateFlow(DEFAULT_RING_MOUSE)
     val ringMouseState: StateFlow<Boolean> = _ringMouseState.asStateFlow()
 
@@ -153,6 +186,18 @@ object GamepadSettingsRepository {
         ringButton = decodeRingButton(store.getString(scoped(KEY_RING_BUTTON)))
         _ringSizeState.value = PanelRingSize.fromKey(store.getString(scoped(KEY_RING_SIZE)))
         _ringMouseState.value = store.getBoolean(scoped(KEY_RING_MOUSE)) ?: DEFAULT_RING_MOUSE
+        cursorButton = when (val stored = store.getString(scoped(KEY_CURSOR_BUTTON))) {
+            null -> DEFAULT_CURSOR_BUTTON
+            RING_BUTTON_OFF -> null
+            else -> GamepadButton.fromId(stored)?.takeIf { it in CURSOR_BUTTON_CHOICES } ?: DEFAULT_CURSOR_BUTTON
+        }
+        _cursorButtonState.value = cursorButton
+        cursorSpeed = ControllerCursorSpeed.entries.firstOrNull { it.name == store.getString(scoped(KEY_CURSOR_SPEED)) }
+            ?: ControllerCursorSpeed.Medium
+        _cursorSpeedState.value = cursorSpeed
+        cursorByDefault = store.getBoolean(scoped(KEY_CURSOR_DEFAULT)) ?: false
+        _cursorByDefaultState.value = cursorByDefault
+        _cursorHintState.value = store.getBoolean(scoped(KEY_CURSOR_HINT)) ?: true
         publish()
     }
 
@@ -206,6 +251,38 @@ object GamepadSettingsRepository {
             store.putString(scoped(KEY_RING_BUTTON), value?.id ?: RING_BUTTON_OFF)
         }
         _ringButtonState.value = value
+    }
+
+    fun setCursorButton(button: GamepadButton?) {
+        ensureLoaded()
+        val value = button?.takeIf { it in CURSOR_BUTTON_CHOICES }
+        cursorButton = value
+        if (value == DEFAULT_CURSOR_BUTTON) {
+            store.remove(scoped(KEY_CURSOR_BUTTON))
+        } else {
+            store.putString(scoped(KEY_CURSOR_BUTTON), value?.id ?: RING_BUTTON_OFF)
+        }
+        _cursorButtonState.value = value
+    }
+
+    fun setCursorSpeed(speed: ControllerCursorSpeed) {
+        ensureLoaded()
+        cursorSpeed = speed
+        if (speed == ControllerCursorSpeed.Medium) store.remove(scoped(KEY_CURSOR_SPEED)) else store.putString(scoped(KEY_CURSOR_SPEED), speed.name)
+        _cursorSpeedState.value = speed
+    }
+
+    fun setCursorByDefault(enabled: Boolean) {
+        ensureLoaded()
+        cursorByDefault = enabled
+        if (enabled) store.putBoolean(scoped(KEY_CURSOR_DEFAULT), true) else store.remove(scoped(KEY_CURSOR_DEFAULT))
+        _cursorByDefaultState.value = enabled
+    }
+
+    fun setCursorHint(visible: Boolean) {
+        ensureLoaded()
+        if (visible) store.remove(scoped(KEY_CURSOR_HINT)) else store.putBoolean(scoped(KEY_CURSOR_HINT), false)
+        _cursorHintState.value = visible
     }
 
     fun setRingSize(size: PanelRingSize) {

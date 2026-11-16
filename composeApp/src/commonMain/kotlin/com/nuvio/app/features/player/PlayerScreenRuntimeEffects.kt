@@ -1696,7 +1696,12 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         val acceptsSponsor = interval.provider == com.nuvio.app.features.youtube.SPONSORBLOCK_SKIP_PROVIDER &&
             interval.type in com.nuvio.app.features.youtube.YOUTUBE_AUTO_SKIP_TYPES &&
             com.nuvio.app.features.youtube.YouTubeFeedRepository.sponsorAutoSkip.value
-        if (!acceptsSponsor && !acceptsCreditsToScene && !playerSettingsUiState.skipAutoAcceptMode.accepts(interval)) {
+        // Outros too when opted in, from the same sources the mode trusts (user report, Nov 16: anime endings).
+        val acceptsOutro = playerSettingsUiState.skipAutoAcceptOutros && interval.isOutroKind() &&
+            playerSettingsUiState.skipAutoAcceptMode.acceptsSource(interval)
+        if (!acceptsSponsor && !acceptsCreditsToScene && !acceptsOutro &&
+            !playerSettingsUiState.skipAutoAcceptMode.accepts(interval)
+        ) {
             return@LaunchedEffect
         }
         // A host-only party member follows the host's skips instead of making their own.

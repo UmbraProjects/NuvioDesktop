@@ -1231,7 +1231,7 @@ private fun EpisodeHorizontalCard(
         modifier = Modifier
             .width(metrics.cardWidth)
             .height(metrics.cardHeight)
-            .nuvioPosterHighlight(metrics.cornerRadius)
+            .nuvioPosterHighlight(metrics.cornerRadius, artworkUrl = video.thumbnail ?: fallbackImage)
             .clip(cardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .nuvioCardDepth(cardShape, NuvioCardDepthSurface.Episodes)
@@ -1528,16 +1528,19 @@ private fun CompactTrailerLandscapeCard(
     height: Dp,
     onClick: () -> Unit,
 ) {
+    val thumbnailUrl = "https://img.youtube.com/vi/${trailer.key}/hqdefault.jpg"
     Box(
         modifier = Modifier
             .width(width)
             .height(height)
+            // The shelf's highlight, as on posters (ahead of the clip: see nuvioPosterHighlight).
+            .nuvioPosterHighlight(12.dp, artworkUrl = thumbnailUrl)
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .clickable(onClick = onClick),
     ) {
         AsyncImage(
-            model = "https://img.youtube.com/vi/${trailer.key}/hqdefault.jpg",
+            model = thumbnailUrl,
             contentDescription = trailer.displayName ?: trailer.name,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
@@ -1689,10 +1692,14 @@ private fun CompactMetaPreviewLandscapeCard(
     /** False when the row draws the reason below the card instead. */
     showReason: Boolean = true,
 ) {
+    val artworkUrl = item.landscapePoster ?: item.banner ?: item.posterFallback ?: item.poster
     Box(
         modifier = Modifier
             .width(width)
             .height(height)
+            // The shelf's highlight, as on posters (More like this, Collection and Same cast had only the enlarge,
+            // which Glow drops; ahead of the clip: see nuvioPosterHighlight).
+            .nuvioPosterHighlight(12.dp, artworkUrl = artworkUrl)
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .clickable(onClick = onClick),
@@ -1702,7 +1709,7 @@ private fun CompactMetaPreviewLandscapeCard(
         // same rule the shelf's landscape cards follow (see `landscapeCardTitleOverlay`).
         val artIncludesTitle = !item.landscapePoster.isNullOrBlank()
         AsyncImage(
-            model = item.landscapePoster ?: item.banner ?: item.posterFallback ?: item.poster,
+            model = artworkUrl,
             contentDescription = item.name,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
@@ -2191,7 +2198,7 @@ private fun EpisodeListCard(
         modifier = modifier
             .fillMaxWidth()
             .height(sizing.cardHeight)
-            .nuvioPosterHighlight(sizing.cardRadius)
+            .nuvioPosterHighlight(sizing.cardRadius, artworkUrl = video.thumbnail ?: fallbackImage)
             .clip(cardShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .border(

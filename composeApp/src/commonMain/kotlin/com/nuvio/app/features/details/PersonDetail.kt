@@ -13,4 +13,8 @@ data class PersonDetail(
     val knownFor: String?,
     val movieCredits: List<MetaPreview>,
     val tvCredits: List<MetaPreview>,
+    /** Backdrop of the title they are best known for (TMDB has no backdrops of people). */
+    val heroBackdrop: String? = null,
+    /** That title's name, shown as a small caption so the backdrop is not mistaken for the person. */
+    val heroBackdropTitle: String? = null,
 )

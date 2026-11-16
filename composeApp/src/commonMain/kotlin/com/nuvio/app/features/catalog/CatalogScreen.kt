@@ -527,7 +527,7 @@ private fun CatalogPosterTile(
                     .fillMaxWidth()
                     .aspectRatio(item.posterShape.catalogAspectRatio())
                     // Ahead of the clip on purpose — see nuvioPosterHighlight.
-                    .nuvioPosterHighlight(cornerRadiusDp.dp)
+                    .nuvioPosterHighlight(cornerRadiusDp.dp, artworkUrl = item.poster)
                     .clip(tileShape)
                     .background(MaterialTheme.colorScheme.surface)
                     .posterCardClickable(onClick = onClick, onLongClick = onLongClick),

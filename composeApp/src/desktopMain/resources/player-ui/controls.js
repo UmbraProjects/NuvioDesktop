@@ -406,6 +406,7 @@ let state = {
   pauseOverlayEpisodeTitle: "",
   pauseOverlayDescription: "",
   pauseOverlaySourceEnabled: false,
+  pauseOverlayEnabled: true,
   resizeModeLabel: "Fit",
   playbackSpeedLabel: "1x",
   playbackSpeedFineIncrementsEnabled: false,
@@ -1880,6 +1881,7 @@ const renderPauseMetadataOverlay = showOpening => {
   const episodeTitleText = String(state.pauseOverlayEpisodeTitle || "").trim();
   const descriptionText = String(state.pauseOverlayDescription || "").trim();
   const showOverlay = Boolean(
+    state.pauseOverlayEnabled !== false &&
     pauseMetadataReady &&
     !state.controlsVisible &&
     !state.isLocked &&
@@ -3919,11 +3921,95 @@ const buildQuickTiles = parent => {
   });
   parent.appendChild(row);
 };
+// The mouse menu's form of the same actions (2026-11-16): a "Quick actions" row whose flyout lists them, ticked when
+// on, instead of the grid (the grid stays on the centred sheet the keys or a pad open, where tiles are easier to walk).
+// It also carries the pause overlay switch, which the sheet's 3x4 grid has no room for.
+const QUICK_SECTION_EXTRAS = [
+  ["Pause overlay", () => {
+    const next = state.pauseOverlayEnabled === false;
+    state = { ...state, pauseOverlayEnabled: next };
+    send("togglePauseOverlay", next ? 1 : 0);
+  }, null, "pauseOverlayEnabled"],
+];
+const buildQuickActionsSection = parent => {
+  const group = document.createElement("div");
+  group.className = "context-menu-group context-menu-quick-section";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "context-menu-item";
+  button.setAttribute("role", "menuitem");
+  const label = document.createElement("span");
+  label.className = "context-menu-label";
+  label.textContent = "Quick actions";
+  button.appendChild(label);
+  const arrow = document.createElement("span");
+  arrow.className = "context-menu-arrow";
+  arrow.textContent = "›";
+  button.appendChild(arrow);
+  const submenu = document.createElement("div");
+  submenu.className = "context-menu-submenu";
+  submenu.setAttribute("role", "menu");
+  [...QUICK_TILES, ...QUICK_SECTION_EXTRAS].forEach(([name, run, , toggleKey, youTubeHidden]) => {
+    const rowGroup = document.createElement("div");
+    rowGroup.className = "context-menu-group";
+    if (youTubeHidden) rowGroup.dataset.youtubeHidden = "true";
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "context-menu-item";
+    row.setAttribute("role", "menuitem");
+    if (toggleKey) row.dataset.quickToggle = toggleKey;
+    const rowLabel = document.createElement("span");
+    rowLabel.className = "context-menu-label";
+    rowLabel.textContent = name;
+    row.appendChild(rowLabel);
+    if (toggleKey) {
+      const indicator = document.createElement("span");
+      indicator.className = "context-menu-state";
+      row.appendChild(indicator);
+    }
+    row.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      // Like the tiles: the menu stays open, so a feature can be stepped through.
+      if (toggleKey === "closeMenuOnSelect") {
+        run();
+      } else {
+        const keep = closeMenuOnSelect;
+        closeMenuOnSelect = false;
+        run();
+        closeMenuOnSelect = keep;
+      }
+      refreshQuickTiles();
+      setTimeout(refreshQuickTiles, 250);
+      noteChromeActivity(true);
+      row.blur();
+    });
+    rowGroup.appendChild(row);
+    rowGroup.addEventListener("mouseenter", () => openContextMenuGroup(rowGroup));
+    rowGroup.addEventListener("focusin", () => openContextMenuGroup(rowGroup));
+    submenu.appendChild(rowGroup);
+  });
+  group.appendChild(button);
+  group.appendChild(submenu);
+  group.addEventListener("mouseenter", () => {
+    positionSubmenu(group);
+    openContextMenuGroup(group);
+  });
+  group.addEventListener("focusin", () => {
+    positionSubmenu(group);
+    openContextMenuGroup(group);
+  });
+  parent.appendChild(group);
+};
 const refreshQuickTiles = () => {
   if (!contextMenu) return;
   contextMenu.querySelectorAll(".context-menu-quick-tile").forEach(tile => {
     const toggleKey = tile.dataset.quickToggle;
     if (toggleKey) tile.classList.toggle("is-on", Boolean(contextMenuValue(toggleKey)));
+  });
+  contextMenu.querySelectorAll(".context-menu-quick-section .context-menu-item[data-quick-toggle]").forEach(row => {
+    const indicator = row.querySelector(".context-menu-state");
+    if (indicator) indicator.textContent = contextMenuValue(row.dataset.quickToggle) ? "✓" : "";
   });
 };
 
@@ -4067,6 +4153,7 @@ window.nuvioOpenPlayerMenu = () => {
 
 if (contextMenu) {
   buildContextMenu(contextMenuItems, contextMenu);
+  buildQuickActionsSection(contextMenu);
   buildQuickTiles(contextMenu);
   refreshContextMenuIndicators();
   refreshQuickTiles();

@@ -293,6 +293,12 @@ object GamepadInput {
         val dpad = HashSet<GamepadButton>()
         var aimX = 0f
         var aimY = 0f
+        var leftX = 0f
+        var leftY = 0f
+        var rightX = 0f
+        var rightY = 0f
+        // While the cursor is unlocked the sticks point and scroll instead of stepping focus.
+        val sticksAsCursor = GamepadCursor.isActive
         for (slot in 0 until SLOT_COUNT) {
             if (connectedMask and (1 shl slot) == 0) continue
             val base = slot * SLOT_STRIDE
@@ -308,8 +314,21 @@ object GamepadInput {
                     aimY = y
                 }
             }
+            val lx = state[base + 3] / THUMB_RANGE
+            val ly = state[base + 4] / THUMB_RANGE
+            if (hypot(lx, ly) > hypot(leftX, leftY)) {
+                leftX = lx
+                leftY = ly
+            }
+            val rx = state[base + 5] / THUMB_RANGE
+            val ry = state[base + 6] / THUMB_RANGE
+            if (hypot(rx, ry) > hypot(rightX, rightY)) {
+                rightX = rx
+                rightY = ry
+            }
             if (state[base + 1] >= TRIGGER_PRESS_THRESHOLD) held += GamepadButton.LeftTrigger
             if (state[base + 2] >= TRIGGER_PRESS_THRESHOLD) held += GamepadButton.RightTrigger
+            if (sticksAsCursor) continue
             stickDirection(state[base + 3], state[base + 4], deadZone)?.let { held += leftStickButton(it) }
             stickDirection(
                 state[base + 5],
@@ -320,6 +339,10 @@ object GamepadInput {
         dpadHeld = dpad
         stickX = aimX
         stickY = aimY
+        leftStickX = leftX
+        leftStickY = leftY
+        rightStickX = rightX
+        rightStickY = rightY
         return held
     }
 
@@ -329,6 +352,12 @@ object GamepadInput {
     private var previousDpad: Set<GamepadButton> = emptySet()
     private var stickX = 0f
     private var stickY = 0f
+
+    // Each stick on its own (strongest across pads), for the controller cursor. Poll thread only.
+    private var leftStickX = 0f
+    private var leftStickY = 0f
+    private var rightStickX = 0f
+    private var rightStickY = 0f
 
     private fun leftStickButton(direction: StickDirection): GamepadButton = when (direction) {
         StickDirection.Up -> GamepadButton.DpadUp
@@ -408,8 +437,12 @@ object GamepadInput {
             if (button !in current) heldKeys.remove(button)?.let(GamepadKeyInjector::release)
         }
         val inPlayer = GamepadContext.playerActive
-        if (panelRing(current, previous, inPlayer, heldKeys, now)) return
+        if (panelRing(current, previous, inPlayer, heldKeys, now)) {
+            GamepadCursor.setLeft(false)
+            return
+        }
         val ringButton = ringDeciding
+        val cursorOwned = controllerCursor(current, previous, inPlayer, heldKeys, now)
         // fork:voice-control - with voice control ready, View is held for push-to-talk, so its own
         // action waits for the release instead of firing on the press.
         val holdForVoice = VoiceControlRepository.uiState.value.ready || backHold.pending
@@ -424,11 +457,91 @@ object GamepadInput {
             .forEach { button ->
                 if (holdForVoice && button == GamepadButton.Back) return@forEach
                 if (button == ringButton) return@forEach
+                if (button in cursorOwned) return@forEach
                 send(button, inPlayer, heldKeys)
             }
     }
 
     private val ringHold = RingHold()
+    private val cursorHold = CursorHold()
+
+    /** Pointer by default, put away with the cursor button until it is held again. Poll thread only. */
+    private var cursorParked = false
+
+    /** Pointer by default, and the D-pad was used since the stick last moved: A and X keep their own actions. */
+    private var padNavigating = false
+
+    /** What the unlocked cursor does with A and X instead of their own actions. */
+    private val cursorButtons = setOf(GamepadButton.A, GamepadButton.X)
+
+    /**
+     * The controller cursor's share of a tick (see [GamepadCursor]). Holding the cursor button toggles it; a tap does
+     * the button's own action, or locks the cursor when it is unlocked. While unlocked: sticks point and scroll, A is
+     * the left button, X right-clicks, and the D-pad locks it again and then moves focus as usual. Only while Nuvio
+     * is the window in front and the on-screen keyboard is down (it owns the pad).
+     *
+     * Returns the buttons it used, so the ordinary dispatch leaves them alone.
+     */
+    private fun controllerCursor(
+        current: Set<GamepadButton>,
+        previous: Set<GamepadButton>,
+        inPlayer: Boolean,
+        heldKeys: MutableMap<GamepadButton, Int>,
+        now: Long,
+    ): Set<GamepadButton> {
+        val cursorButton = GamepadSettingsRepository.cursorButton?.takeIf { it != GamepadSettingsRepository.ringButton }
+        val byDefault = GamepadSettingsRepository.cursorByDefault
+        val canCursor = GamepadKeyInjector.appFocused() && !OnScreenKeyboard.visible.value
+        if (!canCursor || (cursorButton == null && !byDefault)) GamepadCursor.lock()
+        if (!byDefault) cursorParked = false
+        // Pointer by default: back on whenever Nuvio is in front again, unless put away with the button.
+        if (byDefault && canCursor && !cursorParked && !GamepadCursor.isActive) {
+            GamepadCursor.unlock()
+            padNavigating = false
+        }
+        val owned = HashSet<GamepadButton>()
+        if (cursorButton != null && (canCursor || cursorHold.pending)) {
+            when (cursorHold.update(cursorButton in current, now)) {
+                CursorHold.Result.Hold -> {
+                    lastInputAtMs = System.currentTimeMillis()
+                    if (canCursor) {
+                        GamepadCursor.toggle()
+                        cursorParked = byDefault && !GamepadCursor.isActive
+                        padNavigating = false
+                    }
+                }
+                CursorHold.Result.Tap -> {
+                    // Unlocked by hand, a tap locks it again; as the default, a tap keeps the button's own action.
+                    if (GamepadCursor.isActive && !byDefault) GamepadCursor.lock() else send(cursorButton, inPlayer, heldKeys)
+                }
+                CursorHold.Result.None -> Unit
+            }
+            // The button's own action waits for the release, which decides tap or hold.
+            owned += cursorButton
+        }
+        if (!GamepadCursor.isActive) return owned
+        val fresh = current - previous
+        if (fresh.any { it in directions }) {
+            if (!byDefault) {
+                // The D-pad means arrow navigation again; it goes through as usual below.
+                GamepadCursor.lock()
+                return owned
+            }
+            // As the default the pointer stays, and A selects what the D-pad reached until the stick moves again.
+            padNavigating = true
+        }
+        val pointed = GamepadCursor.tick(leftStickX, leftStickY, rightStickX, rightStickY)
+        if (pointed) padNavigating = false
+        if (pointed || fresh.isNotEmpty()) lastInputAtMs = System.currentTimeMillis()
+        if (padNavigating) {
+            GamepadCursor.setLeft(false)
+            return owned
+        }
+        owned += cursorButtons
+        GamepadCursor.setLeft(GamepadButton.A in current)
+        if (GamepadButton.X in fresh) GamepadCursor.rightClick()
+        return owned
+    }
 
     /** The ring button while its press is being decided, so the ordinary dispatch skips it. */
     private var ringDeciding: GamepadButton? = null
@@ -456,7 +569,9 @@ object GamepadInput {
         // not while another application is in front.
         val canRing = !inPlayer && !OnScreenKeyboard.visible.value && GamepadKeyInjector.appFocused()
         val aimDeadZone = GamepadSettingsRepository.deadZone.coerceAtLeast(RING_AIM_DEAD_ZONE)
-        val stickPushed = hypot(stickX, stickY) >= aimDeadZone
+        // While pointing, the stick is nearly always pushed: that must not turn a tap of the ring
+        // button into opening the ring.
+        val stickPushed = !GamepadCursor.isActive && hypot(stickX, stickY) >= aimDeadZone
         ringDeciding = null
         if (ringButton != null && (canRing || ringHold.pending)) {
             when (ringHold.update(ringButton in current, stickPushed, now)) {

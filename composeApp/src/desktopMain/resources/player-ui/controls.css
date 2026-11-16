@@ -8474,6 +8474,10 @@ svg {
 .context-menu-quick-tile.is-on { background: rgba(255, 255, 255, .14); }
 .context-menu-quick-tile.is-on .context-menu-quick-value { color: #fff; }
 .youtube-video .context-menu-quick-tile[data-youtube-hidden] { display: none; }
+/* The mouse menu lists the quick actions in a "Quick actions" flyout instead (2026-11-16); the centred sheet keeps the
+ * grid and has no flyout row. */
+.player:not(.tv-menus) .context-menu-quick { display: none; }
+.player.tv-menus .context-menu-quick-section { display: none; }
 
 .player.tv-menus .context-menu-quick {
   gap: calc(var(--panel-scale) * 6px);

@@ -442,7 +442,11 @@ internal fun NuvioShelfItemSlot(
     dealProgress: (() -> Float)? = null,
     content: @Composable () -> Unit,
 ) {
-    val scale by animateFloatAsState(targetValue = if (focused) 1.04f else 1f)
+    // Glow marks the highlighted card with its glow alone (enlarged as well, the glow ran over the next poster), but
+    // only on a card that draws the glow; any other keeps the enlarge so the row never loses its place.
+    val report = remember { NuvioShelfHighlightReport() }
+    val enlarge = rememberPosterCardStyleUiState().posterHighlightMode != PosterHighlightMode.Glow || !report.drawsGlow
+    val scale by animateFloatAsState(targetValue = if (focused && enlarge) 1.04f else 1f)
     Box(
         modifier = modifier
             .zIndex(if (focused) 1f else 0f)
@@ -475,7 +479,10 @@ internal fun NuvioShelfItemSlot(
             ),
     ) {
         // Poster cards read this to draw their highlight ring — see nuvioPosterHighlight.
-        CompositionLocalProvider(LocalNuvioShelfItemHighlighted provides focused) {
+        CompositionLocalProvider(
+            LocalNuvioShelfItemHighlighted provides focused,
+            LocalNuvioShelfHighlightReport provides report,
+        ) {
             content()
         }
     }
@@ -644,7 +651,7 @@ fun NuvioPosterCard(
                 .fillMaxWidth()
                 .aspectRatio(shape.aspectRatio)
                 // Ahead of the clip on purpose — see nuvioPosterHighlight.
-                .nuvioPosterHighlight(posterCardStyle.cornerRadiusDp.dp)
+                .nuvioPosterHighlight(posterCardStyle.cornerRadiusDp.dp, artworkUrl = currentUrl)
                 .clip(cardShape)
                 .background(
                     if (!hasArtwork) {

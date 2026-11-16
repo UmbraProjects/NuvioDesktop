@@ -234,6 +234,8 @@ data class HomeCatalogSettingsUiState(
     val heroAmbientBackgroundEnabled: Boolean = false,
     val tvModeEnabled: Boolean = false,
     val smoothScrollingEnabled: Boolean = true,
+    /** Basic/Adaptive: one wheel notch steps one row, as Up/Down do (TV Mode always steps). */
+    val snapScrollingEnabled: Boolean = false,
     val hoverPreviewBasicEnabled: Boolean = true,
     val hoverPreviewAdaptiveEnabled: Boolean = false,
     val catalogSeeMoreEnabled: Boolean = false,
@@ -288,6 +290,8 @@ data class HomeCatalogSettingsUiState(
             append(tvModeEnabled)
             append('|')
             append(smoothScrollingEnabled)
+            append('|')
+            append(snapScrollingEnabled)
             append('|')
             append(hoverPreviewBasicEnabled)
             append('|')
@@ -561,6 +565,8 @@ private data class StoredHomeCatalogSettingsPayload(
     @SerialName("immersiveCatalogModeEnabled")
     val tvModeEnabled: Boolean = false,
     val smoothScrollingEnabled: Boolean = true,
+    /** Basic/Adaptive: one wheel notch steps one row, as Up/Down do (TV Mode always steps). */
+    val snapScrollingEnabled: Boolean = false,
     val hoverPreviewBasicEnabled: Boolean = true,
     val hoverPreviewAdaptiveEnabled: Boolean = false,
     val catalogSeeMoreEnabled: Boolean = false,
@@ -642,6 +648,7 @@ object HomeCatalogSettingsRepository {
     private var heroAmbientBackgroundEnabled = false
     private var tvModeEnabled = false
     private var smoothScrollingEnabled = true
+    private var snapScrollingEnabled = false
     private var hoverPreviewBasicEnabled = true
     private var hoverPreviewAdaptiveEnabled = false
     private var catalogSeeMoreEnabled = false
@@ -700,6 +707,7 @@ object HomeCatalogSettingsRepository {
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
         smoothScrollingEnabled = true
+        snapScrollingEnabled = false
         hoverPreviewBasicEnabled = true
         hoverPreviewAdaptiveEnabled = false
         catalogSeeMoreEnabled = false
@@ -763,6 +771,7 @@ object HomeCatalogSettingsRepository {
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
         smoothScrollingEnabled = true
+        snapScrollingEnabled = false
         hoverPreviewBasicEnabled = true
         hoverPreviewAdaptiveEnabled = false
         catalogSeeMoreEnabled = false
@@ -1356,6 +1365,14 @@ object HomeCatalogSettingsRepository {
         persist()
     }
 
+    fun setSnapScrollingEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (snapScrollingEnabled == enabled) return
+        snapScrollingEnabled = enabled
+        publish()
+        persist()
+    }
+
     fun setCatalogSeeMoreEnabled(enabled: Boolean) {
         ensureLoaded()
         if (catalogSeeMoreEnabled == enabled) return
@@ -1598,6 +1615,7 @@ object HomeCatalogSettingsRepository {
         heroAmbientBackgroundEnabled = false
         tvModeEnabled = false
         smoothScrollingEnabled = true
+        snapScrollingEnabled = false
         hoverPreviewBasicEnabled = true
         hoverPreviewAdaptiveEnabled = false
         catalogSeeMoreEnabled = false
@@ -1732,6 +1750,7 @@ object HomeCatalogSettingsRepository {
             heroAmbientBackgroundEnabled = parsedPayload.heroAmbientBackgroundEnabled
             tvModeEnabled = parsedPayload.tvModeEnabled
             smoothScrollingEnabled = parsedPayload.smoothScrollingEnabled
+            snapScrollingEnabled = parsedPayload.snapScrollingEnabled
             hoverPreviewBasicEnabled = parsedPayload.hoverPreviewBasicEnabled
             hoverPreviewAdaptiveEnabled = parsedPayload.hoverPreviewAdaptiveEnabled
             catalogSeeMoreEnabled = parsedPayload.catalogSeeMoreEnabled
@@ -1919,6 +1938,7 @@ object HomeCatalogSettingsRepository {
             heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
             tvModeEnabled = tvModeEnabled,
             smoothScrollingEnabled = smoothScrollingEnabled,
+            snapScrollingEnabled = snapScrollingEnabled,
             // Reported raw for the same reason the TV row dots are: the settings row shows
             // what the user saved for that mode, and the preview itself gates on the mode.
             hoverPreviewBasicEnabled = hoverPreviewBasicEnabled,
@@ -2041,6 +2061,7 @@ object HomeCatalogSettingsRepository {
                     heroAmbientBackgroundEnabled = heroAmbientBackgroundEnabled,
                     tvModeEnabled = tvModeEnabled,
                     smoothScrollingEnabled = smoothScrollingEnabled,
+                    snapScrollingEnabled = snapScrollingEnabled,
                     hoverPreviewBasicEnabled = hoverPreviewBasicEnabled,
                     hoverPreviewAdaptiveEnabled = hoverPreviewAdaptiveEnabled,
                     catalogSeeMoreEnabled = catalogSeeMoreEnabled,

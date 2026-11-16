@@ -2717,7 +2717,7 @@ private fun DesktopHeroContentBlock(
                     peoplePanelTab == HeroPeoplePanelTab.Production &&
                     production.isNotEmpty()
                 ) {
-                    HeroProductionRow(production)
+                    HeroProductionRow(production, onCastClick = onCastClick)
                 } else {
                     HeroCastRow(
                         cast,
@@ -3019,6 +3019,8 @@ private data class HeroProductionCredit(
     val label: String,
     val role: String,
     val imageUrl: String? = null,
+    /** TMDB person id when the details carry one; without it a click looks the name up. */
+    val tmdbId: Int? = null,
 )
 
 @Composable
@@ -3050,7 +3052,7 @@ private fun HeroPeopleBlock(
         Spacer(modifier = Modifier.height(18.dp))
         when (effectiveTab) {
             HeroPeoplePanelTab.Starring -> HeroCastGrid(cast, onCastClick = onCastClick)
-            HeroPeoplePanelTab.Production -> HeroProductionGrid(production)
+            HeroPeoplePanelTab.Production -> HeroProductionGrid(production, onCastClick = onCastClick)
         }
     }
 }
@@ -3117,7 +3119,10 @@ private fun HeroPeopleTabLabel(
 }
 
 @Composable
-private fun HeroProductionGrid(production: List<HeroProductionCredit>) {
+private fun HeroProductionGrid(
+    production: List<HeroProductionCredit>,
+    onCastClick: ((HeroCastMember) -> Unit)?,
+) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -3132,6 +3137,7 @@ private fun HeroProductionGrid(production: List<HeroProductionCredit>) {
                     HeroProductionChip(
                         credit = credit,
                         modifier = Modifier.weight(1f),
+                        onCastClick = onCastClick,
                     )
                 }
                 if (row.size == 1) {
@@ -3147,7 +3153,10 @@ private fun HeroProductionGrid(production: List<HeroProductionCredit>) {
 // (TV keeps 4) since the adaptive hero has less room; company/studio credits are dropped
 // first when trimming so director/producer/writer are kept.
 @Composable
-private fun HeroProductionRow(production: List<HeroProductionCredit>) {
+private fun HeroProductionRow(
+    production: List<HeroProductionCredit>,
+    onCastClick: ((HeroCastMember) -> Unit)?,
+) {
     val visible = production
         .sortedBy { it.role.isHeroCompanyRole() }
         .take(3)
@@ -3162,6 +3171,7 @@ private fun HeroProductionRow(production: List<HeroProductionCredit>) {
                 modifier = Modifier.weight(1f, fill = false),
                 imageSize = 34.dp,
                 textFillsWidth = false,
+                onCastClick = onCastClick,
             )
         }
     }
@@ -3173,10 +3183,32 @@ private fun HeroProductionChip(
     modifier: Modifier = Modifier,
     imageSize: Dp = 52.dp,
     textFillsWidth: Boolean = true,
+    onCastClick: ((HeroCastMember) -> Unit)? = null,
 ) {
     val isCompanyLogo = credit.role.isHeroCompanyRole()
+    // People (director, creator, producer, writer) open their page like the Starring chips;
+    // studios and networks stay labels.
+    val clickHandler = onCastClick?.takeIf { !isCompanyLogo && credit.label.isNotBlank() }
+    val interactionSource = remember { MutableInteractionSource() }
+    val isHovered by interactionSource.collectIsHoveredAsState()
+    val highlightAlpha by animateFloatAsState(
+        targetValue = if (isHovered && clickHandler != null) 0.12f else 0f,
+        label = "hero_production_portrait_highlight",
+    )
+    val clickModifier = clickHandler?.let { handler ->
+        Modifier.clickable(interactionSource = interactionSource, indication = null) {
+            handler(
+                HeroCastMember(
+                    name = credit.label,
+                    photo = credit.imageUrl,
+                    role = credit.role,
+                    tmdbId = credit.tmdbId,
+                ),
+            )
+        }
+    } ?: Modifier
     Row(
-        modifier = modifier,
+        modifier = modifier.then(clickModifier),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -3204,6 +3236,9 @@ private fun HeroProductionChip(
                     fontWeight = FontWeight.Black,
                     maxLines = 1,
                 )
+            }
+            if (highlightAlpha > 0f) {
+                Box(modifier = Modifier.matchParentSize().background(Color.White.copy(alpha = highlightAlpha)))
             }
         }
         Column(
@@ -3323,11 +3358,12 @@ private fun HeroCastChip(
     val interactionSource = remember { MutableInteractionSource() }
     val isHovered by interactionSource.collectIsHoveredAsState()
     val portraitHighlightAlpha by animateFloatAsState(
-        targetValue = if (isHovered && onCastClick != null && person.tmdbId != null && person.tmdbId > 0) 0.12f else 0f,
+        targetValue = if (isHovered && onCastClick != null && person.name.isNotBlank()) 0.12f else 0f,
         label = "hero_cast_portrait_highlight",
     )
+    // A name without a TMDB id is looked up by name when clicked.
     val clickModifier = onCastClick
-        ?.takeIf { person.tmdbId != null && person.tmdbId > 0 }
+        ?.takeIf { person.name.isNotBlank() }
         ?.let { handler ->
             Modifier.clickable(
                 interactionSource = interactionSource,
@@ -3423,19 +3459,22 @@ private suspend fun fetchHeroProductionCredits(
 private fun heroProductionCredits(meta: MetaDetails): List<HeroProductionCredit> =
     listOfNotNull(
         meta.director.firstHeroName()
-            ?.let { name -> HeroProductionCredit(label = name, role = "Director", imageUrl = meta.heroCrewImage(name, "director")) }
+            ?.let { name -> HeroProductionCredit(label = name, role = "Director", imageUrl = meta.heroCrewImage(name, "director"), tmdbId = meta.heroCrewId(name)) }
             ?: meta.creator.firstHeroName()
-                ?.let { name -> HeroProductionCredit(label = name, role = "Creator", imageUrl = meta.heroCrewImage(name, "creator")) },
+                ?.let { name -> HeroProductionCredit(label = name, role = "Creator", imageUrl = meta.heroCrewImage(name, "creator"), tmdbId = meta.heroCrewId(name)) },
         meta.producer.firstHeroName()
-            ?.let { name -> HeroProductionCredit(label = name, role = "Producer", imageUrl = meta.heroCrewImage(name, "producer")) },
+            ?.let { name -> HeroProductionCredit(label = name, role = "Producer", imageUrl = meta.heroCrewImage(name, "producer"), tmdbId = meta.heroCrewId(name)) },
         meta.writer.firstHeroName()
-            ?.let { name -> HeroProductionCredit(label = name, role = "Writer", imageUrl = meta.heroCrewImage(name, "writer")) },
+            ?.let { name -> HeroProductionCredit(label = name, role = "Writer", imageUrl = meta.heroCrewImage(name, "writer"), tmdbId = meta.heroCrewId(name)) },
         meta.productionCompanies.firstHeroCompany()
             ?.let { company -> HeroProductionCredit(label = company.name, role = "Studio", imageUrl = company.logo) }
             ?: meta.networks.firstHeroCompany()
                 ?.let { network -> HeroProductionCredit(label = network.name, role = "Network", imageUrl = network.logo) },
     )
         .distinctBy { credit -> credit.label.trim().lowercase() }
+
+private fun MetaDetails.heroCrewId(name: String): Int? =
+    cast.firstOrNull { person -> person.name.equals(name, ignoreCase = true) && (person.tmdbId ?: 0) > 0 }?.tmdbId
 
 private fun List<String>.firstHeroName(): String? =
     firstOrNull { name -> name.isNotBlank() }?.trim()
@@ -3632,6 +3671,9 @@ internal fun heroGenreDisplayText(genre: String): String {
 /** One entry of the hero's genre line; [genre] is set on the entries that are genres. */
 private data class HeroGenrePart(val text: String, val genre: String? = null)
 
+/** An episode code in a genre line part ("S12E7", "S1 E3"). */
+private val HeroEpisodeCode = Regex("""\bS\d+\s*E\d+""", RegexOption.IGNORE_CASE)
+
 /**
  * The genre line as separate parts so each genre can carry its own hover card. Genres first,
  * then (optionally) the release year, runtime and age rating; a bare media type when there is
@@ -3681,11 +3723,22 @@ private fun HeroGenreLine(
     interests: List<ImdbInterest>,
     modifier: Modifier = Modifier,
 ) {
-    val card = GenreSubgenres.card(parts.mapNotNull { it.genre }, interests, keywords)
+    val genres = parts.mapNotNull { it.genre }
+    val card = GenreSubgenres.card(genres, interests, keywords)
+    // A couple of the card's tags join the genres on the line (deduplicated against them), right after the last
+    // genre and with the same hover, so the most telling ones are seen without hovering.
+    val shownParts = remember(parts, card) {
+        // Not beside an episode (a Continue watching or Next up item: "S12E7 • Borders and Boundaries"): the line has
+        // no room for both, and the tags pushed the episode title into an ellipsis (Nov 16).
+        val showsEpisode = parts.any { it.genre == null && HeroEpisodeCode.containsMatchIn(it.text) }
+        val tags = if (showsEpisode) emptyList() else GenreSubgenres.lineTags(card, genres).map { HeroGenrePart(it, genre = it) }
+        val afterGenres = parts.indexOfLast { it.genre != null } + 1
+        if (tags.isEmpty() || afterGenres == 0) parts else parts.take(afterGenres) + tags + parts.drop(afterGenres)
+    }
     val style = MaterialTheme.typography.titleMedium
     val color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.76f)
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        parts.forEachIndexed { index, part ->
+        shownParts.forEachIndexed { index, part ->
             if (index > 0) {
                 Text(
                     text = " • ",
@@ -3700,7 +3753,7 @@ private fun HeroGenreLine(
             NuvioPosterHoverTooltip(
                 title = if (part.genre != null) card.headline else "",
                 subtitle = if (part.genre != null) card.themeLine else "",
-                modifier = if (index == parts.lastIndex) Modifier.weight(1f, fill = false) else Modifier,
+                modifier = if (index == shownParts.lastIndex) Modifier.weight(1f, fill = false) else Modifier,
             ) {
                 Text(
                     text = part.text,

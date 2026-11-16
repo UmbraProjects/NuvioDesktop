@@ -36,7 +36,7 @@ internal fun mergeCommunityAndChapterSkipIntervals(
         .sortedBy(SkipInterval::startTime)
 }
 
-private fun String.skipIntervalKind(): String = when (lowercase()) {
+internal fun String.skipIntervalKind(): String = when (lowercase()) {
     "intro", "op", "mixed-op" -> "intro"
     "outro", "ed", "mixed-ed", "credits" -> "outro"
     else -> this
@@ -62,9 +62,9 @@ data class NextEpisodeInfo(
  * the exact cut being played. [ANY_SOURCE] additionally accepts the community/API timings, which
  * are matched by title and runtime and so vary in accuracy between sources.
  *
- * Outros are never auto-accepted at any level. Skipping one seeks to the end of the file, which
- * ends the episode and rolls into the next — far too consequential to do without a press, and not
- * what "skip the intro for me" asks for. The outro prompt stays manual.
+ * Outros are not auto-accepted by [accepts]: skipping one can seek to the end of the file, which
+ * ends the episode and rolls into the next, so it is not what "skip the intro for me" asks for. An
+ * opt-in setting (skipAutoAcceptOutros) accepts them too, trusting the same sources ([acceptsSource]).
  */
 enum class SkipAutoAcceptMode {
     MANUAL,
@@ -72,13 +72,13 @@ enum class SkipAutoAcceptMode {
     ANY_SOURCE,
     ;
 
-    fun accepts(interval: SkipInterval): Boolean {
-        if (!interval.isAutoAcceptable()) return false
-        return when (this) {
-            MANUAL -> false
-            CHAPTERS -> interval.provider == CHAPTER_SKIP_PROVIDER
-            ANY_SOURCE -> true
-        }
+    fun accepts(interval: SkipInterval): Boolean = interval.isAutoAcceptable() && acceptsSource(interval)
+
+    /** Whether this mode trusts the source [interval] came from, whatever its kind. */
+    fun acceptsSource(interval: SkipInterval): Boolean = when (this) {
+        MANUAL -> false
+        CHAPTERS -> interval.provider == CHAPTER_SKIP_PROVIDER
+        ANY_SOURCE -> true
     }
 }
 

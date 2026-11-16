@@ -78,6 +78,26 @@ internal object GenreSubgenres {
         return Card(subgenres = subgenres.values.toList(), themes = themes.values.toList())
     }
 
+    /** How many of the card's tags join the genre line itself. */
+    const val MAX_LINE_TAGS = 2
+
+    /**
+     * The first [max] of the card's tags (sub-genres, then themes) for the genre line beside the genres, so the
+     * most telling ones are seen without hovering: none that repeats a shown genre (in any of its spellings) or
+     * another tag. Empty when the card has nothing new.
+     */
+    fun lineTags(card: Card, genres: Collection<String>, max: Int = MAX_LINE_TAGS): List<String> {
+        val taken = genres.flatMapTo(HashSet(), ::genreWords)
+        val out = ArrayList<String>(max)
+        for (tag in card.subgenres + card.themes) {
+            if (out.size >= max) break
+            val key = normalise(tag)
+            if (key.isBlank() || !taken.add(key)) continue
+            out += tag
+        }
+        return out
+    }
+
     /**
      * Sub-genre phrases the hovered [genre] is refined by, in vocabulary order, at most
      * [MAX_PER_GENRE]. Empty when the title has no tag that refines this genre, in which case the

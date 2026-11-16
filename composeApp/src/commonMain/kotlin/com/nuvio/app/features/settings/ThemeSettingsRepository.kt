@@ -72,6 +72,10 @@ object ThemeSettingsRepository {
 
     // Hides the Discover entry from the desktop navigation. Navigation to the tab is blocked while
     // it is off, so the tab can never be selected without a way back to it in the bar.
+    /** Sidebar layout only: its items grouped at the top under the profile instead of centred down the side. */
+    private val _desktopSidebarItemsTop = MutableStateFlow(false)
+    val desktopSidebarItemsTop: StateFlow<Boolean> = _desktopSidebarItemsTop.asStateFlow()
+
     private val _desktopDiscoverTabVisible = MutableStateFlow(true)
     val desktopDiscoverTabVisible: StateFlow<Boolean> = _desktopDiscoverTabVisible.asStateFlow()
 
@@ -121,6 +125,7 @@ object ThemeSettingsRepository {
         _desktopNavigationLayout.value = DesktopNavigationLayout.Default
         _desktopTopBarAlwaysVisible.value = false
         _desktopDiscoverTabVisible.value = true
+        _desktopSidebarItemsTop.value = false
         _desktopAppUiScalePercent.value = 0
         _desktopAppUiScaleAppliesToDetails.value = true
         NativeTabBridge.publishAccentColor(ThemeColors.Ocean.nativeAccentHex)
@@ -184,6 +189,7 @@ object ThemeSettingsRepository {
         )
         _desktopTopBarAlwaysVisible.value = ThemeSettingsStorage.loadDesktopTopBarAlwaysVisible() ?: false
         _desktopDiscoverTabVisible.value = ThemeSettingsStorage.loadDesktopDiscoverTabVisible() ?: true
+        _desktopSidebarItemsTop.value = ThemeSettingsStorage.loadDesktopSidebarItemsTop() ?: false
         _desktopAppUiScalePercent.value =
             ThemeSettingsStorage.loadDesktopAppUiScalePercent()?.coerceIn(-50, 50) ?: 0
         _desktopAppUiScaleAppliesToDetails.value =
@@ -331,6 +337,13 @@ object ThemeSettingsRepository {
         if (_desktopTopBarAlwaysVisible.value == enabled) return
         _desktopTopBarAlwaysVisible.value = enabled
         ThemeSettingsStorage.saveDesktopTopBarAlwaysVisible(enabled)
+    }
+
+    fun setDesktopSidebarItemsTop(top: Boolean) {
+        ensureLoaded()
+        if (_desktopSidebarItemsTop.value == top) return
+        _desktopSidebarItemsTop.value = top
+        ThemeSettingsStorage.saveDesktopSidebarItemsTop(top)
     }
 
     fun setDesktopDiscoverTabVisible(visible: Boolean) {

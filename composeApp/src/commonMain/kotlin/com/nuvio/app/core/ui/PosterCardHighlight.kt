@@ -1,6 +1,9 @@
 package com.nuvio.app.core.ui
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -11,6 +14,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.layer.GraphicsLayer
@@ -122,11 +126,17 @@ private const val PosterHighlightSweepDurationMillis = 650
  * including the sharp-cornered one.
  */
 @Composable
-internal fun Modifier.nuvioPosterHighlight(cornerRadius: Dp): Modifier {
+internal fun Modifier.nuvioPosterHighlight(cornerRadius: Dp, artworkUrl: String? = null): Modifier {
     val mode = rememberPosterCardStyleUiState().posterHighlightMode
     if (mode == PosterHighlightMode.Off) return this
     val highlighted = LocalNuvioShelfItemHighlighted.current
     if (mode == PosterHighlightMode.Sweep) return nuvioSweepHighlight(highlighted, cornerRadius)
+    if (mode == PosterHighlightMode.Glow) {
+        // Tells the shelf slot this card shows its own highlight, so it can leave the card its normal size.
+        val report = LocalNuvioShelfHighlightReport.current
+        SideEffect { report?.drawsGlow = true }
+        return nuvioGlowHighlight(highlighted, cornerRadius, artworkUrl, PosterGlowSpread)
+    }
     val colors = MaterialTheme.nuvio.colors
     // Fades with the magnification instead of snapping on, so a cursor swept across a row leaves a
     // trail of rings settling rather than a strobe.
@@ -395,7 +405,46 @@ internal fun ContentDrawScope.drawNuvioPosterRing(
     )
 }
 
+/**
+ * [PosterHighlightMode.Glow]: the What to watch picker's bloom (TonightAmbient.AmbientGlow) round the card, in the
+ * main colour of its own artwork (a green poster glows green), or a soft accent until that colour is read or when the
+ * card has no artwork URL. Rings drawn outward from the edge, so it looks the same on every renderer; it draws past
+ * the card's bounds, which is why the highlight goes ahead of the card's clip.
+ */
+@Composable
+private fun Modifier.nuvioGlowHighlight(highlighted: Boolean, cornerRadius: Dp, artworkUrl: String?, spread: Dp): Modifier {
+    val fallback = androidx.compose.ui.graphics.lerp(MaterialTheme.nuvio.colors.accent, Color.White, 0.2f)
+    val colour = com.nuvio.app.features.tonight.rememberGlowOf(artworkUrl, fallback)
+    val alpha by animateFloatAsState(if (highlighted) 1f else 0f, label = "posterGlow")
+    val shown by androidx.compose.animation.animateColorAsState(colour, label = "posterGlowColour")
+    if (alpha <= 0.001f) return this
+    return drawBehind {
+        val step = 1.dp.toPx()
+        val rings = (spread.toPx() / step).toInt().coerceAtLeast(1)
+        val layer = 1f - Math.pow((1f - PosterGlowStrength).toDouble(), 1.0 / rings).toFloat()
+        val radius = cornerRadius.toPx()
+        for (i in rings downTo 0) {
+            val grow = i * step
+            drawRoundRect(
+                color = shown.copy(alpha = layer * alpha),
+                topLeft = androidx.compose.ui.geometry.Offset(-grow, -grow),
+                size = androidx.compose.ui.geometry.Size(size.width + grow * 2, size.height + grow * 2),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius + grow),
+            )
+        }
+    }
+}
 
+/** A little wider than the picker's tiles: posters are smaller and sit further apart. */
+private val PosterGlowSpread = 7.dp
 
+/**
+ * Set by a card inside a shelf slot when it draws the Glow highlight itself. The slot drops its enlarge only then: a
+ * card with no highlight of its own (trailers, comments, cast) keeps the enlarge, so a row never loses its place.
+ */
+internal class NuvioShelfHighlightReport {
+    var drawsGlow by mutableStateOf(false)
+}
 
-
+internal val LocalNuvioShelfHighlightReport = compositionLocalOf<NuvioShelfHighlightReport?> { null }
+private const val PosterGlowStrength = 0.8f

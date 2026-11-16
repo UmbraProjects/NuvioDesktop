@@ -201,7 +201,7 @@ private fun CollectionFolderCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(aspectRatio)
-                .nuvioPosterHighlight(posterCardStyle.cornerRadiusDp.dp),
+                .nuvioPosterHighlight(posterCardStyle.cornerRadiusDp.dp, artworkUrl = imageUrl),
             shape = shapeCorner,
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,

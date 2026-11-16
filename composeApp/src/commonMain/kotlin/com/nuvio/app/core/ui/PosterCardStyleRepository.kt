@@ -52,11 +52,20 @@ enum class PosterHighlightMode {
     Accent,
     Shine,
     Sweep,
+
+    /**
+     * The What to watch picker's bloom, in the card's own main colour (TonightAmbient), in place of the highlighted
+     * card's enlarge: enlarged as well, the glow ran over the next poster (Nov 16, chosen over a narrower glow that
+     * kept the enlarge).
+     */
+    Glow,
     ;
 
     companion object {
         fun fromStoredName(name: String?): PosterHighlightMode =
-            entries.firstOrNull { it.name == name } ?: Off
+            entries.firstOrNull { it.name == name }
+                // The no-zoom glow was "GlowFlat" while both versions were on trial.
+                ?: if (name == "GlowFlat") Glow else Off
     }
 }
 

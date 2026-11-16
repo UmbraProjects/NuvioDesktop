@@ -28,33 +28,35 @@ object SkipIntroRepository {
         val cacheKey = "$imdbId:$season:$episode:${durationSeconds ?: 0L}"
         cache[cacheKey]?.let { return it }
 
-        val skipDbResult = fetchFromSkipDb(imdbId, season, episode, durationSeconds)
-        if (skipDbResult.isNotEmpty()) return skipDbResult.also { cache[cacheKey] = it }
-
-        if (introDbConfigured) {
-            val result = fetchFromIntroDb(imdbId, season, episode)
-            if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
+        // Sources in order of trust. Each one fills in only the segment kinds the ones before it had nothing for:
+        // stopping at the first with any timings lost the rest, so an episode IntroDB knew only the intro of never
+        // got Anime-Skip's recap or ending, even with an Anime-Skip key set (user report, Nov 16).
+        // Looked up once, and only if a source past IntroDB is reached.
+        var resolvedEntries: List<ArmEntry>? = null
+        suspend fun entries(): List<ArmEntry> = resolvedEntries ?: resolveImdbEntries(imdbId).also { resolvedEntries = it }
+        val sources = buildList<suspend () -> List<SkipInterval>> {
+            add { fetchFromSkipDb(imdbId, season, episode, durationSeconds) }
+            if (introDbConfigured) add { fetchFromIntroDb(imdbId, season, episode) }
+            add {
+                val malId = entries().getOrNull(season - 1)?.myanimelist?.toString()
+                    ?: entries().firstOrNull()?.myanimelist?.toString()
+                if (malId != null) fetchFromAniSkip(malId, episode) else emptyList()
+            }
+            add {
+                val seasonAnilistId = entries().getOrNull(season - 1)?.anilist?.toString()
+                val fallbackAnilistId = entries().firstOrNull()?.anilist?.toString()
+                var found = emptyList<SkipInterval>()
+                for ((anilistId, seasonFilter) in listOfNotNull(
+                    seasonAnilistId?.let { it to null },
+                    if (fallbackAnilistId != null && fallbackAnilistId != seasonAnilistId) fallbackAnilistId to season else null
+                )) {
+                    found = fetchFromAnimeSkip(anilistId, episode, season = seasonFilter)
+                    if (found.isNotEmpty()) break
+                }
+                found
+            }
         }
-
-        val entries = resolveImdbEntries(imdbId)
-        val malId = entries.getOrNull(season - 1)?.myanimelist?.toString()
-            ?: entries.firstOrNull()?.myanimelist?.toString()
-        if (malId != null) {
-            val result = fetchFromAniSkip(malId, episode)
-            if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
-        }
-
-        val seasonAnilistId = entries.getOrNull(season - 1)?.anilist?.toString()
-        val fallbackAnilistId = entries.firstOrNull()?.anilist?.toString()
-        for ((anilistId, seasonFilter) in listOfNotNull(
-            seasonAnilistId?.let { it to null },
-            if (fallbackAnilistId != null && fallbackAnilistId != seasonAnilistId) fallbackAnilistId to season else null
-        )) {
-            val result = fetchFromAnimeSkip(anilistId, episode, season = seasonFilter)
-            if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
-        }
-
-        return emptyList<SkipInterval>().also { cache[cacheKey] = it }
+        return collectSkipKinds(sources).also { cache[cacheKey] = it }
     }
 
     /**
@@ -141,12 +143,8 @@ object SkipIntroRepository {
         } else {
             listOf(animeChain, imdbChain)
         }
-        for (chain in ordered) {
-            val result = chain()
-            if (result.isNotEmpty()) return result.also { cache[cacheKey] = it }
-        }
-
-        return emptyList<SkipInterval>().also { cache[cacheKey] = it }
+        // As for an IMDb episode: the leading chain's timings, with only the kinds it lacked filled in from the other.
+        return collectSkipKinds(ordered).also { cache[cacheKey] = it }
     }
 
     /**
@@ -540,3 +538,43 @@ private fun animeSkipCategory(type: String): String? = when (type.lowercase()) {
     "recap" -> "recap"
     else -> null
 }
+
+/** The kinds that, once all found, end a lookup early: the later sources could only repeat them. */
+private val COMPLETE_SKIP_KINDS = setOf("intro", "recap", "outro")
+
+/**
+ * Asks [sources] in order, keeping the first one's timings and adding from each later one only the segment kinds
+ * nothing before it covered ([fillMissingSkipKinds]). Stops once intro, recap and outro are all known.
+ */
+private suspend fun collectSkipKinds(sources: List<suspend () -> List<SkipInterval>>): List<SkipInterval> {
+    var collected = emptyList<SkipInterval>()
+    for (source in sources) {
+        val found = runCatching { source() }.getOrElse { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            emptyList()
+        }
+        collected = fillMissingSkipKinds(collected, found)
+        if (collected.mapTo(mutableSetOf()) { it.type.skipIntervalKind() }.containsAll(COMPLETE_SKIP_KINDS)) break
+    }
+    return collected
+}
+
+/**
+ * [kept] plus each of [more] whose kind (intro, recap, outro, preview...) [kept] has nothing for and which does not
+ * overlap a kept segment by more than a moment: two sources timed against different cuts can disagree, and the
+ * earlier, more trusted source wins where they collide.
+ */
+internal fun fillMissingSkipKinds(kept: List<SkipInterval>, more: List<SkipInterval>): List<SkipInterval> {
+    if (more.isEmpty()) return kept
+    val keptKinds = kept.mapTo(mutableSetOf()) { it.type.skipIntervalKind() }
+    val added = more.filter { candidate ->
+        candidate.type.skipIntervalKind() !in keptKinds &&
+            kept.none { other ->
+                minOf(candidate.endTime, other.endTime) - maxOf(candidate.startTime, other.startTime) > SKIP_KIND_OVERLAP_SEC
+            }
+    }
+    return (kept + added).sortedBy(SkipInterval::startTime)
+}
+
+/** How much two sources' segments may overlap at a seam before the later one is dropped. */
+private const val SKIP_KIND_OVERLAP_SEC = 2.0

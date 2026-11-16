@@ -674,6 +674,21 @@ object TmdbService {
             .sortedByDescending { it.popularity }
     }
 
+    /**
+     * TMDB id for a person known only by name (crew listed by an addon without ids). Prefers an
+     * exact name in [department] ("Directing", "Writing"), so a director is not swapped for a
+     * same-named actor; then the exact name; then the most prominent result.
+     */
+    suspend fun findPersonId(name: String, department: String?): Int? {
+        val results = searchPeople(name)
+        val exact = results.filter { it.name.equals(name.trim(), ignoreCase = true) }
+        return (
+            exact.firstOrNull { department != null && it.knownForDepartment.equals(department, ignoreCase = true) }
+                ?: exact.firstOrNull()
+                ?: results.firstOrNull()
+            )?.id
+    }
+
     /** Production companies matching [query]. Ordered as TMDB returns them — no popularity here. */
     suspend fun searchCompanies(query: String): List<TmdbCompanyResult> {
         val apiKey = currentApiKey() ?: return emptyList()

@@ -35,6 +35,8 @@ internal expect object ThemeSettingsStorage {
     fun saveDesktopTopBarAlwaysVisible(enabled: Boolean)
     fun loadDesktopDiscoverTabVisible(): Boolean?
     fun saveDesktopDiscoverTabVisible(visible: Boolean)
+    fun loadDesktopSidebarItemsTop(): Boolean?
+    fun saveDesktopSidebarItemsTop(top: Boolean)
     fun loadDesktopAppUiScalePercent(): Int?
     fun saveDesktopAppUiScalePercent(percent: Int)
     fun loadDesktopAppUiScaleAppliesToDetails(): Boolean?

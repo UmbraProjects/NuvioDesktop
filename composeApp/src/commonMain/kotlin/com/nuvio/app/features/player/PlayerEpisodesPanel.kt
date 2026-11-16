@@ -416,7 +416,7 @@ private fun EpisodeRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(tokens.shapes.compactCard)
-            .nuvioPosterHighlight(NuvioTokens.Radius.compactCard)
+            .nuvioPosterHighlight(NuvioTokens.Radius.compactCard, artworkUrl = episode.thumbnail)
             .background(
                 if (isCurrent) tokens.colors.overlaySelected else Color.Transparent,
             )

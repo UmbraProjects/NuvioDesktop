@@ -2645,6 +2645,14 @@ private fun PlaybackSettingsSection(
                     }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_pause_overlay),
+                        description = stringResource(Res.string.settings_playback_pause_overlay_description),
+                        checked = autoPlayPlayerSettings.desktopPauseOverlayEnabled,
+                        isTablet = isTablet,
+                        onCheckedChange = PlayerSettingsRepository::setDesktopPauseOverlayEnabled,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_pause_overlay_source),
                         description = stringResource(
                             Res.string.settings_playback_pause_overlay_source_description,
@@ -2912,6 +2920,19 @@ private fun PlaybackSettingsSection(
                             SettingsScrollAnchor.searchKey("skip-auto-accept"),
                         ),
                         onSelected = PlayerSettingsRepository::setSkipAutoAcceptMode,
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_skip_auto_accept_outros),
+                        description = stringResource(Res.string.settings_playback_skip_auto_accept_outros_description),
+                        checked = autoPlayPlayerSettings.skipAutoAcceptOutros,
+                        enabled = autoPlayPlayerSettings.skipIntroEnabled &&
+                            autoPlayPlayerSettings.skipAutoAcceptMode != SkipAutoAcceptMode.MANUAL,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(
+                            SettingsScrollAnchor.searchKey("skip-auto-accept-outros"),
+                        ),
+                        onCheckedChange = PlayerSettingsRepository::setSkipAutoAcceptOutros,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(

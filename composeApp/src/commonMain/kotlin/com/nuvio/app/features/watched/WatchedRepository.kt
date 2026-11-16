@@ -393,8 +393,22 @@ object WatchedRepository {
                                 "${provider.providerId.storageId} no longer has after a reset"
                         }
                     }
-                    if (pruned.size != itemsByKey.size || pruned != itemsByKey) {
-                        itemsByKey = pruned.toMutableMap()
+                    // A full read is the provider's whole history: a row this provider imported that it no longer
+                    // reports was un-marked there, and stays ticked here otherwise (an un-marked episode kept Up
+                    // Next on the one after it through every resync, Nov 16). Delta reads cannot tell, so only then.
+                    val current = if (fullRead) {
+                        pruneUnreportedImports(pruned, provider.providerId.storageId, reportedKeys, imported.size)
+                    } else {
+                        pruned
+                    }
+                    if (current.size != pruned.size) {
+                        log.i {
+                            "Provider history import: dropped ${pruned.size - current.size} imported tick(s) " +
+                                "${provider.providerId.storageId} no longer reports"
+                        }
+                    }
+                    if (current.size != itemsByKey.size || current != itemsByKey) {
+                        itemsByKey = current.toMutableMap()
                         changed = true
                     }
                 }
@@ -1266,6 +1280,25 @@ internal fun mergeWatchedItemsAdditively(
         }
     }
     return merged
+}
+
+/**
+ * [items] minus the rows [providerStorageId] imported that its full history ([reportedKeys], alias keys included)
+ * no longer has: episodes un-marked on the service. The user's own ticks (no [WatchedItem.importedFrom]) and other
+ * providers' rows are never touched. An empty read ([reportedCount] 0) removes nothing: a service answering with
+ * nothing at all is far likelier to be failing than to have had every episode un-marked.
+ */
+internal fun pruneUnreportedImports(
+    items: Map<String, WatchedItem>,
+    providerStorageId: String,
+    reportedKeys: Set<String>,
+    reportedCount: Int,
+): Map<String, WatchedItem> {
+    if (reportedCount == 0) return items
+    return items.filterValues { item ->
+        !item.importedFrom.equals(providerStorageId, ignoreCase = true) ||
+            watchedItemKey(item.type, item.id, item.season, item.episode) in reportedKeys
+    }
 }
 
 /**

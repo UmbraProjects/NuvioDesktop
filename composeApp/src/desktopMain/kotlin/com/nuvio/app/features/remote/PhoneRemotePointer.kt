@@ -44,11 +44,23 @@ internal object PhoneRemotePointer {
     @Synchronized
     fun move(dx: Int, dy: Int) {
         used()
+        moveBy { width -> (dx * width / UNITS_PER_WIDTH) to (dy * width / UNITS_PER_WIDTH) }
+    }
+
+    /**
+     * A controller's stick (GamepadCursor): a step in pixels of a 1080p-wide screen, scaled to the screen the cursor
+     * is on, with the same aim assist and fraction keeping as the phone. Does not count as the phone being used.
+     */
+    @Synchronized
+    fun moveBy1080p(dx: Double, dy: Double) {
+        moveBy { width -> (dx * width / 1920.0) to (dy * width / 1920.0) }
+    }
+
+    private inline fun moveBy(step: (width: Double) -> Pair<Double, Double>) {
         val robot = robot() ?: return
         val at = MouseInfo.getPointerInfo()?.location ?: return
         val screen = screenAt(at) ?: return
-        var px = dx * screen.width.coerceAtLeast(1) / UNITS_PER_WIDTH
-        var py = dy * screen.width.coerceAtLeast(1) / UNITS_PER_WIDTH
+        var (px, py) = step(screen.width.coerceAtLeast(1).toDouble())
         val strength = PhoneRemote.state.value.aimStrength.factor
         if (strength > 0.0) {
             // Speed from this step and the time since the last one; a first step after a pause counts as slow.

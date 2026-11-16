@@ -16,7 +16,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -158,7 +162,7 @@ internal fun TonightAmbientWash(colours: List<Color>?, modifier: Modifier = Modi
  * edge): thin rounded rings stacked outward from the edge, each a little faint, so the light is strongest at the
  * edge and fades evenly over [spread] (subtle: user, Nov 12, a quarter of the first 22dp). Drawn rather than blurred, so it looks the same on every renderer. Place it
  * first in a Box the same size as the item, whose rounded corners are [cornerRadius]; it draws past the Box's bounds,
- * so the parent must not clip, and the item itself must be opaque (the rings fill behind it).
+ * so the parent must not clip. Nothing is drawn under the item itself, so it may be translucent.
  */
 @Composable
 internal fun AmbientGlow(
@@ -182,16 +186,28 @@ internal fun AmbientGlow(
                 // thins out evenly to nothing at `spread`.
                 val layer = 1f - (1f - strength).toDouble().pow(1.0 / rings).toFloat()
                 val radius = cornerRadius.toPx()
-                // Ring 0 sits exactly under the item, so its anti-aliased edge blends into the light rather than
-                // leaving a dark hairline between the two.
-                for (i in rings downTo 0) {
-                    val grow = i * step
-                    drawRoundRect(
-                        color = shown.copy(alpha = layer * alpha),
-                        topLeft = Offset(-grow, -grow),
-                        size = Size(size.width + grow * 2, size.height + grow * 2),
-                        cornerRadius = CornerRadius(radius + grow),
+                // Only outside the item: drawn under it as well, a translucent item (Ends By's faded rows) showed the
+                // whole stack through as a bright block, and flashed as the selection left it (Nov 16). The cut-out
+                // sits a pixel inside the edge, so the light still meets the item's anti-aliased edge with no hairline.
+                val inset = 1f
+                val inner = Path().apply {
+                    addRoundRect(
+                        RoundRect(
+                            left = inset, top = inset, right = size.width - inset, bottom = size.height - inset,
+                            cornerRadius = CornerRadius((radius - inset).coerceAtLeast(0f)),
+                        ),
                     )
+                }
+                clipPath(inner, clipOp = ClipOp.Difference) {
+                    for (i in rings downTo 0) {
+                        val grow = i * step
+                        drawRoundRect(
+                            color = shown.copy(alpha = layer * alpha),
+                            topLeft = Offset(-grow, -grow),
+                            size = Size(size.width + grow * 2, size.height + grow * 2),
+                            cornerRadius = CornerRadius(radius + grow),
+                        )
+                    }
                 }
             },
     )

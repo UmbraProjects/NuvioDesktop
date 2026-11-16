@@ -814,6 +814,15 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.KeyboardShortcuts,
+            key = "controller-cursor",
+            title = resolve(Res.string.gamepad_cursor_section),
+            description = resolve(Res.string.gamepad_cursor_search_description),
+            pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
+            section = resolve(Res.string.gamepad_cursor_section),
+            icon = Icons.Rounded.Keyboard,
+        )
+        addRow(
+            page = SettingsPage.KeyboardShortcuts,
             key = "gamepad-rebind",
             title = resolve(Res.string.settings_shortcuts_controller_buttons),
             description = resolve(Res.string.gamepad_rebind_search_description),
@@ -1249,6 +1258,15 @@ private fun settingsSearchEntries(
             key = "desktop-navigation",
             title = resolve(Res.string.settings_appearance_desktop_navigation),
             description = resolve(Res.string.settings_desktop_navigation_search_description),
+            pageLabel = layoutPage,
+            section = resolve(Res.string.settings_appearance_section_display),
+            icon = Icons.Rounded.Palette,
+        )
+        addRow(
+            page = SettingsPage.Appearance,
+            key = "sidebar-items",
+            title = resolve(Res.string.settings_appearance_sidebar_items),
+            description = resolve(Res.string.settings_appearance_sidebar_items_top_description),
             pageLabel = layoutPage,
             section = resolve(Res.string.settings_appearance_section_display),
             icon = Icons.Rounded.Palette,
@@ -2011,6 +2029,11 @@ private fun settingsSearchEntries(
             ),
             PlaybackSearchRow("last-link-cache", resolve(Res.string.settings_playback_last_link_cache_duration)),
             PlaybackSearchRow(
+                "pause-overlay",
+                resolve(Res.string.settings_playback_pause_overlay),
+                resolve(Res.string.settings_playback_pause_overlay_description),
+            ),
+            PlaybackSearchRow(
                 "pause-overlay-source",
                 resolve(Res.string.settings_playback_pause_overlay_source),
                 resolve(Res.string.settings_playback_pause_overlay_source_description),
@@ -2091,6 +2114,11 @@ private fun settingsSearchEntries(
                 "skip-auto-accept",
                 resolve(Res.string.settings_playback_skip_auto_accept),
                 resolve(Res.string.settings_playback_skip_auto_accept_chapters_description),
+            ),
+            PlaybackSearchRow(
+                "skip-auto-accept-outros",
+                resolve(Res.string.settings_playback_skip_auto_accept_outros),
+                resolve(Res.string.settings_playback_skip_auto_accept_outros_description),
             ),
             PlaybackSearchRow(
                 "skip-movie-credits-post-credits",
@@ -2292,7 +2320,7 @@ private fun settingsSearchEntries(
         PlaybackSearchRow("home-adaptive-hero-position", resolve(Res.string.settings_home_backdrop_vertical_position), resolve(Res.string.settings_search_manually_tune_how_adaptive_hero_backdrops), anchor = SettingsScrollAnchor.AdaptiveHeroPosition),
         PlaybackSearchRow("home-adaptive-hero-height", resolve(Res.string.settings_home_hero_height), resolve(Res.string.settings_home_hero_height_description), anchor = SettingsScrollAnchor.AdaptiveHeroHeight),
         PlaybackSearchRow("home-adaptive-ambient-background", resolve(Res.string.settings_home_adaptive_ambient_background), resolve(Res.string.settings_home_adaptive_ambient_background_description)),
-        PlaybackSearchRow("home-smooth-scrolling", resolve(Res.string.settings_home_smooth_scrolling), resolve(Res.string.settings_home_smooth_scrolling_description)),
+        PlaybackSearchRow("home-smooth-scrolling", resolve(Res.string.settings_home_wheel_scrolling), resolve(Res.string.settings_home_wheel_snap_description)),
         PlaybackSearchRow("home-hover-preview", resolve(Res.string.settings_home_hover_preview), resolve(Res.string.settings_home_hover_preview_description)),
         PlaybackSearchRow("home-catalog-see-more", resolve(Res.string.settings_home_see_more_arrows), resolve(Res.string.settings_home_see_more_arrows_description)),
         PlaybackSearchRow("home-catalog-row-numbers", resolve(Res.string.settings_home_number_catalog_rows), resolve(Res.string.settings_search_append_each_rows_position_to_its)),

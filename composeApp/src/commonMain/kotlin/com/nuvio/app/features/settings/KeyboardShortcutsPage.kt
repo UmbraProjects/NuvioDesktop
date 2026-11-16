@@ -66,6 +66,16 @@ import com.nuvio.app.features.input.gamepadButtonTargetIds
 import com.nuvio.app.features.input.gamepadTargetChoices
 import com.nuvio.app.features.input.panelRingMouseState
 import com.nuvio.app.features.input.panelRingPadButtonChoices
+import com.nuvio.app.features.input.ControllerCursorSpeed
+import com.nuvio.app.features.input.controllerCursorButtonChoices
+import com.nuvio.app.features.input.controllerCursorButtonState
+import com.nuvio.app.features.input.controllerCursorSpeedState
+import com.nuvio.app.features.input.setControllerCursorButton
+import com.nuvio.app.features.input.setControllerCursorSpeed
+import com.nuvio.app.features.input.controllerCursorByDefaultState
+import com.nuvio.app.features.input.setControllerCursorByDefault
+import com.nuvio.app.features.input.controllerCursorHintState
+import com.nuvio.app.features.input.setControllerCursorHint
 import com.nuvio.app.features.input.panelRingPadButtonState
 import com.nuvio.app.features.input.panelRingSizeState
 import com.nuvio.app.features.input.resetGamepadButton
@@ -191,6 +201,9 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
 
     // Near the top: one binding for every panel is what spares learning the per-panel keys below.
     item(key = "keyboard-shortcuts-panel-ring") { PanelRingSection(isTablet = isTablet) }
+    if (gamepadSupported()) {
+        item(key = "keyboard-shortcuts-controller-cursor") { ControllerCursorSection(isTablet = isTablet) }
+    }
 
     item(key = "keyboard-shortcuts-navigation") {
         LaunchedEffect(Unit) { ensureAppShortcutBindingsLoaded() }
@@ -522,6 +535,64 @@ private fun GamepadRebindDialog(button: GamepadButton, isTablet: Boolean, onDism
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The controller cursor: hold a stick click to make the left stick the mouse pointer (GamepadCursor on desktop).
+ */
+@Composable
+private fun ControllerCursorSection(isTablet: Boolean) {
+    LaunchedEffect(Unit) { ensureGamepadSettingsLoaded() }
+    val button by controllerCursorButtonState().collectAsState()
+    val speed by controllerCursorSpeedState().collectAsState()
+    val byDefault by controllerCursorByDefaultState().collectAsState()
+    val hint by controllerCursorHintState().collectAsState()
+    SettingsSection(
+        title = stringResource(Res.string.gamepad_cursor_section),
+        isTablet = isTablet,
+        subtitle = stringResource(Res.string.gamepad_cursor_note),
+    ) {
+        SettingsGroup(isTablet = isTablet) {
+            SettingsChoiceRow(
+                title = stringResource(Res.string.gamepad_cursor_button),
+                description = stringResource(Res.string.gamepad_cursor_button_description),
+                options = listOf(SettingsChoiceOption<GamepadButton?>(null, stringResource(Res.string.panel_ring_off))) +
+                    controllerCursorButtonChoices().map { SettingsChoiceOption<GamepadButton?>(it, it.displayName) },
+                selectedValue = button,
+                isTablet = isTablet,
+                onSelected = { setControllerCursorButton(it) },
+            )
+            SettingsGroupDivider(isTablet = isTablet)
+            SettingsSwitchRow(
+                title = stringResource(Res.string.gamepad_cursor_default),
+                description = stringResource(Res.string.gamepad_cursor_default_description),
+                checked = byDefault,
+                isTablet = isTablet,
+                onCheckedChange = { setControllerCursorByDefault(it) },
+            )
+            SettingsGroupDivider(isTablet = isTablet)
+            SettingsSwitchRow(
+                title = stringResource(Res.string.gamepad_cursor_hint),
+                description = stringResource(Res.string.gamepad_cursor_hint_description),
+                checked = hint,
+                isTablet = isTablet,
+                onCheckedChange = { setControllerCursorHint(it) },
+            )
+            SettingsGroupDivider(isTablet = isTablet)
+            SettingsChoiceRow(
+                title = stringResource(Res.string.gamepad_cursor_speed),
+                description = null,
+                options = listOf(
+                    SettingsChoiceOption(ControllerCursorSpeed.Slow, stringResource(Res.string.gamepad_cursor_speed_slow)),
+                    SettingsChoiceOption(ControllerCursorSpeed.Medium, stringResource(Res.string.gamepad_cursor_speed_medium)),
+                    SettingsChoiceOption(ControllerCursorSpeed.Fast, stringResource(Res.string.gamepad_cursor_speed_fast)),
+                ),
+                selectedValue = speed,
+                isTablet = isTablet,
+                onSelected = { setControllerCursorSpeed(it) },
+            )
         }
     }
 }

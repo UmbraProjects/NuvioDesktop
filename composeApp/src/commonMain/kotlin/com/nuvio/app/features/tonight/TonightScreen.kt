@@ -527,6 +527,9 @@ internal fun Modifier.tonightKeysWithHold(onHoldOk: () -> Unit, handle: (Tonight
                 true
             }
             KeyEventType.KeyUp -> {
+                // A release whose press this screen never saw is the tail of the OK that opened it (the launcher acts
+                // on the press): taken as a tap, it played the middle card the moment Three Cards opened (Nov 16).
+                if (hold.downAt < 0) return@onPreviewKeyEvent true
                 val fired = hold.fired || (hold.downAt >= 0 && now - hold.downAt >= HOLD_MS && run { onHoldOk(); true })
                 hold.downAt = -1L
                 hold.fired = false

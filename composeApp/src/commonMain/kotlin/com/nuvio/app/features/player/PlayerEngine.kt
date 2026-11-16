@@ -276,6 +276,8 @@ data class PlayerPauseOverlayState(
     val pauseOverlayDescription: String = "",
     // Opt-in: adds the playing source as the overlay's bottom row, reusing streamTitle/providerName.
     val pauseOverlaySourceEnabled: Boolean = false,
+    // Off (Settings, or the right-click menu's Quick actions): the card never appears.
+    val pauseOverlayEnabled: Boolean = true,
     // Top-billed cast for the pause overlay's top-left block; empty hides it.
     val pauseOverlayCast: List<PlayerControlCastItem> = emptyList(),
 )

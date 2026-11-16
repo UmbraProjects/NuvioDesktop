@@ -89,6 +89,8 @@ data class PlayerSettingsUiState(
     // Adds the playing source (release name + provider) as the bottom row of the paused metadata
     // overlay. Off by default: the raw release strings are noisy, and only some viewers want them.
     val desktopPauseOverlaySourceEnabled: Boolean = false,
+    /** The "You're watching" card a few seconds into a pause. */
+    val desktopPauseOverlayEnabled: Boolean = true,
     // When true, the desktop speed button / speed keyboard shortcuts step by 0.1 instead of
     // jumping between the coarse preset stages (1, 1.25, 1.5, 2, 3, 4).
     val desktopPlaybackSpeedFineIncrementsEnabled: Boolean = false,
@@ -165,6 +167,8 @@ data class PlayerSettingsUiState(
     val skipIntroEnabled: Boolean = true,
     val skipAutoAcceptMode: SkipAutoAcceptMode = SkipAutoAcceptMode.MANUAL,
     val skipMovieCreditsToPostCredits: Boolean = false,
+    /** Opt-in: outros auto-skipped too, from the sources the auto-accept mode trusts. */
+    val skipAutoAcceptOutros: Boolean = false,
     val stripSdhSubtitles: Boolean = false,
     val automaticSubtitleSyncEnabled: Boolean = true,
     val animeSkipEnabled: Boolean = false,
@@ -311,6 +315,7 @@ object PlayerSettingsRepository {
     private var desktopHudButtonOrder: List<String> = emptyList()
     private var desktopAlwaysShowClockEnabled = false
     private var desktopPauseOverlaySourceEnabled = false
+    private var desktopPauseOverlayEnabled = true
     private var desktopPlaybackSpeedFineIncrementsEnabled = false
     private var desktopPlayerZoneInput = DesktopPlayerZoneInput.Off
     private var desktopPlayerZoneActions = DesktopPlayerZoneActions()
@@ -360,6 +365,7 @@ object PlayerSettingsRepository {
     private var skipIntroEnabled = true
     private var skipAutoAcceptMode = SkipAutoAcceptMode.MANUAL
     private var skipMovieCreditsToPostCredits = false
+    private var skipAutoAcceptOutros = false
     private var stripSdhSubtitles = false
     private var automaticSubtitleSyncEnabled = true
     private var animeSkipEnabled = false
@@ -469,6 +475,7 @@ object PlayerSettingsRepository {
         desktopHudButtonOrder = emptyList()
         desktopAlwaysShowClockEnabled = false
         desktopPauseOverlaySourceEnabled = false
+        desktopPauseOverlayEnabled = true
         desktopPlaybackSpeedFineIncrementsEnabled = false
         desktopPlayerZoneInput = DesktopPlayerZoneInput.Off
         desktopPlayerZoneActions = DesktopPlayerZoneActions()
@@ -518,6 +525,7 @@ object PlayerSettingsRepository {
         skipIntroEnabled = true
         skipAutoAcceptMode = SkipAutoAcceptMode.MANUAL
         skipMovieCreditsToPostCredits = false
+        skipAutoAcceptOutros = false
         stripSdhSubtitles = false
         automaticSubtitleSyncEnabled = true
         animeSkipEnabled = false
@@ -639,6 +647,7 @@ object PlayerSettingsRepository {
         }
         desktopAlwaysShowClockEnabled = PlayerSettingsStorage.loadDesktopAlwaysShowClockEnabled() ?: false
         desktopPauseOverlaySourceEnabled = PlayerSettingsStorage.loadDesktopPauseOverlaySourceEnabled() ?: false
+        desktopPauseOverlayEnabled = PlayerSettingsStorage.loadDesktopPauseOverlayEnabled() ?: true
         desktopPlaybackSpeedFineIncrementsEnabled =
             PlayerSettingsStorage.loadDesktopPlaybackSpeedFineIncrementsEnabled() ?: false
         // Before zones had a choice of input they were a wheel-only switch; an old "on" reads as Wheel.
@@ -785,6 +794,7 @@ object PlayerSettingsRepository {
             ?.let { runCatching { SkipAutoAcceptMode.valueOf(it) }.getOrNull() }
             ?: SkipAutoAcceptMode.MANUAL
         skipMovieCreditsToPostCredits = PlayerSettingsStorage.loadSkipMovieCreditsToPostCredits() ?: false
+        skipAutoAcceptOutros = PlayerSettingsStorage.loadSkipAutoAcceptOutros() ?: false
         stripSdhSubtitles = PlayerSettingsStorage.loadStripSdhSubtitles() ?: false
         automaticSubtitleSyncEnabled = PlayerSettingsStorage.loadAutomaticSubtitleSyncEnabled() ?: true
         animeSkipEnabled = PlayerSettingsStorage.loadAnimeSkipEnabled() ?: false
@@ -1056,6 +1066,14 @@ object PlayerSettingsRepository {
         desktopPauseOverlaySourceEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopPauseOverlaySourceEnabled(enabled)
+    }
+
+    fun setDesktopPauseOverlayEnabled(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopPauseOverlayEnabled == enabled) return
+        desktopPauseOverlayEnabled = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopPauseOverlayEnabled(enabled)
     }
 
     fun setDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean) {
@@ -1519,6 +1537,14 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveSkipAutoAcceptMode(mode.name)
     }
 
+    fun setSkipAutoAcceptOutros(enabled: Boolean) {
+        ensureLoaded()
+        if (skipAutoAcceptOutros == enabled) return
+        skipAutoAcceptOutros = enabled
+        publish()
+        PlayerSettingsStorage.saveSkipAutoAcceptOutros(enabled)
+    }
+
     fun setSkipMovieCreditsToPostCredits(enabled: Boolean) {
         ensureLoaded()
         if (skipMovieCreditsToPostCredits == enabled) return
@@ -1864,6 +1890,7 @@ object PlayerSettingsRepository {
             desktopHudButtonOrder = desktopHudButtonOrder,
             desktopAlwaysShowClockEnabled = desktopAlwaysShowClockEnabled,
             desktopPauseOverlaySourceEnabled = desktopPauseOverlaySourceEnabled,
+            desktopPauseOverlayEnabled = desktopPauseOverlayEnabled,
             desktopPlaybackSpeedFineIncrementsEnabled = desktopPlaybackSpeedFineIncrementsEnabled,
             desktopPlayerZoneInput = desktopPlayerZoneInput,
             desktopPlayerZoneActions = desktopPlayerZoneActions,
@@ -1913,6 +1940,7 @@ object PlayerSettingsRepository {
             skipIntroEnabled = skipIntroEnabled,
             skipAutoAcceptMode = skipAutoAcceptMode,
             skipMovieCreditsToPostCredits = skipMovieCreditsToPostCredits,
+            skipAutoAcceptOutros = skipAutoAcceptOutros,
             stripSdhSubtitles = stripSdhSubtitles,
             automaticSubtitleSyncEnabled = automaticSubtitleSyncEnabled,
             animeSkipEnabled = animeSkipEnabled,

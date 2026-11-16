@@ -1181,7 +1181,7 @@ private fun ContinueWatchingCard(
         modifier = Modifier
             .width(cardMetrics.width)
             .aspectRatio(PosterLandscapeAspectRatio)
-            .nuvioPosterHighlight(cardMetrics.cornerRadius)
+            .nuvioPosterHighlight(cardMetrics.cornerRadius, artworkUrl = imageUrl)
             .clip(RoundedCornerShape(cardMetrics.cornerRadius))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .nuvioCardDepth(RoundedCornerShape(cardMetrics.cornerRadius), NuvioCardDepthSurface.ContinueWatching)
@@ -1363,7 +1363,7 @@ private fun ContinueWatchingWideCard(
         modifier = Modifier
             .width(layout.wideCardWidth)
             .height(layout.wideCardHeight)
-            .nuvioPosterHighlight(layout.cardRadius)
+            .nuvioPosterHighlight(layout.cardRadius, artworkUrl = artworkUrl)
             .clip(RoundedCornerShape(layout.cardRadius))
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
             .border(
@@ -1503,7 +1503,7 @@ private fun ContinueWatchingPosterCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(layout.posterCardHeight)
-                .nuvioPosterHighlight(layout.cardRadius)
+                .nuvioPosterHighlight(layout.cardRadius, artworkUrl = posterArtworkUrl)
                 .clip(RoundedCornerShape(layout.cardRadius))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .nuvioCardDepth(RoundedCornerShape(layout.cardRadius), NuvioCardDepthSurface.ContinueWatching)

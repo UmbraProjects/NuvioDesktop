@@ -171,7 +171,7 @@ internal object XtreamUrls {
     fun api(playlist: IptvPlaylist, action: String? = null, vararg extra: Pair<String, String>): String {
         val params = buildList {
             add("username" to playlist.username.orEmpty())
-            add("password" to playlist.password.orEmpty())
+            add("password" to playlist.password.orEmpty().withoutLineBreaks())
             if (action != null) add("action" to action)
             addAll(extra)
         }
@@ -179,7 +179,7 @@ internal object XtreamUrls {
     }
 
     fun streamUrl(playlist: IptvPlaylist, streamId: String, ext: String): String =
-        base(playlist) + "/live/" + segment(playlist.username.orEmpty()) + "/" + segment(playlist.password.orEmpty()) +
+        base(playlist) + "/live/" + segment(playlist.username.orEmpty()) + "/" + segment(playlist.password.orEmpty().withoutLineBreaks()) +
             "/" + segment("$streamId.$ext")
 
     /**
@@ -187,13 +187,13 @@ internal object XtreamUrls {
      * server's own time zone as `yyyy-MM-dd:HH-mm`. The path form every Xtream panel serves.
      */
     fun timeshiftUrl(playlist: IptvPlaylist, streamId: String, startLocal: String, minutes: Int): String =
-        base(playlist) + "/timeshift/" + segment(playlist.username.orEmpty()) + "/" + segment(playlist.password.orEmpty()) +
+        base(playlist) + "/timeshift/" + segment(playlist.username.orEmpty()) + "/" + segment(playlist.password.orEmpty().withoutLineBreaks()) +
             "/" + minutes + "/" + startLocal + "/" + segment("$streamId.ts")
 
     /** The account's full XMLTV guide (`xmltv.php`). */
     fun xmltv(playlist: IptvPlaylist): String =
         base(playlist) + "/xmltv.php?username=" + query(playlist.username.orEmpty()) +
-            "&password=" + query(playlist.password.orEmpty())
+            "&password=" + query(playlist.password.orEmpty().withoutLineBreaks())
 
     private fun query(value: String): String = URLEncoder.encode(value, Charsets.UTF_8)
 
@@ -276,3 +276,9 @@ internal class XtreamEpgListing(
     @SerialName("start_timestamp") @Serializable(with = LooseString::class) val startTimestamp: String? = null,
     @SerialName("stop_timestamp") @Serializable(with = LooseString::class) val stopTimestamp: String? = null,
 )
+
+/**
+ * Credentials without CR/LF. Applied where Xtream URLs are built as well as on save, so a playlist saved with a pasted
+ * trailing newline (stored before the save stripped it) plays without being edited.
+ */
+internal fun String.withoutLineBreaks(): String = filterNot { it == '\n' || it == '\r' }

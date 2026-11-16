@@ -66,6 +66,16 @@ actual fun panelRingPadButtonState(): StateFlow<GamepadButton?> = GamepadSetting
 actual fun setPanelRingPadButton(button: GamepadButton?) = GamepadSettingsRepository.setRingButton(button)
 actual fun panelRingPadButtonChoices(): List<GamepadButton> = GamepadSettingsRepository.RING_BUTTON_CHOICES
 
+actual fun controllerCursorButtonState(): StateFlow<GamepadButton?> = GamepadSettingsRepository.cursorButtonState
+actual fun setControllerCursorButton(button: GamepadButton?) = GamepadSettingsRepository.setCursorButton(button)
+actual fun controllerCursorButtonChoices(): List<GamepadButton> = GamepadSettingsRepository.CURSOR_BUTTON_CHOICES
+actual fun controllerCursorSpeedState(): StateFlow<ControllerCursorSpeed> = GamepadSettingsRepository.cursorSpeedState
+actual fun setControllerCursorSpeed(speed: ControllerCursorSpeed) = GamepadSettingsRepository.setCursorSpeed(speed)
+actual fun controllerCursorByDefaultState(): StateFlow<Boolean> = GamepadSettingsRepository.cursorByDefaultState
+actual fun setControllerCursorByDefault(enabled: Boolean) = GamepadSettingsRepository.setCursorByDefault(enabled)
+actual fun controllerCursorHintState(): StateFlow<Boolean> = GamepadSettingsRepository.cursorHintState
+actual fun setControllerCursorHint(visible: Boolean) = GamepadSettingsRepository.setCursorHint(visible)
+
 actual fun panelRingSizeState(): StateFlow<PanelRingSize> = GamepadSettingsRepository.ringSizeState
 actual fun setPanelRingSize(size: PanelRingSize) = GamepadSettingsRepository.setRingSize(size)
 

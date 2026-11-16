@@ -449,6 +449,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             // reads as messy clutter in the pause card, so it is intentionally not used as a fallback.
             pauseOverlayDescription = activePauseDescription.orEmpty(),
             pauseOverlaySourceEnabled = playerSettingsUiState.desktopPauseOverlaySourceEnabled,
+            pauseOverlayEnabled = playerSettingsUiState.desktopPauseOverlayEnabled,
             pauseOverlayCast = remember(playerMetaCast) {
                 playerMetaCast
                     .filter { it.name.isNotBlank() }
@@ -1775,6 +1776,7 @@ private fun PlayerScreenRuntime.handlePlayerControlsEvent(type: String, value: D
         "copyStreamUrl" -> (if (isYouTubeVideoPlayback) "https://www.youtube.com/watch?v=$youTubeVideoId" else activeSourceUrl)
             .takeIf { it.isNotBlank() }?.let(::copyPlainTextToClipboard)
         "toggleMpvDiagnostics" -> playerController?.setDiagnosticsOverlayEnabled(value != 0.0)
+        "togglePauseOverlay" -> PlayerSettingsRepository.setDesktopPauseOverlayEnabled(value != 0.0)
         "toggleStreamFailover" -> {
             val enabled = value != 0.0
             PlayerSettingsRepository.setStreamFailoverEnabled(enabled)

@@ -18,6 +18,7 @@ import com.nuvio.app.core.ui.PosterHighlightMode
 import com.nuvio.app.core.ui.PosterRatingBadgeScale
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.settings_poster_card_radius
+import nuvio.composeapp.generated.resources.settings_poster_highlight_glow
 import nuvio.composeapp.generated.resources.settings_poster_card_width
 import nuvio.composeapp.generated.resources.settings_poster_description
 import nuvio.composeapp.generated.resources.settings_poster_hide_labels
@@ -274,6 +275,10 @@ private fun posterHighlightModeOptions(): List<SettingsChoiceOption<PosterHighli
     SettingsChoiceOption(
         PosterHighlightMode.Sweep,
         stringResource(Res.string.settings_poster_highlight_sweep),
+    ),
+    SettingsChoiceOption(
+        PosterHighlightMode.Glow,
+        stringResource(Res.string.settings_poster_highlight_glow),
     ),
 )
 

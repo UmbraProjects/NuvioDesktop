@@ -10,6 +10,9 @@ import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.quarantineMismatchedImdbTmdbIdentity
 import com.nuvio.app.features.details.MoreLikeThisSource
 import com.nuvio.app.features.details.PersonDetail
+import com.nuvio.app.features.details.PersonHeroCandidate
+import com.nuvio.app.features.details.isGuestSpotGenre
+import com.nuvio.app.features.details.pickPersonHeroCandidate
 import com.nuvio.app.features.home.HeroAward
 import com.nuvio.app.features.home.HeroDiscoveryAwards
 import com.nuvio.app.features.home.HeroDiscoveryBadgeTarget
@@ -170,12 +173,19 @@ object TmdbMetadataService {
             }?.takeIf { it.isNotBlank() }
 
             val preferCrew = preferCrewCredits ?: shouldPreferCrewCredits(person.knownForDepartment)
+            // Guest spots on talk, news and reality shows are not roles; they filled an actor's
+            // Popular row with chat shows. Dropped unless that is all there is.
+            val allCast = credits?.cast.orEmpty()
+            val roleCast = allCast.filterNot { isGuestSpotGenre(it.genreIds) }.ifEmpty { allCast }
+            // A director's crew list also holds every producer and writer credit; keep their own
+            // line of work when they have any.
+            val ownCrew = ownWorkCrew(credits?.crew.orEmpty(), person.knownForDepartment)
 
             val (castMovieCredits, crewMovieCredits, castTvCredits, crewTvCredits) = coroutineScope {
-                val castMovieDeferred = async { mapPersonMovieCreditsFromCast(credits?.cast.orEmpty()) }
-                val crewMovieDeferred = async { mapPersonMovieCreditsFromCrew(credits?.crew.orEmpty()) }
-                val castTvDeferred = async { mapPersonTvCreditsFromCast(credits?.cast.orEmpty()) }
-                val crewTvDeferred = async { mapPersonTvCreditsFromCrew(credits?.crew.orEmpty()) }
+                val castMovieDeferred = async { mapPersonMovieCreditsFromCast(roleCast) }
+                val crewMovieDeferred = async { mapPersonMovieCreditsFromCrew(ownCrew) }
+                val castTvDeferred = async { mapPersonTvCreditsFromCast(roleCast) }
+                val crewTvDeferred = async { mapPersonTvCreditsFromCrew(ownCrew) }
                 PersonCreditBuckets(
                     castMovieCredits = castMovieDeferred.await(),
                     crewMovieCredits = crewMovieDeferred.await(),
@@ -204,13 +214,84 @@ object TmdbMetadataService {
                     crewCredits = crewTvCredits,
                 ),
             )
-            personCache[cacheKey] = detail
-            detail
+            val usesCrew = (preferCrew && (crewMovieCredits.isNotEmpty() || crewTvCredits.isNotEmpty())) ||
+                (castMovieCredits.isEmpty() && castTvCredits.isEmpty())
+            val heroCandidates = if (usesCrew) {
+                ownCrew.map { it.toHeroCandidate() }
+            } else {
+                roleCast.map { it.toHeroCandidate() }
+            }
+            val hero = pickPersonHeroCandidate(heroCandidates)
+            val withHero = if (hero != null) {
+                detail.copy(
+                    heroBackdrop = textlessBackdrop(hero) ?: buildImageUrl(hero.backdropPath, "original"),
+                    heroBackdropTitle = hero.title,
+                )
+            } else {
+                detail
+            }
+            personCache[cacheKey] = withHero
+            withHero
         } catch (e: Exception) {
             log.w(e) { "Failed to fetch person detail for $personId" }
             null
         }
     }
+
+    /** Highest-voted backdrop without printed text, or null to keep the credit's own backdrop. */
+    private suspend fun textlessBackdrop(candidate: PersonHeroCandidate): String? = runCatching {
+        val type = if (candidate.mediaType == "tv") "tv" else "movie"
+        fetch<TmdbImagesResponse>(
+            endpoint = "$type/${candidate.tmdbId}/images",
+            query = mapOf("include_image_language" to "null"),
+        )?.backdrops
+            ?.filter { !it.filePath.isNullOrBlank() && it.iso6391 == null }
+            ?.maxByOrNull { it.voteAverage ?: 0.0 }
+            ?.let { buildImageUrl(it.filePath, "original") }
+    }.getOrNull()
+
+    private fun ownWorkCrew(
+        crew: List<TmdbPersonCreditCrew>,
+        knownForDepartment: String?,
+    ): List<TmdbPersonCreditCrew> {
+        val department = knownForDepartment?.trim()?.takeIf { it.isNotBlank() } ?: return crew
+        val ownJobs = when (department.lowercase()) {
+            "directing" -> setOf("director", "creator")
+            "writing" -> setOf("screenplay", "writer", "story", "novel", "creator", "author")
+            else -> null
+        }
+        val own = crew.filter { credit ->
+            if (ownJobs != null) {
+                credit.job?.trim()?.lowercase() in ownJobs
+            } else {
+                credit.department.equals(department, ignoreCase = true)
+            }
+        }
+        return own.ifEmpty { crew }
+    }
+
+    private fun TmdbPersonCreditCast.toHeroCandidate() = PersonHeroCandidate(
+        tmdbId = id,
+        mediaType = mediaType.orEmpty(),
+        title = title ?: name.orEmpty(),
+        backdropPath = backdropPath,
+        voteCount = voteCount ?: 0,
+        billing = order,
+        episodeCount = episodeCount,
+        genreIds = genreIds,
+    )
+
+    private fun TmdbPersonCreditCrew.toHeroCandidate() = PersonHeroCandidate(
+        tmdbId = id,
+        mediaType = mediaType.orEmpty(),
+        title = title ?: name.orEmpty(),
+        backdropPath = backdropPath,
+        voteCount = voteCount ?: 0,
+        billing = null,
+        episodeCount = null,
+        genreIds = genreIds,
+        ownWork = true,
+    )
 
     private fun shouldPreferCrewCredits(knownForDepartment: String?): Boolean {
         val department = knownForDepartment?.trim()?.lowercase() ?: return false
@@ -2763,6 +2844,7 @@ private data class TmdbCrewMember(
 @Serializable
 private data class TmdbImagesResponse(
     val logos: List<TmdbImage> = emptyList(),
+    val backdrops: List<TmdbImage> = emptyList(),
 )
 
 @Serializable
@@ -2900,7 +2982,11 @@ private data class TmdbPersonCreditCast(
     @SerialName("release_date") val releaseDate: String? = null,
     @SerialName("first_air_date") val firstAirDate: String? = null,
     @SerialName("vote_average") val voteAverage: Double? = null,
+    @SerialName("vote_count") val voteCount: Int? = null,
     val popularity: Double? = null,
+    val order: Int? = null,
+    @SerialName("episode_count") val episodeCount: Int? = null,
+    @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
 )
 
 @Serializable
@@ -2910,13 +2996,16 @@ private data class TmdbPersonCreditCrew(
     val title: String? = null,
     val name: String? = null,
     val job: String? = null,
+    val department: String? = null,
     @SerialName("poster_path") val posterPath: String? = null,
     @SerialName("backdrop_path") val backdropPath: String? = null,
     val overview: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
     @SerialName("first_air_date") val firstAirDate: String? = null,
     @SerialName("vote_average") val voteAverage: Double? = null,
+    @SerialName("vote_count") val voteCount: Int? = null,
     val popularity: Double? = null,
+    @SerialName("genre_ids") val genreIds: List<Int> = emptyList(),
 )
 
 // ─── Same cast ───

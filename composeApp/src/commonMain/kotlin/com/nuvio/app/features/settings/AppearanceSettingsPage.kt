@@ -61,6 +61,11 @@ import com.nuvio.app.isDesktop
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_reset
+import nuvio.composeapp.generated.resources.settings_appearance_sidebar_items
+import nuvio.composeapp.generated.resources.settings_appearance_sidebar_items_centred
+import nuvio.composeapp.generated.resources.settings_appearance_sidebar_items_centred_description
+import nuvio.composeapp.generated.resources.settings_appearance_sidebar_items_top
+import nuvio.composeapp.generated.resources.settings_appearance_sidebar_items_top_description
 import nuvio.composeapp.generated.resources.settings_appearance_card_depth
 import nuvio.composeapp.generated.resources.settings_appearance_custom_theme
 import nuvio.composeapp.generated.resources.settings_appearance_custom_theme_accent
@@ -340,6 +345,25 @@ internal fun LazyListScope.appearanceSettingsContent(
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("desktop-navigation")),
                         onSelected = onDesktopNavigationLayoutSelected,
                     )
+                    if (desktopNavigationLayout == DesktopNavigationLayout.Sidebar) {
+                        val itemsTop by ThemeSettingsRepository.desktopSidebarItemsTop.collectAsState()
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_appearance_sidebar_items),
+                            description = stringResource(
+                                if (itemsTop) Res.string.settings_appearance_sidebar_items_top_description
+                                else Res.string.settings_appearance_sidebar_items_centred_description,
+                            ),
+                            options = listOf(
+                                SettingsChoiceOption(false, stringResource(Res.string.settings_appearance_sidebar_items_centred)),
+                                SettingsChoiceOption(true, stringResource(Res.string.settings_appearance_sidebar_items_top)),
+                            ),
+                            selectedValue = itemsTop,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("sidebar-items")),
+                            onSelected = ThemeSettingsRepository::setDesktopSidebarItemsTop,
+                        )
+                    }
                     SettingsGroupDivider(isTablet = isTablet)
                     var navigationOrderOpen by remember { mutableStateOf(false) }
                     Box(

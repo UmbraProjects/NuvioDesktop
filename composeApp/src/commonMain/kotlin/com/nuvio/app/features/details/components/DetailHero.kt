@@ -653,7 +653,14 @@ private fun DetailDesktopHeroOverlay(
         val statusLine = remember(meta.type, meta.status, meta.seriesType, meta.country, meta.language, meta.videos, meta.genres, meta.director, meta.tmdbKeywords, meta.mdblistKeywords) {
             buildDetailStatusLine(meta)
         }
-        val hasStatusLine = showOverview && statusLine != null
+        // A couple of the genre hover's tags close the status line, in its faded colour, like theme tags (deduplicated
+        // against the genres in the metadata row above, which keep the full card on hover).
+        val heroGenres = remember(meta.genres) { meta.genres.take(3).filter { it.isNotBlank() } }
+        val genreCard = remember(heroGenres, meta.imdbInterests, meta.tmdbKeywords, meta.mdblistKeywords) {
+            GenreSubgenres.card(heroGenres, meta.imdbInterests, meta.allKeywords())
+        }
+        val statusTags = remember(genreCard, heroGenres) { GenreSubgenres.lineTags(genreCard, heroGenres) }
+        val hasStatusLine = showOverview && (statusLine != null || statusTags.isNotEmpty())
         // Every lane below sits this far under its original spot, so the block reads as centred in
         // the hero rather than hung from the back button; the cast still clears the season tabs.
         val laneShift = 12.dp
@@ -740,7 +747,14 @@ private fun DetailDesktopHeroOverlay(
                             )
                         }
                     }
-                    statusLine?.let { DetailHeroStatusLine(line = it, modifier = Modifier.fillMaxWidth()) }
+                    if (statusLine != null || statusTags.isNotEmpty()) {
+                        DetailHeroStatusLine(
+                            line = statusLine,
+                            tags = statusTags,
+                            card = genreCard,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
 
@@ -884,7 +898,7 @@ private fun DetailDesktopHeroOverlay(
                         showEpisodeCounts = castEpisodeCountVisibility.showCounts(meta.genres),
                         showHeader = false,
                         visibleItemCount = 6,
-                        onCastClick = if (activePeopleTab == DetailHeroPeopleTab.Starring) onCastClick else null,
+                        onCastClick = onCastClick,
                         compactDesktopLayout = true,
                     )
                 }
@@ -1106,6 +1120,9 @@ private fun MetaDetails.detailHeroProductionPeople(): List<MetaPerson> {
                     name = name,
                     role = role,
                     photo = detailHeroCrewImage(name, role),
+                    // Carried over from the TMDB people list so the crew opens a person page;
+                    // a name with no match there is looked up by name when clicked.
+                    tmdbId = cast.firstOrNull { it.name.equals(name, ignoreCase = true) && (it.tmdbId ?: 0) > 0 }?.tmdbId,
                 )
             }
     }
@@ -1260,23 +1277,46 @@ private fun DetailHeroMetadataRow(
 /**
  * "Airing · Japanese Series", "British Limited Series", "Cancelled after 2 seasons": a
  * quieter caption under the ratings. The country lives here rather than in the metadata row.
+ * A couple of the genre hover's [tags] close it ("… · Folk Horror · Found footage"), each with the
+ * same hover [card] as the genres; with no status they make the line on their own.
  */
 @Composable
 private fun DetailHeroStatusLine(
-    line: DetailStatusLine,
+    line: DetailStatusLine?,
+    tags: List<String>,
+    card: GenreSubgenres.Card,
     modifier: Modifier = Modifier,
 ) {
-    val text = detailStatusLineText(line) ?: return
-    Text(
-        text = text,
+    val text = line?.let { detailStatusLineText(it) }
+    if (text == null && tags.isEmpty()) return
+    val style = MaterialTheme.typography.bodyLarge
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
         modifier = modifier,
-        style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = FontWeight.Medium,
-        textAlign = TextAlign.Center,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (text != null) {
+            // The status gives way first on a narrow hero; the tags are short.
+            Text(
+                text = text,
+                modifier = Modifier.weight(1f, fill = false),
+                style = style,
+                color = color,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        tags.forEachIndexed { index, tag ->
+            if (text != null || index > 0) {
+                Text(text = " · ", style = style, color = color, fontWeight = FontWeight.Medium, maxLines = 1)
+            }
+            NuvioPosterHoverTooltip(title = card.headline, subtitle = card.themeLine) {
+                Text(text = tag, style = style, color = color, fontWeight = FontWeight.Medium, maxLines = 1)
+            }
+        }
+    }
 }
 
 @Composable

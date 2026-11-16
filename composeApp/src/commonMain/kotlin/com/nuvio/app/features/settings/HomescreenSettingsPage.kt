@@ -308,15 +308,45 @@ internal fun LazyListScope.homescreenSettingsContent(
                         }
                     } else {
                         SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_home_smooth_scrolling),
-                            description = stringResource(Res.string.settings_home_smooth_scrolling_description),
-                            checked = homeSettings.smoothScrollingEnabled,
+                        // Smooth and snap are two stored switches (the first-run wizard still sets
+                        // only smooth); shown as one choice because only one can drive the wheel.
+                        val wheelScroll = when {
+                            homeSettings.snapScrollingEnabled -> HomeWheelScroll.Snap
+                            homeSettings.smoothScrollingEnabled -> HomeWheelScroll.Smooth
+                            else -> HomeWheelScroll.Standard
+                        }
+                        SettingsChoiceRow(
+                            title = stringResource(Res.string.settings_home_wheel_scrolling),
+                            description = stringResource(
+                                when (wheelScroll) {
+                                    HomeWheelScroll.Smooth -> Res.string.settings_home_wheel_smooth_description
+                                    HomeWheelScroll.Snap -> Res.string.settings_home_wheel_snap_description
+                                    HomeWheelScroll.Standard -> Res.string.settings_home_wheel_standard_description
+                                },
+                            ),
+                            options = listOf(
+                                SettingsChoiceOption(HomeWheelScroll.Smooth, stringResource(Res.string.settings_home_wheel_smooth)),
+                                SettingsChoiceOption(HomeWheelScroll.Snap, stringResource(Res.string.settings_home_wheel_snap)),
+                                SettingsChoiceOption(HomeWheelScroll.Standard, stringResource(Res.string.settings_home_wheel_standard)),
+                            ),
+                            selectedValue = wheelScroll,
                             isTablet = isTablet,
                             modifier = Modifier.settingsScrollAnchor(
                                 SettingsScrollAnchor.searchKey("home-smooth-scrolling"),
                             ),
-                            onCheckedChange = HomeCatalogSettingsRepository::setSmoothScrollingEnabled,
+                            onSelected = { choice ->
+                                when (choice) {
+                                    HomeWheelScroll.Snap -> HomeCatalogSettingsRepository.setSnapScrollingEnabled(true)
+                                    HomeWheelScroll.Smooth -> {
+                                        HomeCatalogSettingsRepository.setSnapScrollingEnabled(false)
+                                        HomeCatalogSettingsRepository.setSmoothScrollingEnabled(true)
+                                    }
+                                    HomeWheelScroll.Standard -> {
+                                        HomeCatalogSettingsRepository.setSnapScrollingEnabled(false)
+                                        HomeCatalogSettingsRepository.setSmoothScrollingEnabled(false)
+                                    }
+                                }
+                            },
                         )
                         SettingsGroupDivider(isTablet = isTablet)
                         // One switch per mode rather than one switch overall: the preview is on by
@@ -1266,3 +1296,5 @@ private fun HomescreenCatalogList(
 
 private fun heroCrossfadeLabel(millis: Int, offLabel: String): String =
     if (millis <= 0) offLabel else "${millis}ms"
+
+private enum class HomeWheelScroll { Smooth, Snap, Standard }

@@ -75,6 +75,24 @@ expect fun panelRingPadButtonChoices(): List<GamepadButton>
 expect fun panelRingSizeState(): StateFlow<com.nuvio.app.features.panelring.PanelRingSize>
 expect fun setPanelRingSize(size: com.nuvio.app.features.panelring.PanelRingSize)
 
+/** The stick click held to turn the left stick into the mouse pointer, or null for none. */
+expect fun controllerCursorButtonState(): StateFlow<GamepadButton?>
+expect fun setControllerCursorButton(button: GamepadButton?)
+expect fun controllerCursorButtonChoices(): List<GamepadButton>
+expect fun controllerCursorSpeedState(): StateFlow<ControllerCursorSpeed>
+expect fun setControllerCursorSpeed(speed: ControllerCursorSpeed)
+expect fun controllerCursorByDefaultState(): StateFlow<Boolean>
+expect fun setControllerCursorByDefault(enabled: Boolean)
+expect fun controllerCursorHintState(): StateFlow<Boolean>
+expect fun setControllerCursorHint(visible: Boolean)
+
+/** How fast the stick moves the pointer at full tilt, in pixels a second on a 1080p-wide screen. */
+enum class ControllerCursorSpeed(val maxPxPerSecond: Double) {
+    Slow(1_000.0),
+    Medium(1_500.0),
+    Fast(2_300.0),
+}
+
 /** Hold the middle mouse button to open the ring. */
 expect fun panelRingMouseState(): StateFlow<Boolean>
 expect fun setPanelRingMouse(enabled: Boolean)

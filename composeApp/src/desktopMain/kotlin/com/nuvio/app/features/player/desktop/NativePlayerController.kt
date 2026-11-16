@@ -3177,6 +3177,8 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("pauseOverlaySourceEnabled", pauseOverlay.pauseOverlaySourceEnabled)
         append(',')
+        appendJsonField("pauseOverlayEnabled", pauseOverlay.pauseOverlayEnabled)
+        append(',')
         appendJsonArrayField("pauseOverlayCast", pauseOverlay.pauseOverlayCast) { appendCastItemJson(it) }
         append(',')
         appendJsonField("resizeModeLabel", resizeModeLabel)

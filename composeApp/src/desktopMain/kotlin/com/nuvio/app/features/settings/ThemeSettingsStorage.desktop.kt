@@ -30,6 +30,7 @@ internal actual object ThemeSettingsStorage {
     // Account-wide, not per profile: set when the account started on the pinned-bar default.
     private const val desktopTopBarPinnedByDefaultKey = "desktop_top_bar_pinned_by_default"
     private const val desktopDiscoverTabVisibleKey = "desktop_discover_tab_visible"
+    private const val desktopSidebarItemsTopKey = "desktop_sidebar_items_top"
     private const val desktopAppUiScalePercentKey = "desktop_app_ui_scale_percent"
     private const val desktopAppUiScaleAppliesToDetailsKey = "desktop_app_ui_scale_applies_to_details"
     private const val appFontFamilyKey = "app_font_family"
@@ -178,6 +179,13 @@ internal actual object ThemeSettingsStorage {
 
     actual fun loadDesktopDiscoverTabVisible(): Boolean? =
         store.getBoolean(ProfileScopedKey.of(desktopDiscoverTabVisibleKey))
+
+    actual fun loadDesktopSidebarItemsTop(): Boolean? =
+        store.getBoolean(ProfileScopedKey.of(desktopSidebarItemsTopKey))
+
+    actual fun saveDesktopSidebarItemsTop(top: Boolean) {
+        store.putBoolean(ProfileScopedKey.of(desktopSidebarItemsTopKey), top)
+    }
 
     actual fun saveDesktopDiscoverTabVisible(visible: Boolean) {
         store.putBoolean(ProfileScopedKey.of(desktopDiscoverTabVisibleKey), visible)

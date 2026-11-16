@@ -87,6 +87,7 @@ import nuvio.composeapp.generated.resources.settings_poster_highlight_descriptio
 import nuvio.composeapp.generated.resources.settings_poster_highlight_off
 import nuvio.composeapp.generated.resources.settings_poster_highlight_shine
 import nuvio.composeapp.generated.resources.settings_poster_highlight_sweep
+import nuvio.composeapp.generated.resources.settings_poster_highlight_glow
 import nuvio.composeapp.generated.resources.settings_poster_highlight_white
 import nuvio.composeapp.generated.resources.settings_poster_landscape_mode
 import nuvio.composeapp.generated.resources.settings_poster_width_balanced
@@ -365,6 +366,7 @@ private val PosterHighlightMode.labelRes: StringResource
         PosterHighlightMode.Accent -> Res.string.settings_poster_highlight_accent
         PosterHighlightMode.Shine -> Res.string.settings_poster_highlight_shine
         PosterHighlightMode.Sweep -> Res.string.settings_poster_highlight_sweep
+        PosterHighlightMode.Glow -> Res.string.settings_poster_highlight_glow
     }
 
 // ---------------------------------------------------------------------------------------------

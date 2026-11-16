@@ -35,6 +35,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopHudButtonOrderKey = "desktop_hud_button_order"
     private const val desktopAlwaysShowClockEnabledKey = "desktop_always_show_clock_enabled"
     private const val desktopPauseOverlaySourceEnabledKey = "desktop_pause_overlay_source_enabled"
+    private const val desktopPauseOverlayEnabledKey = "desktop_pause_overlay_enabled"
     private const val desktopPlaybackSpeedFineIncrementsEnabledKey = "desktop_playback_speed_fine_increments_enabled"
     private const val desktopPlayerScrollZonesEnabledKey = "desktop_player_scroll_zones_enabled"
     private const val desktopPlayerZoneInputKey = "desktop_player_zone_input"
@@ -102,6 +103,7 @@ internal actual object PlayerSettingsStorage {
     private const val skipIntroEnabledKey = "skip_intro_enabled"
     private const val skipAutoAcceptModeKey = "skip_auto_accept_mode"
     private const val skipMovieCreditsToPostCreditsKey = "skip_movie_credits_to_post_credits"
+    private const val skipAutoAcceptOutrosKey = "skip_auto_accept_outros"
     private const val stripSdhSubtitlesKey = "strip_sdh_subtitles"
     private const val automaticSubtitleSyncEnabledKey = "automatic_subtitle_sync_enabled"
     private const val animeSkipEnabledKey = "animeskip_enabled"
@@ -230,6 +232,7 @@ internal actual object PlayerSettingsStorage {
         skipIntroEnabledKey,
         skipAutoAcceptModeKey,
         skipMovieCreditsToPostCreditsKey,
+        skipAutoAcceptOutrosKey,
         stripSdhSubtitlesKey,
         automaticSubtitleSyncEnabledKey,
         animeSkipEnabledKey,
@@ -308,6 +311,9 @@ internal actual object PlayerSettingsStorage {
     actual fun loadDesktopPauseOverlaySourceEnabled(): Boolean? = loadBoolean(desktopPauseOverlaySourceEnabledKey)
     actual fun saveDesktopPauseOverlaySourceEnabled(enabled: Boolean) =
         saveBoolean(desktopPauseOverlaySourceEnabledKey, enabled)
+    actual fun loadDesktopPauseOverlayEnabled(): Boolean? = loadBoolean(desktopPauseOverlayEnabledKey)
+    actual fun saveDesktopPauseOverlayEnabled(enabled: Boolean) =
+        saveBoolean(desktopPauseOverlayEnabledKey, enabled)
     actual fun loadDesktopPlaybackSpeedFineIncrementsEnabled(): Boolean? = loadBoolean(desktopPlaybackSpeedFineIncrementsEnabledKey)
     actual fun saveDesktopPlaybackSpeedFineIncrementsEnabled(enabled: Boolean) = saveBoolean(desktopPlaybackSpeedFineIncrementsEnabledKey, enabled)
     actual fun loadDesktopPlayerScrollZonesEnabled(): Boolean? = loadBoolean(desktopPlayerScrollZonesEnabledKey)
@@ -473,6 +479,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveSkipAutoAcceptMode(mode: String) = saveString(skipAutoAcceptModeKey, mode)
     actual fun loadSkipMovieCreditsToPostCredits(): Boolean? = loadBoolean(skipMovieCreditsToPostCreditsKey)
     actual fun saveSkipMovieCreditsToPostCredits(enabled: Boolean) = saveBoolean(skipMovieCreditsToPostCreditsKey, enabled)
+    actual fun loadSkipAutoAcceptOutros(): Boolean? = loadBoolean(skipAutoAcceptOutrosKey)
+    actual fun saveSkipAutoAcceptOutros(enabled: Boolean) = saveBoolean(skipAutoAcceptOutrosKey, enabled)
     actual fun loadStripSdhSubtitles(): Boolean? = loadBoolean(stripSdhSubtitlesKey)
     actual fun saveStripSdhSubtitles(enabled: Boolean) = saveBoolean(stripSdhSubtitlesKey, enabled)
     actual fun loadAutomaticSubtitleSyncEnabled(): Boolean? = loadBoolean(automaticSubtitleSyncEnabledKey)
@@ -701,6 +709,7 @@ internal actual object PlayerSettingsStorage {
         loadSkipIntroEnabled()?.let { put(skipIntroEnabledKey, encodeSyncBoolean(it)) }
         loadSkipAutoAcceptMode()?.let { put(skipAutoAcceptModeKey, encodeSyncString(it)) }
         loadSkipMovieCreditsToPostCredits()?.let { put(skipMovieCreditsToPostCreditsKey, encodeSyncBoolean(it)) }
+        loadSkipAutoAcceptOutros()?.let { put(skipAutoAcceptOutrosKey, encodeSyncBoolean(it)) }
         loadStripSdhSubtitles()?.let { put(stripSdhSubtitlesKey, encodeSyncBoolean(it)) }
         loadAutomaticSubtitleSyncEnabled()?.let { put(automaticSubtitleSyncEnabledKey, encodeSyncBoolean(it)) }
         loadAnimeSkipEnabled()?.let { put(animeSkipEnabledKey, encodeSyncBoolean(it)) }
@@ -798,6 +807,7 @@ internal actual object PlayerSettingsStorage {
         payload.decodeSyncBoolean(skipIntroEnabledKey)?.let(::saveSkipIntroEnabled)
         payload.decodeSyncString(skipAutoAcceptModeKey)?.let(::saveSkipAutoAcceptMode)
         payload.decodeSyncBoolean(skipMovieCreditsToPostCreditsKey)?.let(::saveSkipMovieCreditsToPostCredits)
+        payload.decodeSyncBoolean(skipAutoAcceptOutrosKey)?.let(::saveSkipAutoAcceptOutros)
         payload.decodeSyncBoolean(stripSdhSubtitlesKey)?.let(::saveStripSdhSubtitles)
         payload.decodeSyncBoolean(automaticSubtitleSyncEnabledKey)?.let(::saveAutomaticSubtitleSyncEnabled)
         payload.decodeSyncBoolean(animeSkipEnabledKey)?.let(::saveAnimeSkipEnabled)
