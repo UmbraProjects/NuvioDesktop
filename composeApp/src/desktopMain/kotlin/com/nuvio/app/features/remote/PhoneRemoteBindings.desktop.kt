@@ -8,7 +8,7 @@ actual fun phoneRemoteState(): StateFlow<PhoneRemoteState> = PhoneRemote.state
 
 actual fun setPhoneRemoteEnabled(enabled: Boolean) = PhoneRemote.setEnabled(enabled)
 
-actual fun setPhoneRemoteAimAssist(enabled: Boolean) = PhoneRemote.setAimAssist(enabled)
+actual fun setPhoneRemoteAimStrength(strength: AimStrength) = PhoneRemote.setAimStrength(strength)
 
 actual fun resetPhoneRemotePairing() = PhoneRemote.resetPairing()
 

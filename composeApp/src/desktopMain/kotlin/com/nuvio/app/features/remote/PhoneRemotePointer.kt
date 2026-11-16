@@ -32,14 +32,15 @@ internal object PhoneRemotePointer {
         val screen = screenAt(at) ?: return
         var px = dx * screen.width.coerceAtLeast(1) / UNITS_PER_WIDTH
         var py = dy * screen.width.coerceAtLeast(1) / UNITS_PER_WIDTH
-        if (aimAssistOn()) {
+        val strength = PhoneRemote.state.value.aimStrength.factor
+        if (strength > 0.0) {
             // Speed from this step and the time since the last one; a first step after a pause counts as slow.
             val now = System.nanoTime()
             val seconds = ((now - lastMoveNanos) / 1_000_000_000.0).coerceIn(0.004, 0.25)
             lastMoveNanos = now
             val scale = screen.width / 1920.0
             AimTargets.refresh(at, screen, (AimAssist.PULL_RADIUS_PX * scale).toInt())
-            val adjusted = AimAssist.adjust(px, py, at, kotlin.math.hypot(px, py) / seconds, AimTargets.over, AimTargets.near, scale)
+            val adjusted = AimAssist.adjust(px, py, at, kotlin.math.hypot(px, py) / seconds, AimTargets.over, AimTargets.near, scale, strength)
             px = adjusted.first
             py = adjusted.second
         }
@@ -49,9 +50,6 @@ internal object PhoneRemotePointer {
     }
 
     private var lastMoveNanos = 0L
-
-    /** Settings > Keyboard shortcuts > Phone remote > Aim assist (on unless turned off). */
-    private fun aimAssistOn(): Boolean = PhoneRemote.state.value.aimAssist
 
     /** The middle of the screen Nuvio's window is on (else the main screen). */
     @Synchronized

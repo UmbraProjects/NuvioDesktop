@@ -14,9 +14,13 @@ import kotlin.math.min
  * fork:phone-remote pointer - aim assist, as consoles do it for a thumbstick: two light touches, only while the
  * phone moves slowly, so a deliberate sweep is never bent and a still phone never moves the cursor.
  *
- * - Friction: over something clickable, slow movement is scaled down, so the cursor is easier to stop on it.
- * - Pull: near something clickable, a slow movement is bent a little toward its centre, at most a fraction of the
- *   movement itself (never more than the hand is already doing).
+ * - Friction: over something clickable, slow movement is scaled down, so the cursor is easier to stop on it. Moving
+ *   away from its centre gets only a quarter of that, so leaving a target never feels sticky.
+ * - Pull: near something clickable, a slow movement already heading toward it is bent a little toward its centre, at
+ *   most a fraction of the movement itself. A movement going past or away is never pulled back (Nov 16: pulling every
+ *   slow move felt like the assist was working against the hand).
+ *
+ * Both scale with the strength chosen in Settings (AimStrength).
  *
  * Pure maths; the targets come from [AimTargets].
  */
@@ -31,7 +35,7 @@ internal object AimAssist {
     const val PULL_STRENGTH = 0.14
 
     /** The pull is never more than this share of the step's own length. */
-    const val PULL_CAP = 0.6
+    const val PULL_CAP = 0.4
 
     /** How far away (pixels on a 1080p-wide screen) a target still pulls. */
     const val PULL_RADIUS_PX = 90.0
@@ -49,33 +53,45 @@ internal object AimAssist {
         over: Rectangle?,
         near: Rectangle?,
         scale: Double = 1.0,
+        strength: Double = 1.0,
     ): Pair<Double, Double> {
         if (dx == 0.0 && dy == 0.0) return 0.0 to 0.0
+        if (strength <= 0.0) return dx to dy
         val slowLimit = SLOW_PX_PER_SECOND * scale
         if (pxPerSecond >= slowLimit) return dx to dy
         // 0 at the fastest the assist acts on, 1 at a crawl.
         val slowness = 1.0 - pxPerSecond / slowLimit
+        val step = hypot(dx, dy)
+        val target = over ?: near
+        val gapX = target?.let { it.centerX - cursor.x } ?: 0.0
+        val gapY = target?.let { it.centerY - cursor.y } ?: 0.0
+        val gap = hypot(gapX, gapY)
+        // 1 heading straight at the target's centre, 0 across it, -1 straight away.
+        val approach = if (target != null && gap > 0.5) (dx * gapX + dy * gapY) / (step * gap) else 0.0
         var x = dx
         var y = dy
         if (over != null) {
-            val factor = 1.0 - (1.0 - FRICTION) * slowness
+            val weight = AWAY_FRICTION_SHARE + (1.0 - AWAY_FRICTION_SHARE) * approach.coerceAtLeast(0.0)
+            val factor = 1.0 - (1.0 - FRICTION) * slowness * strength * weight
             x *= factor
             y *= factor
         }
-        val target = over ?: near
-        if (target != null) {
-            val gapX = target.centerX - cursor.x
-            val gapY = target.centerY - cursor.y
-            val gap = hypot(gapX, gapY)
-            if (gap > 0.5 && (over != null || gap <= PULL_RADIUS_PX * scale + target.width / 2.0)) {
-                val step = hypot(dx, dy)
-                val pull = min(gap * PULL_STRENGTH * slowness, step * PULL_CAP)
-                x += gapX / gap * pull
-                y += gapY / gap * pull
-            }
+        // The pull only helps onto a target: once over one, friction alone (a pull there outran the hand).
+        if (over == null && target != null && gap > 0.5 && approach > MIN_APPROACH &&
+            gap <= PULL_RADIUS_PX * scale + target.width / 2.0
+        ) {
+            val pull = min(gap * PULL_STRENGTH * slowness * approach, step * PULL_CAP) * strength
+            x += gapX / gap * pull
+            y += gapY / gap * pull
         }
         return x to y
     }
+
+    /** Moving away from a target's centre keeps this share of the friction: enough to stop on it, not to stick. */
+    const val AWAY_FRICTION_SHARE = 0.25
+
+    /** Only a movement at least this much toward a target (the cosine of about 70 degrees) is pulled. */
+    const val MIN_APPROACH = 0.35
 
     /** Clickables larger than this share of the screen (a whole-page background) are not targets. */
     fun isTargetSized(target: Rectangle, screen: Rectangle): Boolean =

@@ -21,7 +21,7 @@ import com.nuvio.app.features.remote.ensurePhoneRemoteLoaded
 import com.nuvio.app.features.remote.phoneRemoteState
 import com.nuvio.app.features.remote.resetPhoneRemotePairing
 import com.nuvio.app.features.remote.setPhoneRemoteEnabled
-import com.nuvio.app.features.remote.setPhoneRemoteAimAssist
+import com.nuvio.app.features.remote.setPhoneRemoteAimStrength
 
 /**
  * fork:phone-remote — the switch, the pairing code and who is connected. Literal strings, like the
@@ -52,15 +52,19 @@ internal fun PhoneRemoteSection(isTablet: Boolean) {
             )
             if (state.enabled) {
                 SettingsGroupDivider(isTablet = isTablet)
-                SettingsSwitchRow(
-                    title = "Aim assist for the pointer",
-                    description = "With the phone's Pointer, a slow movement over a button, poster or row slows down a little " +
-                        "and is drawn toward it, so small targets are easier to land on. Quick movements are never changed. " +
+                SettingsActionRow(
+                    title = "Aim assist for the pointer: ${state.aimStrength.label}",
+                    description = "With the phone's Pointer, a slow movement over a button, poster or row slows down a little, " +
+                        "and one heading toward it is drawn onto it, so small targets are easier to land on. Quick movements, " +
+                        "and movements away from a target, are left alone. Light, Medium or Strong; Off turns it off. " +
                         "Nuvio's own screens only: not the player's controls.",
-                    checked = state.aimAssist,
                     isTablet = isTablet,
-                    onCheckedChange = { setPhoneRemoteAimAssist(it) },
-                )
+                ) {
+                    SettingsGlassButton(
+                        text = state.aimStrength.next().label,
+                        onClick = { setPhoneRemoteAimStrength(state.aimStrength.next()) },
+                    )
+                }
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsActionRow(
                     title = "Pairing code  ${state.pin.chunked(3).joinToString(" ")}",

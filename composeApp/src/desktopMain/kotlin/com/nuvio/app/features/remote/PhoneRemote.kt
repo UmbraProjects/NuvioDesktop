@@ -61,6 +61,7 @@ internal object PhoneRemote {
 
     private const val KEY_ENABLED = "enabled"
     private const val KEY_AIM_ASSIST = "aim_assist"
+    private const val KEY_AIM_STRENGTH = "aim_strength"
     private const val KEY_PIN = "pin"
     private const val KEY_DEVICES = "paired_devices"
 
@@ -87,7 +88,9 @@ internal object PhoneRemote {
         _state.update {
             it.copy(
                 enabled = store.getBoolean(KEY_ENABLED) ?: false,
-                aimAssist = store.getBoolean(KEY_AIM_ASSIST) ?: true,
+                // The first version's on/off switch: off stays off.
+                aimStrength = store.getString(KEY_AIM_STRENGTH)?.let { name -> AimStrength.entries.firstOrNull { it.name == name } }
+                    ?: if (store.getBoolean(KEY_AIM_ASSIST) == false) AimStrength.Off else AimStrength.Medium,
                 pin = store.getString(KEY_PIN).orEmpty(),
                 pairedDevices = pairedEntries().map { entry -> entry.second }.sorted(),
                 pcName = computerName(),
@@ -118,12 +121,12 @@ internal object PhoneRemote {
         if (value && started) openServer() else if (!value) closeServer()
     }
 
-    /** fork:phone-remote pointer - aim assist on or off (PhoneRemoteAim.kt). */
-    fun setAimAssist(value: Boolean) {
+    /** fork:phone-remote pointer - aim assist's strength, Off to Strong (PhoneRemoteAim.kt). */
+    fun setAimStrength(value: AimStrength) {
         ensureLoaded()
-        store.putBoolean(KEY_AIM_ASSIST, value)
-        _state.update { it.copy(aimAssist = value) }
-        if (!value) AimTargets.clear()
+        store.putString(KEY_AIM_STRENGTH, value.name)
+        _state.update { it.copy(aimStrength = value) }
+        if (value == AimStrength.Off) AimTargets.clear()
     }
 
     /** A new PIN, and every phone has to pair again. */

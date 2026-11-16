@@ -33,22 +33,50 @@ class PhoneRemoteAimTest {
     }
 
     @Test
-    fun slowOverATargetIsSlowedDown() {
-        val (x, _) = AimAssist.adjust(10.0, 0.0, Point(160, 130), pxPerSecond = 0.0, over = button, near = button)
-        // Friction to 55% at a crawl; the cursor is on the centre, so no pull.
-        assertEquals(5.5, x, 0.01)
-        val (faster, _) = AimAssist.adjust(10.0, 0.0, Point(160, 130), pxPerSecond = 550.0, over = button, near = button)
-        assertTrue(faster > 5.5 && faster < 10.0, "half the slow limit: half the friction ($faster)")
+    fun slowOverATargetHeadingForItsCentreIsSlowedDown() {
+        // Left of the centre, moving right toward it, at a crawl: the full friction (55%), and no pull on top.
+        val (x, y) = AimAssist.adjust(10.0, 0.0, Point(120, 130), pxPerSecond = 0.0, over = button, near = button)
+        assertEquals(5.5, x, 1e-9)
+        assertEquals(0.0, y, 1e-9)
+        val (faster, _) = AimAssist.adjust(10.0, 0.0, Point(120, 130), pxPerSecond = 550.0, over = button, near = button)
+        assertTrue(faster > x, "less help at half the slow limit ($faster vs $x)")
+    }
+
+    @Test
+    fun leavingATargetIsNeitherSlowedMuchNorPulledBack() {
+        // Right of the centre, moving further right: away.
+        val (x, y) = AimAssist.adjust(10.0, 0.0, Point(200, 130), pxPerSecond = 0.0, over = button, near = button)
+        // A quarter of the friction (1 - 0.45 * 0.25), and no pull back toward the centre.
+        assertEquals(10.0 * (1 - (1 - AimAssist.FRICTION) * AimAssist.AWAY_FRICTION_SHARE), x, 1e-9)
+        assertEquals(0.0, y, 1e-9)
     }
 
     @Test
     fun slowNearATargetIsDrawnTowardItButNoMoreThanTheMoveItself() {
-        // Moving up past the button's right side, 60 px off its centre line.
-        val cursor = Point(230, 160)
-        val (x, y) = AimAssist.adjust(0.0, -6.0, cursor, pxPerSecond = 100.0, over = null, near = button)
-        assertTrue(x < 0, "pulled left toward the centre ($x)")
-        val pull = hypot(x, y + 6.0)
-        assertTrue(pull <= 6.0 * AimAssist.PULL_CAP + 1e-9, "pull $pull capped by the step")
+        // Right of the button and below it, moving up and to the left: toward it.
+        val cursor = Point(250, 190)
+        val (x, y) = AimAssist.adjust(-3.0, -5.0, cursor, pxPerSecond = 100.0, over = null, near = button)
+        assertTrue(x < -3.0, "pulled further left toward the centre ($x)")
+        val pull = hypot(x + 3.0, y + 5.0)
+        assertTrue(pull <= hypot(3.0, 5.0) * AimAssist.PULL_CAP + 1e-9, "pull $pull capped by the step")
+    }
+
+    @Test
+    fun goingPastATargetIsNotPulledTowardIt() {
+        // Beside the button, moving straight up past it (across, not toward): left alone.
+        val (x, y) = AimAssist.adjust(0.0, -6.0, Point(250, 130), pxPerSecond = 100.0, over = null, near = button)
+        assertEquals(0.0, x, 1e-9)
+        assertEquals(-6.0, y, 1e-9)
+    }
+
+    @Test
+    fun strengthScalesTheHelpAndOffTurnsItOff() {
+        val cursor = Point(120, 130)
+        fun moved(strength: Double) = AimAssist.adjust(10.0, 0.0, cursor, 0.0, over = button, near = button, strength = strength).first
+        assertEquals(10.0, moved(0.0), 1e-9)
+        val light = moved(0.35)
+        val strong = moved(1.0)
+        assertTrue(strong < light && light < 10.0, "strong $strong < light $light < untouched")
     }
 
     @Test

@@ -18,8 +18,8 @@ data class PhoneRemoteState(
     val connectedDevices: List<String> = emptyList(),
     /** What the phone will call this PC. */
     val pcName: String = "Nuvio",
-    /** The phone's pointer is drawn toward buttons and posters when moving slowly (PhoneRemoteAim.kt). */
-    val aimAssist: Boolean = true,
+    /** How much the phone's pointer is helped onto buttons and posters when moving slowly (PhoneRemoteAim.kt). */
+    val aimStrength: AimStrength = AimStrength.Medium,
 ) {
     /**
      * fork:phone-remote QR pairing — what the QR code in Settings holds: everything the phone would otherwise be told
@@ -35,6 +35,16 @@ data class PhoneRemoteState(
         return "nuvioremote://pair?n=${encodeQueryValue(pcName)}&p=$port&c=$pin&a=" +
             addresses.joinToString(",") { encodeQueryValue(it) }
     }
+}
+
+/**
+ * fork:phone-remote pointer - aim assist's strength. [factor] scales both the friction over a target and the pull toward
+ * it; Strong is the first version's (Nov 15) full strength. Stored by name.
+ */
+enum class AimStrength(val label: String, val factor: Double) {
+    Off("Off", 0.0), Light("Light", 0.35), Medium("Medium", 0.65), Strong("Strong", 1.0);
+
+    fun next(): AimStrength = entries[(ordinal + 1) % entries.size]
 }
 
 private fun encodeQueryValue(text: String): String = buildString {
@@ -58,7 +68,7 @@ expect fun phoneRemoteState(): StateFlow<PhoneRemoteState>
 
 expect fun setPhoneRemoteEnabled(enabled: Boolean)
 
-expect fun setPhoneRemoteAimAssist(enabled: Boolean)
+expect fun setPhoneRemoteAimStrength(strength: AimStrength)
 
 /** A new pairing code; every phone paired so far has to pair again. */
 expect fun resetPhoneRemotePairing()
