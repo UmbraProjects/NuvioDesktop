@@ -24,7 +24,11 @@ import kotlinx.coroutines.launch
 internal fun PlayerScreenRuntime.BindServerPlaybackEffects() {
     DisposableEffect(activeSourceUrl) {
         val effectSourceUrl = activeSourceUrl
-        onDispose { ServerPlayback.stop(effectSourceUrl) }
+        onDispose {
+            ServerPlayback.stop(effectSourceUrl)
+            // A built-in Usenet session ends with the source that played it.
+            com.nuvio.app.features.usenet.UsenetEngine.release(effectSourceUrl)
+        }
     }
     LaunchedEffect(
         playbackSnapshot.positionMs / 1_000L,
@@ -115,4 +119,24 @@ internal fun mergeStreamAndAddonSubtitles(
     val remote = streamSubtitles.filterNot { it.url.isLocalSubtitleUri() }
     if (remote.isEmpty()) return addonSubtitles
     return (remote.map { it.toAddonSubtitle() } + addonSubtitles).distinctBy { "${it.id}|${it.url}" }
+}
+
+/** Opens a Usenet release in the engine first, then hands the playable stream to [onResolved]. */
+internal fun PlayerScreenRuntime.resolveUsenetForPlayer(
+    stream: StreamItem,
+    season: Int?,
+    episode: Int?,
+    onResolved: (StreamItem) -> Unit,
+): Boolean {
+    if (!stream.needsUsenetPreparation) return false
+    scope.launch {
+        val opened = runCatching { com.nuvio.app.features.usenet.UsenetEngine.resolve(stream, season, episode) }
+            .onFailure { if (it is CancellationException) throw it }
+            .getOrElse { error ->
+                NuvioToastController.show(error.message ?: "This Usenet release could not be opened")
+                return@launch
+            }
+        onResolved(opened)
+    }
+    return true
 }

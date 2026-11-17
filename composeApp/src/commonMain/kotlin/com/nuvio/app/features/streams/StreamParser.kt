@@ -30,10 +30,13 @@ object StreamParser {
             val externalUrl = obj.string("externalUrl")
             val ytId = obj.string("ytId")?.trim()?.takeIf { it.isNotEmpty() }
             val clientResolve = obj.objectValue("clientResolve")?.toClientResolve()
+            // Stremio's Usenet stream: an NZB plus the NNTP servers to read it from (the built-in
+            // Usenet engine plays it; NuvioTV PR 4679).
+            val nzbUrl = obj.string("nzbUrl")?.trim()?.takeIf { it.startsWith("http", ignoreCase = true) }
 
             // Must have at least one playable source. A bare ytId counts: it is resolved on pick
             // (upstream 94976222d).
-            if (url == null && infoHash == null && externalUrl == null && ytId == null && clientResolve == null) {
+            if (url == null && infoHash == null && externalUrl == null && ytId == null && clientResolve == null && nzbUrl == null) {
                 return@mapNotNull null
             }
 
@@ -61,6 +64,9 @@ object StreamParser {
                 streamType = normalizeStreamType(obj.string("type")),
                 clientResolve = clientResolve,
                 streamData = obj.objectValue("streamData")?.toAddonData(),
+                nzbUrl = nzbUrl,
+                usenetServers = obj.stringList("servers").takeIf { nzbUrl != null && it.isNotEmpty() },
+                fileMustInclude = obj.string("fileMustInclude")?.takeIf { nzbUrl != null },
                 behaviorHints = StreamBehaviorHints(
                     bingeGroup = hintsObj?.string("bingeGroup"),
                     notWebReady = (hintsObj?.boolean("notWebReady") ?: false) || proxyHeaders != null,

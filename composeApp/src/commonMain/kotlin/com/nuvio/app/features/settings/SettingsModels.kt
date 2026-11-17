@@ -28,6 +28,7 @@ import nuvio.composeapp.generated.resources.compose_settings_page_keyboard_short
 import nuvio.composeapp.generated.resources.compose_settings_page_local_library
 import nuvio.composeapp.generated.resources.compose_settings_page_media_server
 import nuvio.composeapp.generated.resources.compose_settings_page_media_servers
+import nuvio.composeapp.generated.resources.compose_settings_page_usenet
 import nuvio.composeapp.generated.resources.compose_settings_root_downloads_title
 import nuvio.composeapp.generated.resources.compose_settings_page_licenses_attributions
 import nuvio.composeapp.generated.resources.compose_settings_page_mdblist_ratings
@@ -140,6 +141,12 @@ internal enum class SettingsPage(
         titleRes = Res.string.compose_settings_page_media_server,
         category = SettingsCategory.General,
         parentPage = MediaServers,
+    ),
+    /** Built-in Usenet: providers, indexers and the engine (NuvioTV PR 4679). */
+    Usenet(
+        titleRes = Res.string.compose_settings_page_usenet,
+        category = SettingsCategory.General,
+        parentPage = Root,
     ),
     Games(
         titleRes = Res.string.compose_settings_page_games,

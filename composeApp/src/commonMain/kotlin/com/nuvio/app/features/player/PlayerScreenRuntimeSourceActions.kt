@@ -304,6 +304,11 @@ internal fun PlayerScreenRuntime.switchToSource(
         }
     ) return
     if (
+        resolveUsenetForPlayer(stream, activeSeasonNumber, activeEpisodeNumber) {
+            switchToSource(it, sourceIdentityKey, resumePositionOverrideMs, keepSourcesPanelOpen)
+        }
+    ) return
+    if (
         resolveYouTubeForPlayer(stream) {
             switchToSource(it, sourceIdentityKey, resumePositionOverrideMs, keepSourcesPanelOpen)
         }
@@ -351,7 +356,7 @@ internal fun PlayerScreenRuntime.switchToSource(
     stopActiveP2pStream()
     val currentVideoId = activeVideoId
     // A resolved YouTube URL expires after a few hours, so it is not kept for reuse.
-    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && currentVideoId != null && stream.ytId.isNullOrBlank() && stream.serverTarget == null) {
+    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && currentVideoId != null && stream.ytId.isNullOrBlank() && stream.serverTarget == null && stream.nzbUrl == null) {
         saveDirectStreamForReuse(stream, url, currentVideoId, activeSeasonNumber, activeEpisodeNumber, sourceIdentityKey)
     }
     activeSourceAudioUrl = null
@@ -396,6 +401,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     val seasonNumber = episode.playbackSeasonNumber()
     val episodeNumber = episode.playbackEpisodeNumber()
     if (resolveServerForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
+    if (resolveUsenetForPlayer(stream, seasonNumber, episodeNumber) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
     if (resolveYouTubeForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
     if (
         resolveDebridForPlayer(
@@ -433,7 +439,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     stopActiveP2pStream()
     val epVideoId = episode.id
     val resume = resolveEpisodeResume(epVideoId, episode)
-    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && stream.ytId.isNullOrBlank() && stream.serverTarget == null) {
+    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && stream.ytId.isNullOrBlank() && stream.serverTarget == null && stream.nzbUrl == null) {
         saveDirectStreamForReuse(stream, url, epVideoId, seasonNumber, episodeNumber, sourceIdentityKey)
     }
     activeSourceAudioUrl = null

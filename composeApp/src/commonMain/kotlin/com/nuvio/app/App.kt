@@ -5703,7 +5703,18 @@ private fun MainAppContent(
                     if (streamsUiState.requestToken != expectedStreamsRequestToken) return@LaunchedEffect
                     val selectedStream = streamsUiState.autoPlayStream ?: return@LaunchedEffect
                     val selectedSourceIdentityKey = selectedStream.playerSourceIdentityKey()
-                    val stream = if (selectedStream.needsServerPreparation) {
+                    val stream = if (selectedStream.needsUsenetPreparation) {
+                        runCatching {
+                            com.nuvio.app.features.usenet.UsenetEngine.resolve(selectedStream, streamLookupSeasonNumber, streamLookupEpisodeNumber)
+                        }
+                            .onFailure { if (it is CancellationException) throw it }
+                            .getOrElse { error ->
+                                if (!StreamsRepository.skipAutoPlayStream(selectedStream)) {
+                                    NuvioToastController.show(error.message ?: "This Usenet release could not be opened")
+                                }
+                                return@LaunchedEffect
+                            }
+                    } else if (selectedStream.needsServerPreparation) {
                         runCatching { com.nuvio.app.features.servers.ServerPlayback.prepare(selectedStream) }
                             .onFailure { if (it is CancellationException) throw it }
                             .getOrElse { error ->
@@ -5887,6 +5898,37 @@ private fun MainAppContent(
                     // "Play on device…": resolve as usual, then hand the stream to the cast picker.
                     castToDevice: Boolean = false,
                 ) {
+                    if (stream.needsUsenetPreparation) {
+                        if (castToDevice) {
+                            NuvioToastController.show("Usenet sources can't be played on another device yet")
+                            return
+                        }
+                        if (resolvingDebridStream) return
+                        streamRouteScope.launch {
+                            resolvingDebridStream = true
+                            val opened = runCatching {
+                                com.nuvio.app.features.usenet.UsenetEngine.resolve(stream, streamLookupSeasonNumber, streamLookupEpisodeNumber)
+                            }
+                                .onFailure { if (it is CancellationException) throw it }
+                                .getOrElse { error ->
+                                    resolvingDebridStream = false
+                                    NuvioToastController.show(error.message ?: "This Usenet release could not be opened")
+                                    return@launch
+                                }
+                            resolvingDebridStream = false
+                            openSelectedStream(
+                                stream = opened,
+                                resolvedResumePositionMs = resolvedResumePositionMs,
+                                resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                                forceExternal = false,
+                                forceInternal = true,
+                                sourceIdentityKey = sourceIdentityKey,
+                                // The engine's link lives only as long as its session.
+                                saveForReuse = false,
+                            )
+                        }
+                        return
+                    }
                     if (stream.needsServerPreparation) {
                         if (resolvingDebridStream) return
                         streamRouteScope.launch {

@@ -117,7 +117,9 @@ internal val PlayerScreenRuntime.playbackSession: WatchProgressPlaybackSession
         lastStreamSubtitle = activeStreamSubtitle,
         pauseDescription = activePauseDescription,
         // A media server's URL carries its access token and a session that ends with this playback.
-        lastSourceUrl = activeSourceUrl.takeUnless { isServerSourcePlaying() },
+        lastSourceUrl = activeSourceUrl.takeUnless {
+            isServerSourcePlaying() || com.nuvio.app.features.usenet.UsenetEngine.isSessionUrl(it)
+        },
     )
 
 internal fun PlayerScreenRuntime.resetIdentityStateIfNeeded() {

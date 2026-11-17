@@ -273,6 +273,7 @@ object ProfileRepository {
         CollectionMobileSettingsRepository.onProfileChanged()
         DownloadsRepository.onProfileChanged()
         com.nuvio.app.features.servers.ServerRepository.onProfileChanged()
+        com.nuvio.app.features.usenet.UsenetSettingsRepository.onProfileChanged()
         com.nuvio.app.features.librarypvr.LibraryPvrRepository.onProfileChanged()
     }
 

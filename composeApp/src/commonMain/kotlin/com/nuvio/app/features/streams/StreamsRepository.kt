@@ -198,6 +198,8 @@ object StreamsRepository {
             forceRefresh = forceRefresh,
         )
         val preferredGroupIds = serverSources.filter { it.preferred }.mapTo(mutableSetOf()) { it.addonId }
+        // Built-in Usenet (NuvioTV PR 4679): the user's indexers, searched alongside the addons.
+        val searchUsenet = com.nuvio.app.features.usenet.BuiltInUsenet.canSearch(type, effectiveVideoId)
         currentCoroutineContext().ensureActive()
         PlaybackStartTrace.markPendingOrActive("streamsPrepare:localSources")
         val includeLocalInPicker = localStreams.isNotEmpty() && !preferLocalStreams
@@ -359,7 +361,7 @@ object StreamsRepository {
 
         log.d { "Found ${streamAddons.size} addons for stream type=$type id=$effectiveVideoId" }
 
-        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && serverSources.isEmpty()) {
+        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && serverSources.isEmpty() && !searchUsenet) {
             if (includeLocalInPicker) {
                 _uiState.value = localOnlyStreamsState(requestToken, localStreams, streamBadgeRules)
                 return
@@ -403,6 +405,7 @@ object StreamsRepository {
             )
                 })
                 addAll(serverSources.map { it.loadingGroup() })
+                if (searchUsenet) add(com.nuvio.app.features.usenet.BuiltInUsenet.loadingGroup())
             },
             installedOrder = installedAddonOrder,
             preferredGroupIds = preferredGroupIds,
@@ -704,7 +707,20 @@ object StreamsRepository {
                     publishAddonGroup(presentStreamGroup(source.load()))
                     autoSelectOnResponse()
                 }
-            }
+            } + listOfNotNull(
+                if (searchUsenet) {
+                    launch {
+                        publishAddonGroup(
+                            presentStreamGroup(
+                                com.nuvio.app.features.usenet.BuiltInUsenet.group(type, effectiveVideoId, effectiveSeason, effectiveEpisode),
+                            ),
+                        )
+                        autoSelectOnResponse()
+                    }
+                } else {
+                    null
+                },
+            )
 
             streamAddons.forEach { addon ->
                 launch {

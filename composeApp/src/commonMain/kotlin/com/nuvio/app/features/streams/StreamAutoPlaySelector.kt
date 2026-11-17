@@ -222,6 +222,7 @@ object StreamAutoPlaySelector {
     ): Boolean =
         playableDirectUrl != null ||
             serverTarget != null ||
+            nzbUrl != null ||
             (
                 AppFeaturePolicy.p2pEnabled &&
                     needsLocalDebridResolve &&

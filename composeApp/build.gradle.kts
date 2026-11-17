@@ -946,6 +946,101 @@ val buildWindowsWhisper = tasks.register("buildWindowsWhisper") {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// fork:usenet - nuvio-usenet.exe: NuvioMedia/nuvio-usenet-engine (Go + cgo RapidYenc), the built-in
+// Usenet engine Nuvio runs as a child process (features/usenet/UsenetEngine.kt). Same kind of sibling
+// checkout as whisper.cpp: nuvio-usenet-engine at the commit below beside NuvioDesktop, or
+// -Pnuvio.usenet.sourceDir. Built with MSYS2's Go (pacman -S mingw-w64-ucrt-x86_64-go) and gcc; the
+// result links only Windows' own UCRT DLLs. Best-effort: without it Settings > Usenet says the engine
+// is missing and Usenet releases cannot play; nothing else is affected.
+// ---------------------------------------------------------------------------------------------
+val usenetSourceDir = providers.gradleProperty("nuvio.usenet.sourceDir").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?.let(::File)
+    ?: rootProject.projectDir.resolve("../nuvio-usenet-engine")
+val usenetExpectedCommit = "e4b0717ae5bfe44e76ca8c7662022bff326f3806"
+val usenetGoRoot = nuvioEngineMsys2Root.resolve("lib/go")
+val usenetOutput = layout.buildDirectory.file("native/windows/nuvio-usenet.exe")
+
+fun missingUsenetInputs(): List<String> = listOfNotNull(
+    "nuvio-usenet-engine checkout ${usenetSourceDir.absolutePath} (git clone https://github.com/NuvioMedia/nuvio-usenet-engine beside NuvioDesktop and check out $usenetExpectedCommit, or pass -Pnuvio.usenet.sourceDir)"
+        .takeUnless { usenetSourceDir.resolve("cmd/nuvio-usenet").isDirectory },
+    "Go under ${usenetGoRoot.absolutePath} (MSYS2: pacman -S mingw-w64-ucrt-x86_64-go)"
+        .takeUnless { usenetGoRoot.resolve("bin/go.exe").isFile },
+    "MSYS2 UCRT64 gcc under ${nuvioEngineMsys2Root.absolutePath}"
+        .takeUnless { nuvioEngineMsys2Root.resolve("bin/gcc.exe").isFile },
+)
+
+val buildWindowsUsenetEngine = tasks.register("buildWindowsUsenetEngine") {
+    notCompatibleWithConfigurationCache("Builds the host-local Usenet engine with MSYS2's Go toolchain.")
+    enabled = isWindowsHost
+    if (usenetSourceDir.resolve("internal").isDirectory) {
+        inputs.dir(usenetSourceDir.resolve("internal"))
+        inputs.dir(usenetSourceDir.resolve("cmd"))
+        inputs.dir(usenetSourceDir.resolve("third_party"))
+        inputs.file(usenetSourceDir.resolve("go.mod"))
+    }
+    outputs.file(usenetOutput)
+    doLast {
+        val output = usenetOutput.get().asFile
+        val missing = missingUsenetInputs()
+        if (missing.isNotEmpty()) {
+            logger.warn("Skipping the Usenet engine build; built-in Usenet will be unavailable. Missing: " + missing.joinToString("; "))
+            output.delete()
+            return@doLast
+        }
+        try {
+            val head = runCatching {
+                ProcessBuilder("git", "-C", usenetSourceDir.absolutePath, "rev-parse", "HEAD")
+                    .redirectErrorStream(true).start().let { it.inputStream.bufferedReader().readText().trim() }
+            }.getOrDefault("")
+            if (head.isNotEmpty() && head != usenetExpectedCommit) {
+                logger.warn("nuvio-usenet-engine is at $head, not the tested $usenetExpectedCommit")
+            }
+            val work = layout.buildDirectory.dir("native/usenet").get().asFile.apply { mkdirs() }
+            output.parentFile.mkdirs()
+            val msysBin = nuvioEngineMsys2Root.resolve("bin")
+            fun go(vararg args: String): Pair<Int, String> {
+                val process = ProcessBuilder(usenetGoRoot.resolve("bin/go.exe").absolutePath, *args)
+                    .directory(usenetSourceDir)
+                    .redirectErrorStream(true)
+                    .apply {
+                        val env = environment()
+                        // A shell's own Go or C settings (CGO_CFLAGS, GOFLAGS, CPATH ...) must not reach this build.
+                        listOf("CGO_CFLAGS", "CGO_CPPFLAGS", "CGO_LDFLAGS", "CPATH", "C_INCLUDE_PATH", "LIBRARY_PATH",
+                            "GOENV", "GOPATH", "GOOS", "GOARCH", "CXX", "AR", "PKG_CONFIG").forEach(env::remove)
+                        env["GOROOT"] = usenetGoRoot.absolutePath
+                        env["PATH"] = "${msysBin.absolutePath};${usenetGoRoot.resolve("bin").absolutePath};${System.getenv("SystemRoot") ?: "C:\\Windows"}\\System32"
+                        env["CGO_ENABLED"] = "1"
+                        env["CC"] = msysBin.resolve("gcc.exe").absolutePath
+                        env["GOTOOLCHAIN"] = "local"
+                        env["GOFLAGS"] = "-mod=mod"
+                        env["GOCACHE"] = work.resolve("gocache").absolutePath
+                        env["GOMODCACHE"] = work.resolve("gomod").absolutePath
+                        env["GOTMPDIR"] = work.resolve("tmp").apply { mkdirs() }.absolutePath
+                    }
+                    .start()
+                val log = process.inputStream.bufferedReader().readText()
+                return process.waitFor() to log
+            }
+            val (code, log) = go("build", "-trimpath", "-ldflags=-s -w", "-o", output.absolutePath, "./cmd/nuvio-usenet")
+            if (code != 0) {
+                // The first failure can be a bare "cgo.exe: exit status 2"; -x shows the command that failed.
+                val (_, verbose) = go("build", "-x", "-trimpath", "-ldflags=-s -w", "-o", output.absolutePath, "./cmd/nuvio-usenet")
+                val (_, env) = go("env", "GOROOT", "GOVERSION", "CC", "CGO_ENABLED", "GOTMPDIR", "GOCACHE")
+                throw GradleException(
+                    "Usenet engine build failed (exit $code):\n${log.takeLast(3000)}\n--- go env ---\n$env\n--- go build -x (tail) ---\n${verbose.takeLast(6000)}",
+                )
+            }
+            check(output.isFile) { "Usenet engine build finished but ${output.absolutePath} is missing" }
+            logger.lifecycle("Usenet engine: ${output.absolutePath} (${output.length() / 1024} KB)")
+        } catch (failure: Exception) {
+            logger.warn("Usenet engine build failed; built-in Usenet will be unavailable: ${failure.message?.take(4000)}")
+            output.delete()
+        }
+    }
+}
+
 val windowsPlaybackStartupTestSource = layout.projectDirectory.file("src/desktopTest/native/windows/playback_startup_test.cpp")
 val windowsPlaybackStartupTestOutput = layout.buildDirectory.file("native/windows/player_startup_test.exe")
 val buildWindowsPlaybackStartupTests = tasks.register<Exec>("buildWindowsPlaybackStartupTests") {
@@ -1263,6 +1358,7 @@ if (isWindowsHost) {
             buildWindowsNuvioEngine,
             buildWindowsQuickJs,
             buildWindowsWhisper,
+            buildWindowsUsenetEngine,
             prepareWindowsPlayerRuntime,
             generateWindowsPlayerRuntimeIndex,
             prepareWindowsPythonLib,
@@ -1290,6 +1386,7 @@ if (isWindowsHost) {
             inputs.files(nuvioEngineOutput).optional()
             inputs.files(quickJsOutput).optional()
             inputs.files(whisperOutput).optional()
+            inputs.files(usenetOutput).optional()
             inputs.files(
                 fileTree(desktopResourcesSourceDir) { include(externalDesktopResources) },
             )
@@ -1321,6 +1418,8 @@ if (isWindowsHost) {
                     from(nuvioEngineOutput)
                     from(quickJsOutput)
                     from(whisperOutput)
+                    // fork:usenet - optional: a build without Go ships without built-in Usenet.
+                    from(usenetOutput)
                     into(imageDir)
                 }
                 check(nuvioEngineOptional || nuvioEngineOutput.get().asFile.isFile) {
