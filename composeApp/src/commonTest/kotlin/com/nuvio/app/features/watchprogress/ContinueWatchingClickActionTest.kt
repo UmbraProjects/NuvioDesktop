@@ -19,4 +19,12 @@ class ContinueWatchingClickActionTest {
     fun playActionNeverOpensDetails() {
         assertFalse(ContinueWatchingClickAction.PLAY.opensDetails(canOpenDetails = true))
     }
+
+    @Test
+    fun detailsForUpcomingOpensDetailsOnlyForAnUnairedEpisode() {
+        val action = ContinueWatchingClickAction.DETAILS_FOR_UPCOMING
+        assertTrue(action.opensDetails(canOpenDetails = true, isUpcoming = true))
+        assertFalse(action.opensDetails(canOpenDetails = true, isUpcoming = false))
+        assertFalse(action.opensDetails(canOpenDetails = false, isUpcoming = true))
+    }
 }

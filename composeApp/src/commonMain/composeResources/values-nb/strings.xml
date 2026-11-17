@@ -40,6 +40,9 @@
   <string name="addons_error_enter_url">Skriv inn en tilleggs-URL.</string>
   <string name="addons_input_placeholder">Tilleggs-URL</string>
   <string name="addons_install_button">Installer tillegg</string>
+  <string name="addons_tracking_consent_title">Sporingstillegg</string>
+  <string name="addons_tracking_consent_body">%1$s er et sporingstillegg. Nuvio sender det aktiviteten din: hva du spiller av, pauser og stopper med avspillingsposisjon, hva du legger til i eller fjerner fra biblioteket, og hva du merker som sett eller usett. Disse dataene forlater Nuvio og håndteres av utvikleren av tillegget og tjenesten det kobler til.</string>
+  <string name="addons_tracking_consent_checkbox">Jeg godtar å dele seeraktiviteten og biblioteket mitt med dette tillegget</string>
   <string name="addons_loading_manifest_details">Laster manifest-detaljer…</string>
   <string name="addons_modal_checking_message">Validerer manifest-URL og laster tilleggsdetaljer før installasjon.</string>
   <string name="addons_modal_checking_title">Sjekker tillegg</string>
@@ -1224,6 +1227,7 @@
   <string name="settings_continue_watching_click_action_description">Valg for venstreklikk.</string>
   <string name="settings_continue_watching_click_action_play">Spill av</string>
   <string name="settings_continue_watching_click_action_details">Detaljer</string>
+  <string name="settings_continue_watching_click_action_details_upcoming">Detaljer bare for kommende</string>
   <string name="settings_continue_watching_source_shortcut_title">Snarvei til kilde</string>
   <string name="settings_continue_watching_source_shortcut_description">En knapp som vises ved pekeren og gjør det motsatte av et klikk: åpner kildevelgeren når Gjenbruk siste lenke er på, ellers spilles siste lenke av. Midt gjør den til en stor knapp over bildet.</string>
   <string name="settings_continue_watching_source_shortcut_off">Av</string>

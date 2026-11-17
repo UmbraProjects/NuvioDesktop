@@ -52,4 +52,6 @@ internal data class PlayerScreenArgs(
     /** Watch party: the party moved to another title; open it the way the app launches playback. */
     val onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit = {},
     val stream: com.nuvio.app.features.streams.StreamItem? = null,
+    /** The source was taken from the reuse-last-link cache; see `linkCacheSourceUrl`. */
+    val sourceFromLinkCache: Boolean = false,
 )

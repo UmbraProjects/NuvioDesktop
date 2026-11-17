@@ -49,6 +49,7 @@ fun PlayerScreen(
     onPlaylistJump: ((entryId: String) -> Unit)? = null,
     onOpenPartyMedia: (com.nuvio.app.features.party.PartyMedia) -> Unit = {},
     stream: com.nuvio.app.features.streams.StreamItem? = null,
+    sourceFromLinkCache: Boolean = false,
 ) {
     PlayerScreenContent(
         PlayerScreenArgs(
@@ -96,6 +97,7 @@ fun PlayerScreen(
             onPlaylistJump = onPlaylistJump,
             onOpenPartyMedia = onOpenPartyMedia,
             stream = stream,
+            sourceFromLinkCache = sourceFromLinkCache,
         )
     )
 }

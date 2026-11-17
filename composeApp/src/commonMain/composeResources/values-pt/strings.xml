@@ -40,6 +40,9 @@
   <string name="addons_error_enter_url">Introduz o URL de um addon.</string>
   <string name="addons_input_placeholder">URL do addon</string>
   <string name="addons_install_button">Instalar addon</string>
+  <string name="addons_tracking_consent_title">Addon de acompanhamento</string>
+  <string name="addons_tracking_consent_body">%1$s é um addon de acompanhamento. O Nuvio vai enviar-lhe a sua atividade: o que reproduz, pausa e para, com a posição de reprodução, o que adiciona ou remove da biblioteca e o que marca como visto ou não visto. Estes dados saem do Nuvio e são tratados pelo programador do addon e pelo serviço a que se liga.</string>
+  <string name="addons_tracking_consent_checkbox">Aceito partilhar a minha atividade e biblioteca com este addon</string>
   <string name="addons_loading_manifest_details">A carregar detalhes do manifesto...</string>
   <string name="addons_modal_checking_message">A validar o URL do manifesto e a carregar os detalhes do addon antes de instalar.</string>
   <string name="addons_modal_checking_title">A verificar addon</string>
@@ -1224,6 +1227,7 @@
   <string name="settings_continue_watching_click_action_description">Opção do clique esquerdo.</string>
   <string name="settings_continue_watching_click_action_play">Reproduzir</string>
   <string name="settings_continue_watching_click_action_details">Detalhes</string>
+  <string name="settings_continue_watching_click_action_details_upcoming">Detalhes apenas para os próximos</string>
   <string name="settings_continue_watching_source_shortcut_title">Atalho de fonte</string>
   <string name="settings_continue_watching_source_shortcut_description">Um botão que aparece ao passar o rato e faz o contrário do clique: abre o seletor de fontes quando Reutilizar última ligação está ativo, caso contrário reproduz a última ligação. Centro torna-o um botão grande sobre a imagem.</string>
   <string name="settings_continue_watching_source_shortcut_off">Desativado</string>

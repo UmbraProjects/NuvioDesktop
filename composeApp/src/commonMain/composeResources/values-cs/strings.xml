@@ -40,6 +40,9 @@
   <string name="addons_error_enter_url">Zadejte URL doplňku.</string>
   <string name="addons_input_placeholder">URL doplňku</string>
   <string name="addons_install_button">Nainstalovat doplněk</string>
+  <string name="addons_tracking_consent_title">Sledovací doplněk</string>
+  <string name="addons_tracking_consent_body">%1$s je sledovací doplněk. Nuvio mu bude posílat vaši aktivitu: co přehráváte, pozastavujete a zastavujete i s pozicí přehrávání, co přidáváte do knihovny nebo z ní odebíráte a co označujete jako zhlédnuté či nezhlédnuté. Tato data opouštějí Nuvio a zpracovává je vývojář doplňku a služba, ke které se připojuje.</string>
+  <string name="addons_tracking_consent_checkbox">Souhlasím se sdílením své aktivity a knihovny s tímto doplňkem</string>
   <string name="addons_loading_manifest_details">Načítání podrobností manifestu...</string>
   <string name="addons_modal_checking_message">Ověřování URL manifestu a načítání podrobností o doplňku před instalací.</string>
   <string name="addons_modal_checking_title">Kontrola doplňku</string>
@@ -1224,6 +1227,7 @@
   <string name="settings_continue_watching_click_action_description">Možnost levého kliknutí.</string>
   <string name="settings_continue_watching_click_action_play">Přehrát</string>
   <string name="settings_continue_watching_click_action_details">Podrobnosti</string>
+  <string name="settings_continue_watching_click_action_details_upcoming">Podrobnosti jen u nadcházejících</string>
   <string name="settings_continue_watching_source_shortcut_title">Zástupce zdroje</string>
   <string name="settings_continue_watching_source_shortcut_description">Tlačítko při najetí myší, které dělá opak kliknutí: otevře výběr zdroje, je-li zapnuto Znovu použít poslední odkaz, jinak přehraje poslední odkaz. Střed z něj udělá velké tlačítko přes obrázek.</string>
   <string name="settings_continue_watching_source_shortcut_off">Vypnuto</string>

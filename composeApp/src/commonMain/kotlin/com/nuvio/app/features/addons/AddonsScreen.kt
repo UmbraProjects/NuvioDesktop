@@ -145,12 +145,41 @@ internal fun AddonsSettingsPageContent(
                         AddonInstallModalState.Success(result.manifest.name)
                     }
 
+                    is AddAddonResult.TrackingConsentRequired -> {
+                        AddonRepository.requestTrackingConsent(result.manifest)
+                        null
+                    }
+
                     is AddAddonResult.Error -> {
                         AddonInstallModalState.Error(result.message)
                     }
                 }
             }
         }
+    }
+
+    val pendingTrackingConsent by AddonRepository.pendingTrackingConsent.collectAsStateWithLifecycle()
+    val trackingConsentManifest = pendingTrackingConsent
+    if (trackingConsentManifest != null) {
+        TrackingAddonConsentDialog(
+            manifest = trackingConsentManifest,
+            onInstall = {
+                installModalState = AddonInstallModalState.Checking
+                coroutineScope.launch {
+                    installModalState = when (val result = AddonRepository.installWithTrackingConsent(trackingConsentManifest)) {
+                        is AddAddonResult.Success -> {
+                            addonUrl = ""
+                            AddonInstallModalState.Success(result.manifest.name)
+                        }
+
+                        is AddAddonResult.TrackingConsentRequired -> null
+
+                        is AddAddonResult.Error -> AddonInstallModalState.Error(result.message)
+                    }
+                }
+            },
+            onDismiss = AddonRepository::dismissTrackingConsent,
+        )
     }
 
     if (isDesktop) {

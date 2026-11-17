@@ -68,6 +68,9 @@ import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.getString
 import nuvio.composeapp.generated.resources.*
 import com.nuvio.app.core.i18n.localizedString
+import com.nuvio.app.features.addons.ADDON_LIBRARY_RESOURCE
+import com.nuvio.app.features.addons.AddonEventDispatcher
+import com.nuvio.app.features.addons.AddonLibraryAction
 
 @Serializable
 private data class StoredLibraryPayload(
@@ -292,6 +295,7 @@ object LibraryRepository {
                         desiredMembership = desired,
                     )
                     mirrorLibraryToFloppy(provider.providerId, item, inLibrary = desired.values.any { it })
+                    emitAddonLibraryChange(item, wasSaved = current.values.any { it }, isSavedNow = desired.values.any { it })
                 }
                     .onFailure { e ->
                         log.e(e) { "Failed to toggle ${provider.providerId} library" }
@@ -307,9 +311,21 @@ object LibraryRepository {
 
         if (itemsById.containsKey(libraryItemKey(item.id, item.type))) {
             remove(item.id, item.type)
+            emitAddonLibraryChange(item, wasSaved = true, isSavedNow = false)
         } else {
             save(item)
+            emitAddonLibraryChange(item, wasSaved = false, isSavedNow = true)
         }
+    }
+
+    /** Stremio `library` event for tracking addons (upstream 964ecfd8d); user actions only. */
+    private fun emitAddonLibraryChange(item: LibraryItem, wasSaved: Boolean, isSavedNow: Boolean) {
+        if (wasSaved == isSavedNow) return
+        AddonEventDispatcher.library(
+            type = item.type,
+            id = item.id,
+            action = if (isSavedNow) AddonLibraryAction.LIBRARY_ADD else AddonLibraryAction.LIBRARY_REMOVE,
+        )
     }
 
     fun save(item: LibraryItem) {
@@ -330,6 +346,9 @@ object LibraryRepository {
             persist()
             pushToServer()
             removed.forEach { item -> mirrorLocalLibraryToFloppy(item, inLibrary = false) }
+            removed.distinctBy { it.type }.forEach { item ->
+                emitAddonLibraryChange(item, wasSaved = true, isSavedNow = false)
+            }
         }
     }
 
@@ -413,6 +432,16 @@ object LibraryRepository {
     }
 
     suspend fun applyMembershipChanges(item: LibraryItem, desiredMembership: Map<String, Boolean>) {
+        if (!AddonEventDispatcher.hasEnabledAddonFor(ADDON_LIBRARY_RESOURCE)) {
+            applyMembershipChangesInternal(item, desiredMembership)
+            return
+        }
+        val wasSaved = isSaved(item.id, item.type)
+        applyMembershipChangesInternal(item, desiredMembership)
+        emitAddonLibraryChange(item, wasSaved = wasSaved, isSavedNow = isSaved(item.id, item.type))
+    }
+
+    private suspend fun applyMembershipChangesInternal(item: LibraryItem, desiredMembership: Map<String, Boolean>) {
         ensureLoaded()
         val localDesired = desiredMembership[LOCAL_LIBRARY_LIST_KEY] == true
         val currentlyInLocal = itemsById.containsKey(libraryItemKey(item.id, item.type))

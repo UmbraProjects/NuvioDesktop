@@ -40,6 +40,9 @@
   <string name="addons_error_enter_url">Inserisci l'URL dell'addon.</string>
   <string name="addons_input_placeholder">URL Addon</string>
   <string name="addons_install_button">Installa Addon</string>
+  <string name="addons_tracking_consent_title">Addon di tracciamento</string>
+  <string name="addons_tracking_consent_body">%1$s è un addon di tracciamento. Nuvio gli invierà la tua attività: cosa riproduci, metti in pausa e interrompi con la posizione di riproduzione, cosa aggiungi o rimuovi dalla libreria e cosa segni come visto o non visto. Questi dati escono da Nuvio e sono gestiti dallo sviluppatore dell\'addon e dal servizio a cui si collega.</string>
+  <string name="addons_tracking_consent_checkbox">Accetto di condividere la mia attività e la mia libreria con questo addon</string>
   <string name="addons_loading_manifest_details">Caricamento dettagli manifest...</string>
   <string name="addons_modal_checking_message">Validazione dell'URL del manifest e caricamento dei dettagli dell'addon prima dell'installazione.</string>
   <string name="addons_modal_checking_title">Verifica Addon</string>
@@ -1224,6 +1227,7 @@
   <string name="settings_continue_watching_click_action_description">Opzione del clic sinistro.</string>
   <string name="settings_continue_watching_click_action_play">Riproduci</string>
   <string name="settings_continue_watching_click_action_details">Dettagli</string>
+  <string name="settings_continue_watching_click_action_details_upcoming">Dettagli solo per i prossimi</string>
   <string name="settings_continue_watching_source_shortcut_title">Scorciatoia sorgente</string>
   <string name="settings_continue_watching_source_shortcut_description">Un pulsante al passaggio del puntatore che fa l'opposto di un clic: apre il selettore delle sorgenti quando Riusa ultimo link è attivo, altrimenti riproduce l'ultimo link. Centro lo trasforma in un grande pulsante sopra l'immagine.</string>
   <string name="settings_continue_watching_source_shortcut_off">Disattivata</string>

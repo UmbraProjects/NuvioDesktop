@@ -32,6 +32,9 @@
     <string name="addons_error_enter_url">Gib eine Addon-URL ein.</string>
     <string name="addons_input_placeholder">Addon-URL</string>
     <string name="addons_install_button">Addon installieren</string>
+    <string name="addons_tracking_consent_title">Tracking-Addon</string>
+    <string name="addons_tracking_consent_body">%1$s ist ein Tracking-Addon. Nuvio sendet ihm deine Aktivität: was du abspielst, pausierst und stoppst samt Wiedergabeposition, was du deiner Bibliothek hinzufügst oder daraus entfernst und was du als gesehen oder ungesehen markierst. Diese Daten verlassen Nuvio und werden vom Entwickler des Addons und dem verbundenen Dienst verarbeitet.</string>
+    <string name="addons_tracking_consent_checkbox">Ich bin einverstanden, meine Wiedergabeaktivität und Bibliothek mit diesem Addon zu teilen</string>
     <string name="addons_loading_manifest_details">Manifest-Details werden geladen...</string>
     <string name="addons_modal_checking_message">Manifest-URL wird geprüft und Addon-Details werden vor der Installation geladen.</string>
     <string name="addons_modal_checking_title">Addon wird geprüft</string>
@@ -1952,6 +1955,7 @@
     <string name="settings_continue_watching_click_action_description">Option für Linksklick.</string>
     <string name="settings_continue_watching_click_action_play">Abspielen</string>
     <string name="settings_continue_watching_click_action_details">Details</string>
+    <string name="settings_continue_watching_click_action_details_upcoming">Details nur für kommende</string>
     <string name="settings_continue_watching_source_shortcut_title">Quellen-Shortcut</string>
     <string name="settings_continue_watching_source_shortcut_description">Ein Hover-Button, der das Gegenteil eines Klicks tut: öffnet die Quellenauswahl, wenn „Letzten Link wiederverwenden“ aktiv ist, sonst wird der letzte Link abgespielt. „Mitte“ macht ihn zu einem großen Button über dem Artwork.</string>
     <string name="settings_continue_watching_source_shortcut_off">Aus</string>

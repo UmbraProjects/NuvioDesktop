@@ -25,6 +25,22 @@ data class AddonResource(
     val idPrefixes: List<String> = emptyList(),
 )
 
+fun AddonManifest.supportsResource(name: String, type: String, id: String): Boolean =
+    resources.any { resource ->
+        resource.name == name &&
+            resource.types.contains(type) &&
+            (resource.idPrefixes.isEmpty() || resource.idPrefixes.any { id.startsWith(it) })
+    }
+
+/** Stremio tracking resources (upstream 964ecfd8d): the addon is told what you play and save. */
+internal const val ADDON_PLAYER_RESOURCE = "player"
+internal const val ADDON_LIBRARY_RESOURCE = "library"
+
+val AddonManifest.isTrackingAddon: Boolean
+    get() = resources.any { resource ->
+        resource.name == ADDON_PLAYER_RESOURCE || resource.name == ADDON_LIBRARY_RESOURCE
+    }
+
 data class AddonCatalog(
     val type: String,
     val id: String,
@@ -88,5 +104,7 @@ internal fun List<ManagedAddon>.enabledAddons(): List<ManagedAddon> =
 
 sealed interface AddAddonResult {
     data class Success(val manifest: AddonManifest) : AddAddonResult
+    /** A tracking addon: installed only after the user ticks the consent box. */
+    data class TrackingConsentRequired(val manifest: AddonManifest) : AddAddonResult
     data class Error(val message: String) : AddAddonResult
 }

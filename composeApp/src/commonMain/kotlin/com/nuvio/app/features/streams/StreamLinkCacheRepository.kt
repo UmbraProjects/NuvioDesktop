@@ -81,7 +81,10 @@ object StreamLinkCacheRepository {
         // A provider's error/status placeholder is the outcome of one failed resolve, not the
         // title's link: caching it would replay "Debrid Rate Limited" on every reopen until the
         // entry aged out, long after the provider recovered. Drop whatever was there too.
-        if (url.isNotBlank() && (url.hasLikelyExpiringPlaybackCredentials() || isPlaybackPlaceholderUrl(url))) {
+        // Links with an expiring token are kept (upstream 3d70db683): debrid links are always
+        // tokenized, and the player re-fetches a saved link that fails
+        // (`tryRefreshCredentialedSourceAfterError`).
+        if (url.isNotBlank() && isPlaybackPlaceholderUrl(url)) {
             remove(contentKey)
             return
         }
@@ -126,9 +129,7 @@ object StreamLinkCacheRepository {
             StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
             return null
         }
-        if (entry.url.isNotBlank() &&
-            (entry.url.hasLikelyExpiringPlaybackCredentials() || isPlaybackPlaceholderUrl(entry.url))
-        ) {
+        if (entry.url.isNotBlank() && isPlaybackPlaceholderUrl(entry.url)) {
             StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
             return null
         }

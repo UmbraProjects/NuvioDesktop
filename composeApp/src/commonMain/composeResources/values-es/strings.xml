@@ -32,6 +32,9 @@
     <string name="addons_error_enter_url">Introduce una URL de complemento.</string>
     <string name="addons_input_placeholder">URL del complemento</string>
     <string name="addons_install_button">Instalar complemento</string>
+    <string name="addons_tracking_consent_title">Complemento de seguimiento</string>
+    <string name="addons_tracking_consent_body">%1$s es un complemento de seguimiento. Nuvio le enviará tu actividad: lo que reproduces, pausas y detienes con la posición de reproducción, lo que añades o quitas de tu biblioteca y lo que marcas como visto o no visto. Estos datos salen de Nuvio y los gestionan el desarrollador del complemento y el servicio al que se conecta.</string>
+    <string name="addons_tracking_consent_checkbox">Acepto compartir mi actividad y mi biblioteca con este complemento</string>
     <string name="addons_loading_manifest_details">Cargando detalles del manifiesto...</string>
     <string name="addons_modal_checking_message">Validando la URL del manifiesto y cargando los detalles del complemento antes de instalar.</string>
     <string name="addons_modal_checking_title">Comprobando complemento</string>
@@ -1949,6 +1952,7 @@
     <string name="settings_continue_watching_click_action_description">Opción del clic izquierdo.</string>
     <string name="settings_continue_watching_click_action_play">Reproducir</string>
     <string name="settings_continue_watching_click_action_details">Detalles</string>
+    <string name="settings_continue_watching_click_action_details_upcoming">Detalles solo para próximos</string>
     <string name="settings_continue_watching_source_shortcut_title">Atajo de fuente</string>
     <string name="settings_continue_watching_source_shortcut_description">Un botón al pasar el cursor que hace lo contrario de un clic: abre el selector de fuente cuando Reutilizar último enlace está activado; si no, reproduce el último enlace. Centro lo convierte en un botón grande sobre la ilustración.</string>
     <string name="settings_continue_watching_source_shortcut_off">Desactivado</string>

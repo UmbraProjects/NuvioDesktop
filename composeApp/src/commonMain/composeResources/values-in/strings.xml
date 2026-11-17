@@ -40,6 +40,9 @@
   <string name="addons_error_enter_url">Masukkan URL addon.</string>
   <string name="addons_input_placeholder">URL Addon</string>
   <string name="addons_install_button">Pasang Addon</string>
+  <string name="addons_tracking_consent_title">Addon pelacak</string>
+  <string name="addons_tracking_consent_body">%1$s adalah addon pelacak. Nuvio akan mengirimkan aktivitas Anda kepadanya: apa yang Anda putar, jeda, dan hentikan beserta posisi pemutaran, apa yang Anda tambahkan ke atau hapus dari pustaka, dan apa yang Anda tandai sudah atau belum ditonton. Data ini keluar dari Nuvio dan ditangani oleh pengembang addon serta layanan yang terhubung dengannya.</string>
+  <string name="addons_tracking_consent_checkbox">Saya setuju membagikan aktivitas tontonan dan pustaka saya dengan addon ini</string>
   <string name="addons_loading_manifest_details">Memuat detail manifes...</string>
   <string name="addons_modal_checking_message">Memvalidasi URL manifes dan memuat detail addon sebelum dipasang.</string>
   <string name="addons_modal_checking_title">Memeriksa Addon</string>
@@ -1224,6 +1227,7 @@
   <string name="settings_continue_watching_click_action_description">Opsi klik kiri.</string>
   <string name="settings_continue_watching_click_action_play">Putar</string>
   <string name="settings_continue_watching_click_action_details">Detail</string>
+  <string name="settings_continue_watching_click_action_details_upcoming">Detail hanya untuk yang akan datang</string>
   <string name="settings_continue_watching_source_shortcut_title">Pintasan sumber</string>
   <string name="settings_continue_watching_source_shortcut_description">Tombol saat disorot yang melakukan kebalikan dari klik: membuka pemilih sumber saat Gunakan Ulang Link Terakhir aktif, jika tidak memutar link terakhir. Tengah menjadikannya tombol besar di atas gambar.</string>
   <string name="settings_continue_watching_source_shortcut_off">Mati</string>

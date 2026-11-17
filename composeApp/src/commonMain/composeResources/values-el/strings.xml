@@ -40,6 +40,9 @@
   <string name="addons_error_enter_url">Εισάγετε μια διεύθυνση URL πρόσθετου.</string>
   <string name="addons_input_placeholder">URL πρόσθετου</string>
   <string name="addons_install_button">Εγκατάσταση πρόσθετου</string>
+  <string name="addons_tracking_consent_title">Πρόσθετο παρακολούθησης</string>
+  <string name="addons_tracking_consent_body">Το %1$s είναι πρόσθετο παρακολούθησης. Το Nuvio θα του στέλνει τη δραστηριότητά σας: τι αναπαράγετε, παύετε και σταματάτε μαζί με τη θέση αναπαραγωγής, τι προσθέτετε ή αφαιρείτε από τη βιβλιοθήκη σας και τι σημειώνετε ως προβεβλημένο ή μη. Αυτά τα δεδομένα φεύγουν από το Nuvio και τα διαχειρίζεται ο δημιουργός του πρόσθετου και η υπηρεσία με την οποία συνδέεται.</string>
+  <string name="addons_tracking_consent_checkbox">Συμφωνώ να μοιράζομαι τη δραστηριότητα παρακολούθησης και τη βιβλιοθήκη μου με αυτό το πρόσθετο</string>
   <string name="addons_loading_manifest_details">Φόρτωση λεπτομερειών manifest...</string>
   <string name="addons_modal_checking_message">Επικύρωση της διεύθυνσης URL manifest και φόρτωση λεπτομερειών πρόσθετου πριν από την εγκατάσταση.</string>
   <string name="addons_modal_checking_title">Έλεγχος πρόσθετου</string>
@@ -1224,6 +1227,7 @@
   <string name="settings_continue_watching_click_action_description">Επιλογή με αριστερό κλικ.</string>
   <string name="settings_continue_watching_click_action_play">Αναπαραγωγή</string>
   <string name="settings_continue_watching_click_action_details">Λεπτομέρειες</string>
+  <string name="settings_continue_watching_click_action_details_upcoming">Λεπτομέρειες μόνο για επερχόμενα</string>
   <string name="settings_continue_watching_source_shortcut_title">Συντόμευση πηγής</string>
   <string name="settings_continue_watching_source_shortcut_description">Ένα κουμπί που εμφανίζεται με τον δείκτη και κάνει το αντίθετο από ένα κλικ: ανοίγει τον επιλογέα πηγής όταν είναι ενεργή η «Επαναχρησιμοποίηση τελευταίου συνδέσμου», αλλιώς παίζει τον τελευταίο σύνδεσμο. Η επιλογή «Κέντρο» το κάνει μεγάλο κουμπί πάνω από τα εικαστικά.</string>
   <string name="settings_continue_watching_source_shortcut_off">Ανενεργή</string>

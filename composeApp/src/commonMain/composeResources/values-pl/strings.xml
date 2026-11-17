@@ -40,6 +40,9 @@
   <string name="addons_error_enter_url">Wprowadź URL dodatku.</string>
   <string name="addons_input_placeholder">URL dodatku</string>
   <string name="addons_install_button">Zainstaluj dodatek</string>
+  <string name="addons_tracking_consent_title">Dodatek śledzący</string>
+  <string name="addons_tracking_consent_body">%1$s to dodatek śledzący. Nuvio będzie wysyłać do niego Twoją aktywność: co odtwarzasz, wstrzymujesz i zatrzymujesz wraz z pozycją odtwarzania, co dodajesz do biblioteki lub z niej usuwasz oraz co oznaczasz jako obejrzane lub nieobejrzane. Te dane opuszczają Nuvio i są przetwarzane przez twórcę dodatku i usługę, z którą się łączy.</string>
+  <string name="addons_tracking_consent_checkbox">Zgadzam się udostępniać temu dodatkowi moją aktywność i bibliotekę</string>
   <string name="addons_loading_manifest_details">Ładowanie szczegółów manifestu...</string>
   <string name="addons_modal_checking_message">Walidacja URL manifestu i ładowanie szczegółów dodatku przed instalacją.</string>
   <string name="addons_modal_checking_title">Sprawdzanie dodatku</string>
@@ -1224,6 +1227,7 @@
   <string name="settings_continue_watching_click_action_description">Opcja kliknięcia lewym przyciskiem.</string>
   <string name="settings_continue_watching_click_action_play">Odtwórz</string>
   <string name="settings_continue_watching_click_action_details">Szczegóły</string>
+  <string name="settings_continue_watching_click_action_details_upcoming">Szczegóły tylko dla nadchodzących</string>
   <string name="settings_continue_watching_source_shortcut_title">Skrót do źródła</string>
   <string name="settings_continue_watching_source_shortcut_description">Przycisk widoczny po najechaniu, który robi coś przeciwnego niż kliknięcie: otwiera wybór źródła, gdy włączone jest Użyj ostatniego linku, a w przeciwnym razie odtwarza ostatni link. Opcja Środek zamienia go w duży przycisk nad grafiką.</string>
   <string name="settings_continue_watching_source_shortcut_off">Wyłączony</string>

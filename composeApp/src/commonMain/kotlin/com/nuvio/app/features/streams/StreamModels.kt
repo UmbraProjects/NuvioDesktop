@@ -60,6 +60,8 @@ data class StreamItem(
      * unless a debrid resolve will prove the link first (see `CwStreamCache`).
      */
     val cachedAtMs: Long? = null,
+    /** True when [url] was produced by Nuvio's own debrid resolver, not returned by the add-on. */
+    val debridResolved: Boolean = false,
 ) {
     val streamLabel: String
         // Read from composition for every row of a stream list, so it must not block: the resource

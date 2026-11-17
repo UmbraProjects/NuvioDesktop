@@ -73,6 +73,8 @@ data class PlayerLaunch(
     val autoPlayMode: PlayerAutoPlayMode = PlayerAutoPlayMode.NextEpisode,
     /** The stream being played, when the launch came from one; a watch-party host can share it. */
     val stream: com.nuvio.app.features.streams.StreamItem? = null,
+    /** The source was taken from the reuse-last-link cache, not picked fresh from add-ons. */
+    val sourceFromLinkCache: Boolean = false,
 )
 
 enum class PlayerAutoPlayMode {

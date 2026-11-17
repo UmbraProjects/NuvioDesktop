@@ -36,6 +36,9 @@
     <string name="addons_error_enter_url">Saisis une URL d’addon.</string>
     <string name="addons_input_placeholder">URL de l’addon</string>
     <string name="addons_install_button">Installer l’addon</string>
+    <string name="addons_tracking_consent_title">Extension de suivi</string>
+    <string name="addons_tracking_consent_body">%1$s est une extension de suivi. Nuvio lui enverra votre activité : ce que vous lisez, mettez en pause et arrêtez avec la position de lecture, ce que vous ajoutez à votre bibliothèque ou en retirez, et ce que vous marquez comme vu ou non vu. Ces données quittent Nuvio et sont traitées par le développeur de l\'extension et le service auquel elle se connecte.</string>
+    <string name="addons_tracking_consent_checkbox">J\'accepte de partager mon activité et ma bibliothèque avec cette extension</string>
     <string name="addons_loading_manifest_details">Chargement des détails du manifeste…</string>
     <string name="addons_modal_checking_message">Validation de l’URL du manifeste et chargement des détails de l’addon avant installation.</string>
     <string name="addons_modal_checking_title">Vérification de l’addon</string>
@@ -2401,6 +2404,7 @@
     <string name="settings_continue_watching_click_action_description">Option du clic gauche.</string>
     <string name="settings_continue_watching_click_action_play">Lire</string>
     <string name="settings_continue_watching_click_action_details">Détails</string>
+    <string name="settings_continue_watching_click_action_details_upcoming">Détails seulement pour les à venir</string>
     <string name="settings_continue_watching_source_shortcut_title">Raccourci de source</string>
     <string name="settings_continue_watching_source_shortcut_description">Un bouton au survol qui fait l’inverse d’un clic : ouvre le sélecteur de source quand Réutiliser le dernier lien est activé, sinon lit le dernier lien. Centre en fait un grand bouton sur le visuel.</string>
     <string name="settings_continue_watching_source_shortcut_off">Désactivé</string>

@@ -85,10 +85,7 @@ object ContinueWatchingPreferencesRepository {
             useEpisodeThumbnails = useEpisodeThumbnails,
             showUnairedNextUp = showUnairedNextUp,
             blurNextUp = blurNextUp,
-            dismissedNextUpKeys = dismissedNextUpKeys
-                .map(String::trim)
-                .filter(String::isNotBlank)
-                .toSet(),
+            dismissedNextUpKeys = normalizeDismissedNextUpKeys(dismissedNextUpKeys),
         )
         persist()
     }
@@ -119,7 +116,7 @@ object ContinueWatchingPreferencesRepository {
                 separateUpcomingRow = stored.separateUpcomingRow,
                 seedNextUpFromNuvioSync = stored.seedNextUpFromNuvioSync,
                 blurNextUp = stored.blurNextUp,
-                dismissedNextUpKeys = stored.dismissedNextUpKeys,
+                dismissedNextUpKeys = normalizeDismissedNextUpKeys(stored.dismissedNextUpKeys),
                 showResumePromptOnLaunch = stored.showResumePromptOnLaunch,
                 sortMode = stored.sortModeV2 ?: stored.sortMode,
                 relativeAirCountdown = stored.relativeAirCountdown,
@@ -201,7 +198,7 @@ object ContinueWatchingPreferencesRepository {
 
     fun addDismissedNextUpKey(key: String) {
         ensureLoaded()
-        val normalizedKey = key.trim()
+        val normalizedKey = key.trim().substringBefore("|")
         if (normalizedKey.isBlank()) return
         val current = _uiState.value.dismissedNextUpKeys
         if (normalizedKey in current) return
@@ -234,11 +231,23 @@ object ContinueWatchingPreferencesRepository {
         val normalizedContentId = contentId.trim()
         if (normalizedContentId.isBlank()) return
         val prefix = "$normalizedContentId|"
-        val filtered = _uiState.value.dismissedNextUpKeys.filterNot { it.startsWith(prefix) }.toSet()
+        val filtered = _uiState.value.dismissedNextUpKeys.filterNot {
+            it == normalizedContentId || it.startsWith(prefix)
+        }.toSet()
         if (filtered == _uiState.value.dismissedNextUpKeys) return
         _uiState.value = _uiState.value.copy(dismissedNextUpKeys = filtered)
         persist()
     }
+
+    /**
+     * A dismissed Next Up show is stored by its content id alone (upstream 9da04b944); keys saved in
+     * the old "id|season|episode" form are read as their show, so a changed seed episode (anime
+     * remapping, progress from another device) no longer brings it back.
+     */
+    private fun normalizeDismissedNextUpKeys(keys: Set<String>): Set<String> =
+        keys.map { it.trim().substringBefore("|") }
+            .filter(String::isNotBlank)
+            .toSet()
 
     private fun persist() {
         ContinueWatchingPreferencesStorage.savePayload(

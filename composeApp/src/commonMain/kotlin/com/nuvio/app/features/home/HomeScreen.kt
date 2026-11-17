@@ -241,6 +241,7 @@ import com.nuvio.app.features.home.components.homeHeroLayout
 import com.nuvio.app.features.home.components.homeTvLazyScrollTarget
 import androidx.compose.foundation.lazy.LazyListState
 import com.nuvio.app.features.watchprogress.ContinueWatchingSectionStyle
+import com.nuvio.app.features.watchprogress.isUpcoming
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
@@ -5857,10 +5858,7 @@ internal fun splitContinueWatchingRows(
     nowEpochMs: Long = WatchProgressClock.nowEpochMs(),
 ): HomeContinueWatchingRows {
     val (upcoming, watchable) = if (separateUpcomingRow) {
-        items.partition { item ->
-            item.isNextUp && com.nuvio.app.features.watchprogress.parseReleaseDateToEpochMs(item.released)
-                ?.let { releaseEpochMs -> releaseEpochMs > nowEpochMs } == true
-        }
+        items.partition { item -> item.isUpcoming(nowEpochMs) }
     } else {
         emptyList<ContinueWatchingItem>() to items
     }

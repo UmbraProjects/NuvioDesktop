@@ -46,6 +46,8 @@ enum class ContinueWatchingSortMode {
 enum class ContinueWatchingClickAction {
     PLAY,
     DETAILS,
+    /** Details for a Next Up episode that has not aired yet, play for the rest (upstream 37e8a5c0e). */
+    DETAILS_FOR_UPCOMING,
 }
 
 /**
@@ -60,8 +62,18 @@ enum class ContinueWatchingSourceShortcut {
     CENTER,
 }
 
-internal fun ContinueWatchingClickAction.opensDetails(canOpenDetails: Boolean): Boolean =
-    this == ContinueWatchingClickAction.DETAILS && canOpenDetails
+internal fun ContinueWatchingClickAction.opensDetails(
+    canOpenDetails: Boolean,
+    isUpcoming: Boolean = false,
+): Boolean = canOpenDetails && when (this) {
+    ContinueWatchingClickAction.PLAY -> false
+    ContinueWatchingClickAction.DETAILS -> true
+    ContinueWatchingClickAction.DETAILS_FOR_UPCOMING -> isUpcoming
+}
+
+/** A Next Up episode whose air date is still ahead. */
+internal fun ContinueWatchingItem.isUpcoming(nowEpochMs: Long = WatchProgressClock.nowEpochMs()): Boolean =
+    isNextUp && parseReleaseDateToEpochMs(released)?.let { releaseEpochMs -> releaseEpochMs > nowEpochMs } == true
 
 /** Whether a playback source URL is a local file (local-library / download) rather than a remote stream. */
 fun isLocalFileSourceUrl(url: String?): Boolean =
@@ -274,13 +286,7 @@ internal fun nextUpDismissKey(
     contentId: String,
     seasonNumber: Int?,
     episodeNumber: Int?,
-): String = buildString {
-    append(contentId.trim())
-    append("|")
-    append(seasonNumber ?: -1)
-    append("|")
-    append(episodeNumber ?: -1)
-}
+): String = contentId.trim() // Upstream 9da04b944: the show alone, as NuvioTV stores it.
 
 internal fun WatchProgressEntry.toContinueWatchingItem(): ContinueWatchingItem {
     val normalizedEntry = normalizedCompletion()

@@ -445,6 +445,7 @@ import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingItem
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.ResumePromptRepository
+import com.nuvio.app.features.watchprogress.isUpcoming
 import com.nuvio.app.features.watchprogress.WatchProgressPlaybackSession
 import com.nuvio.app.features.watchprogress.WatchProgressRepository
 import com.nuvio.app.features.watchprogress.nextUpDismissKey
@@ -2378,6 +2379,17 @@ private fun MainAppContent(
                         lastStreamTitle = playerLaunch.streamTitle,
                         lastSourceUrl = playerLaunch.sourceUrl,
                     )
+                    if (durationMs != null && durationMs > 0L) {
+                        com.nuvio.app.features.addons.AddonEventDispatcher.player(
+                            target = com.nuvio.app.features.addons.AddonPlayerEventTarget(
+                                type = session.contentType,
+                                videoId = session.videoId,
+                            ),
+                            action = com.nuvio.app.features.addons.AddonPlayerAction.STOP,
+                            currentTimeMs = if (result.endedByUser) result.positionMs else durationMs,
+                            durationMs = durationMs,
+                        )
+                    }
                     val snapshot = PlayerPlaybackSnapshot(
                         isLoading = false,
                         isPlaying = false,
@@ -3353,6 +3365,7 @@ private fun MainAppContent(
             if (
                 continueWatchingPreferencesUiState.clickAction.opensDetails(
                     canOpenDetails = !item.isCloudLibraryContinueWatchingItem(),
+                    isUpcoming = item.isUpcoming(),
                 )
             ) {
                 resumePromptItem = null
@@ -4008,6 +4021,7 @@ private fun MainAppContent(
                         },
                         onOpenPartyMedia = ::openPartyMedia,
                         stream = launch.stream,
+                        sourceFromLinkCache = launch.sourceFromLinkCache,
                         // fork:pip-browse - from the corner box there is no route to pop: the player just ends.
                         onBack = if (hosted == null) {
                             onBackFromPlayer
@@ -5083,6 +5097,7 @@ private fun MainAppContent(
             val continueWatchingUsesDetailsByDefault = selectedContinueWatching?.let { item ->
                 continueWatchingPreferencesUiState.clickAction.opensDetails(
                     canOpenDetails = !item.isCloudLibraryContinueWatchingItem(),
+                    isUpcoming = item.isUpcoming(),
                 )
             } == true
 
@@ -5632,6 +5647,7 @@ private fun MainAppContent(
                                 disableProgressTracking = launch.disableProgressTracking,
                                 autoPlayMode = launch.autoPlayMode,
                                 stream = cachedDirectStream,
+                                sourceFromLinkCache = true,
                             )
                         if (playerSettings.externalPlayerEnabled) {
                             openExternalPlayback(playerLaunch)
