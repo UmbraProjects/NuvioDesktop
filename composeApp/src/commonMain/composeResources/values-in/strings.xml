@@ -5049,4 +5049,6 @@
     <string name="gamepad_rebind_player">Saat pemutaran</string>
     <string name="gamepad_rebind_changed">Diubah</string>
     <string name="gamepad_rebind_search_description">Atur ulang tombol kontroler, untuk menjelajah dan pemutaran</string>
+    <string name="servers_show_in_local_library">Tampilkan di pustaka lokal</string>
+    <string name="servers_show_in_local_library_description">Film dan serial dari server ini masuk ke katalog pustaka lokal Anda, di samping file di PC ini. Semuanya tetap diputar dari server. Judul tanpa ID IMDb atau TMDB tetap di baris server.</string>
 </resources>

@@ -116,7 +116,8 @@ internal val PlayerScreenRuntime.playbackSession: WatchProgressPlaybackSession
         lastStreamTitle = activeStreamTitle,
         lastStreamSubtitle = activeStreamSubtitle,
         pauseDescription = activePauseDescription,
-        lastSourceUrl = activeSourceUrl,
+        // A media server's URL carries its access token and a session that ends with this playback.
+        lastSourceUrl = activeSourceUrl.takeUnless { isServerSourcePlaying() },
     )
 
 internal fun PlayerScreenRuntime.resetIdentityStateIfNeeded() {

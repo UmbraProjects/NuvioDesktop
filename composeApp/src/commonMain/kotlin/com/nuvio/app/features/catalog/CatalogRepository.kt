@@ -188,6 +188,8 @@ object CatalogRepository {
                         page = requestedSkip.takeIf { it > 0 } ?: 1,
                     )
 
+                    is CatalogTarget.Server -> com.nuvio.app.features.servers.ServerCatalog.page(target, skip = requestedSkip)
+
                     is CatalogTarget.Library,
                     is CatalogTarget.DiscoverRow,
                     -> error(getString(Res.string.catalog_load_failed))

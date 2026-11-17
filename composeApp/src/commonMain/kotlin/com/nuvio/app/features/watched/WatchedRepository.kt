@@ -31,6 +31,7 @@ import com.nuvio.app.features.watching.sync.WatchedSyncAdapter
 import com.nuvio.app.features.addons.ADDON_LIBRARY_RESOURCE
 import com.nuvio.app.features.addons.AddonEventDispatcher
 import com.nuvio.app.features.addons.AddonLibraryAction
+import com.nuvio.app.features.servers.ServerWatched
 import com.nuvio.app.features.watchprogress.buildPlaybackVideoId
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -704,6 +705,15 @@ object WatchedRepository {
         }
     }
 
+    /** Watched state read from a media server: kept here only, sent nowhere. */
+    internal fun markWatchedLocally(items: Collection<WatchedItem>) {
+        markWatched(items = items, remoteSync = WatchedRemoteSync.Skip, syncRemote = false)
+    }
+
+    internal fun unmarkWatchedLocally(items: Collection<WatchedItem>) {
+        unmarkWatched(items = items, syncRemote = false)
+    }
+
     internal fun markWatchedFromPlaybackCompletion(item: WatchedItem, syncRemote: Boolean = true) {
         markWatched(items = listOf(item), remoteSync = WatchedRemoteSync.Skip, syncRemote = syncRemote)
     }
@@ -874,9 +884,16 @@ object WatchedRepository {
     }
 
     private fun pushMarksToServer(
-        items: Collection<WatchedItem>,
+        allItems: Collection<WatchedItem>,
         remoteSync: WatchedRemoteSync,
     ) {
+        // Media servers: a server's own title is marked on that server and nowhere else; a manual
+        // mark on a catalog title is mirrored to the servers that have it (upstream ServerWatched).
+        val (serverItems, items) = allItems.partition(ServerWatched::isServerItem)
+        if (remoteSync == WatchedRemoteSync.Manual) {
+            if (serverItems.isNotEmpty()) syncScope.launch { ServerWatched.apply(serverItems, played = true) }
+            ServerWatched.mirror(items, played = true)
+        }
         syncScope.launch {
             runCatching {
                 if (items.isEmpty()) return@runCatching
@@ -903,7 +920,10 @@ object WatchedRepository {
         }
     }
 
-    private fun pushDeleteToServer(items: Collection<WatchedItem>) {
+    private fun pushDeleteToServer(allItems: Collection<WatchedItem>) {
+        val (serverItems, items) = allItems.partition(ServerWatched::isServerItem)
+        if (serverItems.isNotEmpty()) syncScope.launch { ServerWatched.apply(serverItems, played = false) }
+        ServerWatched.mirror(items, played = false)
         syncScope.launch {
             runCatching {
                 if (items.isEmpty()) return@runCatching

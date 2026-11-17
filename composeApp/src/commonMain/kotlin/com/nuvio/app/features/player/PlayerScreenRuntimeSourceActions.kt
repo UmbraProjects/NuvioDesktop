@@ -299,6 +299,11 @@ internal fun PlayerScreenRuntime.switchToSource(
     keepSourcesPanelOpen: Boolean = false,
 ) {
     if (
+        resolveServerForPlayer(stream) {
+            switchToSource(it, sourceIdentityKey, resumePositionOverrideMs, keepSourcesPanelOpen)
+        }
+    ) return
+    if (
         resolveYouTubeForPlayer(stream) {
             switchToSource(it, sourceIdentityKey, resumePositionOverrideMs, keepSourcesPanelOpen)
         }
@@ -346,7 +351,7 @@ internal fun PlayerScreenRuntime.switchToSource(
     stopActiveP2pStream()
     val currentVideoId = activeVideoId
     // A resolved YouTube URL expires after a few hours, so it is not kept for reuse.
-    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && currentVideoId != null && stream.ytId.isNullOrBlank()) {
+    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && currentVideoId != null && stream.ytId.isNullOrBlank() && stream.serverTarget == null) {
         saveDirectStreamForReuse(stream, url, currentVideoId, activeSeasonNumber, activeEpisodeNumber, sourceIdentityKey)
     }
     activeSourceAudioUrl = null
@@ -365,6 +370,7 @@ internal fun PlayerScreenRuntime.switchToSource(
     activeInitialProgressFraction = null
     if (!keepSourcesPanelOpen) showSourcesPanel = false
     controlsVisible = true
+    externalSubtitles = stream.externalSubtitles
     beginPlaybackAttempt()
     activeSourceUrl = url
 }
@@ -389,6 +395,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
 ) {
     val seasonNumber = episode.playbackSeasonNumber()
     val episodeNumber = episode.playbackEpisodeNumber()
+    if (resolveServerForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
     if (resolveYouTubeForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
     if (
         resolveDebridForPlayer(
@@ -426,7 +433,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     stopActiveP2pStream()
     val epVideoId = episode.id
     val resume = resolveEpisodeResume(epVideoId, episode)
-    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && stream.ytId.isNullOrBlank()) {
+    if (StreamLinkCacheRepository.shouldSaveLinks(playerSettingsUiState.streamReuseLastLinkEnabled) && stream.ytId.isNullOrBlank() && stream.serverTarget == null) {
         saveDirectStreamForReuse(stream, url, epVideoId, seasonNumber, episodeNumber, sourceIdentityKey)
     }
     activeSourceAudioUrl = null
@@ -434,6 +441,7 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     activeSourceResponseHeaders = sanitizePlaybackResponseHeaders(stream.behaviorHints.proxyHeaders?.response)
     activeStreamType = stream.streamType
     applyEpisodeStreamMetadata(stream, episode, resume, sourceIdentityKey)
+    externalSubtitles = stream.externalSubtitles
     beginPlaybackAttempt()
     activeSourceUrl = url
 }

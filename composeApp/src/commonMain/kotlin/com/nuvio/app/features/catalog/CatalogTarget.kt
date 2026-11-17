@@ -24,6 +24,16 @@ sealed interface CatalogTarget {
         override val supportsPagination: Boolean = false
     }
 
+    /** A media server's library, resume row or collection (upstream's servers feature). */
+    data class Server(
+        val connectionId: String,
+        val libraryId: String?,
+        override val contentType: String,
+        val collectionId: String? = null,
+    ) : CatalogTarget {
+        override val supportsPagination: Boolean = true
+    }
+
     data class CollectionSource(
         val collectionId: String,
         val folderId: String,
@@ -52,4 +62,5 @@ enum class CatalogTargetKind {
     LIBRARY,
     COLLECTION_SOURCE,
     DISCOVER_ROW,
+    SERVER,
 }

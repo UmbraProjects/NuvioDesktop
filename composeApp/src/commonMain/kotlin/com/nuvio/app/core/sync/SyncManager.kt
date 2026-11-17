@@ -86,6 +86,11 @@ object SyncManager {
                 runCatching { HomeCatalogSettingsSyncService.pullFromServer(profileId) }
                     .onFailure { log.e(it) { "HomeCatalogSettings pull failed" } }
             }
+            launch {
+                // Media servers (upstream): the connection list, without tokens; sign in again here.
+                runCatching { MediaServerSync.syncFromRemote(profileId) }
+                    .onFailure { log.e(it) { "Media server pull failed" } }
+            }
 
             log.i { "pullAllForProfile($profileId) — all pulls launched" }
         }

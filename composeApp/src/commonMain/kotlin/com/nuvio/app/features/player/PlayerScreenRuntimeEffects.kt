@@ -516,6 +516,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
     BindYouTubeRelatedEffect() // fork:youtube-mode
     BindStreamFailoverWatchdogEffect()
     BindIptvLiveEffects()
+    BindServerPlaybackEffects()
 
     DisposableEffect(playbackSession.videoId, activeSourceUrl, activeSourceAudioUrl) {
         val effectVideoId = playbackSession.videoId
@@ -2340,6 +2341,7 @@ internal fun PlayerScreenRuntime.removeFailedStreamFromCache() {
 internal fun PlayerScreenRuntime.tryRefreshCredentialedSourceAfterError(message: String?): Boolean {
     // A YouTube tab video has no addon to ask again: its streams are looked up again instead.
     if (isYouTubeVideoPlayback) return tryReresolveYouTubeAfterError(message)
+    if (isServerSourcePlaying()) return retryServerSourceAfterError(message)
     if (credentialRefreshJob?.isActive == true) return true
     val failedUrl = activeSourceUrl
     if (failedUrl.isBlank()) return false

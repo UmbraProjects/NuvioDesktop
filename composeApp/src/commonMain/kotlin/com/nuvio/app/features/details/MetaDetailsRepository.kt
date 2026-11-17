@@ -58,6 +58,8 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import nuvio.composeapp.generated.resources.*
+import com.nuvio.app.features.servers.message
+import com.nuvio.app.features.servers.serverFailure
 import org.jetbrains.compose.resources.getString
 
 object MetaDetailsRepository {
@@ -93,6 +95,12 @@ object MetaDetailsRepository {
         PerfTelemetry.count("MetaDetailsRepository.load")
         log.d { "load() called — type=$type id=$id" }
         val requestKey = "$type:$id"
+
+        // A media server's own title (a server: id): its details come from the server itself.
+        com.nuvio.app.features.servers.ServerItemRef.parse(id)?.let { ref ->
+            loadServerMeta(requestKey, ref)
+            return
+        }
 
         // Unmatched local-library items have no addon meta; serve a synthesized one so the details
         // page still opens and plays the local file(s). (Matched items use their real tt/tmdb meta.)
@@ -353,6 +361,14 @@ object MetaDetailsRepository {
          */
         episodeSeasons: Set<Int>? = null,
     ): MetaDetails? {
+        com.nuvio.app.features.servers.ServerItemRef.parse(id)?.let { ref ->
+            val serverKey = "$type:$id"
+            if (!forceRefresh) cachedMetaByRequestKey[serverKey]?.let { return it.baseMeta }
+            return runCatching { com.nuvio.app.features.servers.ServerCatalog.details(ref).meta }
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                .getOrNull()
+                ?.also { cachedMetaByRequestKey[serverKey] = CachedMetaEntry(baseMeta = it) }
+        }
         // Keyed on the **resolved** lookup id, not the id the caller happened to hold — plan §23.3.
         // `tt11561116` and `tmdb:860508` are the same title and produce the identical addon URL, so
         // keying on the requested id made each alias pay for its own fetch. Resolving first is
@@ -981,6 +997,38 @@ object MetaDetailsRepository {
      * series-level or season 1, treating later-season trailers as a spoiler risk.
      */
     private const val HERO_TRAILER_SEASON = 1
+
+    /** A media server's title: details, watched state and resume points read from the server. */
+    private fun loadServerMeta(requestKey: String, ref: com.nuvio.app.features.servers.ServerItemRef) {
+        if (_uiState.value.isLoading && activeRequestKey == requestKey) return
+        activeRequestKey = requestKey
+        _uiState.value = MetaDetailsUiState(
+            isLoading = true,
+            meta = cachedMetaByRequestKey[requestKey]?.baseMeta,
+        )
+        scope.launch {
+            val result = runCatching { com.nuvio.app.features.servers.ServerCatalog.details(ref) }
+            if (activeRequestKey != requestKey) return@launch
+            result.fold(
+                onSuccess = { details ->
+                    val meta = details.meta
+                    com.nuvio.app.features.servers.ServerUserStateProjection.apply(details)
+                    cachedMetaByRequestKey[requestKey] = CachedMetaEntry(baseMeta = meta)
+                    _uiState.value = MetaDetailsUiState(meta = meta)
+                },
+                onFailure = { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    log.w { "Server details failed: ${error.serverFailure()}" }
+                    val cached = cachedMetaByRequestKey[requestKey]?.baseMeta
+                    _uiState.value = MetaDetailsUiState(
+                        meta = cached,
+                        errorMessage = if (cached == null) getString(error.serverFailure().message()) else null,
+                    )
+                    if (cached == null) activeRequestKey = null
+                },
+            )
+        }
+    }
 
     private const val FETCH_TIMEOUT_MS = 12_000L
     private const val HTTP_NOT_FOUND = 404

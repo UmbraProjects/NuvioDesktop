@@ -41,7 +41,7 @@
   <string name="addons_input_placeholder">URL Addon</string>
   <string name="addons_install_button">Installa Addon</string>
   <string name="addons_tracking_consent_title">Addon di tracciamento</string>
-  <string name="addons_tracking_consent_body">%1$s è un addon di tracciamento. Nuvio gli invierà la tua attività: cosa riproduci, metti in pausa e interrompi con la posizione di riproduzione, cosa aggiungi o rimuovi dalla libreria e cosa segni come visto o non visto. Questi dati escono da Nuvio e sono gestiti dallo sviluppatore dell\'addon e dal servizio a cui si collega.</string>
+  <string name="addons_tracking_consent_body">%1$s è un addon di tracciamento. Nuvio gli invierà la tua attività: cosa riproduci, metti in pausa e interrompi con la posizione di riproduzione, cosa aggiungi o rimuovi dalla libreria e cosa segni come visto o non visto. Questi dati escono da Nuvio e sono gestiti dallo sviluppatore dell'addon e dal servizio a cui si collega.</string>
   <string name="addons_tracking_consent_checkbox">Accetto di condividere la mia attività e la mia libreria con questo addon</string>
   <string name="addons_loading_manifest_details">Caricamento dettagli manifest...</string>
   <string name="addons_modal_checking_message">Validazione dell'URL del manifest e caricamento dei dettagli dell'addon prima dell'installazione.</string>
@@ -5018,9 +5018,9 @@
     <string name="panel_ring_pad_button">Pulsante del controller</string>
     <string name="panel_ring_pad_button_description">Tienilo premuto per aprire l'anello e punta con una delle levette; un tocco rapido esegue ancora l'azione del pulsante.</string>
     <string name="gamepad_cursor_section">Cursore col controller</string>
-    <string name="gamepad_cursor_note">Per le schermate che le frecce non raggiungono. L\'assistenza alla mira usa l\'intensità impostata per il telecomando del telefono.</string>
+    <string name="gamepad_cursor_note">Per le schermate che le frecce non raggiungono. L'assistenza alla mira usa l'intensità impostata per il telecomando del telefono.</string>
     <string name="gamepad_cursor_button">Pulsante di sblocco</string>
-    <string name="gamepad_cursor_button_description">Tienilo premuto per usare lo stick sinistro come puntatore; tienilo o premilo di nuovo, o premi la croce, per tornare. Una pressione breve fa ancora l\'azione del pulsante.</string>
+    <string name="gamepad_cursor_button_description">Tienilo premuto per usare lo stick sinistro come puntatore; tienilo o premilo di nuovo, o premi la croce, per tornare. Una pressione breve fa ancora l'azione del pulsante.</string>
     <string name="gamepad_cursor_speed">Velocità del puntatore</string>
     <string name="gamepad_cursor_speed_slow">Lenta</string>
     <string name="gamepad_cursor_speed_medium">Media</string>

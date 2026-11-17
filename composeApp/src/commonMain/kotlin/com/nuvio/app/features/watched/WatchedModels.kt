@@ -25,6 +25,8 @@ data class WatchedItem(
      * from local ones, so they kept seeding Up Next long after the source moved elsewhere.
      */
     val importedFrom: String? = null,
+    /** The episode's own video id, when the mark came from somewhere that knows it (a media server). */
+    val videoId: String? = null,
 )
 
 data class WatchedUiState(

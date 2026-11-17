@@ -393,6 +393,7 @@ object FolderDetailRepository {
 
                     is CatalogTarget.Library -> false
                     is CatalogTarget.DiscoverRow -> false
+                    is CatalogTarget.Server -> false
                     null -> false
                 }
         }

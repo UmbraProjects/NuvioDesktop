@@ -356,6 +356,8 @@ internal class PlayerScreenRuntime(
     var nextEpisodePreloadRequestedFor by mutableStateOf<String?>(null)
     var pendingP2pSwitch by mutableStateOf<PendingPlayerP2pSwitch?>(null)
     var credentialRefreshJob by mutableStateOf<Job?>(null)
+    /** Subtitle files that come with the playing stream (a media server's); see PlayerScreenRuntimeServer. */
+    var externalSubtitles by mutableStateOf(args.stream?.externalSubtitles.orEmpty())
     var activeAddonPlayerEventTarget: com.nuvio.app.features.addons.AddonPlayerEventTarget? = null
     var lastAddonPlayerAction: com.nuvio.app.features.addons.AddonPlayerAction? = null
     /** URL opened from the reuse-last-link cache; it is refreshed after a playback error even without a token. */

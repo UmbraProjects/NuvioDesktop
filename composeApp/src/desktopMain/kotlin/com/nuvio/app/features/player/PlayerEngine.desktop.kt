@@ -799,7 +799,13 @@ private fun NativePlayerSurface(
                     " playbackHost=${PlaybackRedirectResolver.hostOf(resolution.playbackUrl)}" +
                     " redirect=${resolution.outcome.name.lowercase()}/${resolution.hops}" +
                     (if (warmedResolution) " warmed=yes" else "") +
-                    " sourceUrl=${com.nuvio.app.features.iptv.redactIptvCredentials(sourceUrl).takeLast(48)}",
+                    // Media-server links carry their access token in the query (Jellyfin/Emby api_key,
+                    // Plex X-Plex-Token): masked before the tail is taken, as users send these logs in.
+                    " sourceUrl=${
+                        com.nuvio.app.features.iptv.redactIptvCredentials(sourceUrl)
+                            .replace(PlaybackUrlTokenPattern, "$1=***")
+                            .takeLast(48)
+                    }",
             )
         }
         fun attachWith(
@@ -2313,3 +2319,6 @@ private fun voicePillText(state: com.nuvio.app.features.voice.VoiceSessionState)
         com.nuvio.app.features.voice.VoiceSessionState.Idle -> null
     }
 }
+
+/** Access tokens in a playback URL query (media servers, generic token params), for log lines. */
+private val PlaybackUrlTokenPattern = Regex("""(?i)\b(api_key|x-plex-token|access_token|token)=[^&#\s]+""")

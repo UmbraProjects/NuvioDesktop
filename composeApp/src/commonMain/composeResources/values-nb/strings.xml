@@ -5052,4 +5052,6 @@
     <string name="gamepad_rebind_player">Under avspilling</string>
     <string name="gamepad_rebind_changed">Endret</string>
     <string name="gamepad_rebind_search_description">Tilordne kontrollerknapper på nytt, for surfing og avspilling</string>
+    <string name="servers_show_in_local_library">Vis i lokalt bibliotek</string>
+    <string name="servers_show_in_local_library_description">Filmer og serier fra denne serveren kommer med i katalogene i det lokale biblioteket, ved siden av filene på denne PC-en. De spilles fortsatt av fra serveren. Titler uten IMDb- eller TMDB-ID blir værende i serverens rader.</string>
 </resources>

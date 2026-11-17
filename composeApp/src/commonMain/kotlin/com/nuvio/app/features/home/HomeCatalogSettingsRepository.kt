@@ -2173,7 +2173,11 @@ object HomeCatalogSettingsRepository {
 
     fun exportToSyncPayload(): SyncHomeCatalogPayload {
         ensureLoaded()
-        val items = preferences.values.sortedBy { it.order }.map { pref ->
+        // A media server's rows are this device's: the server list syncs, its sign-in does not.
+        val items = preferences.values
+            .filterNot { com.nuvio.app.features.servers.ServerCatalog.isServerKey(it.key) }
+            .sortedBy { it.order }
+            .map { pref ->
             val parts = pref.key.split(":")
             val isCollection = pref.key.startsWith("collection_")
             if (isCollection) {

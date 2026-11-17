@@ -41,7 +41,7 @@
   <string name="addons_input_placeholder">Eklenti URL'si</string>
   <string name="addons_install_button">Eklentiyi kur</string>
   <string name="addons_tracking_consent_title">İzleme eklentisi</string>
-  <string name="addons_tracking_consent_body">%1$s bir izleme eklentisidir. Nuvio etkinliğinizi ona gönderir: oynattığınız, duraklattığınız ve durdurduğunuz içerikler ile oynatma konumu, kitaplığınıza eklediğiniz veya çıkardığınız öğeler ve izlendi ya da izlenmedi olarak işaretledikleriniz. Bu veriler Nuvio\'dan çıkar ve eklentinin geliştiricisi ile bağlandığı hizmet tarafından işlenir.</string>
+  <string name="addons_tracking_consent_body">%1$s bir izleme eklentisidir. Nuvio etkinliğinizi ona gönderir: oynattığınız, duraklattığınız ve durdurduğunuz içerikler ile oynatma konumu, kitaplığınıza eklediğiniz veya çıkardığınız öğeler ve izlendi ya da izlenmedi olarak işaretledikleriniz. Bu veriler Nuvio'dan çıkar ve eklentinin geliştiricisi ile bağlandığı hizmet tarafından işlenir.</string>
   <string name="addons_tracking_consent_checkbox">İzleme etkinliğimi ve kitaplığımı bu eklentiyle paylaşmayı kabul ediyorum</string>
   <string name="addons_loading_manifest_details">Manifest detayları yükleniyor...</string>
   <string name="addons_modal_checking_message">Kurulumdan önce manifest URL'si doğrulanıyor ve eklenti detayları yükleniyor.</string>

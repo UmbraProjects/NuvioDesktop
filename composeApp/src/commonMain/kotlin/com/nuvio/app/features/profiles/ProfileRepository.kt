@@ -272,6 +272,7 @@ object ProfileRepository {
         com.nuvio.app.features.iptv.IptvRepository.onProfileChanged()
         CollectionMobileSettingsRepository.onProfileChanged()
         DownloadsRepository.onProfileChanged()
+        com.nuvio.app.features.servers.ServerRepository.onProfileChanged()
         com.nuvio.app.features.librarypvr.LibraryPvrRepository.onProfileChanged()
     }
 
@@ -361,6 +362,7 @@ object ProfileRepository {
         if (AuthRepository.state.value.isAnonymous) {
             val remaining = _state.value.profiles.filter { it.profileIndex != profileIndex }
             ProfilePinCacheStorage.removePayload(profileIndex)
+            com.nuvio.app.features.servers.ServerRepository.removeProfile(profileIndex)
             _state.value = _state.value.copy(
                 profiles = remaining,
                 activeProfile = if (_state.value.activeProfile?.profileIndex == profileIndex) remaining.firstOrNull() else _state.value.activeProfile,
@@ -374,6 +376,7 @@ object ProfileRepository {
         runCatching {
             val params = buildJsonObject { put("p_profile_id", profileIndex) }
             SupabaseProvider.client.postgrest.rpc("sync_delete_profile_data", params)
+            com.nuvio.app.features.servers.ServerRepository.removeProfile(profileIndex)
             pullProfiles()
         }.onFailure { e ->
             log.e(e) { "Failed to delete profile $profileIndex" }

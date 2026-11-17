@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
@@ -590,6 +591,13 @@ private fun settingsSearchEntries(
         title = localLibraryPage,
         description = resolve(Res.string.settings_local_library_description),
         icon = Icons.Rounded.CollectionsBookmark,
+    )
+    addPage(
+        page = SettingsPage.MediaServers,
+        key = "media-servers",
+        title = resolve(Res.string.compose_settings_page_media_servers),
+        description = "Jellyfin, Emby, Plex, Silo",
+        icon = Icons.Rounded.Dns,
     )
     addPage(
         page = SettingsPage.Games,
@@ -2976,6 +2984,8 @@ private fun settingsSearchEntries(
     // builds instead of silently producing another unreachable option.
     val unavailablePages = buildSet {
         add(SettingsPage.Root)
+        // One server's page: reached from Media servers after picking a server, never on its own.
+        add(SettingsPage.MediaServer)
         if (!pluginsEnabled) add(SettingsPage.Plugins)
         if (!downloadsEnabled) {
             add(SettingsPage.AutoDownloads)

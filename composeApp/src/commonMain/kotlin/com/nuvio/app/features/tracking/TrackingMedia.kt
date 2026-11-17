@@ -144,6 +144,8 @@ fun buildTrackingMediaReference(
 ): TrackingMediaReference {
     val ids = parseTrackingExternalIds(parentMetaId)
         .mergeMissing(parseTrackingExternalIds(videoId))
+        // A media server's own title: its ids as the server reported them (ServerTrackingIds).
+        .let { parsed -> com.nuvio.app.features.servers.ServerTrackingIds.forMetaId(parentMetaId)?.let(parsed::mergeMissing) ?: parsed }
     // Providers convert from the episode's own coordinates, so a native anime episode is always
     // reported in its entry's numbering, read off its id. The player is launched with the canonical
     // TMDB pair instead, and where the entry maps to TMDB season 1 (Apothecary Diaries S3 is TMDB

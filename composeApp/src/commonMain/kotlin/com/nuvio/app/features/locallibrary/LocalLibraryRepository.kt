@@ -43,6 +43,8 @@ private data class LocalConfigPayload(
     // already cached is treated as considered on load, so we never retroactively file old items
     // (only genuinely new scans get auto-filed). Absent on fresh installs (empty cache) too.
     val autoFiledKeys: Set<String>? = null,
+    /** Connection ids of the media servers shown in the Local Library (LocalServerLinks). */
+    val serverLinks: Set<String> = emptySet(),
 )
 
 @Serializable
@@ -79,6 +81,7 @@ object LocalLibraryRepository {
     // Keys the auto-filer has already considered — so an item the user deliberately moves to
     // Unsorted isn't re-filed on the next rescan, and pre-existing items aren't filed retroactively.
     private var autoConsideredKeys: Set<String> = emptySet()
+    private var serverLinks: Set<String> = emptySet()
     private var scanJob: Job? = null
 
     // Startup loads this from the deferred warm on a background thread; screens still call
@@ -113,7 +116,7 @@ object LocalLibraryRepository {
     /** One background scan per session, started by the screens that show local items. */
     fun scanIfNotScannedThisSession() {
         ensureLoaded()
-        if (scannedThisSession || folders.isEmpty()) return
+        if (scannedThisSession || (folders.isEmpty() && serverLinks.isEmpty())) return
         rescan()
     }
 
@@ -130,6 +133,7 @@ object LocalLibraryRepository {
             ?: LocalLibraryPlaybackPreference.SOURCE_PICKER
         assignmentsByKey = config?.assignments.orEmpty()
         titlePlaybackByKey = config?.titlePlayback.orEmpty()
+        serverLinks = config?.serverLinks.orEmpty()
         overridesByKey = LocalLibraryStorage.loadOverrides(profileId)
             ?.let { runCatching { json.decodeFromString<LocalOverridesPayload>(it).overrides }.getOrNull() }
             .orEmpty()
@@ -137,7 +141,10 @@ object LocalLibraryRepository {
         itemsByKey = LocalLibraryStorage.loadCache(profileId)
             ?.let { runCatching { json.decodeFromString<LocalCachePayload>(it).items }.getOrNull() }
             .orEmpty()
-            .filter { it.folderId in folders.map(LocalFolder::id) }
+            .filter { item ->
+                item.folderId in folders.map(LocalFolder::id) ||
+                    item.folderId.localServerConnectionId()?.let { it in serverLinks } == true
+            }
             .associateBy { it.key }
         // A null set means a pre-feature (or fresh) payload: treat everything already cached as
         // considered, so upgrading never sweeps existing Unsorted items into their type catalogs.
@@ -249,9 +256,27 @@ object LocalLibraryRepository {
         return folders.any { path.isInsideDirectory(it.path) }
     }
 
+    /** Shows a media server's titles in the Local Library, or takes them out again. */
+    fun setServerLinked(connectionId: String, linked: Boolean) {
+        ensureLoaded()
+        val updated = if (linked) serverLinks + connectionId else serverLinks - connectionId
+        if (updated == serverLinks) return
+        serverLinks = updated
+        persistConfig()
+        if (!linked) {
+            val folderId = localServerFolderId(connectionId)
+            itemsByKey = itemsByKey.filterValues { it.folderId != folderId }
+            persistCache()
+            publish(isScanning = _uiState.value.isScanning)
+        } else {
+            publish(isScanning = _uiState.value.isScanning)
+            rescan()
+        }
+    }
+
     fun rescan() {
         ensureLoaded()
-        if (folders.isEmpty()) {
+        if (folders.isEmpty() && serverLinks.isEmpty()) {
             itemsByKey = emptyMap()
             persistCache()
             publish(isScanning = false)
@@ -267,6 +292,13 @@ object LocalLibraryRepository {
                 val result = FolderScanner.scan(folder)
                 if (result.errorMessage != null && firstError == null) firstError = result.errorMessage
                 scanned += result.items.map { applyOverride(it) }
+            }
+            // Linked media servers: their titles join the scan; one that cannot be reached keeps
+            // the titles it had, so a server being off for a while does not empty its catalogs.
+            for (server in LocalServerLinks.scan(serverLinks)) {
+                val folderId = localServerFolderId(server.connectionId)
+                scanned += server.items?.map { applyOverride(it) }
+                    ?: itemsByKey.values.filter { it.folderId == folderId }
             }
 
             // Preserve ids that were already resolved (from cache) before re-matching, so we don't
@@ -857,6 +889,7 @@ object LocalLibraryRepository {
             hideEmptyCatalogs = hideEmptyCatalogs,
             playbackPreference = playbackPreference,
             titlePlayback = titlePlaybackByKey,
+            linkedServers = serverLinks,
             isLoaded = true,
             isScanning = isScanning,
             errorMessage = errorMessage,
@@ -875,6 +908,7 @@ object LocalLibraryRepository {
                     assignments = assignmentsByKey,
                     titlePlayback = titlePlaybackByKey,
                     autoFiledKeys = autoConsideredKeys,
+                    serverLinks = serverLinks,
                 ),
             ),
         )

@@ -436,6 +436,8 @@ data class LocalLibraryUiState(
     // Default false: the four defaults are visible even when empty so the user knows they exist and
     // hides them by a deliberate choice (the eye toggle).
     val hideEmptyCatalogs: Boolean = false,
+    /** Media servers whose titles are shown in the Local Library ("Show in Local Library"). */
+    val linkedServers: Set<String> = emptySet(),
     val isLoaded: Boolean = false,
     val isScanning: Boolean = false,
     val errorMessage: String? = null,

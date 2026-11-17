@@ -106,6 +106,7 @@ object ProfileSettingsSync {
     fun startObserving() {
         if (observeJob?.isActive == true) return
         ensureRepositoriesLoaded()
+        MediaServerSync.startObserving()
         observeLocalChangesAndPush()
     }
 

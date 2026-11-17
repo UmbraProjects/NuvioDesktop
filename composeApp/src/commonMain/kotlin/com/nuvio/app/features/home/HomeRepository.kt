@@ -335,7 +335,8 @@ object HomeRepository {
             // manifest, or a launch would remember a Home missing that addon's rows.
             if (activeAddons.none { it.isRefreshing }) {
                 restoredDefinitions = requests
-                HomeCatalogDiskCache.writeDefinitions(profileId, requests)
+                // The stored row shape has no server fields, so server rows are not remembered.
+                HomeCatalogDiskCache.writeDefinitions(profileId, requests.filter { it.serverConnectionId == null })
             }
             ensureCollectionHeroFallback(
                 addons = activeAddons,
@@ -461,7 +462,8 @@ object HomeRepository {
 
     private fun homeRequestKey(definitions: List<HomeCatalogDefinition>): String =
         definitions.joinToString(separator = "|") { request ->
-            "${request.manifestUrl}:${request.type}:${request.catalogId}:${request.genre.orEmpty()}"
+            "${request.manifestUrl}:${request.type}:${request.catalogId}:${request.genre.orEmpty()}" +
+                request.serverConnectionId?.let { ":server=$it" }.orEmpty()
         }
 
     private fun HomeCatalogDefinition.isActiveInHome(snapshot: HomeCatalogSettingsSnapshot): Boolean {
@@ -531,6 +533,7 @@ object HomeRepository {
     )
 
     private suspend fun HomeCatalogDefinition.toSection(profileId: Int): HomeCatalogSection {
+        serverConnectionId?.let { connectionId -> return toServerSection(connectionId) }
         // The whole first page is parsed even for a catalog the manifest calls non-paginating:
         // whether it pages is only known once the response is in hand (below), and a row that
         // turns out to page keeps its full page so the next skip stays page-aligned.
@@ -543,9 +546,33 @@ object HomeRepository {
 
     /** The row a previous launch fetched, replayed from disk; null when there is none fit to show. */
     private suspend fun HomeCatalogDefinition.restoredSection(profileId: Int): HomeCatalogSection? {
+        if (serverConnectionId != null) return null // Server rows are always asked of the server.
         val url = firstPageUrl()
         val stored = HomeCatalogDiskCache.read(profileId, key, url) ?: return null
         return runCatching { sectionFromPage(catalogPageFromPayload(stored.payload)) }.getOrNull()
+    }
+
+    /** A media server's library (or resume) row, read from the server itself. */
+    private suspend fun HomeCatalogDefinition.toServerSection(connectionId: String): HomeCatalogSection {
+        val target = CatalogTarget.Server(connectionId, catalogId, type)
+        val page = com.nuvio.app.features.servers.ServerCatalog.page(
+            target,
+            skip = 0,
+            limit = HOME_CATALOG_PREVIEW_FETCH_LIMIT,
+        )
+        WatchedContentFilter.prepareForLoad(page.items)
+        return HomeCatalogSection(
+            key = key,
+            title = defaultTitle,
+            subtitle = addonName,
+            addonName = addonName,
+            target = target,
+            items = page.items,
+            availableItemCount = page.rawItemCount,
+            hasMore = page.nextSkip != null,
+            paginates = page.nextSkip != null,
+            nextSkip = page.nextSkip,
+        )
     }
 
     private suspend fun HomeCatalogDefinition.sectionFromPage(page: CatalogPage): HomeCatalogSection {
@@ -617,9 +644,9 @@ object HomeRepository {
             log.d { "loadMore skipped ($sectionKey): section is not in the published state" }
             return null
         }
-        val target = section.target as? CatalogTarget.Addon
-        if (target == null) {
-            log.d { "loadMore skipped ($sectionKey): not an addon catalog" }
+        val target = section.target
+        if (target !is CatalogTarget.Addon && target !is CatalogTarget.Server) {
+            log.d { "loadMore skipped ($sectionKey): not an addon or server catalog" }
             return null
         }
         val skip = section.nextSkip
@@ -637,13 +664,17 @@ object HomeRepository {
         setLoadingMore(sectionKey, loading = true)
         val job = scope.launch {
             runCatching {
-                fetchCatalogPage(
-                    manifestUrl = target.manifestUrl,
-                    type = target.contentType,
-                    catalogId = target.catalogId,
-                    genre = target.genre,
-                    skip = skip,
-                ).also { page ->
+                when (target) {
+                    is CatalogTarget.Server -> com.nuvio.app.features.servers.ServerCatalog.page(target, skip = skip)
+                    is CatalogTarget.Addon -> fetchCatalogPage(
+                        manifestUrl = target.manifestUrl,
+                        type = target.contentType,
+                        catalogId = target.catalogId,
+                        genre = target.genre,
+                        skip = skip,
+                    )
+                    else -> error("unreachable")
+                }.also { page ->
                     WatchedContentFilter.prepareForLoad(page.items, resolveBudgetMs = WATCHED_FILTER_RESOLVE_BUDGET_MS)
                 }
             }.fold(

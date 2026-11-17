@@ -20,6 +20,12 @@ data class HomeCatalogDefinition(
     val catalogId: String,
     val genre: String? = null,
     val supportsPagination: Boolean,
+    /** The catalog's own name, without the type (media-server rows set it; addon rows leave it). */
+    val catalogName: String = "",
+    /** Changes when what the row shows changes (a media server's address, name or library). */
+    val descriptorSignature: String = "",
+    /** Set for a media server's row: the connection it reads from. */
+    val serverConnectionId: String? = null,
 )
 
 /**
@@ -30,17 +36,27 @@ data class HomeCatalogDefinition(
  */
 fun buildHomeCatalogDefinitions(addons: List<ManagedAddon>): List<HomeCatalogDefinition> {
     val locale = Locale.current.toLanguageTag()
+    // Media servers' rows (upstream's servers feature) ride along, remembered by the server
+    // list's revision so an unchanged Home keeps returning the same list instance.
+    com.nuvio.app.features.servers.ServerRepository.ensureLoaded()
+    val serverRevision = com.nuvio.app.features.servers.ServerRepository.uiState.value.revision
     homeDefinitionsMemo?.let { memo ->
-        if (memo.locale == locale && memo.addons.sameDefinitionInputs(addons)) return memo.result
+        if (memo.locale == locale && memo.serverRevision == serverRevision &&
+            memo.addons.sameDefinitionInputs(addons)
+        ) {
+            return memo.result
+        }
     }
-    val result = computeHomeCatalogDefinitions(addons)
-    homeDefinitionsMemo = HomeDefinitionsMemo(addons, locale, result)
+    val result = (computeHomeCatalogDefinitions(addons) + com.nuvio.app.features.servers.ServerCatalog.homeDefinitions())
+        .distinctBy(HomeCatalogDefinition::key)
+    homeDefinitionsMemo = HomeDefinitionsMemo(addons, locale, serverRevision, result)
     return result
 }
 
 private class HomeDefinitionsMemo(
     val addons: List<ManagedAddon>,
     val locale: String,
+    val serverRevision: Int,
     val result: List<HomeCatalogDefinition>,
 )
 

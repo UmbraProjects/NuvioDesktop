@@ -5062,4 +5062,6 @@
     <string name="gamepad_rebind_player">Při přehrávání</string>
     <string name="gamepad_rebind_changed">Změněno</string>
     <string name="gamepad_rebind_search_description">Přemapovat tlačítka ovladače pro procházení i přehrávání</string>
+    <string name="servers_show_in_local_library">Zobrazit v místní knihovně</string>
+    <string name="servers_show_in_local_library_description">Filmy a seriály z tohoto serveru se přidají do katalogů místní knihovny vedle souborů v tomto PC. Přehrávají se dál ze serveru. Tituly bez ID z IMDb nebo TMDB zůstanou jen v řádcích serveru.</string>
 </resources>

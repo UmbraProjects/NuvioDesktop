@@ -80,7 +80,9 @@ object SearchRepository {
         }
 
         val activeAddons = addons.enabledAddons().filter { it.manifest != null }
-        if (activeAddons.isEmpty()) {
+        // Media servers that can search answer with a row each, after the addons' rows.
+        val serverSearches = com.nuvio.app.features.servers.ServerCatalog.searchTargets()
+        if (activeAddons.isEmpty() && serverSearches.isEmpty()) {
             activeJob?.cancel()
             lastRequestKey = null
             _uiState.value = SearchUiState(
@@ -94,7 +96,7 @@ object SearchRepository {
             addons = activeAddons,
             query = normalizedQuery,
         )
-        if (requests.isEmpty()) {
+        if (requests.isEmpty() && serverSearches.isEmpty()) {
             activeJob?.cancel()
             lastRequestKey = null
             _uiState.value = SearchUiState(
@@ -114,7 +116,20 @@ object SearchRepository {
                     "${request.addon.manifestUrl}:${request.type}:${request.catalogId}"
                 },
             )
+            serverSearches.forEach { ref ->
+                append("|server:${ref.connection.id}:${ref.kind.contentType}:")
+                append(ref.connection.selectedLibraries(ref.kind).joinToString(",") { it.id })
+            }
         }
+        val loaders: List<suspend () -> HomeCatalogSection> =
+            requests.map { request -> suspend { request.toSection() } } +
+                serverSearches.map { ref ->
+                    suspend {
+                        com.nuvio.app.features.servers.ServerCatalog.searchSection(ref, normalizedQuery).also { section ->
+                            require(section.items.isNotEmpty()) { "No results in ${section.title}" }
+                        }
+                    }
+                }
         if (lastRequestKey == requestKey) return
         lastRequestKey = requestKey
 
@@ -126,9 +141,9 @@ object SearchRepository {
 
         activeJob = scope.launch {
             val resultChannel = Channel<IndexedSearchResult>(Channel.UNLIMITED)
-            val jobs = requests.mapIndexed { index, request ->
+            val jobs = loaders.mapIndexed { index, load ->
                 launch {
-                    runCatching { request.toSection() }
+                    runCatching { load() }
                         .fold(
                             onSuccess = { section ->
                                 resultChannel.send(
@@ -154,7 +169,7 @@ object SearchRepository {
                 jobs.joinAll()
                 resultChannel.close()
             }
-            val results = arrayOfNulls<IndexedSearchResult>(requests.size)
+            val results = arrayOfNulls<IndexedSearchResult>(loaders.size)
             // Rows are published as they arrive, but not before the top one is known: a later
             // catalog answering first (Series before Movies) was drawn as row one and then pushed
             // down when the real first row landed, moving whatever was focused. Past the wait,

@@ -1423,6 +1423,31 @@ object WatchProgressRepository {
         }
     }
 
+    /**
+     * Resume points read from a media server (upstream's servers feature): stored locally only,
+     * and only where they are newer than what is already here. Nothing is pushed to a provider.
+     */
+    fun applyExternalProgress(entries: List<WatchProgressEntry>) {
+        ensureLoaded()
+        var changed = false
+        entries.forEach { entry ->
+            val replaced = synchronized(entriesLock) {
+                val existing = entriesByVideoId[entry.videoId]
+                if (existing != null && existing.lastUpdatedEpochMs >= entry.lastUpdatedEpochMs) {
+                    false
+                } else {
+                    entriesByVideoId[entry.videoId] = entry.normalizedCompletion()
+                    true
+                }
+            }
+            if (replaced) changed = true
+        }
+        if (changed) {
+            publish()
+            persist()
+        }
+    }
+
     private fun upsert(
         session: WatchProgressPlaybackSession,
         snapshot: PlayerPlaybackSnapshot,
@@ -1558,6 +1583,8 @@ object WatchProgressRepository {
     }
 
     private fun pushScrobbleToServer(entry: WatchProgressEntry) {
+        // A media server's own title (server: id) means nothing to other devices; its server keeps it.
+        if (com.nuvio.app.features.servers.ServerItemRef.isServerId(entry.parentMetaId)) return
         if (!isNuvioSyncAuthenticated()) {
             log.d { "Skipping watch progress scrobble push: Nuvio Sync is not authenticated" }
             return
@@ -1602,6 +1629,9 @@ object WatchProgressRepository {
         }
         syncScope.launch {
             runCatching {
+                val entries = entries.filterNot {
+                    com.nuvio.app.features.servers.ServerItemRef.isServerId(it.parentMetaId)
+                }
                 if (entries.isEmpty()) return@runCatching
                 val profileId = ProfileRepository.activeProfileId
                 syncAdapter.delete(profileId = profileId, entries = entries)

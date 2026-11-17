@@ -188,6 +188,16 @@ object StreamsRepository {
         currentCoroutineContext().ensureActive()
         PlaybackStartTrace.markPendingOrActive("streamsPrepare:settings")
         val localStreams = MetaDetailsRepository.findLocalStreams(effectiveVideoId)
+        // Media servers (upstream's servers feature): one group per connection that can serve this
+        // title, loaded alongside the addons; a server set to "list first" goes on top.
+        val serverSources = com.nuvio.app.features.servers.ServerStreams.sources(
+            type = type,
+            videoId = effectiveVideoId,
+            season = effectiveSeason,
+            episode = effectiveEpisode,
+            forceRefresh = forceRefresh,
+        )
+        val preferredGroupIds = serverSources.filter { it.preferred }.mapTo(mutableSetOf()) { it.addonId }
         currentCoroutineContext().ensureActive()
         PlaybackStartTrace.markPendingOrActive("streamsPrepare:localSources")
         val includeLocalInPicker = localStreams.isNotEmpty() && !preferLocalStreams
@@ -349,7 +359,7 @@ object StreamsRepository {
 
         log.d { "Found ${streamAddons.size} addons for stream type=$type id=$effectiveVideoId" }
 
-        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
+        if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && serverSources.isEmpty()) {
             if (includeLocalInPicker) {
                 _uiState.value = localOnlyStreamsState(requestToken, localStreams, streamBadgeRules)
                 return
@@ -392,8 +402,10 @@ object StreamsRepository {
                 isLoading = true,
             )
                 })
+                addAll(serverSources.map { it.loadingGroup() })
             },
             installedOrder = installedAddonOrder,
+            preferredGroupIds = preferredGroupIds,
         )
         currentCoroutineContext().ensureActive()
         val isInitiallyLoading = initialGroups.any { it.isLoading }
@@ -493,6 +505,7 @@ object StreamsRepository {
                             if (currentGroup.addonId == group.addonId) group else currentGroup
                         },
                         installedOrder = installedAddonOrder,
+                        preferredGroupIds = preferredGroupIds,
                     )
                     val anyLoading = updated.any { it.isLoading }
                     current.copy(
@@ -684,6 +697,13 @@ object StreamsRepository {
                 }
             } else {
                 null
+            }
+
+            val serverJobs = serverSources.map { source ->
+                launch {
+                    publishAddonGroup(presentStreamGroup(source.load()))
+                    autoSelectOnResponse()
+                }
             }
 
             streamAddons.forEach { addon ->
@@ -975,6 +995,7 @@ object StreamsRepository {
                                     }
                                 },
                                 installedOrder = installedAddonOrder,
+                                preferredGroupIds = preferredGroupIds,
                             )
                             val anyLoading = updated.any { it.isLoading }
                             current.copy(
@@ -994,6 +1015,7 @@ object StreamsRepository {
                 availabilityJob.join()
                 autoSelectOnResponse()
             }
+            serverJobs.forEach { it.join() }
 
             launch {
                 DirectDebridStreamPreparer.prepare(

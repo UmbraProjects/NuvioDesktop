@@ -5130,4 +5130,6 @@
     <string name="gamepad_rebind_player">Bei der Wiedergabe</string>
     <string name="gamepad_rebind_changed">Geändert</string>
     <string name="gamepad_rebind_search_description">Controller-Tasten neu belegen, fürs Stöbern und für die Wiedergabe</string>
+    <string name="servers_show_in_local_library">In lokaler Bibliothek zeigen</string>
+    <string name="servers_show_in_local_library_description">Filme und Serien dieses Servers erscheinen in den Katalogen deiner lokalen Bibliothek, neben den Dateien auf diesem PC. Sie werden weiter vom Server abgespielt. Titel ohne IMDb- oder TMDB-ID bleiben in den Reihen des Servers.</string>
 </resources>

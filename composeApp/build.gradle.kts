@@ -1912,6 +1912,8 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            // Media-server provider tests (features/servers) answer through Ktor's mock engine.
+            implementation("io.ktor:ktor-client-mock:${libs.versions.ktor.get()}")
         }
         val desktopTest by getting {
             dependencies {
