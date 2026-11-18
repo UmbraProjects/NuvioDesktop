@@ -5222,4 +5222,6 @@
     <string name="usenet_compressed_skip_all">Always skip</string>
     <string name="usenet_compressed_skipped">Compressed 7z skipped - trying next source</string>
     <string name="usenet_compressed_unplayable">This release is a compressed 7z, skipped by your Usenet settings</string>
+    <string name="tonight_twelve_hour">12-hour clock</string>
+    <string name="tonight_twelve_hour_description">Show times as 11:30 PM instead of 23:30.</string>
 </resources>

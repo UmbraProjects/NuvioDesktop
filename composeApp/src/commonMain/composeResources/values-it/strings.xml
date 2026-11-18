@@ -5067,4 +5067,6 @@
     <string name="usenet_compressed_skip_all">Salta sempre</string>
     <string name="usenet_compressed_skipped">7z compresso saltato - provo la fonte successiva</string>
     <string name="usenet_compressed_unplayable">Questa release è un 7z compresso, saltata dalle impostazioni Usenet</string>
+    <string name="tonight_twelve_hour">Orologio a 12 ore</string>
+    <string name="tonight_twelve_hour_description">Mostra gli orari come 11:30 PM invece di 23:30.</string>
 </resources>

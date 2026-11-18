@@ -5064,4 +5064,6 @@
     <string name="usenet_compressed_skip_all">Selalu lewati</string>
     <string name="usenet_compressed_skipped">7z terkompresi dilewati - mencoba sumber berikutnya</string>
     <string name="usenet_compressed_unplayable">Rilisan ini 7z terkompresi, dilewati oleh pengaturan Usenet Anda</string>
+    <string name="tonight_twelve_hour">Jam 12 jam</string>
+    <string name="tonight_twelve_hour_description">Tampilkan waktu sebagai 11:30 PM, bukan 23:30.</string>
 </resources>

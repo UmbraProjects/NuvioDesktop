@@ -174,7 +174,7 @@ internal fun TonightEndsByView(
             var hour = axisStart
             while (hour <= axisEnd) {
                 Text(
-                    clockLabel(hour), color = TextFaint, fontSize = 13.sp, textAlign = TextAlign.Center,
+                    hourLabel(hour), color = TextFaint, fontSize = 13.sp, textAlign = TextAlign.Center,
                     modifier = Modifier.offset(x = xOf(hour) - 24.dp).width(48.dp).height(20.dp),
                 )
                 hour += 60

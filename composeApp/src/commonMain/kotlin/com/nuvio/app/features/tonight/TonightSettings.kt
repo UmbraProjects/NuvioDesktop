@@ -26,6 +26,8 @@ data class TonightSettings(
     val discoverSources: Set<TonightDiscoverSource> = emptySet(),
     /** Three Cards picks each card at random from this many of its best matches (user, Nov 12: was fixed at 5). */
     val pickFromTop: Int = TONIGHT_PICK_FROM_TOP_DEFAULT,
+    /** Times as "11:30 PM" rather than "23:30" (user, Nov 18). */
+    val twelveHour: Boolean = false,
 )
 
 const val TONIGHT_PICK_FROM_TOP_DEFAULT = 5
@@ -68,6 +70,7 @@ object TonightSettingsRepository {
                 pickFromTop = TonightStorage.getString("pickFromTop")?.toIntOrNull()
                     ?.coerceIn(TonightPickFromTopRange.first, TonightPickFromTopRange.last)
                     ?: TONIGHT_PICK_FROM_TOP_DEFAULT,
+                twelveHour = TonightStorage.getString("clock12") == "true",
             )
         }.getOrDefault(TonightSettings())
     }
@@ -103,6 +106,11 @@ object TonightSettingsRepository {
         val next = count.coerceIn(TonightPickFromTopRange.first, TonightPickFromTopRange.last)
         update { it.copy(pickFromTop = next) }
         TonightStorage.putString("pickFromTop", next.toString())
+    }
+
+    fun setTwelveHour(on: Boolean) {
+        update { it.copy(twelveHour = on) }
+        TonightStorage.putString("clock12", on.toString())
     }
 
     fun setBedtime(minuteOfDay: Int) {

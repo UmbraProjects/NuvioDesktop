@@ -77,6 +77,17 @@ class TonightRulesTest {
     }
 
     @Test
+    fun twelveHourClock() {
+        assertEquals("11:30 PM", clockLabel(23 * 60 + 30, twelveHour = true))
+        assertEquals("12:15 AM", clockLabel(24 * 60 + 15, twelveHour = true))
+        assertEquals("12:00 PM", clockLabel(12 * 60, twelveHour = true))
+        assertEquals("9:05 AM", clockLabel(9 * 60 + 5, twelveHour = true))
+        assertEquals("11 PM", hourLabel(23 * 60, twelveHour = true))
+        assertEquals("12 AM", hourLabel(24 * 60, twelveHour = true))
+        assertEquals("23:00", hourLabel(23 * 60, twelveHour = false))
+    }
+
+    @Test
     fun clockAndLengthLabels() {
         assertEquals("00:30", clockLabel(24 * 60 + 30))
         assertEquals("23:06", clockLabel(23 * 60 + 6))

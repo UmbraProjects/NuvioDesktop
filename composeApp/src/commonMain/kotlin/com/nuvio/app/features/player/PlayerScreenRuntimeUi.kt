@@ -36,6 +36,7 @@ import com.nuvio.app.core.ui.rememberPosterCardStyleUiState
 import com.nuvio.app.core.ui.appFontFamilyName
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.debrid.DebridSettingsRepository
+import com.nuvio.app.features.debrid.DirectDebridPlaybackResolver
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.details.MetaVideo
 import com.nuvio.app.features.details.playbackEpisodeNumber
@@ -1792,6 +1793,9 @@ private fun PlayerScreenRuntime.requestP2pConsentForPlayerControls(
     episode: MetaVideo?,
 ): Boolean {
     if (!isP2pStream(stream)) return false
+    // A torrent the debrid service resolves (TorBox and the others with link resolving on) plays
+    // from the service, not peer to peer: switchToSource resolves it, no P2P warning.
+    if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) return false
     if (!P2pSettingsRepository.isVisible) return false
     if (P2pSettingsRepository.uiState.value.p2pEnabled) return false
     playerControlsPendingP2pSwitch = PendingPlayerP2pSwitch(

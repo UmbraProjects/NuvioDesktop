@@ -5145,4 +5145,6 @@
     <string name="usenet_compressed_skip_all">Immer überspringen</string>
     <string name="usenet_compressed_skipped">Komprimiertes 7z übersprungen - nächste Quelle wird versucht</string>
     <string name="usenet_compressed_unplayable">Dieses Release ist ein komprimiertes 7z und wird laut Usenet-Einstellungen übersprungen</string>
+    <string name="tonight_twelve_hour">12-Stunden-Uhr</string>
+    <string name="tonight_twelve_hour_description">Zeiten als 11:30 PM statt 23:30 anzeigen.</string>
 </resources>

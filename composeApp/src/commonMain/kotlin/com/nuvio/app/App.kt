@@ -5602,6 +5602,12 @@ private fun MainAppContent(
                                     bingeGroup = cached.bingeGroup,
                                 ),
                             )
+                            // A torrent saved from a P2P play: with link resolving on, the debrid
+                            // service plays it, so the sources load as usual (and resolve it there)
+                            // rather than opening it peer to peer behind the P2P warning.
+                            if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(cachedStream)) {
+                                return@LaunchedEffect
+                            }
                             requestOrOpenP2pStream(
                                 stream = cachedStream,
                                 resolvedResumePositionMs = launch.resumePositionMs,

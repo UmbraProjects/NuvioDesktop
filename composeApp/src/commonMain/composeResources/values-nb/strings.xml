@@ -5067,4 +5067,6 @@
     <string name="usenet_compressed_skip_all">Hopp alltid over</string>
     <string name="usenet_compressed_skipped">Komprimert 7z hoppet over - prøver neste kilde</string>
     <string name="usenet_compressed_unplayable">Denne utgivelsen er en komprimert 7z, hoppet over av Usenet-innstillingene</string>
+    <string name="tonight_twelve_hour">12-timers klokke</string>
+    <string name="tonight_twelve_hour_description">Vis klokkeslett som 11:30 PM i stedet for 23:30.</string>
 </resources>

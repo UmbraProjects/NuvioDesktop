@@ -50,12 +50,20 @@ internal fun LazyListScope.tonightSettingsContent(isTablet: Boolean) {
                     title = stringResource(Res.string.tonight_bedtime),
                     description = stringResource(Res.string.tonight_bedtime_description),
                     value = bedValue.coerceIn(20 * 60, 26 * 60),
-                    valueText = clockLabel(bedValue),
-                    valueTextForValue = ::clockLabel,
+                    valueText = clockLabel(bedValue, settings.twelveHour),
+                    valueTextForValue = { clockLabel(it, settings.twelveHour) },
                     valueRange = (20 * 60)..(26 * 60),
                     step = 15,
                     isTablet = isTablet,
                     onValueChange = TonightSettingsRepository::setBedtime,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.tonight_twelve_hour),
+                    description = stringResource(Res.string.tonight_twelve_hour_description),
+                    checked = settings.twelveHour,
+                    isTablet = isTablet,
+                    onCheckedChange = TonightSettingsRepository::setTwelveHour,
                 )
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsSliderRow(

@@ -5077,4 +5077,6 @@
     <string name="usenet_compressed_skip_all">Vždy přeskočit</string>
     <string name="usenet_compressed_skipped">Komprimované 7z přeskočeno - zkouším další zdroj</string>
     <string name="usenet_compressed_unplayable">Toto vydání je komprimované 7z, přeskočené podle nastavení Usenetu</string>
+    <string name="tonight_twelve_hour">12hodinový formát času</string>
+    <string name="tonight_twelve_hour_description">Zobrazovat časy jako 11:30 PM místo 23:30.</string>
 </resources>

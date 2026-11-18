@@ -126,10 +126,25 @@ fun TonightTitle.endsAtLabel(nowMinuteOfDay: Int): String? {
     return clockLabel(nowMinuteOfDay + minutes)
 }
 
-fun clockLabel(minuteOfDay: Int): String {
+/**
+ * A time of day: "23:30", or "11:30 PM" with the 12-hour clock (Settings > Random Play > Tonight).
+ * Screens collect the settings, so a change of clock redraws them.
+ */
+fun clockLabel(minuteOfDay: Int, twelveHour: Boolean = TonightSettingsRepository.state.value.twelveHour): String {
     val m = ((minuteOfDay % (24 * 60)) + 24 * 60) % (24 * 60)
-    return "${(m / 60).toString().padStart(2, '0')}:${(m % 60).toString().padStart(2, '0')}"
+    val minutes = (m % 60).toString().padStart(2, '0')
+    if (!twelveHour) return "${(m / 60).toString().padStart(2, '0')}:$minutes"
+    return "${twelveHourOf(m)}:$minutes ${if (m < 12 * 60) "AM" else "PM"}"
 }
+
+/** An hour on a time scale: "23:00", or "11 PM" with the 12-hour clock (narrower than "11:00 PM"). */
+fun hourLabel(minuteOfDay: Int, twelveHour: Boolean = TonightSettingsRepository.state.value.twelveHour): String {
+    if (!twelveHour) return clockLabel(minuteOfDay, twelveHour = false)
+    val m = ((minuteOfDay % (24 * 60)) + 24 * 60) % (24 * 60)
+    return "${twelveHourOf(m)} ${if (m < 12 * 60) "AM" else "PM"}"
+}
+
+private fun twelveHourOf(minuteOfDay: Int): Int = (minuteOfDay / 60 % 12).let { if (it == 0) 12 else it }
 
 /** "1h 56m", "45m". */
 fun lengthLabel(minutes: Int): String = when {

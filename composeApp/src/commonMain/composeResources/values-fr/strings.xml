@@ -5147,4 +5147,6 @@
     <string name="usenet_compressed_skip_all">Toujours ignorer</string>
     <string name="usenet_compressed_skipped">7z compressé ignoré - essai de la source suivante</string>
     <string name="usenet_compressed_unplayable">Cette release est un 7z compressé, ignorée par vos réglages Usenet</string>
+    <string name="tonight_twelve_hour">Horloge sur 12 heures</string>
+    <string name="tonight_twelve_hour_description">Afficher les heures au format 11:30 PM au lieu de 23:30.</string>
 </resources>

@@ -5076,4 +5076,6 @@
     <string name="usenet_compressed_skip_all">Zawsze pomijaj</string>
     <string name="usenet_compressed_skipped">Pominięto skompresowane 7z - próba następnego źródła</string>
     <string name="usenet_compressed_unplayable">To wydanie to skompresowane 7z, pominięte przez ustawienia Usenet</string>
+    <string name="tonight_twelve_hour">Zegar 12-godzinny</string>
+    <string name="tonight_twelve_hour_description">Pokazuj godziny jako 11:30 PM zamiast 23:30.</string>
 </resources>

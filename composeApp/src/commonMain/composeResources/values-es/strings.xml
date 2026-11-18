@@ -5147,4 +5147,6 @@
     <string name="usenet_compressed_skip_all">Omitir siempre</string>
     <string name="usenet_compressed_skipped">7z comprimido omitido - probando la siguiente fuente</string>
     <string name="usenet_compressed_unplayable">Este lanzamiento es un 7z comprimido, omitido por tus ajustes de Usenet</string>
+    <string name="tonight_twelve_hour">Reloj de 12 horas</string>
+    <string name="tonight_twelve_hour_description">Mostrar las horas como 11:30 PM en lugar de 23:30.</string>
 </resources>

@@ -5064,4 +5064,6 @@
     <string name="usenet_compressed_skip_all">Her zaman atla</string>
     <string name="usenet_compressed_skipped">Sıkıştırılmış 7z atlandı - sonraki kaynak deneniyor</string>
     <string name="usenet_compressed_unplayable">Bu yayın sıkıştırılmış 7z, Usenet ayarlarınız gereği atlandı</string>
+    <string name="tonight_twelve_hour">12 saat biçimi</string>
+    <string name="tonight_twelve_hour_description">Saatleri 23:30 yerine 11:30 PM olarak göster.</string>
 </resources>
