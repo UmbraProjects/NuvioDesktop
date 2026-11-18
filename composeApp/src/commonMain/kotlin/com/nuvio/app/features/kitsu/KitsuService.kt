@@ -98,6 +98,29 @@ object KitsuService {
             ?.takeIf { it > 0 }
     }
 
+    /**
+     * The names one Kitsu entry is known by (English, romaji, canonical and short ones), the
+     * names fansub groups post its episodes under.
+     */
+    suspend fun fetchTitles(kitsuId: Int): List<String>? {
+        val url = buildUrl(
+            "$BASE_URL/anime/$kitsuId",
+            mapOf("fields[anime]" to "canonicalTitle,titles,abbreviatedTitles"),
+        )
+        val response = runCatching {
+            httpRequestRaw(method = "GET", url = url, headers = headers, body = "")
+        }.onFailure { error ->
+            if (error is CancellationException) throw error
+            log.d { "Kitsu titles lookup failed for $kitsuId: ${error.message}" }
+        }.getOrNull() ?: return null
+        if (response.status !in 200..299) return null
+        val attributes = runCatching { json.decodeFromString<KitsuSingleResponse>(response.body) }
+            .getOrNull()?.data?.takeIf { it.id?.toIntOrNull() == kitsuId }?.attributes ?: return null
+        return (listOfNotNull(attributes.titles?.en, attributes.titles?.enJp, attributes.canonicalTitle) +
+            attributes.abbreviatedTitles.orEmpty())
+            .map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+    }
+
     private fun subtypeRankFor(subtype: String?, preferMovie: Boolean): Int {
         val isMovie = subtype?.equals("movie", ignoreCase = true) == true
         return if (isMovie == preferMovie) 1 else 0
@@ -176,6 +199,7 @@ private data class KitsuAttributes(
     val subtype: String? = null,
     val startDate: String? = null,
     val episodeCount: Int? = null,
+    val abbreviatedTitles: List<String>? = null,
     val synopsis: String? = null,
     val posterImage: KitsuPosterImage? = null,
 )

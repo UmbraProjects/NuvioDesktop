@@ -50,4 +50,11 @@ class UsenetEngineUrlsTest {
         assertTrue(UsenetEngineUrls.isSession("http://127.0.0.1:41234/stream/$id/Movie.mkv"))
         assertTrue(UsenetEngineUrls.isSession("http://127.0.0.1:42000/stream/$id/Movie.mkv"))
     }
+    @Test fun `seek thumbnails get the preview address, other sources none`() {
+        assertEquals(
+            "http://127.0.0.1:41234/stream/$id/Movie.mkv?preview=1",
+            UsenetEngineUrls.preview("http://127.0.0.1:41234/stream/$id/Movie.mkv#/Movie%20Title"),
+        )
+        assertEquals(null, UsenetEngineUrls.preview("https://cdn.example/Movie.mkv"))
+    }
 }

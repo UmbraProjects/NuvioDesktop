@@ -1968,6 +1968,8 @@
   <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Varsayılan olarak kapalı: SDR'den HDR'ye dönüşüm düz anime renklerini aşırı doygunlaştırabilir. Aşağıdaki seçenek açık olmadıkça Anime4K, özel gölgelendirici veya SVP çalışırken asla uygulanmaz.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping">SDR'den HDR'ye (mpv)</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_desc">SDR videoyu herhangi bir GPU'da HDR'ye genişletir (mpv'nin ters ton eşlemesi). Windows HDR'nin açık olması gerekir; RTX Video True HDR çalışırken o devralır. Anime4K, gölgelendiriciler ve SVP ile çalışır.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Yenileme hızını eşleştir</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">Video oynarken monitörü, videonun kare hızına tam bölünen bir yenileme hızına geçirir (24 fps için 24 veya 120 Hz, 25 fps için 50 Hz) ve takılmayı giderir; oynatıcı kapanınca eski hıza döner. Her geçişte ekran bir an kararabilir.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak">SDR'den HDR'ye tepe parlaklık</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">En parlak vurguların ne kadar parlak olacağı. Ekranının HDR tepe değerine yakın bir değer iyi bir başlangıçtır; düşük değerler özgün SDR'ye daha yakın görünür.</string>
   <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Anime gölgelendiricileriyle de</string>
@@ -5051,4 +5053,15 @@
     <string name="gamepad_rebind_player">Oynatma sırasında</string>
     <string name="gamepad_rebind_changed">Değiştirildi</string>
     <string name="gamepad_rebind_search_description">Kumanda düğmelerini gezinme ve oynatma için yeniden atayın</string>
+    <string name="usenet_unpacking_7z">Sıkıştırılmış 7z açılıyor</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">Sıkıştırılmış 7z (filmler)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">Sıkıştırılmış 7z (diziler ve anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Açıldığında sıkıştırılmış 7z olduğu anlaşılan Usenet yayınları. Oynatılırlar ama ileri atlamak, o noktaya kadar her şeyin inmesini bekler.</string>
+    <string name="usenet_compressed_releases">Sıkıştırılmış 7z yayınları</string>
+    <string name="usenet_compressed_releases_description">Sıkıştırılmış 7z ancak açıldığında anlaşılır. Oynatılır ama ileri atlamak, öncesindeki her şeyin inmesini bekler. Atlananlar bir daha denenmez.</string>
+    <string name="usenet_compressed_play_all">Her zaman oynat</string>
+    <string name="usenet_compressed_skip_over">%1$s üzerini atla</string>
+    <string name="usenet_compressed_skip_all">Her zaman atla</string>
+    <string name="usenet_compressed_skipped">Sıkıştırılmış 7z atlandı - sonraki kaynak deneniyor</string>
+    <string name="usenet_compressed_unplayable">Bu yayın sıkıştırılmış 7z, Usenet ayarlarınız gereği atlandı</string>
 </resources>

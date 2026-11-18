@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Ukryj wydania cam i screener</string>
     <string name="usenet_exclude_full_disc">Ukryj pełne płyty Blu-ray i DVD</string>
     <string name="usenet_hide_duplicates">Pokaż każde wydanie raz</string>
-    <string name="usenet_hide_duplicates_description">Wydanie znalezione przez kilka indekserów pojawia się raz, z najwyższego priorytetu.</string>
+    <string name="usenet_hide_duplicates_description">Wydanie znalezione kilka razy (w kilku indekserach lub wrzucone ponownie) pokazuje się raz, z najwyższego priorytetu. Pozostałe wrzutki zostają jako zapas i są próbowane, gdy jest niekompletne.</string>
     <string name="usenet_indexer_fallback">Pytaj niższe priorytety tylko w razie potrzeby</string>
     <string name="usenet_show_release_names">Pokaż nazwy wydań</string>
     <string name="usenet_section_engine">Silnik</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">Własny User-Agent</string>
     <string name="usenet_user_agent_custom_description">Wysyłany z każdym wyszukiwaniem w indekserze i pobraniem NZB.</string>
     <string name="usenet_user_agent_invalid">Użyj znaków drukowalnych w jednej linii, maksymalnie 256</string>
+    <string name="usenet_search_mode">Szukaj według</string>
+    <string name="usenet_search_mode_description">Automatycznie szuka po ID, a po tytule, gdy nic nie znajdzie. Niektóre indeksery odpowiadają dużo lepiej na jedno. Oba zużywa dwa razy więcej zapytań API.</string>
+    <string name="usenet_search_mode_auto">Automatycznie</string>
+    <string name="usenet_search_mode_id">Tylko ID</string>
+    <string name="usenet_search_mode_title">Tylko tytuł</string>
+    <string name="usenet_search_mode_both">Oba</string>
+    <string name="usenet_hide_passworded">Ukryj wydania z hasłem</string>
+    <string name="usenet_hide_passworded_description">Wyłączone: są pokazywane. Wydanie, którego NZB lub nazwa zawiera hasło, odtwarza się; bez niego jest pomijane w kilka sekund i próbowane jest następne źródło.</string>
 </resources>

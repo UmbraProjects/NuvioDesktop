@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Sembunyikan rilis cam dan screener</string>
     <string name="usenet_exclude_full_disc">Sembunyikan disk Blu-ray dan DVD utuh</string>
     <string name="usenet_hide_duplicates">Tampilkan setiap rilis sekali</string>
-    <string name="usenet_hide_duplicates_description">Rilis yang ditemukan beberapa pengindeks ditampilkan sekali, dari prioritas tertinggi.</string>
+    <string name="usenet_hide_duplicates_description">Rilisan yang ditemukan lebih dari sekali (di beberapa indexer atau diunggah ulang) ditampilkan sekali, dari prioritas tertinggi. Unggahan lain disimpan sebagai cadangan dan dicoba jika tidak lengkap.</string>
     <string name="usenet_indexer_fallback">Tanya prioritas rendah hanya bila perlu</string>
     <string name="usenet_show_release_names">Tampilkan nama rilis</string>
     <string name="usenet_section_engine">Mesin</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">User-Agent kustom</string>
     <string name="usenet_user_agent_custom_description">Dikirim dengan setiap pencarian pengindeks dan unduhan NZB.</string>
     <string name="usenet_user_agent_invalid">Gunakan karakter yang dapat dicetak dalam satu baris, maksimal 256</string>
+    <string name="usenet_search_mode">Cari berdasarkan</string>
+    <string name="usenet_search_mode_description">Otomatis mencari dengan ID, lalu dengan judul jika tidak ada hasil. Beberapa indexer menjawab salah satunya jauh lebih baik. Keduanya memakai dua kali lipat permintaan API.</string>
+    <string name="usenet_search_mode_auto">Otomatis</string>
+    <string name="usenet_search_mode_id">Hanya ID</string>
+    <string name="usenet_search_mode_title">Hanya judul</string>
+    <string name="usenet_search_mode_both">Keduanya</string>
+    <string name="usenet_hide_passworded">Sembunyikan rilisan berkata sandi</string>
+    <string name="usenet_hide_passworded_description">Mati: tetap ditampilkan. Rilisan yang NZB atau namanya memuat kata sandi bisa diputar; tanpa itu, dilewati dalam beberapa detik dan sumber berikutnya dicoba.</string>
 </resources>

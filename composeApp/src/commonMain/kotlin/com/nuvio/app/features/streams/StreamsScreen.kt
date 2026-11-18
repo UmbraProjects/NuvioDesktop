@@ -914,7 +914,12 @@ fun StreamsScreen(
         val streamRowActions = StreamRowActions(
             onCopyUrl = { stream ->
                 val directUrl = stream.playableDirectUrl
-                if (!directUrl.isNullOrBlank()) {
+                val nzbUrl = stream.nzbUrl?.takeIf { stream.needsUsenetPreparation && it.isNotBlank() }
+                if (nzbUrl != null) {
+                    // A Usenet row has no stream link until the engine opens it: its NZB is the link.
+                    clipboardManager.setText(AnnotatedString(nzbUrl))
+                    NuvioToastController.show(streamLinkCopiedText)
+                } else if (!directUrl.isNullOrBlank()) {
                     clipboardManager.setText(AnnotatedString(directUrl))
                     NuvioToastController.show(streamLinkCopiedText)
                 } else if (DirectDebridPlaybackResolver.shouldResolveToPlayableStream(stream)) {
@@ -2175,7 +2180,8 @@ internal fun StreamList(
     val streamCard: @Composable (StreamItem, Modifier) -> Unit = { stream, cardModifier ->
         StreamRowContextMenu(
             stream = stream,
-            enabled = stream.playableDirectUrl != null || stream.isAddonDebridCandidate,
+            // A Usenet row has no link until the engine opens it, which left it with no menu at all.
+            enabled = stream.playableDirectUrl != null || stream.isAddonDebridCandidate || stream.needsUsenetPreparation,
             scoreContext = rowScoreContext,
         ) {
             StreamCard(

@@ -120,8 +120,13 @@ class NewznabProtocolTest {
         assertEquals("121361", season.queryParameter("tvdbid"))
         assertEquals("1", season.queryParameter("season"))
         assertNull(season.queryParameter("ep"))
-        // Season-wide text searches and movies are never shared.
-        assertNull(NewznabProtocol.searchUrl(indexer, episode.copy(tvdbId = null, title = "A Show"), caps, wholeSeason = true))
+        // By title a season search asks for "A Show S01" (the packs); movies have no season search.
+        val textSeason = NewznabProtocol.searchUrl(indexer, episode.copy(tvdbId = null, title = "A Show"), caps, wholeSeason = true)!!
+        assertEquals("A Show S01", textSeason.queryParameter("q"))
+        assertNull(textSeason.queryParameter("ep"))
+        val forcedTitle = NewznabProtocol.searchUrl(indexer, episode.copy(title = "A Show"), caps, byTitle = true)!!
+        assertNull(forcedTitle.queryParameter("tvdbid"))
+        assertEquals("A Show S01E02", forcedTitle.queryParameter("q"))
         assertNull(NewznabProtocol.searchUrl(indexer, UsenetSearchRequest(imdbId = "tt1"), NewznabCapabilities(), wholeSeason = true))
         assertNull(NewznabProtocol.searchUrl(indexer, UsenetSearchRequest(tvdbId = "1"), NewznabCapabilities(movieParams = setOf("tvdbid"))))
         val obfuscated = UsenetRelease("a8f3k2b9", "url")
@@ -194,15 +199,38 @@ class NewznabProtocolTest {
         val preferred = UsenetRelease("Show.S01E01.1080p-GRP", "https://a/1", indexerId = indexer.id)
         val repeat = UsenetRelease("show s01e01 1080p grp", "https://b/1", indexerId = low.id)
         val other = UsenetRelease("Show.S01E01.720p-GRP", "https://b/2", indexerId = low.id)
-        assertEquals(listOf(preferred, other), NewznabProtocol.withoutDuplicates(listOf(repeat, preferred, other), config))
-        // A passworded preferred copy is filtered out later; the repeat must survive instead.
+        assertEquals(listOf(preferred.copy(alternates = listOf(repeat.nzbUrl)), other),
+            NewznabProtocol.withoutDuplicates(listOf(repeat, preferred, other), config))
+        // With passworded releases hidden, a passworded preferred copy is filtered out later; the repeat must
+        // survive instead, and the hidden copy is no backup.
         assertEquals(listOf(repeat, other),
+            NewznabProtocol.withoutDuplicates(listOf(preferred.copy(passworded = true), repeat, other), config.copy(hidePassworded = true)))
+        // Listed (the default), the passworded preferred copy is kept, the repeat behind it.
+        assertEquals(listOf(preferred.copy(passworded = true, alternates = listOf(repeat.nzbUrl)), other),
             NewznabProtocol.withoutDuplicates(listOf(preferred.copy(passworded = true), repeat, other), config))
+    }
+
+    @Test fun `copies of one name and size are one release kept with backups and another size is not a copy`() {
+        val low = indexer.copy(id = "low", priority = 2)
+        val config = UsenetSourceConfiguration(indexers = listOf(indexer, low))
+        val gb = 1_000_000_000L
+        val first = UsenetRelease("Show.S01E01.2160p-GRP", "https://a/1", size = 8 * gb, indexerId = indexer.id)
+        val reupload = UsenetRelease("Show.S01E01.2160p-GRP", "https://a/2", size = 8 * gb + 40_000_000, indexerId = indexer.id)
+        val elsewhere = UsenetRelease("show s01e01 2160p grp", "https://b/1", size = 8 * gb - 30_000_000, indexerId = low.id)
+        val reencode = UsenetRelease("Show.S01E01.2160p-GRP", "https://b/2", size = 5 * gb, indexerId = low.id)
+        val kept = NewznabProtocol.withoutDuplicates(listOf(elsewhere, first, reupload, reencode), config)
+        assertEquals(kept.toString(), 2, kept.size)
+        val main = kept.first { it.size > 6 * gb }
+        assertEquals(indexer.id, main.indexerId)
+        assertEquals("the two hidden uploads are its backups", 3, (main.alternates + main.nzbUrl).toSet().size)
+        assertTrue("https://b/1" in main.alternates)
+        assertTrue("a 5 GB release of that name is not a copy", kept.any { it.nzbUrl == reencode.nzbUrl && it.alternates.isEmpty() })
     }
 
     @Test fun `sort filters duplicates and is stable regardless of response order`() {
         val now = 1800000000000L
-        val config = UsenetSourceConfiguration(indexers = listOf(indexer), maxResults = 2, minResolution = 720, maxSizeGb = 10, maxAgeDays = 30)
+        val config = UsenetSourceConfiguration(indexers = listOf(indexer), maxResults = 2, minResolution = 720, maxSizeGb = 10, maxAgeDays = 30,
+            hidePassworded = true)
         val releases = listOf(
             UsenetRelease("Good.1080p", "https://test/1", 4000, now, "one"),
             UsenetRelease("Good.2160p", "https://test/2", 5000, now, "one"),
@@ -215,6 +243,24 @@ class NewznabProtocolTest {
         assertEquals(listOf("Good.2160p", "Good.1080p"), sorted.map { it.title })
         assertEquals(sorted, NewznabProtocol.arrange(releases.reversed(), config, now))
         assertEquals("Good.1080p", NewznabProtocol.arrange(releases, config.copy(sort = UsenetSort.SMALLEST), now).first().title)
+        // Listed by default: a passworded release may carry its password in the NZB.
+        assertTrue(NewznabProtocol.arrange(releases, config.copy(hidePassworded = false, maxResults = 10), now).any { it.title == "Locked.2160p" })
+    }
+
+    @Test fun `a password in the release name is taken out of the name`() {
+        val page = NewznabProtocol.releases("""
+            <rss xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/"><channel>
+            <item><title>Movie.2020.2160p-GRP{{s3cr&amp;t}}</title><enclosure type="application/x-nzb" url="/get?id=1" length="1000"/></item>
+            <item><title>Plain.2020.1080p</title><enclosure type="application/x-nzb" url="/get?id=2" length="1000"/></item>
+            </channel></rss>
+        """.trimIndent(), indexer)
+        val (locked, plain) = page.releases
+        assertEquals("Movie.2020.2160p-GRP", locked.title)
+        assertEquals("s3cr&t", locked.password)
+        assertEquals(2160, locked.resolution)
+        assertNull(plain.password)
+        assertEquals("Name" to "pw", usenetNamePassword("Name {{pw}}"))
+        assertEquals("Name" to null, usenetNamePassword("Name"))
     }
 
     @Test fun `id search results whose name gives another year are another film`() {

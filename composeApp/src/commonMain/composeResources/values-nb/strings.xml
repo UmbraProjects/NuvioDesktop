@@ -1968,6 +1968,8 @@
   <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Av som standard: SDR-til-HDR-trinnet kan overmette flate animefarger. Brukes aldri mens Anime4K, en egendefinert shader eller SVP kjører, med mindre alternativet nedenfor er på.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping">SDR til HDR (mpv)</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_desc">Utvider SDR-video til HDR på hvilken som helst GPU (mpvs omvendte tonemapping). Krever Windows HDR på; RTX Video True HDR tar over når den kjører. Fungerer med Anime4K, shadere og SVP.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Tilpass oppdateringsfrekvens</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">Mens en video spilles, bytter skjermen til en oppdateringsfrekvens som går opp i videoens bildefrekvens (24 fps til 24 eller 120 Hz, 25 fps til 50 Hz) for å fjerne hakking, og bytter tilbake når avspilleren lukkes. Skjermen kan bli svart et øyeblikk ved hvert bytte.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak">Toppluminans for SDR til HDR</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">Hvor lyse de lyseste høylysene blir. Rundt skjermens HDR-topp er en god start; lavere ligner mer på den opprinnelige SDR-en.</string>
   <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Også med anime-shadere</string>
@@ -5054,4 +5056,15 @@
     <string name="gamepad_rebind_search_description">Tilordne kontrollerknapper på nytt, for surfing og avspilling</string>
     <string name="servers_show_in_local_library">Vis i lokalt bibliotek</string>
     <string name="servers_show_in_local_library_description">Filmer og serier fra denne serveren kommer med i katalogene i det lokale biblioteket, ved siden av filene på denne PC-en. De spilles fortsatt av fra serveren. Titler uten IMDb- eller TMDB-ID blir værende i serverens rader.</string>
+    <string name="usenet_unpacking_7z">Pakker ut komprimert 7z</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">Komprimert 7z (filmer)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">Komprimert 7z (serier og anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Usenet-utgivelser som viste seg å være komprimert 7z da de ble åpnet. De spilles av, men å hoppe fremover venter til alt før det punktet er lastet ned.</string>
+    <string name="usenet_compressed_releases">Komprimerte 7z-utgivelser</string>
+    <string name="usenet_compressed_releases_description">En komprimert 7z vises først når den åpnes. Den spilles av, men å hoppe fremover venter til alt før er lastet ned. Hoppede over prøves ikke igjen.</string>
+    <string name="usenet_compressed_play_all">Spill alltid av</string>
+    <string name="usenet_compressed_skip_over">Hopp over over %1$s</string>
+    <string name="usenet_compressed_skip_all">Hopp alltid over</string>
+    <string name="usenet_compressed_skipped">Komprimert 7z hoppet over - prøver neste kilde</string>
+    <string name="usenet_compressed_unplayable">Denne utgivelsen er en komprimert 7z, hoppet over av Usenet-innstillingene</string>
 </resources>

@@ -39,6 +39,7 @@ import com.nuvio.app.features.usenet.UsenetIndexer
 import com.nuvio.app.features.usenet.UsenetProvider
 import com.nuvio.app.features.usenet.UsenetSettingsRepository
 import com.nuvio.app.features.usenet.UsenetSort
+import com.nuvio.app.features.usenet.UsenetSearchMode
 import com.nuvio.app.features.usenet.UsenetSourceConfiguration
 import com.nuvio.app.features.usenet.USENET_PRIORITIES
 import com.nuvio.app.features.usenet.replaceOrAdd
@@ -240,10 +241,36 @@ internal fun LazyListScope.usenetSettingsContent(isTablet: Boolean) {
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
+                        title = stringResource(Res.string.usenet_hide_passworded),
+                        description = stringResource(Res.string.usenet_hide_passworded_description),
+                        checked = sources.hidePassworded,
+                        isTablet = isTablet,
+                        onCheckedChange = { on -> save { it.copy(hidePassworded = on) } },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
                         title = stringResource(Res.string.usenet_exclude_full_disc),
                         checked = sources.excludeFullDisc,
                         isTablet = isTablet,
                         onCheckedChange = { on -> save { it.copy(excludeFullDisc = on) } },
+                    )
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsChoiceRow(
+                        title = stringResource(Res.string.usenet_compressed_releases),
+                        description = stringResource(Res.string.usenet_compressed_releases_description),
+                        options = UsenetConfiguration.COMPRESSED_CHOICES.map { value ->
+                            SettingsChoiceOption(
+                                value,
+                                when (value) {
+                                    UsenetConfiguration.COMPRESSED_PLAY_ALL -> stringResource(Res.string.usenet_compressed_play_all)
+                                    UsenetConfiguration.COMPRESSED_SKIP_ALL -> stringResource(Res.string.usenet_compressed_skip_all)
+                                    else -> stringResource(Res.string.usenet_compressed_skip_over, "$value GB")
+                                },
+                            )
+                        },
+                        selectedValue = engine.compressedSkipGb,
+                        isTablet = isTablet,
+                        onSelected = { value -> UsenetSettingsRepository.updateEngine { it.copy(compressedSkipGb = value) } },
                     )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
@@ -494,6 +521,7 @@ private fun IndexerDialog(
     var apiKey by remember { mutableStateOf(initial.apiKey) }
     var priority by remember { mutableStateOf(initial.priority) }
     var enabled by remember { mutableStateOf(initial.enabled) }
+    var searchMode by remember { mutableStateOf(initial.searchMode) }
     var testing by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val okText = stringResource(Res.string.usenet_test_ok)
@@ -502,7 +530,7 @@ private fun IndexerDialog(
 
     fun draft() = initial.copy(
         name = name.trim(), apiUrl = apiUrl.trim(), apiPath = apiPath.trim(), apiKey = apiKey.trim(),
-        priority = priority, enabled = enabled,
+        priority = priority, enabled = enabled, searchMode = searchMode,
     )
 
     NuvioModalDialog(
@@ -557,6 +585,19 @@ private fun IndexerDialog(
             UsenetField(apiUrl, { apiUrl = it }, stringResource(Res.string.usenet_field_api_url), example = "https://api.indexer.example", keyboardType = KeyboardType.Uri)
             UsenetField(apiPath, { apiPath = it }, stringResource(Res.string.usenet_field_api_path), example = DEFAULT_API_PATH)
             UsenetField(apiKey, { apiKey = it }, stringResource(Res.string.usenet_field_api_key), secret = true)
+            SettingsChoiceRow(
+                title = stringResource(Res.string.usenet_search_mode),
+                description = stringResource(Res.string.usenet_search_mode_description),
+                options = listOf(
+                    SettingsChoiceOption(UsenetSearchMode.AUTO, stringResource(Res.string.usenet_search_mode_auto)),
+                    SettingsChoiceOption(UsenetSearchMode.ID, stringResource(Res.string.usenet_search_mode_id)),
+                    SettingsChoiceOption(UsenetSearchMode.TITLE, stringResource(Res.string.usenet_search_mode_title)),
+                    SettingsChoiceOption(UsenetSearchMode.BOTH, stringResource(Res.string.usenet_search_mode_both)),
+                ),
+                selectedValue = searchMode,
+                isTablet = true,
+                onSelected = { searchMode = it },
+            )
             SettingsSwitchRow(title = stringResource(Res.string.usenet_field_enabled), checked = enabled, isTablet = true, onCheckedChange = { enabled = it })
             SettingsChoiceRow(
                 title = stringResource(Res.string.usenet_field_priority),

@@ -1968,6 +1968,8 @@
   <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Desativado por predefinição: a conversão de SDR para HDR pode saturar demasiado as cores planas do anime. Nunca se aplica enquanto o Anime4K, um shader personalizado ou o SVP estiverem a correr, a menos que a opção abaixo esteja ativa.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping">SDR para HDR (mpv)</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_desc">Expande vídeo SDR para HDR em qualquer GPU (mapeamento tonal inverso do mpv). Requer o HDR do Windows ativo; o RTX Video True HDR assume quando está em execução. Funciona com Anime4K, shaders e SVP.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Ajustar taxa de atualização</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">Durante a reprodução, muda o monitor para uma taxa de atualização múltipla da taxa de quadros do vídeo (24 fps para 24 ou 120 Hz, 25 fps para 50 Hz) para eliminar trepidação, e restaura ao fechar o player. A tela pode ficar preta por um instante a cada troca.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak">Brilho máximo de SDR para HDR</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">Quão brilhantes ficam as zonas mais luminosas. Um valor próximo do pico HDR do teu ecrã é um bom ponto de partida; valores mais baixos ficam mais próximos do SDR original.</string>
   <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Também com shaders de anime</string>
@@ -5052,4 +5054,15 @@
     <string name="gamepad_rebind_player">Durante a reprodução</string>
     <string name="gamepad_rebind_changed">Alterado</string>
     <string name="gamepad_rebind_search_description">Reatribuir os botões do comando, para navegação e reprodução</string>
+    <string name="usenet_unpacking_7z">Descompactando 7z compactado</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">7z compactado (filmes)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">7z compactado (séries e anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Lançamentos Usenet que se revelaram um 7z compactado ao abrir. Reproduzem, mas avançar espera que tudo antes desse ponto seja baixado.</string>
+    <string name="usenet_compressed_releases">Lançamentos 7z compactados</string>
+    <string name="usenet_compressed_releases_description">Um 7z compactado só se revela ao abrir. Reproduz, mas avançar espera que tudo antes seja baixado. Os ignorados não são tentados de novo.</string>
+    <string name="usenet_compressed_play_all">Sempre reproduzir</string>
+    <string name="usenet_compressed_skip_over">Ignorar acima de %1$s</string>
+    <string name="usenet_compressed_skip_all">Sempre ignorar</string>
+    <string name="usenet_compressed_skipped">7z compactado ignorado - tentando a próxima fonte</string>
+    <string name="usenet_compressed_unplayable">Este lançamento é um 7z compactado, ignorado pelas suas definições Usenet</string>
 </resources>

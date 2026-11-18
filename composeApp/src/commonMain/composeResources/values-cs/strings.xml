@@ -1968,6 +1968,8 @@
   <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Ve výchozím stavu vypnuto: převod SDR na HDR může přesytit plošné barvy anime. Nepoužije se, když běží Anime4K, vlastní shader nebo SVP, pokud není zapnuta možnost níže.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping">SDR na HDR (mpv)</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_desc">Převede video SDR na HDR na libovolném GPU (inverzní tone mapping v mpv). Vyžaduje zapnuté HDR ve Windows; při běhu ho přebírá RTX Video True HDR. Funguje s Anime4K, shadery i SVP.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Přizpůsobit obnovovací frekvenci</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">Během přehrávání přepne monitor na obnovovací frekvenci, kterou snímková frekvence videa rovnoměrně dělí (24 fps na 24 nebo 120 Hz, 25 fps na 50 Hz), aby se odstranilo trhání, a po zavření přehrávače ji vrátí zpět. Obrazovka může při každém přepnutí na chvíli zčernat.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak">Špičkový jas při převodu SDR na HDR</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">Jak jasné budou nejsvětlejší partie. Dobrým začátkem je hodnota kolem špičkového jasu HDR vašeho displeje; nižší hodnota je blíže původnímu SDR.</string>
   <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Také se shadery pro anime</string>
@@ -5064,4 +5066,15 @@
     <string name="gamepad_rebind_search_description">Přemapovat tlačítka ovladače pro procházení i přehrávání</string>
     <string name="servers_show_in_local_library">Zobrazit v místní knihovně</string>
     <string name="servers_show_in_local_library_description">Filmy a seriály z tohoto serveru se přidají do katalogů místní knihovny vedle souborů v tomto PC. Přehrávají se dál ze serveru. Tituly bez ID z IMDb nebo TMDB zůstanou jen v řádcích serveru.</string>
+    <string name="usenet_unpacking_7z">Rozbalování komprimovaného 7z</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">Komprimované 7z (filmy)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">Komprimované 7z (seriály a anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Usenet vydání, u kterých se po otevření ukázalo, že jsou komprimované 7z. Přehrají se, ale přeskočení vpřed čeká, než se stáhne vše před daným místem.</string>
+    <string name="usenet_compressed_releases">Komprimovaná vydání 7z</string>
+    <string name="usenet_compressed_releases_description">Komprimované 7z se pozná až při otevření. Přehraje se, ale přeskočení vpřed čeká, než se stáhne vše před daným místem. Přeskočená vydání se už nezkoušejí.</string>
+    <string name="usenet_compressed_play_all">Vždy přehrát</string>
+    <string name="usenet_compressed_skip_over">Přeskočit nad %1$s</string>
+    <string name="usenet_compressed_skip_all">Vždy přeskočit</string>
+    <string name="usenet_compressed_skipped">Komprimované 7z přeskočeno - zkouším další zdroj</string>
+    <string name="usenet_compressed_unplayable">Toto vydání je komprimované 7z, přeskočené podle nastavení Usenetu</string>
 </resources>

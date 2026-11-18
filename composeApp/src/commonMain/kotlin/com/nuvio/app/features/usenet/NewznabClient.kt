@@ -100,20 +100,96 @@ class NewznabClient(
         request: UsenetSearchRequest,
         caps: NewznabCapabilities,
         results: Int = UsenetSourceConfiguration.DEFAULT_INDEXER_RESULTS,
+    ): List<UsenetRelease> {
+        // Whether this indexer can be asked by ID at all for this request: with no ID search, every
+        // mode is the title search.
+        val idCapable = NewznabProtocol.searchUrl(indexer, request, caps)?.let(NewznabProtocol::isIdSearch) == true
+        // Anime is posted by fansub groups without IDs as much as by scene groups with them, so Auto
+        // asks both ways for it.
+        val both = indexer.searchMode == UsenetSearchMode.BOTH ||
+            (indexer.searchMode == UsenetSearchMode.AUTO && request.anime != null && request.series)
+        return when {
+            !idCapable || indexer.searchMode == UsenetSearchMode.TITLE -> searchByTitles(indexer, request, caps, results)
+            indexer.searchMode == UsenetSearchMode.ID -> searchBy(indexer, request, caps, results, byTitle = false)
+            both -> coroutineScope {
+                val byId = async { runCatching { searchBy(indexer, request, caps, results, byTitle = false) } }
+                val byTitle = async { runCatching { searchByTitles(indexer, request, caps, results) } }
+                val answers = listOf(byId.await(), byTitle.await())
+                answers.firstOrNull { it.isFailure && it.exceptionOrNull() is CancellationException }?.getOrThrow()
+                if (answers.all { it.isFailure }) answers.first().getOrThrow()
+                answers.flatMap { it.getOrDefault(emptyList()) }.distinctBy { it.nzbUrl }
+            }
+            // AUTO: by ID, and by title when the ID search found nothing (an indexer that files the
+            // title without its IDs, or under other ones).
+            else -> searchBy(indexer, request, caps, results, byTitle = false).ifEmpty {
+                if (request.title.isNullOrBlank()) emptyList() else searchByTitles(indexer, request, caps, results)
+            }
+        }
+    }
+
+    /**
+     * The title searches: under the title, and for anime also its other names and episode numbers
+     * at once ([NewznabProtocol.titleRequests]). Anything else is asked under its other names one
+     * by one only when its title found nothing ([NewznabProtocol.fallbackTitleRequests]).
+     */
+    private suspend fun searchByTitles(
+        indexer: UsenetIndexer,
+        request: UsenetSearchRequest,
+        caps: NewznabCapabilities,
+        results: Int,
+    ): List<UsenetRelease> {
+        val asked = NewznabProtocol.titleRequests(request)
+        val found = if (asked.size == 1) {
+            searchBy(indexer, request, caps, results, byTitle = true)
+        } else coroutineScope {
+            val answers = asked.map { async { runCatching { searchBy(indexer, it, caps, results, byTitle = true) } } }
+                .map { it.await() }
+            answers.firstOrNull { it.exceptionOrNull() is CancellationException }?.getOrThrow()
+            if (answers.all { it.isFailure }) answers.first().getOrThrow()
+            answers.flatMap { it.getOrDefault(emptyList()) }.distinctBy { it.nzbUrl }
+        }
+        if (found.isNotEmpty()) return found
+        for (other in NewznabProtocol.fallbackTitleRequests(request)) {
+            val more = try {
+                searchBy(indexer, other, caps, results, byTitle = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: IndexerCooldownException) {
+                break
+            } catch (_: Exception) {
+                emptyList()
+            }
+            if (more.isNotEmpty()) return more
+        }
+        return found
+    }
+
+    /** The episode (or movie) search and, for an episode, its season's alongside: the packs. */
+    private suspend fun searchBy(
+        indexer: UsenetIndexer,
+        request: UsenetSearchRequest,
+        caps: NewznabCapabilities,
+        results: Int,
+        byTitle: Boolean,
     ): List<UsenetRelease> = coroutineScope {
         val season = async {
             try {
-                Result.success(seasonReleases(indexer, request, caps, results).orEmpty()
-                    .filter { NewznabProtocol.matches(it, request, idSearch = true, requireNumbering = true) })
+                val seasonUrl = NewznabProtocol.searchUrl(indexer, request, caps, wholeSeason = true, byTitle = byTitle)
+                Result.success(seasonReleases(indexer, request, caps, results, byTitle).orEmpty()
+                    .filter {
+                        NewznabProtocol.matches(it, request, idSearch = seasonUrl != null && NewznabProtocol.isIdSearch(seasonUrl),
+                            requireNumbering = true)
+                    })
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Result.failure(e)
             }
         }
-        val url = NewznabProtocol.searchUrl(indexer, request, caps) ?: return@coroutineScope season.await().getOrThrow()
+        val url = NewznabProtocol.searchUrl(indexer, request, caps, byTitle = byTitle)
+            ?: return@coroutineScope season.await().getOrThrow()
         val episode = try {
-            pages(indexer, url, request, caps, results)
+            pages(indexer, url, request, caps, results, byTitle = byTitle)
                 .filter { NewznabProtocol.matches(it, request, NewznabProtocol.isIdSearch(url)) }
         } catch (e: CancellationException) {
             throw e
@@ -146,14 +222,15 @@ class NewznabClient(
         request: UsenetSearchRequest,
         caps: NewznabCapabilities,
         results: Int,
+        byTitle: Boolean = false,
     ): List<UsenetRelease>? {
-        val url = NewznabProtocol.searchUrl(indexer, request, caps, wholeSeason = true) ?: return null
+        val url = NewznabProtocol.searchUrl(indexer, request, caps, wholeSeason = true, byTitle = byTitle) ?: return null
         val cacheKey = "$url#$results"
         synchronized(seasons) { seasons[cacheKey] }?.takeIf { now() - it.first < SEASON_TTL_MS }?.let { cached ->
             return cached.second.map { it.copy(indexerId = indexer.id, indexerName = indexer.name) }
         }
         val releases = try {
-            pages(indexer, url, request, caps, results, wholeSeason = true)
+            pages(indexer, url, request, caps, results, wholeSeason = true, byTitle = byTitle)
         } catch (e: CancellationException) {
             throw e
         } catch (e: IndexerCooldownException) {
@@ -174,6 +251,7 @@ class NewznabClient(
         caps: NewznabCapabilities,
         results: Int,
         wholeSeason: Boolean = false,
+        byTitle: Boolean = false,
     ): List<UsenetRelease> {
         val limit = caps.limit.coerceIn(1, 100)
         var page = request(indexer, url) { NewznabProtocol.releases(it, indexer) }
@@ -181,7 +259,7 @@ class NewznabClient(
         var offset = limit
         while (offset < results && page.items > 0 && (page.total?.let { offset < it } ?: (page.items >= limit))) {
             page = try {
-                NewznabProtocol.searchUrl(indexer, request, caps, offset, wholeSeason)?.let { next ->
+                NewznabProtocol.searchUrl(indexer, request, caps, offset, wholeSeason, byTitle)?.let { next ->
                     request(indexer, next) { NewznabProtocol.releases(it, indexer) }
                 }
             } catch (e: CancellationException) {

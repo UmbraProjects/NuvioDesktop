@@ -10,7 +10,9 @@ internal class UsenetPreparationException(
     /** The engine's X-Usenet-Failure kind, such as "missing-article", when it sent one. */
     val failure: String? = null,
     /** The engine's X-Usenet-Providers report: what each provider did for an open that failed. */
-    val providers: String? = null
+    val providers: String? = null,
+    /** The engine refused the release itself (HTTP 422): another try with it fails the same way. */
+    val releaseUnplayable: Boolean = false,
 ) : IOException(message) {
     enum class Scope { SOURCE, PROVIDER, ENGINE }
 }

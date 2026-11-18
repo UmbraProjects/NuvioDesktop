@@ -2,6 +2,9 @@ package com.nuvio.app.features.streams
 
 import kotlinx.serialization.Serializable
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.settings_stream_scoring_trait_compressed_archive_caption
+import nuvio.composeapp.generated.resources.settings_stream_scoring_trait_compressed_archive_movie
+import nuvio.composeapp.generated.resources.settings_stream_scoring_trait_compressed_archive_series
 import nuvio.composeapp.generated.resources.settings_stream_scoring_answer_audio_advanced
 import nuvio.composeapp.generated.resources.settings_stream_scoring_answer_audio_basic
 import nuvio.composeapp.generated.resources.settings_stream_scoring_answer_cached_high
@@ -172,13 +175,17 @@ data class StreamScoreProfile(
      */
     val htpcSourceTab: Boolean = false,
 ) {
-    fun pointsFor(trait: StreamScoreTrait): Int = points[trait.id] ?: 0
+    fun pointsFor(trait: StreamScoreTrait): Int =
+        points[trait.id] ?: if (trait in DEFAULTED_WHEN_UNSET) trait.defaultPoints else 0
 
     fun withPoints(trait: StreamScoreTrait, value: Int): StreamScoreProfile {
         val clamped = value.coerceIn(MIN_POINTS, MAX_POINTS)
         // Zero is the absence of an opinion, so it is stored as absence — this keeps a profile that
-        // has been reset back to defaults from carrying a map full of noise.
-        return copy(points = if (clamped == 0) points - trait.id else points + (trait.id to clamped))
+        // has been reset back to defaults from carrying a map full of noise. A trait whose absence
+        // means its default stores its value, 0 included.
+        return copy(
+            points = if (clamped == 0 && trait !in DEFAULTED_WHEN_UNSET) points - trait.id else points + (trait.id to clamped),
+        )
     }
 
     /** True when this profile should influence the given consumer. */
@@ -249,6 +256,12 @@ data class StreamScoreProfile(
     companion object {
         const val MIN_POINTS = -10000
         const val MAX_POINTS = 10000
+
+        /** Traits added after profiles were saved: absent from a stored profile, they score their default. */
+        val DEFAULTED_WHEN_UNSET = setOf(
+            StreamScoreTrait.COMPRESSED_ARCHIVE_MOVIE,
+            StreamScoreTrait.COMPRESSED_ARCHIVE_SERIES,
+        )
     }
 }
 
@@ -512,6 +525,25 @@ enum class StreamScoreTrait(
         Res.string.settings_stream_scoring_trait_debrid_cached,
         50,
         Res.string.settings_stream_scoring_trait_debrid_cached_caption,
+    ),
+
+    // A Usenet release found to be a compressed 7z (it plays, but skipping ahead waits for everything
+    // before the target to download). Split by kind: in a binge a slow skip costs more than in a film.
+    // Unlike the other traits these keep their default in a profile that never set them, so they
+    // apply without a reset; a value set to 0 is stored as 0.
+    COMPRESSED_ARCHIVE_MOVIE(
+        "compressed_archive_movie",
+        StreamScoreTraitGroup.AVAILABILITY,
+        Res.string.settings_stream_scoring_trait_compressed_archive_movie,
+        -100,
+        Res.string.settings_stream_scoring_trait_compressed_archive_caption,
+    ),
+    COMPRESSED_ARCHIVE_SERIES(
+        "compressed_archive_series",
+        StreamScoreTraitGroup.AVAILABILITY,
+        Res.string.settings_stream_scoring_trait_compressed_archive_series,
+        -200,
+        Res.string.settings_stream_scoring_trait_compressed_archive_caption,
     ),
 
     // Size

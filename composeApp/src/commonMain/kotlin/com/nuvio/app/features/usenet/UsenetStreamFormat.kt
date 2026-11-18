@@ -4,17 +4,19 @@ import com.nuvio.app.features.debrid.DebridStreamAudioTag
 import com.nuvio.app.features.debrid.DebridStreamQuality
 import com.nuvio.app.features.debrid.DebridStreamResolution
 import com.nuvio.app.features.debrid.DebridStreamVisualTag
+import com.nuvio.app.features.streams.ReleaseGroupName
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamReleaseGroups
 import com.nuvio.app.features.streams.StreamTraitDetector
 import com.nuvio.app.features.streams.StreamTraits
+import java.util.Locale
 
 /**
  * How built-in Usenet rows read in the source picker, laid out like a popular AIOStreams format
  * so addon rows and Usenet rows read the same way:
  *
  *     📀 2160p
- *     ⚡Midsommar | 2019
+ *     ⚡Midsommar | 2019        (📖 instead of ⚡ when the NZB is already kept: Cache NZB files)
  *     ☀️ DV · HDR | 9 months | AltHub
  *     🥇 FraMeSToR 🎧 DTS-HD MA • 5.1
  *     (release name, when "Show release names" is on)
@@ -35,11 +37,12 @@ internal object UsenetStreamFormat {
         publishedAt: Long,
         showReleaseName: Boolean,
         now: Long = System.currentTimeMillis(),
+        kept: Boolean = false,
     ): StreamItem {
         val traits = StreamTraitDetector.detect(stream)
         val releaseName = stream.behaviorHints.filename.orEmpty()
         val lines = listOf(
-            titleLine(subject, releaseName),
+            titleLine(subject, releaseName, kept),
             pictureLine(traits, ageLabel(publishedAt, now), indexerName),
             groupAudioLine(traits, releaseName),
             releaseName.takeIf { showReleaseName && it.isNotBlank() },
@@ -64,13 +67,19 @@ internal object UsenetStreamFormat {
         return listOfNotNull(emoji, resolution ?: "Usenet").joinToString(" ")
     }
 
-    /** "⚡Midsommar | 2019", or "⚡The Bear | S02 E05" (a pack: "S02"). */
-    fun titleLine(subject: Subject, releaseName: String): String? {
+    /**
+     * "⚡Midsommar | 2019", or "⚡The Bear | S02 E05" (a pack: "S02"). A release whose NZB the engine
+     * already keeps ([kept]) starts with a book instead: it is in your library and opens at once.
+     */
+    fun titleLine(subject: Subject, releaseName: String, kept: Boolean = false): String? {
         val title = subject.title?.trim()?.takeIf { it.isNotEmpty() }?.let(::truncate)
         val detail = if (subject.series) seasonEpisode(releaseName) else subject.year?.toString()
         if (title == null && detail == null) return null
-        return "⚡" + listOfNotNull(title, detail).joinToString(" | ")
+        return (if (kept) KEPT else FRESH) + listOfNotNull(title, detail).joinToString(" | ")
     }
+
+    const val FRESH = "⚡"
+    const val KEPT = "📖"
 
     /** The picture's emoji and kind, then the age and the indexer: "🌞 DV · HDR10+ | 9 months | AltHub". */
     fun pictureLine(traits: StreamTraits, age: String?, indexer: String?): String {
@@ -117,14 +126,8 @@ internal object UsenetStreamFormat {
         return labels.filterNot { label -> labels.any { other -> other != label && other.startsWith(label) } }
     }
 
-    /** The uploader's tag after the last dash ("…REMUX-FraMeSToR"), as written; null when there is none. */
-    fun releaseGroup(releaseName: String): String? {
-        val name = releaseName.trim().removeSuffix(".nzb").replace(VIDEO_EXTENSION, "")
-        val dash = name.lastIndexOf('-')
-        if (dash < 0) return null
-        val group = name.substring(dash + 1).substringBefore('[').substringBefore(' ').trim()
-        return group.takeIf { it.length in 2..24 && it.none { c -> c == '.' } && !it.all(Char::isDigit) }
-    }
+    /** The uploader's tag, as written; null when the name gives none. See [ReleaseGroupName]. */
+    fun releaseGroup(releaseName: String): String? = ReleaseGroupName.of(releaseName)
 
     /** "292 days", "9 months", "3 years"; null when the indexer gave no date. */
     fun ageLabel(publishedAt: Long, now: Long): String? {
@@ -155,5 +158,4 @@ internal object UsenetStreamFormat {
     private fun two(value: Int) = value.toString().padStart(2, '0')
 
     private val SEASON_EPISODE = Regex("(?i)\\bS(\\d{1,2})[ ._-]?E(\\d{1,3})\\b")
-    private val VIDEO_EXTENSION = Regex("(?i)\\.(mkv|mp4|avi|ts|m2ts)$")
 }

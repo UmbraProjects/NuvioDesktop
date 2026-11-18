@@ -1707,7 +1707,7 @@ public:
         // Kept apart from hostHwnd: by the time a trailer is torn down its AWT canvas may already
         // be gone, and the frame is what focus has to go back to (see cleanupUiResources).
         hostTopLevelHwnd = host ? GetAncestor(host, GA_ROOT) : nullptr;
-        thumbnailSourceUrl = sourceUrl;
+        thumbnailSourceUrl = auxiliarySourceFor(sourceUrl);
         thumbnailHeaderLines = headerLines;
         // Set before spawning the UI/mpv thread so it is visible there. When present
         // (e.g. a YouTube trailer with separate hi-res video + audio tracks) it is
@@ -4099,6 +4099,33 @@ public:
     // Read by containerWindowProc to reject mouse activation (WM_MOUSEACTIVATE).
     bool isPassiveSurface() const { return passiveSurface; }
 
+    // fork:usenet - the side decoders (seek thumbnails, speech sampling) open the source a second
+    // time. For a built-in Usenet session that second reader is told apart by its own address
+    // (the engine's "?preview=1"), which the engine serves without read-ahead: on the same address
+    // every thumbnail hover queued up to 32 MB of downloads in front of the next seek. Kotlin
+    // names the pair before it creates or replaces the source; this applies it wherever the
+    // source is set, and to a source already playing.
+    void setAuxiliarySource(const std::string &forSourceUrl, const std::string &auxiliaryUrl) {
+        std::string current;
+        {
+            std::lock_guard<std::mutex> lock(auxiliarySourceMutex);
+            auxiliaryForSourceUrl = forSourceUrl;
+            auxiliarySourceUrl = auxiliaryUrl;
+        }
+        {
+            std::lock_guard<std::mutex> lock(thumbnailMutex);
+            current = thumbnailSourceUrl;
+        }
+        if (current == forSourceUrl && !auxiliaryUrl.empty()) {
+            retireThumbnailWorker(forSourceUrl, currentThumbnailHeaderLines());
+        }
+    }
+
+    std::string auxiliarySourceFor(const std::string &sourceUrl) {
+        std::lock_guard<std::mutex> lock(auxiliarySourceMutex);
+        return (!auxiliarySourceUrl.empty() && sourceUrl == auxiliaryForSourceUrl) ? auxiliarySourceUrl : sourceUrl;
+    }
+
     void requestSeekThumbnail(long long positionMs) {
         {
             std::lock_guard<std::mutex> lock(thumbnailMutex);
@@ -4191,9 +4218,18 @@ public:
                 continue;
             }
             bool frameReady = false;
-            const auto seekDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+            // A slow source (a Usenet preview fetches its keyframe article by article) can take
+            // longer than a few seconds. The frame used to be dropped after 3 s, leaving the
+            // hovered spot blank until the pointer moved to another one: wait while nothing newer
+            // is asked for, and a repeat request for this same spot (the controls fading and
+            // coming back) keeps this seek going instead of starting it again.
+            const auto seekDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
             while (std::chrono::steady_clock::now() < seekDeadline && !thumbnailStopping.load()) {
-                if (thumbnailRequestGeneration.load() != generation) break;
+                if (thumbnailRequestGeneration.load() != generation) {
+                    std::lock_guard<std::mutex> lock(thumbnailMutex);
+                    if (thumbnailRequestedPositionMs != positionMs) break;
+                    generation = thumbnailRequestGeneration.load();
+                }
                 mpv_event *event = api.waitEvent(thumbnailMpv, 0.04);
                 if (event && event->event_id == MPV_EVENT_PLAYBACK_RESTART) {
                     frameReady = true;
@@ -4274,6 +4310,9 @@ private:
     long long thumbnailRequestedPositionMs = 0;
     std::string thumbnailSourceUrl;
     std::vector<std::string> thumbnailHeaderLines;
+    std::mutex auxiliarySourceMutex;
+    std::string auxiliaryForSourceUrl;
+    std::string auxiliarySourceUrl;
 
     JavaVM *javaVm = nullptr;
     jobject eventSink = nullptr;
@@ -6047,10 +6086,11 @@ private:
         thumbnailCv.notify_all();
         if (worker.joinable()) worker.join();
         std::lock_guard<std::mutex> lock(thumbnailMutex);
-        thumbnailSourceUrl = sourceUrl;
+        thumbnailSourceUrl = auxiliarySourceFor(sourceUrl);
         thumbnailHeaderLines = headerLines;
         if (!stopping.load()) thumbnailStopping.store(false);
     }
+
 
     // Forgets the outgoing file's mirrored values, so position, duration and the end state read
     // as "nothing loaded yet" until the new file reports its own. Pause, volume, mute and speed
@@ -8018,6 +8058,15 @@ void setBorderlessFullscreenSuspended(HWND hwnd, bool suspended) {
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setAuxiliarySource(
+    JNIEnv *env, jobject, jlong handle, jstring forSourceUrl, jstring auxiliaryUrl
+) {
+    auto player = playerFromHandle(handle);
+    if (!player || !forSourceUrl) return;
+    player->setAuxiliarySource(jstringToUtf8(env, forSourceUrl), auxiliaryUrl ? jstringToUtf8(env, auxiliaryUrl) : std::string());
+}
+
+extern "C" JNIEXPORT void JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_requestSeekThumbnail(
     JNIEnv *, jobject, jlong handle, jlong positionMs
 ) {
@@ -9573,6 +9622,92 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_isWindowDisplayHdr
     HWND hwnd = (HWND)(intptr_t)windowHwnd;
     if (!hwnd) return JNI_FALSE;
     return WindowsMpvWebPlayer::isDisplayHdrEnabled(hwnd, true) ? JNI_TRUE : JNI_FALSE;
+}
+
+namespace {
+// The display device whose refresh rate the player switched, or empty when none is switched.
+// The change is made with CDS_FULLSCREEN, so it is never written to the registry and Windows puts
+// the user's own mode back if the process ends without restoring it.
+std::mutex gRefreshSwitchMutex;
+std::wstring gRefreshSwitchedDevice;
+
+bool monitorDeviceName(HWND hwnd, std::wstring &deviceName) {
+    if (!hwnd) return false;
+    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    if (!monitor) return false;
+    MONITORINFOEXW info{};
+    info.cbSize = sizeof(info);
+    if (!GetMonitorInfoW(monitor, &info)) return false;
+    deviceName = info.szDevice;
+    return !deviceName.empty();
+}
+} // namespace
+
+// The refresh rates the monitor [windowHwnd] sits on offers at its current resolution and colour
+// depth (progressive modes only). Element 0 is the current rate; the rest are the choices, in no
+// particular order. Empty when the monitor cannot be read. Windows reports whole numbers: a
+// fractional rate such as 23.976 Hz is usually listed as 23 (and 24.000 as 24).
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_displayRefreshRates(JNIEnv *env, jobject, jlong windowHwnd) {
+    std::vector<jint> rates;
+    std::wstring device;
+    if (monitorDeviceName((HWND)(intptr_t)windowHwnd, device)) {
+        DEVMODEW current{};
+        current.dmSize = sizeof(current);
+        if (EnumDisplaySettingsW(device.c_str(), ENUM_CURRENT_SETTINGS, &current)) {
+            rates.push_back((jint)current.dmDisplayFrequency);
+            DEVMODEW mode{};
+            mode.dmSize = sizeof(mode);
+            for (DWORD index = 0; EnumDisplaySettingsW(device.c_str(), index, &mode); ++index) {
+                const bool sameShape = mode.dmPelsWidth == current.dmPelsWidth &&
+                    mode.dmPelsHeight == current.dmPelsHeight &&
+                    mode.dmBitsPerPel == current.dmBitsPerPel &&
+                    (mode.dmDisplayFlags & DM_INTERLACED) == 0;
+                const jint hz = (jint)mode.dmDisplayFrequency;
+                if (sameShape && hz > 1 && std::find(rates.begin() + 1, rates.end(), hz) == rates.end()) {
+                    rates.push_back(hz);
+                }
+                mode = DEVMODEW{};
+                mode.dmSize = sizeof(mode);
+            }
+        }
+    }
+    jintArray result = env->NewIntArray((jsize)rates.size());
+    if (result && !rates.empty()) env->SetIntArrayRegion(result, 0, (jsize)rates.size(), rates.data());
+    return result;
+}
+
+// Switches the monitor [windowHwnd] sits on to [hz] at its current resolution, temporarily. With
+// [hz] 0 it puts back the user's own mode on whichever monitor was switched. True on success (or,
+// for a restore, when there was nothing to restore).
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setDisplayRefreshRate(JNIEnv *, jobject, jlong windowHwnd, jint hz) {
+    std::lock_guard<std::mutex> lock(gRefreshSwitchMutex);
+    if (hz <= 0) {
+        if (gRefreshSwitchedDevice.empty()) return JNI_TRUE;
+        const LONG restored = ChangeDisplaySettingsExW(gRefreshSwitchedDevice.c_str(), nullptr, nullptr, 0, nullptr);
+        nuvioMpvLogAppend("[nuvio-bridge] display refresh restored: " + std::to_string(restored) + "\n");
+        gRefreshSwitchedDevice.clear();
+        return restored == DISP_CHANGE_SUCCESSFUL ? JNI_TRUE : JNI_FALSE;
+    }
+    std::wstring device;
+    if (!monitorDeviceName((HWND)(intptr_t)windowHwnd, device)) return JNI_FALSE;
+    // Moving to another monitor: hand the first one back before switching this one.
+    if (!gRefreshSwitchedDevice.empty() && gRefreshSwitchedDevice != device) {
+        ChangeDisplaySettingsExW(gRefreshSwitchedDevice.c_str(), nullptr, nullptr, 0, nullptr);
+        gRefreshSwitchedDevice.clear();
+    }
+    DEVMODEW mode{};
+    mode.dmSize = sizeof(mode);
+    if (!EnumDisplaySettingsW(device.c_str(), ENUM_CURRENT_SETTINGS, &mode)) return JNI_FALSE;
+    if ((jint)mode.dmDisplayFrequency == hz) return JNI_TRUE;
+    mode.dmDisplayFrequency = (DWORD)hz;
+    mode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY;
+    const LONG changed = ChangeDisplaySettingsExW(device.c_str(), &mode, nullptr, CDS_FULLSCREEN, nullptr);
+    nuvioMpvLogAppend("[nuvio-bridge] display refresh -> " + std::to_string(hz) + " Hz: " + std::to_string(changed) + "\n");
+    if (changed != DISP_CHANGE_SUCCESSFUL) return JNI_FALSE;
+    gRefreshSwitchedDevice = device;
+    return JNI_TRUE;
 }
 
 // Whether the foreground window belongs to this process. The screensaver's shutdown wants "is

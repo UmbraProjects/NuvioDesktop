@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Ocultar publicaciones cam y screener</string>
     <string name="usenet_exclude_full_disc">Ocultar discos Blu-ray y DVD completos</string>
     <string name="usenet_hide_duplicates">Mostrar cada publicación una vez</string>
-    <string name="usenet_hide_duplicates_description">Una publicación encontrada por varios indexadores aparece una vez, desde la prioridad más alta.</string>
+    <string name="usenet_hide_duplicates_description">Un lanzamiento encontrado varias veces (en varios indexadores o resubido) aparece una vez, del de mayor prioridad. Las otras subidas quedan como respaldo y se prueban si está incompleto.</string>
     <string name="usenet_indexer_fallback">Consultar prioridades bajas solo si hace falta</string>
     <string name="usenet_show_release_names">Mostrar nombres de las publicaciones</string>
     <string name="usenet_section_engine">Motor</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">User-Agent personalizado</string>
     <string name="usenet_user_agent_custom_description">Se envía con cada búsqueda en el indexador y cada descarga NZB.</string>
     <string name="usenet_user_agent_invalid">Usa caracteres imprimibles en una sola línea, hasta 256</string>
+    <string name="usenet_search_mode">Buscar por</string>
+    <string name="usenet_search_mode_description">Automático busca por ID, y por título si eso no encuentra nada. Algunos indexadores responden mucho mejor a uno que al otro. Ambos usa el doble de peticiones a la API.</string>
+    <string name="usenet_search_mode_auto">Automático</string>
+    <string name="usenet_search_mode_id">Solo ID</string>
+    <string name="usenet_search_mode_title">Solo título</string>
+    <string name="usenet_search_mode_both">Ambos</string>
+    <string name="usenet_hide_passworded">Ocultar lanzamientos con contraseña</string>
+    <string name="usenet_hide_passworded_description">Desactivado: se muestran. Uno cuyo NZB o nombre lleva la contraseña se reproduce; sin ella, se omite en segundos y se prueba la siguiente fuente.</string>
 </resources>

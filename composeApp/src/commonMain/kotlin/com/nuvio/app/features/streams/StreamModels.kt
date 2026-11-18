@@ -86,6 +86,15 @@ data class StreamItem(
     val usenetServers: List<String>? = null,
     /** Text the played file's name must contain, for an NZB holding several videos. */
     val fileMustInclude: String? = null,
+    /**
+     * Other uploads of the same release (NZB links), tried in order when this one turns out
+     * incomplete. Set by Built-in Usenet's "Show each release once"; carries indexer keys, not saved.
+     */
+    @kotlinx.serialization.Transient
+    val usenetAlternates: List<String> = emptyList(),
+    /** The archive password of a release named "Name{{password}}", for the Usenet engine. */
+    @kotlinx.serialization.Transient
+    val usenetPassword: String? = null,
 ) {
     val streamLabel: String
         // Read from composition for every row of a stream list, so it must not block: the resource

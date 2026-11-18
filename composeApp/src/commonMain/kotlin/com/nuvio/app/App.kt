@@ -331,6 +331,7 @@ import com.nuvio.app.features.player.ExternalPlayerPlaybackRequest
 import com.nuvio.app.features.player.rememberExternalPlayerLauncher
 import com.nuvio.app.features.player.prepareExternalPlayerLaunch
 import com.nuvio.app.features.player.playerSourceIdentityKey
+import com.nuvio.app.features.player.nextFailoverStream
 import com.nuvio.app.features.player.externalPlayerSubtitleTargets
 import com.nuvio.app.features.player.externalPlaybackTracking
 import com.nuvio.app.features.cast.CastController
@@ -5612,6 +5613,71 @@ private fun MainAppContent(
                             reuseNavigated = true
                             return@LaunchedEffect
                         }
+                        val cachedUsenetStream = cached.toUsenetStream()
+                        if (cachedUsenetStream != null) {
+                            // Holds autoplay back while the engine opens the release again.
+                            reuseNavigated = true
+                            val opened = runCatching {
+                                com.nuvio.app.features.usenet.UsenetEngine.resolve(
+                                    cachedUsenetStream,
+                                    streamLookupSeasonNumber,
+                                    streamLookupEpisodeNumber,
+                                )
+                            }
+                                .onFailure {
+                                    // Never leave autoplay held back by an open that was abandoned.
+                                    if (it is CancellationException) {
+                                        reuseNavigated = false
+                                        throw it
+                                    }
+                                }
+                                .getOrNull()
+                            val openedUrl = opened?.playableDirectUrl
+                            if (opened == null || openedUrl == null) {
+                                // Gone or no longer complete: forget it and choose a source as usual.
+                                StreamLinkCacheRepository.remove(cacheKey)
+                                reuseNavigated = false
+                                return@LaunchedEffect
+                            }
+                            val usenetLaunch = PlayerLaunch(
+                                title = launch.title,
+                                sourceUrl = openedUrl,
+                                streamType = opened.streamType,
+                                sourceAffinity = launch.sourceAffinity,
+                                logo = launch.logo,
+                                poster = launch.poster,
+                                background = launch.background,
+                                seasonNumber = canonicalSeasonNumber,
+                                episodeNumber = canonicalEpisodeNumber,
+                                episodeTitle = launch.episodeTitle,
+                                episodeThumbnail = launch.episodeThumbnail,
+                                streamTitle = cached.streamName,
+                                streamFilename = opened.mediaFilename,
+                                streamSubtitle = null,
+                                sourceIdentityKey = cached.sourceIdentityKey
+                                    ?: cachedUsenetStream.playerSourceIdentityKey(),
+                                bingeGroup = cached.bingeGroup,
+                                pauseDescription = pauseDescription,
+                                providerName = cached.addonName,
+                                providerAddonId = cached.addonId,
+                                contentType = launch.type,
+                                videoId = effectiveVideoId,
+                                parentMetaId = launch.parentMetaId ?: effectiveVideoId,
+                                parentMetaType = launch.parentMetaType ?: launch.type,
+                                watchProgressSource = launch.watchProgressSource,
+                                initialPositionMs = launch.resumePositionMs ?: 0L,
+                                initialProgressFraction = launch.resumeProgressFraction,
+                                disableProgressTracking = launch.disableProgressTracking,
+                                autoPlayMode = launch.autoPlayMode,
+                                stream = opened,
+                                sourceFromLinkCache = true,
+                            )
+                            // The engine's link lives with its session, so it always plays here.
+                            StreamsRepository.clear()
+                            StreamPickerController.close(clearStreams = false)
+                            navController.navigateToPlayer(usenetLaunch)
+                            return@LaunchedEffect
+                        }
                         val cachedDirectStream = StreamItem(
                             name = cached.streamName,
                             url = cached.url,
@@ -5694,6 +5760,8 @@ private fun MainAppContent(
                     streamsUiState.requestToken,
                     expectedStreamsRequestToken,
                     reuseHandled,
+                    // A saved Usenet release that no longer opens hands back to autoplay.
+                    reuseNavigated,
                     launch.manualSelection,
                 ) {
                     if (!reuseHandled) return@LaunchedEffect
@@ -5703,14 +5771,25 @@ private fun MainAppContent(
                     if (streamsUiState.requestToken != expectedStreamsRequestToken) return@LaunchedEffect
                     val selectedStream = streamsUiState.autoPlayStream ?: return@LaunchedEffect
                     val selectedSourceIdentityKey = selectedStream.playerSourceIdentityKey()
+                    if (selectedStream.needsUsenetPreparation && com.nuvio.app.features.usenet.UsenetEngine.hasFailed(selectedStream)) {
+                        // It failed to open moments ago; the engine would only say so again.
+                        StreamsRepository.skipAutoPlayStream(selectedStream)
+                        return@LaunchedEffect
+                    }
                     val stream = if (selectedStream.needsUsenetPreparation) {
                         runCatching {
                             com.nuvio.app.features.usenet.UsenetEngine.resolve(selectedStream, streamLookupSeasonNumber, streamLookupEpisodeNumber)
                         }
                             .onFailure { if (it is CancellationException) throw it }
                             .getOrElse { error ->
+                                val compressed = com.nuvio.app.features.usenet.usenetCompressedSkip(error)
                                 if (!StreamsRepository.skipAutoPlayStream(selectedStream)) {
-                                    NuvioToastController.show(error.message ?: "This Usenet release could not be opened")
+                                    NuvioToastController.show(
+                                        if (compressed) getString(Res.string.usenet_compressed_unplayable)
+                                        else error.message ?: "This Usenet release could not be opened",
+                                    )
+                                } else if (compressed) {
+                                    NuvioToastController.show(getString(Res.string.usenet_compressed_skipped))
                                 }
                                 return@LaunchedEffect
                             }
@@ -5782,7 +5861,10 @@ private fun MainAppContent(
                             season = streamLookupSeasonNumber,
                             episode = streamLookupEpisodeNumber,
                         )
-                        StreamLinkCacheRepository.save(
+                        // A Usenet release is kept by its NZB: the engine URL ends with its session.
+                        if (selectedStream.nzbUrl != null) {
+                            StreamLinkCacheRepository.saveUsenet(cacheKey, selectedStream, selectedSourceIdentityKey)
+                        } else StreamLinkCacheRepository.save(
                             contentKey = cacheKey,
                             url = sourceUrl,
                             streamName = stream.streamLabel,
@@ -5885,6 +5967,10 @@ private fun MainAppContent(
                     return@session
                 }
 
+                // Sources the picker's own failover has tried for this request (a Usenet release
+                // that would not open), so a walk never comes back to one.
+                val pickerFailoverTried = remember(request.launchId) { mutableSetOf<String>() }
+
                 fun openSelectedStream(
                     stream: StreamItem,
                     resolvedResumePositionMs: Long?,
@@ -5912,10 +5998,54 @@ private fun MainAppContent(
                                 .onFailure { if (it is CancellationException) throw it }
                                 .getOrElse { error ->
                                     resolvingDebridStream = false
-                                    NuvioToastController.show(error.message ?: "This Usenet release could not be opened")
+                                    sourceIdentityKey?.let(pickerFailoverTried::add)
+                                    stream.playerSourceIdentityKey()?.let(pickerFailoverTried::add)
+                                    val next = if (playerSettings.streamFailoverEnabled) {
+                                        nextFailoverStream(
+                                            streams = StreamsRepository.uiState.value.groups.flatMap { it.streams },
+                                            activeIdentityKey = null,
+                                            triedIdentityKeys = pickerFailoverTried,
+                                            excludeUsenet = com.nuvio.app.features.usenet.usenetUnavailable(error),
+                                        )
+                                    } else {
+                                        null
+                                    }
+                                    val compressed = com.nuvio.app.features.usenet.usenetCompressedSkip(error)
+                                    if (next == null) {
+                                        NuvioToastController.show(
+                                            if (compressed) getString(Res.string.usenet_compressed_unplayable)
+                                            else error.message ?: "This Usenet release could not be opened",
+                                        )
+                                        return@launch
+                                    }
+                                    next.playerSourceIdentityKey()?.let(pickerFailoverTried::add)
+                                    NuvioToastController.show(
+                                        getString(if (compressed) Res.string.usenet_compressed_skipped else Res.string.player_failover_trying_next),
+                                    )
+                                    openSelectedStream(
+                                        stream = next,
+                                        resolvedResumePositionMs = resolvedResumePositionMs,
+                                        resolvedResumeProgressFraction = resolvedResumeProgressFraction,
+                                        forceExternal = forceExternal,
+                                        forceInternal = forceInternal,
+                                        saveForReuse = saveForReuse,
+                                    )
                                     return@launch
                                 }
                             resolvingDebridStream = false
+                            if (saveForReuse && StreamLinkCacheRepository.shouldSaveLinks(playerSettings.streamReuseLastLinkEnabled)) {
+                                StreamLinkCacheRepository.saveUsenet(
+                                    StreamLinkCacheRepository.contentKey(
+                                        type = launch.type,
+                                        videoId = effectiveStreamVideoId,
+                                        parentMetaId = launch.parentMetaId,
+                                        season = streamLookupSeasonNumber,
+                                        episode = streamLookupEpisodeNumber,
+                                    ),
+                                    stream,
+                                    sourceIdentityKey,
+                                )
+                            }
                             openSelectedStream(
                                 stream = opened,
                                 resolvedResumePositionMs = resolvedResumePositionMs,

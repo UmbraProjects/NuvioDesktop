@@ -217,6 +217,11 @@ data class PlayerSettingsUiState(
     val desktopInverseToneMappingEnabled: Boolean = false,
     /** The `target-peak` the expansion aims for, in nits. */
     val desktopInverseToneMappingPeakNits: Int = DESKTOP_INVERSE_TONE_MAPPING_DEFAULT_PEAK_NITS,
+    /**
+     * Switch the monitor to a refresh rate the video's frame rate divides evenly while it plays
+     * (24 fps to 24/48/120 Hz), and back when the player closes. See `DisplayRefreshMatch.kt`.
+     */
+    val desktopMatchDisplayRefreshRate: Boolean = false,
     val desktopColorProfile: DesktopColorProfile = DesktopColorProfile.Neutral,
     /**
      * mpv equalizer offsets for [DesktopColorProfile.Custom]. Ignored by every other profile, so
@@ -403,6 +408,7 @@ object PlayerSettingsRepository {
     private var desktopHdrMode = DesktopHdrMode.Auto
     private var desktopInverseToneMappingEnabled = false
     private var desktopInverseToneMappingPeakNits = DESKTOP_INVERSE_TONE_MAPPING_DEFAULT_PEAK_NITS
+    private var desktopMatchDisplayRefreshRate = false
     private var desktopColorProfile = DesktopColorProfile.Neutral
     private var desktopColorContrast = 0
     private var desktopColorBrightness = 0
@@ -563,6 +569,7 @@ object PlayerSettingsRepository {
         desktopHdrMode = DesktopHdrMode.Auto
         desktopInverseToneMappingEnabled = false
         desktopInverseToneMappingPeakNits = DESKTOP_INVERSE_TONE_MAPPING_DEFAULT_PEAK_NITS
+        desktopMatchDisplayRefreshRate = false
         desktopColorProfile = DesktopColorProfile.Neutral
         desktopColorContrast = 0
         desktopColorBrightness = 0
@@ -849,6 +856,7 @@ object PlayerSettingsRepository {
             ?.let { runCatching { DesktopHdrMode.valueOf(it) }.getOrNull() }
             ?: DesktopHdrMode.Auto
         desktopInverseToneMappingEnabled = PlayerSettingsStorage.loadDesktopInverseToneMappingEnabled() ?: false
+        desktopMatchDisplayRefreshRate = PlayerSettingsStorage.loadDesktopMatchDisplayRefreshRate() ?: false
         desktopInverseToneMappingPeakNits = PlayerSettingsStorage.loadDesktopInverseToneMappingPeakNits()
             ?.coerceIn(DESKTOP_INVERSE_TONE_MAPPING_PEAK_RANGE)
             ?: DESKTOP_INVERSE_TONE_MAPPING_DEFAULT_PEAK_NITS
@@ -1978,6 +1986,7 @@ object PlayerSettingsRepository {
             desktopHdrMode = desktopHdrMode,
             desktopInverseToneMappingEnabled = desktopInverseToneMappingEnabled,
             desktopInverseToneMappingPeakNits = desktopInverseToneMappingPeakNits,
+            desktopMatchDisplayRefreshRate = desktopMatchDisplayRefreshRate,
             desktopColorProfile = desktopColorProfile,
             desktopColorContrast = desktopColorContrast,
             desktopColorBrightness = desktopColorBrightness,
@@ -2033,6 +2042,14 @@ object PlayerSettingsRepository {
         desktopInverseToneMappingEnabled = enabled
         publish()
         PlayerSettingsStorage.saveDesktopInverseToneMappingEnabled(enabled)
+    }
+
+    fun setDesktopMatchDisplayRefreshRate(enabled: Boolean) {
+        ensureLoaded()
+        if (desktopMatchDisplayRefreshRate == enabled) return
+        desktopMatchDisplayRefreshRate = enabled
+        publish()
+        PlayerSettingsStorage.saveDesktopMatchDisplayRefreshRate(enabled)
     }
 
     fun setDesktopInverseToneMappingPeakNits(nits: Int) {

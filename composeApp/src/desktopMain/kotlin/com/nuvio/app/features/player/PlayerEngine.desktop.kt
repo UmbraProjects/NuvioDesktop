@@ -1547,6 +1547,19 @@ private fun NativePlayerSurface(
         }
     }
 
+    // fork:usenet - times each seek or stall of a Usenet session to 0.1 s and logs what the
+    // engine did meanwhile (UsenetSeekProbe). Its own loop, so the 500 ms snapshot cadence the
+    // rest of the player relies on is unchanged; nothing runs for other sources.
+    LaunchedEffect(controller, playbackAttemptId, sourceUrl) {
+        if (!com.nuvio.app.features.usenet.UsenetEngine.isSessionUrl(sourceUrl)) return@LaunchedEffect
+        while (true) {
+            if (startedAttemptId.value == playbackAttemptId) {
+                com.nuvio.app.features.usenet.UsenetSeekProbe.onSnapshot(sourceUrl, controller.snapshotOffUiThread())
+            }
+            delay(100L)
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()

@@ -79,6 +79,13 @@ internal object NativePlayerBridge {
     external fun updateControls(handle: Long, controlsJson: String)
     external fun runJavaScript(handle: Long, script: String)
     external fun requestSeekThumbnail(handle: Long, positionMs: Long)
+
+    /**
+     * fork:usenet - while [forSourceUrl] plays, seek thumbnails and the other side decoders open
+     * [auxiliaryUrl] instead (null: the source itself). Applies to the source playing now and to
+     * a create or replace with that source that follows.
+     */
+    external fun setAuxiliarySource(handle: Long, forSourceUrl: String, auxiliaryUrl: String?)
     external fun setCursorHidden(handle: Long, hidden: Boolean)
     external fun setPaused(handle: Long, paused: Boolean)
 
@@ -301,6 +308,19 @@ internal object NativePlayerBridge {
      * cannot be matched, never a guess from another display. See `DesktopHdrUiCompensation`.
      */
     external fun isWindowDisplayHdr(windowHwnd: Long): Boolean
+
+    /**
+     * Refresh rates the monitor [windowHwnd] sits on offers at its current resolution: element 0
+     * is the current rate, the rest are the choices. Empty when it cannot be read. See
+     * `DisplayRefreshMatch`.
+     */
+    external fun displayRefreshRates(windowHwnd: Long): IntArray
+
+    /**
+     * Temporarily switches that monitor to [hz] (never saved; Windows undoes it if the app ends).
+     * [hz] 0 puts back the user's own mode on whichever monitor was switched.
+     */
+    external fun setDisplayRefreshRate(windowHwnd: Long, hz: Int): Boolean
 
     val controlsPageUrl: String by lazy { controlsPageAssets.url }
     private val controlsPageAssets: ControlsPageAssets by lazy { exportControlsPageAssets() }

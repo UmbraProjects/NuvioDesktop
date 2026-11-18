@@ -1968,6 +1968,8 @@
   <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Domyślnie wyłączone: konwersja SDR na HDR może przesycać płaskie kolory anime. Nigdy nie działa, gdy uruchomiony jest Anime4K, własny shader lub SVP, chyba że włączona jest opcja poniżej.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping">SDR na HDR (mpv)</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_desc">Rozszerza wideo SDR do HDR na dowolnej karcie graficznej (odwrotne mapowanie tonów mpv). Wymaga włączonego HDR w systemie Windows; RTX Video True HDR przejmuje działanie, gdy jest uruchomiony. Działa z Anime4K, shaderami i SVP.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Dopasuj częstotliwość odświeżania</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">Podczas odtwarzania przełącza monitor na częstotliwość odświeżania będącą wielokrotnością liczby klatek filmu (24 kl./s na 24 lub 120 Hz, 25 kl./s na 50 Hz), aby usunąć szarpanie, i przywraca ją po zamknięciu odtwarzacza. Ekran może na chwilę zgasnąć przy każdym przełączeniu.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak">Maksymalna jasność SDR na HDR</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">Jak jasne mogą być najjaśniejsze światła. Dobrym początkiem jest wartość zbliżona do szczytowej jasności HDR wyświetlacza; niższe wartości wyglądają bliżej oryginalnego SDR.</string>
   <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Także z shaderami anime</string>
@@ -5063,4 +5065,15 @@
     <string name="gamepad_rebind_player">Podczas odtwarzania</string>
     <string name="gamepad_rebind_changed">Zmieniono</string>
     <string name="gamepad_rebind_search_description">Zmień przypisanie przycisków kontrolera do przeglądania i odtwarzania</string>
+    <string name="usenet_unpacking_7z">Rozpakowywanie skompresowanego 7z</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">Skompresowane 7z (filmy)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">Skompresowane 7z (seriale i anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Wydania Usenet, które po otwarciu okazały się skompresowanym 7z. Odtwarzają się, ale przewijanie do przodu czeka, aż pobierze się wszystko wcześniej.</string>
+    <string name="usenet_compressed_releases">Skompresowane wydania 7z</string>
+    <string name="usenet_compressed_releases_description">Skompresowane 7z widać dopiero po otwarciu. Odtwarza się, ale przewijanie do przodu czeka, aż pobierze się wszystko wcześniej. Pominięte nie są ponawiane.</string>
+    <string name="usenet_compressed_play_all">Zawsze odtwarzaj</string>
+    <string name="usenet_compressed_skip_over">Pomiń powyżej %1$s</string>
+    <string name="usenet_compressed_skip_all">Zawsze pomijaj</string>
+    <string name="usenet_compressed_skipped">Pominięto skompresowane 7z - próba następnego źródła</string>
+    <string name="usenet_compressed_unplayable">To wydanie to skompresowane 7z, pominięte przez ustawienia Usenet</string>
 </resources>

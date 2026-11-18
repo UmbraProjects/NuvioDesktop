@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Hide cam and screener releases</string>
     <string name="usenet_exclude_full_disc">Hide whole Blu-ray and DVD discs</string>
     <string name="usenet_hide_duplicates">Show each release once</string>
-    <string name="usenet_hide_duplicates_description">A release several indexers found is listed once, from the highest priority.</string>
+    <string name="usenet_hide_duplicates_description">A release found more than once (on several indexers, or reuploaded) is listed once, from the highest priority. The other uploads stay as backups and are tried if it is incomplete.</string>
     <string name="usenet_indexer_fallback">Ask lower priorities only when needed</string>
     <string name="usenet_show_release_names">Show release names</string>
     <string name="usenet_section_engine">Engine</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">Custom User-Agent</string>
     <string name="usenet_user_agent_custom_description">Sent with every indexer search and NZB download.</string>
     <string name="usenet_user_agent_invalid">Use printable characters on one line, up to 256</string>
+    <string name="usenet_search_mode">Search by</string>
+    <string name="usenet_search_mode_description">Automatic asks by ID, and by title when that finds nothing. Some indexers answer one far better than the other. Both uses twice the API hits.</string>
+    <string name="usenet_search_mode_auto">Automatic</string>
+    <string name="usenet_search_mode_id">ID only</string>
+    <string name="usenet_search_mode_title">Title only</string>
+    <string name="usenet_search_mode_both">Both</string>
+    <string name="usenet_hide_passworded">Hide passworded releases</string>
+    <string name="usenet_hide_passworded_description">Off: they are listed. One whose NZB or name carries the password plays; without it, it is skipped within seconds and the next source is tried.</string>
 </resources>

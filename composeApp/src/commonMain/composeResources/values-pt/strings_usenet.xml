@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Ocultar lançamentos cam e screener</string>
     <string name="usenet_exclude_full_disc">Ocultar discos Blu-ray e DVD completos</string>
     <string name="usenet_hide_duplicates">Mostrar cada lançamento uma vez</string>
-    <string name="usenet_hide_duplicates_description">Um lançamento encontrado por vários indexadores aparece uma vez, a partir da prioridade mais alta.</string>
+    <string name="usenet_hide_duplicates_description">Um lançamento encontrado várias vezes (em vários indexadores ou reenviado) aparece uma vez, da prioridade mais alta. Os outros envios ficam de reserva e são tentados se estiver incompleto.</string>
     <string name="usenet_indexer_fallback">Consultar prioridades baixas só quando preciso</string>
     <string name="usenet_show_release_names">Mostrar nomes dos lançamentos</string>
     <string name="usenet_section_engine">Motor</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">User-Agent personalizado</string>
     <string name="usenet_user_agent_custom_description">Enviado com cada pesquisa no indexador e cada transferência NZB.</string>
     <string name="usenet_user_agent_invalid">Use caracteres imprimíveis numa só linha, até 256</string>
+    <string name="usenet_search_mode">Pesquisar por</string>
+    <string name="usenet_search_mode_description">Automático pesquisa por ID, e por título quando não encontra nada. Alguns indexadores respondem muito melhor a um do que ao outro. Ambos usa o dobro dos pedidos à API.</string>
+    <string name="usenet_search_mode_auto">Automático</string>
+    <string name="usenet_search_mode_id">Só ID</string>
+    <string name="usenet_search_mode_title">Só título</string>
+    <string name="usenet_search_mode_both">Ambos</string>
+    <string name="usenet_hide_passworded">Ocultar lançamentos com palavra-passe</string>
+    <string name="usenet_hide_passworded_description">Desligado: são listados. Um cujo NZB ou nome traz a palavra-passe reproduz; sem ela, é ignorado em segundos e tenta-se a próxima fonte.</string>
 </resources>

@@ -2,6 +2,12 @@ package com.nuvio.app.features.usenet
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.details.MetaDetailsRepository
+import com.nuvio.app.features.kitsu.KitsuService
+import com.nuvio.app.features.metadata.MediaIdResolver
+import com.nuvio.app.features.metadata.ResolvedMediaIds
+import com.nuvio.app.features.metadata.explicitFranchiseCoords
+import com.nuvio.app.features.metadata.isAnimeNativeId
+import com.nuvio.app.features.metadata.nativeAnimeBase
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamItem
@@ -94,9 +100,11 @@ object BuiltInUsenet {
         } else {
             releases
         }
-        return NewznabProtocol.arrange(candidates, config, series = series).map {
-            it.toStream(config, series, UsenetStreamFormat.Subject(request.title, request.year, series))
-        }
+        val subject = UsenetStreamFormat.Subject(request.title, request.year, series)
+        val engine = UsenetSettingsRepository.engine
+        return NewznabProtocol.arrange(candidates, config, series = series)
+            .filterNot { UsenetCompressedReleases.isCompressed(it.nzbUrl) && engine.skipsCompressed(it.size.takeIf { size -> size > 0 }) }
+            .map { it.toStream(config, series, subject) }
     }
 
     private suspend fun searchOne(
@@ -114,27 +122,121 @@ object BuiltInUsenet {
         null
     }
 
-    /** Fills in the ids, title and year the indexers are asked with. */
+    /** Fills in the ids, title and year the indexers are asked with, and for anime its numbering. */
     private suspend fun metadata(request: UsenetSearchRequest, videoId: String, type: String): UsenetSearchRequest {
         val parentId = parentContentId(videoId)
-        val imdb = parentId.takeIf { it.startsWith("tt") }
-        val tmdb = runCatching { TmdbService.ensureTmdbId(parentId, type) }.getOrNull()
-        val resolvedImdb = imdb ?: tmdb?.toIntOrNull()?.let { runCatching { TmdbService.tmdbToImdb(it, type) }.getOrNull() }
+        val native = parentId.isAnimeNativeId()
+        // Anime entry ids (kitsu:, mal:, ...) are mapped to the show's IMDb, TVDB and TMDB ids and
+        // its season, the same way the stream addons are asked.
+        val ids = quietly {
+            MediaIdResolver.resolve(
+                contentType = type,
+                parentMetaId = parentId,
+                videoId = videoId,
+                sourceSeasonNumber = if (native && request.series) request.season ?: 1 else request.season,
+                sourceEpisodeNumber = request.episode,
+                isAnimeHint = type.equals("anime", ignoreCase = true),
+            )
+        }
         val meta = MetaDetailsRepository.peek(type, parentId)
-            ?: runCatching { MetaDetailsRepository.fetch(type, parentId) }.getOrNull()
-        return request.copy(
-            imdbId = resolvedImdb,
+            ?: quietly { MetaDetailsRepository.fetch(type, parentId) }
+        val tmdb = ids?.tmdb?.toString()
+            ?: meta?.tmdbId?.toString()
+            ?: quietly { TmdbService.ensureTmdbId(parentId, type) }
+        val imdb = ids?.imdb
+            ?: meta?.imdbId?.takeIf { it.startsWith("tt") }
+            ?: parentId.takeIf { it.startsWith("tt") }
+            ?: tmdb?.toIntOrNull()?.let { quietly { TmdbService.tmdbToImdb(it, type) } }
+        val tvdb = ids?.tvdb?.toString() ?: meta?.tvdbId?.trim()?.takeIf { it.toIntOrNull() != null }
+        val names = tmdb?.toIntOrNull()?.let { quietly { TmdbService.fetchOtherTitles(it, if (request.series) "series" else "movie") } }
+        // An anime entry's meta names the entry ("... 2nd Season"); TMDB names the show.
+        val title = if (native) names?.title ?: meta?.name else meta?.name ?: names?.title
+        val base = request.copy(
+            imdbId = imdb,
             tmdbId = tmdb,
-            title = meta?.name,
+            tvdbId = tvdb,
+            title = title,
+            originalTitle = names?.originalTitle?.takeIf { !it.equals(title, ignoreCase = true) },
+            otherTitles = names?.alternativeTitles,
             year = meta?.releaseInfo?.let { YEAR.find(it)?.value?.toIntOrNull() },
+        )
+        if (!request.series || ids?.isAnime != true) return base
+        return animeNumbering(base, ids, native = native && videoId.explicitFranchiseCoords() == null,
+            entryName = meta?.name.takeIf { native })
+    }
+
+    /**
+     * Places an anime episode in each numbering its releases use: the TVDB season and episode
+     * (scene releases, ID searches), the episode within the entry and the one counted from the
+     * show's start (fansub releases). [native] requests number within the entry, others by season.
+     */
+    private suspend fun animeNumbering(
+        request: UsenetSearchRequest,
+        ids: ResolvedMediaIds,
+        native: Boolean,
+        entryName: String?,
+    ): UsenetSearchRequest {
+        val episode = request.episode ?: return request
+        val tmdb = request.tmdbId?.toIntOrNull()
+        val counts = tmdb?.let { quietly { TmdbService.fetchSeasonEpisodeCounts(it) } }
+        val entryEpisode: Int?
+        val seasonEpisode: Pair<Int, Int>?
+        val tmdbEpisode: Pair<Int, Int>?
+        if (native) {
+            entryEpisode = episode
+            tmdbEpisode = ids.tmdbSeason?.let { it to episode + (ids.tmdbEpisodeOffset ?: 0) }
+            seasonEpisode = ids.tvdbSeason?.let { it to episode + (ids.tvdbEpisodeOffset ?: 0) }
+                ?: tmdbEpisode
+                // No season known: the entry is taken to be the whole show, placed in TMDB's seasons.
+                ?: counts?.let { seasonOf(episode, it) }
+        } else {
+            val season = request.season ?: return request
+            seasonEpisode = season to episode
+            tmdbEpisode = null
+            entryEpisode = when (season) {
+                ids.tvdbSeason -> episode - (ids.tvdbEpisodeOffset ?: 0)
+                ids.tmdbSeason -> episode - (ids.tmdbEpisodeOffset ?: 0)
+                else -> null
+            }?.takeIf { it >= 1 }
+        }
+        val startsShow = animeEntryStartsShow(ids.tvdbSeason, ids.tmdbSeason, ids.tvdbEpisodeOffset, ids.tmdbEpisodeOffset)
+        val absolute = animeAbsoluteEpisode(native, startsShow, entryEpisode, tmdbEpisode ?: seasonEpisode, counts)
+        val showNames = listOfNotNull(request.title, request.originalTitle) + request.otherTitles.orEmpty()
+        val kitsuNames = ids.kitsu?.let { quietly { KitsuService.fetchTitles(it) } }.orEmpty()
+        // An entry named like the show cannot tell its own count from the show's, unless they agree.
+        val entryTitles = (listOfNotNull(entryName) + kitsuNames).distinctBy { it.lowercase(Locale.ROOT) }
+            .filter { name -> entryEpisode == absolute || showNames.none { it.equals(name, ignoreCase = true) } }
+        val others = listOfNotNull(
+            tmdbEpisode,
+            absolute?.let { 1 to it },
+        ).filter { it != seasonEpisode }.distinct()
+        return request.copy(
+            season = seasonEpisode?.first,
+            episode = seasonEpisode?.second,
+            anime = UsenetAnimeNumbering(
+                entryEpisode = entryEpisode,
+                absoluteEpisode = absolute,
+                entryTitles = entryTitles,
+                otherCoordinates = others,
+            ),
         )
     }
 
-    /** The title's id from an episode id: tt123:1:2 is tt123, tmdb:10:1:2 is tmdb:10. */
+    /** A lookup the search can do without: its failure leaves the field unknown. */
+    private suspend fun <T> quietly(block: suspend () -> T?): T? = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
+    /** The title's id from an episode id: tt123:1:2 is tt123, tmdb:10:1:2 is tmdb:10, kitsu:7:5 is kitsu:7. */
     private fun parentContentId(videoId: String): String {
         val parts = videoId.split(':')
         return when {
             videoId.startsWith("tmdb:") || videoId.startsWith("tvdb:") -> parts.take(2).joinToString(":")
+            videoId.isAnimeNativeId() -> videoId.nativeAnimeBase()
             else -> parts.first()
         }
     }
@@ -156,8 +258,17 @@ object BuiltInUsenet {
                 filename = title,
             ),
             nzbUrl = nzbUrl,
+            usenetAlternates = alternates,
+            usenetPassword = password,
         )
-        return UsenetStreamFormat.format(raw, subject, indexerName, publishedAt, config.showReleaseNames)
+        return UsenetStreamFormat.format(
+            raw,
+            subject,
+            indexerName,
+            publishedAt,
+            config.showReleaseNames,
+            kept = UsenetSettingsRepository.engine.cacheNzb && UsenetKeptNzbs.isKept(nzbUrl),
+        )
     }
 
     /** One upload's episodes share a binge group, so the next episode plays from the same upload. */

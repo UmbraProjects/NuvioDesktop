@@ -26,8 +26,34 @@ data class UsenetSearchRequest(
     val year: Int? = null,
     val season: Int? = null,
     val episode: Int? = null,
-    val series: Boolean = false
+    val series: Boolean = false,
+    /** The name a title search asks with, when it is not [title]: one of the other names. */
+    val queryTitle: String? = null,
+    /** Asks a series title search for "Title 05", the way anime releases number episodes, not by S/E. */
+    val absoluteQuery: Int? = null,
+    /** Set for anime: the other ways its releases number the episode. */
+    val anime: UsenetAnimeNumbering? = null,
 )
+
+/**
+ * How anime releases may number one episode. Fansub groups name the entry the user opened
+ * ("Jujutsu Kaisen 2nd Season - 05", counted from that entry's first episode) or the whole show
+ * ("Jujutsu Kaisen - 29", counted from the show's first episode), and scene groups use the
+ * TVDB season and episode the request already carries ([UsenetSearchRequest.season]).
+ */
+data class UsenetAnimeNumbering(
+    /** The episode within the anime entry (a Kitsu or MyAnimeList entry is one season or cour). */
+    val entryEpisode: Int? = null,
+    /** The episode counted from the show's first one. */
+    val absoluteEpisode: Int? = null,
+    /** The entry's own names (Kitsu's English, romaji and short titles), which number by [entryEpisode]. */
+    val entryTitles: List<String> = emptyList(),
+    /** Other season and episode pairs naming the same episode (TMDB's numbering where TVDB's differs). */
+    val otherCoordinates: List<Pair<Int, Int>> = emptyList(),
+) {
+    /** The entry is the show's start, so its episode numbers count from the show's first episode. */
+    val countsFromStart: Boolean get() = entryEpisode != null && entryEpisode == absoluteEpisode
+}
 
 @Serializable
 data class NewznabCapabilities(
@@ -44,7 +70,14 @@ data class UsenetRelease(
     val publishedAt: Long = 0,
     val indexerId: String = "",
     val indexerName: String = "",
-    val passworded: Boolean = false
+    val passworded: Boolean = false,
+    /**
+     * Other uploads of this release that "Show each release once" hid (their NZB links, best
+     * first): the engine opens the next one when this upload turns out incomplete.
+     */
+    val alternates: List<String> = emptyList(),
+    /** The archive password the release's name carried ("Name{{password}}"), taken out of [title]. */
+    val password: String? = null,
 ) {
     // Read from the title once: filtering and sorting read these thousands of times per search.
     val resolution: Int = RESOLUTION.find(title)?.groupValues?.get(1)?.toInt()
@@ -95,10 +128,16 @@ object NewznabProtocol {
 
     /** [wholeSeason] drops the episode from an ID search so one request covers a season. */
     fun searchUrl(indexer: UsenetIndexer, request: UsenetSearchRequest,
-        caps: NewznabCapabilities, offset: Int = 0, wholeSeason: Boolean = false): UsenetUrl? {
+        caps: NewznabCapabilities, offset: Int = 0, wholeSeason: Boolean = false,
+        /** Ask by title even where the indexer takes an ID (Title and Both search modes). */
+        byTitle: Boolean = false): UsenetUrl? {
         val params = if (request.series) caps.tvParams else caps.movieParams
         val builder = apiUrl(indexer, if (request.series) "tvsearch" else "movie")
+        val absolute = request.absoluteQuery?.takeIf { request.series && it > 0 }
+        // "Title 05" is a text search for one episode: there is no season pack of it, nor an ID form.
+        if (absolute != null && (wholeSeason || !byTitle)) return null
         val idParam = when {
+            byTitle -> null
             request.series && !("season" in params && "ep" in params) -> null
             request.imdbId != null && "imdbid" in params -> "imdbid" to request.imdbId.removePrefix("tt")
             // TVDB is the TV identifier Newznab indexers support most widely.
@@ -106,29 +145,33 @@ object NewznabProtocol {
             request.tmdbId != null && "tmdbid" in params -> "tmdbid" to request.tmdbId
             else -> null
         }
-        // Season-wide text searches are too broad to share between episodes.
-        if (wholeSeason && (!request.series || idParam == null)) return null
+        // A season search is for packs: series only. By title it asks for "Title S07", which every
+        // episode of the season shares, as AIOStreams does alongside "Title S07E05".
+        if (wholeSeason && !request.series) return null
         if (idParam != null) {
             builder.setQueryParameter(idParam.first, idParam.second)
         } else {
             // Query the way release names are spelled: "Amélie" and "Marvel's" are posted as Amelie and Marvels.
-            val title = request.title?.let { releaseSpelling(it).replace(NON_WORD, " ").trim() }
+            val title = (request.queryTitle ?: request.title)?.let { releaseSpelling(it).replace(NON_WORD, " ").trim() }
                 ?.takeIf { it.isNotBlank() } ?: return null
             if ("q" !in params) {
                 if (!caps.searchAvailable) return null
                 builder.setQueryParameter("t", "search")
             }
             val query = if (request.series) {
-                title + if (request.season != null && request.episode != null) {
-                    " S%02dE%02d".format(Locale.ROOT, request.season, request.episode)
-                } else ""
+                title + when {
+                    absolute != null -> " %02d".format(Locale.ROOT, absolute)
+                    request.season == null || request.episode == null -> ""
+                    wholeSeason -> " S%02d".format(Locale.ROOT, request.season)
+                    else -> " S%02dE%02d".format(Locale.ROOT, request.season, request.episode)
+                }
             } else title
             builder.setQueryParameter("q", query)
             if (!request.series && request.year != null && "year" in params) {
                 builder.setQueryParameter("year", request.year.toString())
             }
         }
-        if (request.series) {
+        if (request.series && absolute == null) {
             // Never turn an episode lookup into an unbounded whole-series ID lookup.
             if (request.season == null || request.episode == null) return null
             if (idParam != null && !("season" in params && "ep" in params)) return null
@@ -178,7 +221,8 @@ object NewznabProtocol {
             val download = enclosure?.getAttribute("url")?.takeIf { it.isNotBlank() }
                 ?: text("link").takeIf { it.isNotBlank() && enclosures.length == 0 } ?: return@mapNotNull null
             val url = indexer.endpoint.toUsenetUrl().resolve(download) ?: return@mapNotNull null
-            val title = text("title").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val (title, namePassword) = usenetNamePassword(text("title").takeIf { it.isNotBlank() } ?: return@mapNotNull null)
+            if (title.isBlank()) return@mapNotNull null
             val published = listOfNotNull(attributes["usenetdate"], text("pubDate")).firstNotNullOfOrNull { date ->
                 runCatching { ZonedDateTime.parse(date, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }.getOrNull()
                     ?: runCatching { Instant.parse(date).toEpochMilli() }.getOrNull()
@@ -188,7 +232,8 @@ object NewznabProtocol {
             } ?: 0
             UsenetRelease(title, url.toString(),
                 (attributes["size"]?.toLongOrNull() ?: enclosure?.getAttribute("length")?.toLongOrNull() ?: 0).coerceAtLeast(0),
-                published, indexer.id, indexer.name, attributes["password"]?.lowercase() in setOf("1", "2", "true", "yes"))
+                published, indexer.id, indexer.name, attributes["password"]?.lowercase() in setOf("1", "2", "true", "yes"),
+                password = namePassword)
         }
         val response = root.getElementsByTagNameNS("*", "response").item(0) as? Element
         return NewznabPage(results, response?.getAttribute("total")?.toIntOrNull(), items.length)
@@ -210,8 +255,9 @@ object NewznabProtocol {
      */
     fun matches(release: UsenetRelease, request: UsenetSearchRequest, idSearch: Boolean,
         requireNumbering: Boolean = false): Boolean {
+        request.anime?.takeIf { request.series }?.let { return matchesAnime(release, request, it, idSearch, requireNumbering) }
         // Umlauts are posted both ways: König as Koenig or Konig.
-        val titles = listOfNotNull(request.title, request.originalTitle)
+        val titles = listOfNotNull(request.title, request.originalTitle, request.queryTitle)
             .flatMap { listOf(words(it), words(it, umlauts = false)) }
             .filter { it.isNotEmpty() }.distinct().map { it.split(' ') }
         if (!idSearch) {
@@ -235,6 +281,144 @@ object NewznabProtocol {
         }
         return true
     }
+
+    /**
+     * The title searches for [request], its own first. Anime is also asked the ways fansub groups
+     * name releases: "Title 05" by the show's count under the show's names (the romaji one among
+     * them), by the entry's count under the entry's names, and S/E under the show's first other name.
+     * Other titles are asked under one name; [fallbackTitleRequests] are their other names.
+     */
+    fun titleRequests(request: UsenetSearchRequest): List<UsenetSearchRequest> {
+        val anime = request.anime?.takeIf { request.series } ?: return listOf(request)
+        val own = request.title?.let(::searchName)?.lowercase(Locale.ROOT)
+        val show = searchNames(listOfNotNull(request.title, request.originalTitle) + request.otherTitles.orEmpty())
+            .take(MAX_ANIME_SHOW_NAMES)
+        val entry = searchNames(anime.entryTitles).filter { name -> show.none { it.equals(name, ignoreCase = true) } }
+            .take(MAX_ANIME_ENTRY_NAMES)
+        val asked = mutableListOf(request)
+        fun ask(name: String, absolute: Int?) {
+            asked += request.copy(queryTitle = name.takeIf { it.lowercase(Locale.ROOT) != own }, absoluteQuery = absolute)
+        }
+        anime.absoluteEpisode?.let { number -> show.forEach { ask(it, number) } }
+        show.firstOrNull { it.lowercase(Locale.ROOT) != own }?.let { ask(it, null) }
+        anime.entryEpisode?.let { number -> entry.forEach { ask(it, number) } }
+        return asked.distinctBy { (it.queryTitle ?: it.title)?.let(::searchName)?.lowercase(Locale.ROOT) to it.absoluteQuery }
+    }
+
+    /** A title search under each of the other names of [request], for when its own title found nothing. */
+    fun fallbackTitleRequests(request: UsenetSearchRequest): List<UsenetSearchRequest> {
+        if (request.anime != null && request.series) return emptyList()
+        val own = request.title?.let(::searchName)?.lowercase(Locale.ROOT)
+        return searchNames(listOfNotNull(request.originalTitle) + request.otherTitles.orEmpty())
+            .filter { it.lowercase(Locale.ROOT) != own }.take(MAX_FALLBACK_NAMES)
+            .map { request.copy(queryTitle = it) }
+    }
+
+    /** A name as it is asked: spelled the way releases are, one space between words. */
+    private fun searchName(name: String) = releaseSpelling(name).replace(NON_WORD, " ").trim()
+
+    /** [names] that releases can carry (Latin letters), each once. */
+    private fun searchNames(names: List<String>): List<String> =
+        names.filter { hasLatinLetter(it) }.map(::searchName).filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(Locale.ROOT) }
+
+    /**
+     * [matches] for anime. A release passes when a name of the show or of the entry is followed by
+     * the episode's number in one of the forms its groups use:
+     * - S02E05 (scene): the request's season and episode, or one of its other pairs;
+     * - "S2 - 05" or "Season 2 - 05": the same, as fansub groups write it;
+     * - "- 05" right after a name: the entry's count after the entry's names, the show's count
+     *   after the show's names (and the entry's too where the entry starts the show);
+     * - "(01-12)" or "Batch" after a name: a batch holding the episode;
+     * - a season pack of the request's season.
+     * An ID search vouches for the title, so there a "- 05" counts wherever it stands.
+     */
+    private fun matchesAnime(release: UsenetRelease, request: UsenetSearchRequest, anime: UsenetAnimeNumbering,
+        idSearch: Boolean, requireNumbering: Boolean): Boolean {
+        val name = words(release.title).split(' ')
+        val pairs = listOfNotNull(request.season?.let { season -> request.episode?.let { season to it } }) +
+            anime.otherCoordinates
+        val showNumbers = setOfNotNull(anime.absoluteEpisode, anime.entryEpisode?.takeIf { anime.countsFromStart })
+        val entryNumbers = setOfNotNull(anime.entryEpisode)
+        val showNames = listOfNotNull(request.title, request.originalTitle, request.queryTitle) + request.otherTitles.orEmpty()
+        val afterEntry = after(name, anime.entryTitles)
+        val afterShow = after(name, showNames)
+        if (!idSearch && afterEntry == null && afterShow == null) return false
+        val episodes = EPISODES.flatMap { it.findAll(release.title).toList() }
+        if (episodes.isNotEmpty()) return episodes.any { match ->
+            pairs.any { (season, episode) -> match.groupValues[1].toInt() == season && names(episode, match, release.title) }
+        }
+        val batch = BATCH.containsMatchIn(release.title)
+        val numbered = listOfNotNull(
+            afterEntry?.let { numberedAfter(it, batch) }?.let { it to entryNumbers },
+            afterShow?.let { numberedAfter(it, batch) }?.let { it to showNumbers },
+        )
+        if (numbered.isNotEmpty()) return numbered.any { (numbering, numbers) ->
+            val (season, episodes) = numbering
+            if (season != null) pairs.any { (s, e) -> s == season && e in episodes }
+            else numbers.any { it in episodes }
+        }
+        val seasons = release.packSeasons
+        if (seasons.isNotEmpty()) return request.season in seasons
+        if (idSearch) DASH_NUMBER.find(release.title)?.let { dash ->
+            return dash.groupValues[1].toInt() in showNumbers + entryNumbers
+        }
+        return idSearch && !requireNumbering
+    }
+
+    /**
+     * The words of release [name] after the longest of [titles] it is named by, or null when it is
+     * named by none. Before the name only a group tag or an article may come, as for any series;
+     * right after it, the number, the year or a release tag.
+     */
+    private fun after(name: List<String>, titles: List<String>): List<String>? {
+        val wordLists = titles.flatMap { listOf(words(it), words(it, umlauts = false)) }
+            .filter { it.isNotEmpty() }.distinct().map { it.split(' ') }.sortedByDescending { it.size }
+        for (title in wordLists) {
+            for (i in 0..name.size - title.size) {
+                if (name.subList(i, i + title.size) != title) continue
+                val before = name.subList(0, i)
+                if (!(title.size > 1 || before.isEmpty() || before.any { it !in ARTICLES })) continue
+                val rest = name.subList(i + title.size, name.size)
+                val next = rest.firstOrNull()
+                if (next == null || next in RELEASE_TAGS || RELEASE_MARKER.matches(next) || EPISODE_NUMBER.matches(next)) {
+                    return rest
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * The season (null when none is given) and the episodes the words after a name number:
+     * "05", "05v2", "2023 05", "s2 05", "season 2 05", or in a [batch] "01 12".
+     */
+    private fun numberedAfter(rest: List<String>, batch: Boolean): Pair<Int?, IntRange>? {
+        var i = 0
+        if (rest.getOrNull(0)?.let(YEAR::matches) == true && rest.getOrNull(1)?.let(EPISODE_NUMBER::matches) == true) i = 1
+        var season: Int? = null
+        val word = rest.getOrNull(i) ?: return null
+        SEASON_WORD.matchEntire(word)?.let { season = it.groupValues[1].toInt(); i += 1 }
+        if (season == null && word == "season") {
+            season = rest.getOrNull(i + 1)?.toIntOrNull() ?: return null
+            i += 2
+        }
+        val first = rest.getOrNull(i)?.let(EPISODE_NUMBER::matchEntire)?.groupValues?.get(1)?.toInt() ?: return null
+        val last = rest.getOrNull(i + 1)?.takeIf { batch }?.let(EPISODE_NUMBER::matchEntire)?.groupValues?.get(1)?.toInt()
+            ?.takeIf { it > first }
+        return season to (first..(last ?: first))
+    }
+
+    private const val MAX_ANIME_SHOW_NAMES = 2
+    private const val MAX_ANIME_ENTRY_NAMES = 2
+    private const val MAX_FALLBACK_NAMES = 2
+    /** An episode number as anime releases write it: 05, 1089, or 05v2 for a corrected release. */
+    private val EPISODE_NUMBER = Regex("(\\d{1,4})(?:v\\d)?")
+    private val SEASON_WORD = Regex("s(\\d{1,2})")
+    /** A batch: "(01-12)", "[01 ~ 24]" or the word. */
+    private val BATCH = Regex("(?i)[\\[(]\\s*\\d{1,4}\\s*[-~]\\s*\\d{1,4}\\s*[])]|(?:^|[ ._\\[(])batch(?:$|[ ._\\])])")
+    /** The fansub episode number: "Title - 05". */
+    private val DASH_NUMBER = Regex("(?:^|[ ._])-[ ._]*(\\d{1,4})(?:v\\d)?(?=$|[ ._\\[(])")
 
     /**
      * The [releases] of a movie's ID search that are of [movie], by the year and the title their
@@ -443,9 +627,13 @@ object NewznabProtocol {
         'ł' to "l", 'þ' to "th", 'ı' to "i")
 
     /**
-     * Keeps one copy of a release found by several indexers: the one from the highest
-     * indexer priority (then list order) that passes the filters. Names are compared
-     * ignoring case and punctuation, since indexers write separators differently.
+     * Keeps one copy of a release found more than once (several indexers, or reuploads on one): the
+     * one from the highest indexer priority (then list order) that passes the filters. Copies are the
+     * same name, compared ignoring case and punctuation since indexers write separators differently,
+     * and about the same size ([SAME_SIZE_TOLERANCE]; an unknown size matches any), so a re-encode
+     * that kept the name is not taken for a copy. The hidden copies stay with the kept one as its
+     * [UsenetRelease.alternates]: uploads differ in which articles survive, and the engine opens the
+     * next one when the first is incomplete.
      */
     fun withoutDuplicates(releases: List<UsenetRelease>, config: UsenetSourceConfiguration,
         now: Long = System.currentTimeMillis(), seasonEpisodes: Map<Int, Int>? = null,
@@ -453,12 +641,39 @@ object NewznabProtocol {
         val order = config.indexers.mapIndexed { i, indexer -> indexer.id to i }.toMap()
         fun name(release: UsenetRelease) =
             release.title.lowercase(Locale.ROOT).replace(NON_WORD, " ").trim()
-        return releases.groupBy(::name).values.map { copies ->
+        return releases.groupBy(::name).values.flatMap(::sameSizeGroups).map { copies ->
             // A preferred copy hidden by a filter (no size, passworded) must not hide the others.
-            copies.filter { arrange(listOf(it), config, now, seasonEpisodes, series).isNotEmpty() }.ifEmpty { copies }
-                .minBy { order[it.indexerId] ?: Int.MAX_VALUE }
+            val usable = copies.filter { arrange(listOf(it), config, now, seasonEpisodes, series).isNotEmpty() }
+            val ranked = (usable.ifEmpty { copies }).sortedBy { order[it.indexerId] ?: Int.MAX_VALUE }
+            val kept = ranked.first()
+            val backups = (ranked.drop(1) + (copies - usable.toSet()).filterNot { config.hidePassworded && it.passworded })
+                .map { it.nzbUrl }.filter { it != kept.nzbUrl }.distinct()
+            if (backups.isEmpty()) kept else kept.copy(alternates = backups)
         }
     }
+
+    /** Copies of one name split by size: within [SAME_SIZE_TOLERANCE] of each other they are one release. */
+    private fun sameSizeGroups(copies: List<UsenetRelease>): List<List<UsenetRelease>> {
+        if (copies.size < 2) return listOf(copies)
+        val unknown = copies.filter { it.size <= 0 }
+        val groups = mutableListOf<MutableList<UsenetRelease>>()
+        for (release in copies.filter { it.size > 0 }.sortedBy { it.size }) {
+            val group = groups.lastOrNull()
+            if (group != null && release.size - group.first().size <= group.first().size * SAME_SIZE_TOLERANCE) {
+                group += release
+            } else {
+                groups += mutableListOf(release)
+            }
+        }
+        if (groups.isEmpty()) return listOf(unknown)
+        // An unknown size could be any of them: it joins the largest group.
+        groups.maxBy { it.size } += unknown
+        // Keep the incoming order within each group (indexer order decides among equals).
+        return groups.map { group -> copies.filter { it in group } }
+    }
+
+    /** Sizes within this fraction of each other are taken for the same upload's. */
+    private const val SAME_SIZE_TOLERANCE = 0.02
 
     /**
      * [seasonEpisodes] lets a season pack be filtered and sorted by its size per episode.
@@ -470,7 +685,7 @@ object NewznabProtocol {
         rank: (UsenetRelease) -> Int = { 0 }): List<UsenetRelease> {
         val priority = config.indexers.mapIndexed { i, indexer -> indexer.id to i }.toMap()
         val filtered = releases.filter {
-            !it.passworded && (!config.excludeLowQuality || !it.lowQuality) && (!config.excludeFullDisc || !it.fullDisc) &&
+            (!config.hidePassworded || !it.passworded) && (!config.excludeLowQuality || !it.lowQuality) && (!config.excludeFullDisc || !it.fullDisc) &&
                 (config.minResolution == 0 || it.resolution >= config.minResolution) &&
                 (config.maxSizeGb == 0 || it.episodeSize(seasonEpisodes) in 1..config.maxSizeGb.toLong() * 1024 * 1024 * 1024) &&
                 (config.maxAgeDays == 0 || it.publishedAt > 0 && now - it.publishedAt <= config.maxAgeDays.toLong() * 86400000)

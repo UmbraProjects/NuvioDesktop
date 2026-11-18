@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Masquer les releases cam et screener</string>
     <string name="usenet_exclude_full_disc">Masquer les disques Blu-ray et DVD complets</string>
     <string name="usenet_hide_duplicates">Afficher chaque release une fois</string>
-    <string name="usenet_hide_duplicates_description">Une release trouvée par plusieurs indexeurs apparaît une fois, depuis la priorité la plus haute.</string>
+    <string name="usenet_hide_duplicates_description">Une release trouvée plusieurs fois (sur plusieurs indexeurs, ou repostée) n’apparaît qu’une fois, depuis la plus haute priorité. Les autres envois restent en secours et sont essayés si elle est incomplète.</string>
     <string name="usenet_indexer_fallback">N'interroger les priorités basses qu'au besoin</string>
     <string name="usenet_show_release_names">Afficher les noms des releases</string>
     <string name="usenet_section_engine">Moteur</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">User-Agent personnalisé</string>
     <string name="usenet_user_agent_custom_description">Envoyé avec chaque recherche sur l’indexeur et chaque téléchargement NZB.</string>
     <string name="usenet_user_agent_invalid">Caractères imprimables sur une seule ligne, 256 au maximum</string>
+    <string name="usenet_search_mode">Rechercher par</string>
+    <string name="usenet_search_mode_description">Automatique cherche par ID, et par titre si rien n’est trouvé. Certains indexeurs répondent bien mieux à l’un qu’à l’autre. Les deux utilise deux fois plus de requêtes API.</string>
+    <string name="usenet_search_mode_auto">Automatique</string>
+    <string name="usenet_search_mode_id">ID uniquement</string>
+    <string name="usenet_search_mode_title">Titre uniquement</string>
+    <string name="usenet_search_mode_both">Les deux</string>
+    <string name="usenet_hide_passworded">Masquer les releases protégées par mot de passe</string>
+    <string name="usenet_hide_passworded_description">Désactivé : elles sont listées. Celle dont le NZB ou le nom porte le mot de passe se lit ; sans lui, elle est ignorée en quelques secondes et la source suivante est essayée.</string>
 </resources>

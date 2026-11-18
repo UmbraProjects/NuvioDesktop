@@ -287,6 +287,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopInverseToneMappingEnabled(enabled: Boolean)
     fun loadDesktopInverseToneMappingPeakNits(): Int?
     fun saveDesktopInverseToneMappingPeakNits(nits: Int)
+    fun loadDesktopMatchDisplayRefreshRate(): Boolean?
+    fun saveDesktopMatchDisplayRefreshRate(enabled: Boolean)
     fun loadDesktopColorProfile(): String?
     fun saveDesktopColorProfile(profile: String)
     fun loadDesktopColorContrast(): Int?

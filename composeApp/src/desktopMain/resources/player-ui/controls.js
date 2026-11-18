@@ -1426,6 +1426,10 @@ const SEEK_THUMBNAIL_SETTLE_MS = 220;
 const seekThumbnailCache = new Map();
 let seekThumbnailRequestTimer = 0;
 let pendingSeekThumbnailPosition = -1;
+let pendingSeekThumbnailSince = 0;
+// A request with no answer by then is asked again when the pointer is still on its spot (a slow
+// source may have dropped it); the player keeps one running for the same spot, so this is cheap.
+const SEEK_THUMBNAIL_RETRY_MS = 6000;
 
 // Seekr sprites: Kotlin does the keyed lookup and hands over only the signed WebVTT URL, which
 // (like the sheets it lists) needs no key. Cues map source time to a tile on a sprite sheet.
@@ -1611,8 +1615,10 @@ const showSeekThumbnailAt = event => {
   }
   seekThumbnailImage.removeAttribute("src");
   seekThumbnail.hidden = false;
-  if (pendingSeekThumbnailPosition === thumbnailPositionMs) return;
+  if (pendingSeekThumbnailPosition === thumbnailPositionMs &&
+      Date.now() - pendingSeekThumbnailSince < SEEK_THUMBNAIL_RETRY_MS) return;
   pendingSeekThumbnailPosition = thumbnailPositionMs;
+  pendingSeekThumbnailSince = Date.now();
   window.clearTimeout(seekThumbnailRequestTimer);
   // Each request is a fresh HTTP range open on the preview stream, against the same host as the
   // main player. Only ask once the pointer has settled on a spot: sweeping across the bar used to

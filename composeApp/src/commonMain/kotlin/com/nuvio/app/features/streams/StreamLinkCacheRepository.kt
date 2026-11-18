@@ -30,7 +30,38 @@ data class CachedStreamLink(
      * resolved or re-signed one, which never appears in a fresh listing.
      */
     val sourceIdentityKey: String? = null,
-)
+    /**
+     * A built-in Usenet release: its NZB link. The engine's own URL lives only as long as its
+     * session, so a replay opens the release again from this ([url] is blank).
+     */
+    val nzbUrl: String? = null,
+    /** The engine's file pick within the release, beside [fileIdx]. */
+    val fileMustInclude: String? = null,
+    /** The archive password a release's name carried ("Name{{password}}"). */
+    val nzbPassword: String? = null,
+) {
+    /** The release as a source row again, ready for the Usenet engine; null for any other link. */
+    fun toUsenetStream(): StreamItem? {
+        val nzb = nzbUrl?.takeIf { it.isNotBlank() } ?: return null
+        return StreamItem(
+            name = streamName,
+            addonName = addonName,
+            addonId = addonId,
+            streamType = streamType ?: "usenet",
+            fileIdx = fileIdx,
+            behaviorHints = StreamBehaviorHints(
+                filename = filename,
+                videoSize = videoSize,
+                videoHash = videoHash,
+                bingeGroup = bingeGroup,
+                proxyHeaders = requestHeaders.takeIf { it.isNotEmpty() }?.let { StreamProxyHeaders(request = it) },
+            ),
+            nzbUrl = nzb,
+            fileMustInclude = fileMustInclude,
+            usenetPassword = nzbPassword,
+        )
+    }
+}
 
 internal expect fun epochMs(): Long
 
@@ -111,6 +142,40 @@ object StreamLinkCacheRepository {
         StreamLinkCacheStorage.saveEntry(hashedKey(contentKey), payload)
     }
 
+    /**
+     * Saves a Usenet release by its NZB rather than by the engine URL it played from: that URL dies
+     * with its session. False (nothing saved) for a release that brings its own NNTP servers: they
+     * carry credentials, which are never written to disk.
+     */
+    fun saveUsenet(contentKey: String, stream: StreamItem, sourceIdentityKey: String?): Boolean {
+        val entry = usenetEntry(stream, sourceIdentityKey, epochMs()) ?: return false
+        StreamLinkCacheStorage.saveEntry(hashedKey(contentKey), json.encodeToString(CachedStreamLink.serializer(), entry))
+        return true
+    }
+
+    internal fun usenetEntry(stream: StreamItem, sourceIdentityKey: String?, nowMs: Long): CachedStreamLink? {
+        val nzb = stream.nzbUrl?.takeIf { it.isNotBlank() } ?: return null
+        if (!stream.usenetServers.isNullOrEmpty()) return null
+        return CachedStreamLink(
+            url = "",
+            streamName = stream.streamLabel,
+            addonName = stream.addonName,
+            addonId = stream.addonId,
+            cachedAtMs = nowMs,
+            requestHeaders = stream.behaviorHints.proxyHeaders?.request.orEmpty(),
+            filename = stream.behaviorHints.filename,
+            videoSize = stream.behaviorHints.videoSize,
+            videoHash = stream.behaviorHints.videoHash,
+            fileIdx = stream.fileIdx,
+            bingeGroup = stream.behaviorHints.bingeGroup,
+            streamType = stream.streamType,
+            sourceIdentityKey = sourceIdentityKey,
+            nzbUrl = nzb,
+            fileMustInclude = stream.fileMustInclude,
+            nzbPassword = stream.usenetPassword,
+        )
+    }
+
     fun remove(contentKey: String) {
         StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
     }
@@ -133,7 +198,7 @@ object StreamLinkCacheRepository {
             StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
             return null
         }
-        if (entry.url.isBlank() && entry.infoHash.isNullOrBlank()) {
+        if (entry.url.isBlank() && entry.infoHash.isNullOrBlank() && entry.nzbUrl.isNullOrBlank()) {
             StreamLinkCacheStorage.removeEntry(hashedKey(contentKey))
             return null
         }

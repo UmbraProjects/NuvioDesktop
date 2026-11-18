@@ -1414,6 +1414,15 @@ private fun PlaybackSettingsSection(
                             )
                         }
                         SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_desktop_match_refresh_rate),
+                            description = stringResource(Res.string.settings_playback_desktop_match_refresh_rate_desc),
+                            checked = autoPlayPlayerSettings.desktopMatchDisplayRefreshRate,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setDesktopMatchDisplayRefreshRate,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.MatchRefreshRate),
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
                         SettingsChoiceRow(
                             title = stringResource(Res.string.settings_playback_desktop_color_profile),
                             description = stringResource(autoPlayPlayerSettings.desktopColorProfile.descriptionRes),

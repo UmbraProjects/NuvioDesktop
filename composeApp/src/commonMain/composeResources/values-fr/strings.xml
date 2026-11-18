@@ -2890,6 +2890,8 @@
     <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Désactivé par défaut : le passage SDR vers HDR peut sursaturer les aplats de couleur des anime. Ne s’applique jamais pendant qu’Anime4K, un shader personnalisé ou SVP est actif, sauf si l’option ci-dessous est activée.</string>
     <string name="settings_playback_desktop_inverse_tone_mapping">SDR vers HDR (mpv)</string>
     <string name="settings_playback_desktop_inverse_tone_mapping_desc">Étend la vidéo SDR en HDR sur n’importe quel GPU (inverse tone mapping de mpv). Nécessite le HDR de Windows ; RTX Video True HDR prend le relais s’il est actif. Compatible avec Anime4K, les shaders et SVP.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Adapter la fréquence de rafraîchissement</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">Pendant la lecture, passe le moniteur à une fréquence de rafraîchissement multiple de la cadence de la vidéo (24 i/s en 24 ou 120 Hz, 25 i/s en 50 Hz) pour supprimer les saccades, puis la rétablit à la fermeture du lecteur. L écran peut devenir noir un instant à chaque changement.</string>
     <string name="settings_playback_desktop_inverse_tone_mapping_peak">Luminosité maximale SDR vers HDR</string>
     <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">Intensité des plus fortes hautes lumières. Autour du pic HDR de ton écran est un bon départ ; plus bas se rapproche du SDR d’origine.</string>
     <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Aussi avec les shaders anime</string>
@@ -5134,4 +5136,15 @@
     <string name="gamepad_rebind_player">Pendant la lecture</string>
     <string name="gamepad_rebind_changed">Modifié</string>
     <string name="gamepad_rebind_search_description">Réattribuer les boutons de la manette, pour la navigation et la lecture</string>
+    <string name="usenet_unpacking_7z">Décompression du 7z compressé</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">7z compressé (films)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">7z compressé (séries et anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Releases Usenet qui se sont révélées être un 7z compressé à l’ouverture. Elles se lisent, mais avancer attend que tout ce qui précède soit téléchargé.</string>
+    <string name="usenet_compressed_releases">Releases 7z compressées</string>
+    <string name="usenet_compressed_releases_description">Un 7z compressé ne se révèle qu’à l’ouverture. Il se lit, mais avancer attend que tout ce qui précède soit téléchargé. Ceux qui sont ignorés ne sont plus essayés.</string>
+    <string name="usenet_compressed_play_all">Toujours lire</string>
+    <string name="usenet_compressed_skip_over">Ignorer au-delà de %1$s</string>
+    <string name="usenet_compressed_skip_all">Toujours ignorer</string>
+    <string name="usenet_compressed_skipped">7z compressé ignoré - essai de la source suivante</string>
+    <string name="usenet_compressed_unplayable">Cette release est un 7z compressé, ignorée par vos réglages Usenet</string>
 </resources>

@@ -37,7 +37,28 @@ data class UsenetConfiguration(
      */
     val userAgentMode: String = AGENT_GENERIC,
     val customUserAgent: String = "",
+    /**
+     * A compressed 7z plays only by unpacking from the start, so a skip ahead downloads everything
+     * before it. Larger than this many GB, one is skipped at open like an unplayable release.
+     * [COMPRESSED_PLAY_ALL] plays every one, [COMPRESSED_SKIP_ALL] skips every one.
+     */
+    val compressedSkipGb: Int = 5,
 ) {
+    /** The engine's limit in bytes: 0 is none, 1 refuses every compressed 7z. */
+    val maxCompressedBytes: Long
+        get() = when (compressedSkipGb) {
+            COMPRESSED_PLAY_ALL -> 0L
+            COMPRESSED_SKIP_ALL -> 1L
+            else -> compressedSkipGb * 1_000_000_000L
+        }
+
+    /** Whether a compressed 7z of [sizeBytes] (null: not known) is skipped. */
+    fun skipsCompressed(sizeBytes: Long?): Boolean = when (compressedSkipGb) {
+        COMPRESSED_PLAY_ALL -> false
+        COMPRESSED_SKIP_ALL -> true
+        else -> sizeBytes == null || sizeBytes > maxCompressedBytes
+    }
+
     /** The User-Agent to send, or null to leave the library's own default. */
     val userAgent: String?
         get() = when (userAgentMode) {
@@ -56,6 +77,7 @@ data class UsenetConfiguration(
             maxConsecutiveMissing = maxConsecutiveMissing.coerceIn(1, minOf(10, missing)),
             userAgentMode = userAgentMode.takeIf { it in AGENT_MODES } ?: AGENT_GENERIC,
             customUserAgent = customUserAgent.takeIf(::isValidUserAgent).orEmpty(),
+            compressedSkipGb = compressedSkipGb.takeIf { it in COMPRESSED_CHOICES } ?: 5,
         )
     }
 
@@ -65,6 +87,9 @@ data class UsenetConfiguration(
         const val AGENT_NUVIO = "nuvio"
         const val AGENT_CUSTOM = "custom"
         val AGENT_MODES = listOf(AGENT_GENERIC, AGENT_NUVIO, AGENT_CUSTOM)
+        const val COMPRESSED_PLAY_ALL = 0
+        const val COMPRESSED_SKIP_ALL = -1
+        val COMPRESSED_CHOICES = listOf(COMPRESSED_PLAY_ALL, 2, 5, 10, 20, COMPRESSED_SKIP_ALL)
     }
 }
 

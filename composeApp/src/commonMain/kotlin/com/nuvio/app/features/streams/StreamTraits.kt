@@ -55,6 +55,8 @@ data class StreamTraits(
     val isFullDisc: Boolean = false,
     /** A whole-season release rather than a single episode. Only meaningful for episodes. */
     val isSeasonPack: Boolean = false,
+    /** A Usenet release known to be a compressed 7z (set by the scorer from UsenetCompressedReleases). */
+    val isCompressedArchive: Boolean = false,
     /**
      * Size of the whole torrent/folder behind this row, as opposed to [size] which is the one file
      * it resolved to. Null when nothing published it — plenty of rows carry only a file size, and
@@ -151,7 +153,11 @@ object StreamTraitDetector {
     private fun detectUncached(stream: StreamItem): StreamTraits {
         val parsed = stream.clientResolve?.stream?.raw?.parsed
         val searchText = streamSearchText(stream)
-        val group = parsed?.group?.takeIf { it.isNotBlank() } ?: releaseGroupFromText(searchText)
+        // An addon's own parse first, then the release name as the row shows it (ReleaseGroupName knows
+        // Sonarr renames, "x264 NTb NL sub", "-Ben.The.Men" and the rest), then the old suffix rule.
+        val group = parsed?.group?.takeIf { it.isNotBlank() }
+            ?: releaseNameText(stream)?.let(ReleaseGroupName::of)
+            ?: releaseGroupFromText(searchText)
         // The parsed group is the high-confidence signal; the text scan catches groups sitting
         // mid-name where the trailing-token parse cannot see them.
         val tier = StreamReleaseGroups.tierOf(group) ?: StreamReleaseGroups.bestTierInText(searchText)

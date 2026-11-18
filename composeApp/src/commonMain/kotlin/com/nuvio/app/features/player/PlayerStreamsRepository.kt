@@ -154,6 +154,12 @@ object PlayerStreamsRepository {
         _episodeStreamsState.value = StreamsUiState()
     }
 
+    /** Rewrites the loaded source rows in place (both lists), e.g. a Usenet row's 📖. */
+    internal fun mapGroups(transform: (List<AddonStreamGroup>) -> List<AddonStreamGroup>) {
+        _sourceState.update { state -> transform(state.groups).let { if (it === state.groups) state else state.copy(groups = it) } }
+        _episodeStreamsState.update { state -> transform(state.groups).let { if (it === state.groups) state else state.copy(groups = it) } }
+    }
+
     fun clearAll() {
         sourceJob?.cancel()
         sourceRequestKey = null

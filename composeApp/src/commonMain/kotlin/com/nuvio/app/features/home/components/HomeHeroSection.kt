@@ -116,6 +116,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -3735,10 +3737,31 @@ private fun HeroGenreLine(
         val afterGenres = parts.indexOfLast { it.genre != null } + 1
         if (tags.isEmpty() || afterGenres == 0) parts else parts.take(afterGenres) + tags + parts.drop(afterGenres)
     }
+    val tagCount = shownParts.size - parts.size
     val style = MaterialTheme.typography.titleMedium
     val color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.76f)
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        shownParts.forEachIndexed { index, part ->
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(modifier = modifier) {
+    // The tags are extras: when the line is too long they go first, the last one first. Only the
+    // last part may shrink, and that was the runtime: with five genres and tags it shrank to
+    // nothing, leaving a "•" with the age badge far past it (Midsommar, Nov 18).
+    val maxWidthPx = constraints.maxWidth
+    val fittedParts = remember(shownParts, maxWidthPx, style) {
+        if (tagCount <= 0 || maxWidthPx == Constraints.Infinity) return@remember shownParts
+        val measured = style.copy(fontWeight = FontWeight.SemiBold)
+        fun width(text: String) = measurer.measure(text, measured, maxLines = 1).size.width
+        val firstTag = parts.indexOfLast { it.genre != null } + 1 // Where the tags were put in.
+        val keep = heroLineTagsThatFit(
+            widths = shownParts.map { width(it.text) },
+            separatorWidth = width(" • "),
+            firstTag = firstTag,
+            tagCount = tagCount,
+            maxWidth = maxWidthPx,
+        )
+        shownParts.filterIndexed { index, _ -> index < firstTag || index >= firstTag + tagCount || index < firstTag + keep }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        fittedParts.forEachIndexed { index, part ->
             if (index > 0) {
                 Text(
                     text = " • ",
@@ -3753,7 +3776,7 @@ private fun HeroGenreLine(
             NuvioPosterHoverTooltip(
                 title = if (part.genre != null) card.headline else "",
                 subtitle = if (part.genre != null) card.themeLine else "",
-                modifier = if (index == shownParts.lastIndex) Modifier.weight(1f, fill = false) else Modifier,
+                modifier = if (index == fittedParts.lastIndex) Modifier.weight(1f, fill = false) else Modifier,
             ) {
                 Text(
                     text = part.text,
@@ -3766,6 +3789,28 @@ private fun HeroGenreLine(
             }
         }
     }
+    }
+}
+
+/**
+ * How many of the genre line's [tagCount] tags (starting at [firstTag]) fit in [maxWidth] beside
+ * everything else, dropping the last tag first. The rest of the line is never dropped here.
+ */
+internal fun heroLineTagsThatFit(
+    widths: List<Int>,
+    separatorWidth: Int,
+    firstTag: Int,
+    tagCount: Int,
+    maxWidth: Int,
+): Int {
+    if (firstTag < 0 || tagCount <= 0) return 0
+    var keep = tagCount
+    fun lineWidth(): Int {
+        val shown = widths.filterIndexed { index, _ -> index < firstTag || index >= firstTag + tagCount || index < firstTag + keep }
+        return shown.sum() + separatorWidth * (shown.size - 1).coerceAtLeast(0)
+    }
+    while (keep > 0 && lineWidth() > maxWidth) keep--
+    return keep
 }
 
 @Composable

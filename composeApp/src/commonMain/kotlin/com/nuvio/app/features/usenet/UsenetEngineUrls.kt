@@ -18,6 +18,16 @@ internal object UsenetEngineUrls {
     fun isSubtitle(url: String): Boolean = matches(subtitleUrl, url)
 
     /**
+     * The address seek thumbnails and other side readers use for session [url]: the same file,
+     * served by the engine without read-ahead and kept out of the seek timings. Null for any
+     * other URL.
+     */
+    fun preview(url: String): String? {
+        if (!isSession(url)) return null
+        return url.substringBefore('#').substringBefore('?') + "?preview=1"
+    }
+
+    /**
      * The player URL for a session [path] the engine returned, "/stream/<id>/<name>". A disc clip's
      * name keeps its BDMV/STREAM folders, so the player finds BDMV/CLIPINF beside it; any other
      * file is its base name, as before. Each segment is encoded as Uri.encode does.

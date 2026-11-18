@@ -63,6 +63,18 @@ class UsenetStreamFormatTest {
         assertEquals("FraMeSToR", UsenetStreamFormat.releaseGroup("Film.2019.2160p.DTS-HD.MA.5.1.REMUX-FraMeSToR"))
         assertEquals("NTb", UsenetStreamFormat.releaseGroup("Show.S01E01.1080p.WEB-DL-NTb.mkv"))
         assertEquals(null, UsenetStreamFormat.releaseGroup("Film.2019.1080p.BluRay.x264"))
+        // A Sonarr rename: the group is the last bracket, not "1080p]" after the dash in [Bluray-1080p].
+        assertEquals("PFa", UsenetStreamFormat.releaseGroup("Wentworth (2013) (264234) - S06E02 - The Boxer - [Bluray-1080p] [AAC] [PFa]"))
+        // Spaces and no group dash: the word after the codec, not "DL" from WEB-DL; trailing language words skipped.
+        assertEquals("NTb", UsenetStreamFormat.releaseGroup("Wentworth S06 1080p NF WEB-DL DD2.0 x264 NTb NL sub"))
+        assertEquals("GRP", UsenetStreamFormat.releaseGroup("Movie.2020.1080p.WEB-DL-GRP [rarbg]"))
+        assertEquals(null, UsenetStreamFormat.releaseGroup("Movie 2020 1080p WEB-DL"))
+        assertEquals("Ben.The.Men", UsenetStreamFormat.releaseGroup("Other.Mommy.2026.2160p.AMZN.WEB-DL.DV.HDR10+-Ben.The.Men"))
+        assertEquals("SumVision", UsenetStreamFormat.releaseGroup("Midsommar.2019.Directors.Cut.2160p.UHD.Blu-ray.Remux.HEVC.DTS-HD.MA.5.1.Single.Layer.DoVi.SumVision"))
+        assertEquals("HONE", UsenetStreamFormat.releaseGroup("Midsommar (2019) Director's Cut (2160p UHD BluRay x265 DV HDR DD 5.1 English - Weasley HONE)"))
+        assertEquals("KRaLiMaRKo", UsenetStreamFormat.releaseGroup("Midsommar.2019.Directors.Cut.2160p.UHD.Blu-ray.Remux.HEVC.DTS-HD.MA.5.1.KRaLiMaRKo"))
+        assertEquals("x0r", UsenetStreamFormat.releaseGroup("Midsommar.2019.720p.BluRay.X264-x0r[FEATUETTE-Let the Festivities Begin: Manifesting Midsommar]"))
+        assertEquals(null, UsenetStreamFormat.releaseGroup("Movie.Title.2020.1080p.BluRay.x264"))
     }
 
     @Test

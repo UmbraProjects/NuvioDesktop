@@ -1041,6 +1041,7 @@ private fun PlayerScreenRuntime.phoneRemoteSubtitleName(): String? {
  * it clears the failover tried-set so a later, unrelated mid-playback failure gets a fresh budget.
  */
 private const val STREAM_FAILOVER_WATCHDOG_STEP_MS = 500L
+private const val USENET_DECODE_PROBE_MS = 2_000L
 private const val IPTV_STARTUP_TIMEOUT_MS = 45_000L
 private const val STREAM_FAILOVER_SUSTAINED_PLAYBACK_RESET_MS = 30_000L
 private const val INITIAL_TRACK_RESTORE_POLL_INTERVAL_MS = 250L
@@ -1084,6 +1085,12 @@ private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
         }
         var elapsed = 0L
         var started = false
+        // A compressed 7z decodes everything before a resume point first (it cannot jump): as
+        // long as the engine reports the decoder moving towards it, the start is not stuck, and
+        // the wait shows how far it is instead of failing over a release that is playing.
+        val usenetSession = com.nuvio.app.features.usenet.UsenetEngine.isSessionUrl(watchedUrl)
+        var sinceDecodeProbe = 0L
+        var lastDecoded = -1L
         while (elapsed < timeoutMs) {
             // A debrid URL can open and publish duration/position while waiting for the actual
             // torrent. Only mpv's first rendered-frame event proves this source really started.
@@ -1103,6 +1110,23 @@ private fun PlayerScreenRuntime.BindStreamFailoverWatchdogEffect() {
             ) return@LaunchedEffect
             delay(STREAM_FAILOVER_WATCHDOG_STEP_MS)
             elapsed += STREAM_FAILOVER_WATCHDOG_STEP_MS
+            if (usenetSession) {
+                sinceDecodeProbe += STREAM_FAILOVER_WATCHDOG_STEP_MS
+                if (sinceDecodeProbe >= USENET_DECODE_PROBE_MS) {
+                    sinceDecodeProbe = 0L
+                    val progress = com.nuvio.app.features.usenet.usenetDecodeProgress(
+                        com.nuvio.app.features.usenet.UsenetEngine.diagnostics(watchedUrl),
+                    )
+                    if (progress != null && progress.decodedBytes > lastDecoded) {
+                        lastDecoded = progress.decodedBytes
+                        elapsed = 0L
+                        playerController?.showTransientMessage(
+                            getString(Res.string.usenet_unpacking_7z),
+                            com.nuvio.app.features.usenet.usenetDecodeProgressLabel(progress),
+                        )
+                    }
+                }
+            }
         }
         if (!started &&
             playbackAttemptId == watchedAttemptId &&

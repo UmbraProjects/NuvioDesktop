@@ -15,6 +15,10 @@ internal actual fun usenetEngineExecutable(): File? {
     return dirs.asSequence().map { File(it, ENGINE_EXE) }.firstOrNull { it.isFile }
 }
 
+/** A file of this name in the data folder switches a Usenet experiment on (no setting for it). */
+internal actual fun usenetMarker(name: String): Boolean =
+    runCatching { java.nio.file.Files.exists(DesktopStorage.rootDir.resolve(name)) }.getOrDefault(false)
+
 /** Next to the account's stores, so a portable install keeps it in its own folder. */
 internal actual fun usenetNzbCacheDir(): File =
     DesktopStorage.storeFile("nuvio_usenet").toFile().parentFile.resolve("cache/usenet-nzb")

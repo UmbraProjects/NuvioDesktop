@@ -1968,6 +1968,8 @@
   <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Απενεργοποιημένο από προεπιλογή: η μετατροπή SDR σε HDR μπορεί να υπερκορέσει τα επίπεδα χρώματα του anime. Δεν εφαρμόζεται ποτέ ενώ εκτελείται Anime4K, προσαρμοσμένο shader ή SVP, εκτός αν είναι ενεργή η παρακάτω επιλογή.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping">SDR σε HDR (mpv)</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_desc">Επεκτείνει το βίντεο SDR σε HDR σε οποιαδήποτε GPU (αντίστροφο tone mapping του mpv). Απαιτεί ενεργό HDR των Windows· το RTX Video True HDR αναλαμβάνει όταν εκτελείται. Λειτουργεί με Anime4K, shaders και SVP.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Αντιστοίχιση ρυθμού ανανέωσης</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">Κατά την αναπαραγωγή, αλλάζει την οθόνη σε ρυθμό ανανέωσης που διαιρείται ακριβώς με τον ρυθμό καρέ του βίντεο (24 fps σε 24 ή 120 Hz, 25 fps σε 50 Hz) για να αφαιρεθεί το τρέμουλο, και τον επαναφέρει όταν κλείσει η αναπαραγωγή. Η οθόνη μπορεί να μαυρίσει για λίγο σε κάθε αλλαγή.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak">Μέγιστη φωτεινότητα SDR σε HDR</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">Πόσο φωτεινές γίνονται οι πιο φωτεινές περιοχές. Μια τιμή κοντά στο HDR peak της οθόνης σας είναι καλή αρχή· χαμηλότερη τιμή μοιάζει περισσότερο με το αρχικό SDR.</string>
   <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Και με shaders anime</string>
@@ -5052,4 +5054,15 @@
     <string name="gamepad_rebind_player">Κατά την αναπαραγωγή</string>
     <string name="gamepad_rebind_changed">Αλλαγμένο</string>
     <string name="gamepad_rebind_search_description">Αλλαγή αντιστοίχισης κουμπιών χειριστηρίου για περιήγηση και αναπαραγωγή</string>
+    <string name="usenet_unpacking_7z">Αποσυμπίεση συμπιεσμένου 7z</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">Συμπιεσμένο 7z (ταινίες)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">Συμπιεσμένο 7z (σειρές και anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Κυκλοφορίες Usenet που αποδείχθηκαν συμπιεσμένα 7z όταν άνοιξαν. Παίζουν, αλλά η μεταπήδηση μπροστά περιμένει να κατέβει ό,τι υπάρχει πριν από εκείνο το σημείο.</string>
+    <string name="usenet_compressed_releases">Συμπιεσμένες κυκλοφορίες 7z</string>
+    <string name="usenet_compressed_releases_description">Ένα συμπιεσμένο 7z φαίνεται μόνο όταν ανοίξει. Παίζει, αλλά η μεταπήδηση μπροστά περιμένει να κατέβει ό,τι υπάρχει πριν. Όσα παραλείπονται δεν δοκιμάζονται ξανά.</string>
+    <string name="usenet_compressed_play_all">Πάντα αναπαραγωγή</string>
+    <string name="usenet_compressed_skip_over">Παράλειψη άνω των %1$s</string>
+    <string name="usenet_compressed_skip_all">Πάντα παράλειψη</string>
+    <string name="usenet_compressed_skipped">Παραλείφθηκε συμπιεσμένο 7z - δοκιμή επόμενης πηγής</string>
+    <string name="usenet_compressed_unplayable">Αυτή η κυκλοφορία είναι συμπιεσμένο 7z και παραλείπεται από τις ρυθμίσεις Usenet</string>
 </resources>

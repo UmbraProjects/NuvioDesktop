@@ -407,6 +407,9 @@ internal class PlayerScreenRuntime(
     val failoverTriedIdentityKeys: MutableSet<String> = mutableSetOf()
     var failoverInProgress by mutableStateOf(false)
     var failoverJob: Job? = null
+    // Set when a Usenet open failed for the engine or the providers, not the release: failover then
+    // passes over every Usenet row until the next manual pick.
+    var failoverSkipsUsenet: Boolean = false
 
     /** Live TV: no metadata, skip lookups, addon failover or redirect probe; see PlayerScreenRuntimeIptv. */
     val isIptvPlayback: Boolean get() = parentMetaType == com.nuvio.app.features.iptv.IPTV_META_TYPE

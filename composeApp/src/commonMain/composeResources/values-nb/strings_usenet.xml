@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Skjul cam- og screener-utgivelser</string>
     <string name="usenet_exclude_full_disc">Skjul hele Blu-ray- og DVD-plater</string>
     <string name="usenet_hide_duplicates">Vis hver utgivelse én gang</string>
-    <string name="usenet_hide_duplicates_description">En utgivelse flere indekserere fant, vises én gang, fra høyeste prioritet.</string>
+    <string name="usenet_hide_duplicates_description">En utgivelse funnet flere ganger (hos flere indeksere eller lastet opp på nytt) vises én gang, fra høyeste prioritet. De andre opplastingene beholdes som reserve og prøves hvis den er ufullstendig.</string>
     <string name="usenet_indexer_fallback">Spør lavere prioriteter bare ved behov</string>
     <string name="usenet_show_release_names">Vis utgivelsesnavn</string>
     <string name="usenet_section_engine">Motor</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">Egendefinert User-Agent</string>
     <string name="usenet_user_agent_custom_description">Sendes med hvert indekser-søk og hver NZB-nedlasting.</string>
     <string name="usenet_user_agent_invalid">Bruk utskrivbare tegn på én linje, høyst 256</string>
+    <string name="usenet_search_mode">Søk etter</string>
+    <string name="usenet_search_mode_description">Automatisk søker med ID, og med tittel når det ikke finner noe. Noen indeksere svarer mye bedre på det ene. Begge bruker dobbelt så mange API-kall.</string>
+    <string name="usenet_search_mode_auto">Automatisk</string>
+    <string name="usenet_search_mode_id">Bare ID</string>
+    <string name="usenet_search_mode_title">Bare tittel</string>
+    <string name="usenet_search_mode_both">Begge</string>
+    <string name="usenet_hide_passworded">Skjul utgivelser med passord</string>
+    <string name="usenet_hide_passworded_description">Av: de vises. En utgivelse der NZB-en eller navnet har passordet spilles av; uten blir den hoppet over på sekunder og neste kilde prøves.</string>
 </resources>

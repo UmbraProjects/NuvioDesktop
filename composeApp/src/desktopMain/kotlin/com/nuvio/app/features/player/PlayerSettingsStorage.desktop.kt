@@ -555,6 +555,8 @@ internal actual object PlayerSettingsStorage {
     actual fun saveDesktopInverseToneMappingEnabled(enabled: Boolean) = saveBoolean("desktop_inverse_tone_mapping_enabled", enabled)
     actual fun loadDesktopInverseToneMappingPeakNits(): Int? = loadInt("desktop_inverse_tone_mapping_peak_nits")
     actual fun saveDesktopInverseToneMappingPeakNits(nits: Int) = saveInt("desktop_inverse_tone_mapping_peak_nits", nits)
+    actual fun loadDesktopMatchDisplayRefreshRate(): Boolean? = loadBoolean("desktop_match_display_refresh_rate")
+    actual fun saveDesktopMatchDisplayRefreshRate(enabled: Boolean) = saveBoolean("desktop_match_display_refresh_rate", enabled)
     actual fun loadDesktopColorProfile(): String? = loadString(desktopColorProfileKey)
     actual fun saveDesktopColorProfile(profile: String) = saveString(desktopColorProfileKey, profile)
     actual fun loadDesktopColorContrast(): Int? = loadInt(desktopColorContrastKey)

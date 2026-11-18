@@ -597,7 +597,7 @@ private fun settingsSearchEntries(
         page = SettingsPage.Usenet,
         key = "usenet",
         title = resolve(Res.string.compose_settings_page_usenet),
-        description = "Usenet · NNTP · Newznab · NZB · User-Agent",
+        description = "Usenet · NNTP · Newznab · NZB · User-Agent · 7z",
         icon = Icons.Rounded.Newspaper,
     )
     addPage(
@@ -1775,6 +1775,12 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_playback_desktop_inverse_tone_mapping),
                 resolve(Res.string.settings_playback_desktop_inverse_tone_mapping_desc),
                 anchor = SettingsScrollAnchor.InverseToneMapping,
+            ) else null,
+            if (isDesktop) PlaybackSearchRow(
+                "desktop-match-refresh-rate",
+                resolve(Res.string.settings_playback_desktop_match_refresh_rate),
+                resolve(Res.string.settings_playback_desktop_match_refresh_rate_desc),
+                anchor = SettingsScrollAnchor.MatchRefreshRate,
             ) else null,
             if (isDesktop) PlaybackSearchRow(
                 "desktop-color-profile",

@@ -569,6 +569,7 @@ internal class NativePlayerController(
                         return@synchronized
                     }
                     if (pending.tracePlaybackStart) PlaybackStartTrace.mark("nativeCreateReturned")
+                    pointSideDecodersAtPreview(newHandle, withMpvFilenameHint(mpvSourceUrl, pending.mediaTitle), mpvSourceUrl)
                     finishAttach(newHandle, pending)
                 }
             }
@@ -590,6 +591,8 @@ internal class NativePlayerController(
                 }
             }
         }
+        // Named before the swap: the bridge sets the side decoders' source while applying it.
+        pointSideDecodersAtPreview(liveHandle, withMpvFilenameHint(mpvSourceUrl, pending.mediaTitle), mpvSourceUrl)
         val replaced = runCatching {
             NativePlayerBridge.replaceSource(
                 handle = liveHandle,
@@ -1789,6 +1792,11 @@ internal class NativePlayerController(
                     if (hiddenThrough >= 0 && attachGeneration.get() > hiddenThrough) {
                         tracksHiddenThroughGeneration = -1L
                     }
+                    if (livePending?.tracePlaybackStart == true && DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+                        DisplayRefreshSwitcher.matchWhenKnown(liveHostViewPtr) {
+                            decodeTracks { NativePlayerBridge.videoTracksJson(it) }.firstOrNull { it.selected }?.fps
+                        }
+                    }
                     handle.takeIf { it != 0L }?.let { current ->
                         applyPendingSubtitleConfiguration(current)
                         // Align the overlay's tracked volume with mpv's real (possibly restored)
@@ -1972,6 +1980,7 @@ internal class NativePlayerController(
         onEvent = { _, _ -> false }
         onScrubChange = { false }
         onScrubFinished = { false }
+        if (livePending?.tracePlaybackStart == true) DisplayRefreshSwitcher.releaseSoon()
         disposePlayerHandle()
     }
 
@@ -2969,6 +2978,16 @@ internal const val DIRECT_MEDIA_NETWORK_TIMEOUT_SECONDS = 15
  * non-manifest paths: an HLS/DASH manifest resolves its relative segment URLs against the base URL,
  * and a `/` inside the fragment would corrupt that base.
  */
+/**
+ * fork:usenet - a built-in Usenet session's seek thumbnails read the engine's preview address,
+ * which it serves without read-ahead (see [NativePlayerBridge.setAuxiliarySource]). Nothing for
+ * any other source.
+ */
+private fun pointSideDecodersAtPreview(handle: Long, playedUrl: String, sourceUrl: String) {
+    val preview = com.nuvio.app.features.usenet.UsenetEngineUrls.preview(sourceUrl) ?: return
+    runCatching { NativePlayerBridge.setAuxiliarySource(handle, playedUrl, preview) }
+}
+
 internal fun withMpvFilenameHint(url: String, title: String): String {
     val name = title.trim().replace(Regex("[\\\\/\\s]+"), " ").trim()
     if (name.isEmpty() || '#' in url) return url

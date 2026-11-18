@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Cam ve screener yayınlarını gizle</string>
     <string name="usenet_exclude_full_disc">Tam Blu-ray ve DVD disklerini gizle</string>
     <string name="usenet_hide_duplicates">Her yayını bir kez göster</string>
-    <string name="usenet_hide_duplicates_description">Birden çok dizinleyicinin bulduğu yayın, en yüksek öncelikten bir kez listelenir.</string>
+    <string name="usenet_hide_duplicates_description">Birden çok kez bulunan bir yayın (birkaç indeksleyicide ya da yeniden yüklenmiş) en yüksek öncelikten bir kez listelenir. Diğer yüklemeler yedek olarak kalır ve eksik çıkarsa denenir.</string>
     <string name="usenet_indexer_fallback">Düşük önceliklere yalnızca gerekirse sor</string>
     <string name="usenet_show_release_names">Yayın adlarını göster</string>
     <string name="usenet_section_engine">Motor</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">Özel User-Agent</string>
     <string name="usenet_user_agent_custom_description">Her dizinleyici aramasıyla ve her NZB indirmesiyle gönderilir.</string>
     <string name="usenet_user_agent_invalid">Tek satırda yazdırılabilir karakterler kullanın, en fazla 256</string>
+    <string name="usenet_search_mode">Şuna göre ara</string>
+    <string name="usenet_search_mode_description">Otomatik önce ID ile, bir şey bulamazsa başlıkla arar. Bazı indeksleyiciler birine çok daha iyi yanıt verir. İkisi de, iki kat API isteği kullanır.</string>
+    <string name="usenet_search_mode_auto">Otomatik</string>
+    <string name="usenet_search_mode_id">Yalnızca ID</string>
+    <string name="usenet_search_mode_title">Yalnızca başlık</string>
+    <string name="usenet_search_mode_both">İkisi de</string>
+    <string name="usenet_hide_passworded">Parolalı yayınları gizle</string>
+    <string name="usenet_hide_passworded_description">Kapalı: listelenirler. NZB’si ya da adı parolayı taşıyan yayın oynatılır; parola yoksa saniyeler içinde atlanır ve sonraki kaynak denenir.</string>
 </resources>

@@ -2047,6 +2047,8 @@
     <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Off by default: the SDR-to-HDR pass can oversaturate flat anime colours. Never applies while Anime4K, a custom shader or SVP is running, unless the option below is on.</string>
     <string name="settings_playback_desktop_inverse_tone_mapping">SDR to HDR (mpv)</string>
     <string name="settings_playback_desktop_inverse_tone_mapping_desc">Expands SDR video to HDR on any GPU (mpv's inverse tone mapping). Needs Windows HDR on; RTX Video True HDR takes over when running. Works with Anime4K, shaders and SVP.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Match display refresh rate</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">While a video plays, switches the monitor to a refresh rate its frame rate divides evenly (24 fps to 24 or 120 Hz, 25 fps to 50 Hz) to remove judder, and switches back when the player closes. The screen may go black for a moment at each switch.</string>
     <string name="settings_playback_desktop_inverse_tone_mapping_peak">SDR to HDR peak brightness</string>
     <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">How bright the brightest highlights get. Around your display's HDR peak is a good start; lower looks closer to the original SDR.</string>
     <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Also with anime shaders</string>
@@ -5209,4 +5211,15 @@
     <string name="gamepad_rebind_player">During playback</string>
     <string name="gamepad_rebind_changed">Changed</string>
     <string name="gamepad_rebind_search_description">Rebind controller buttons, for browsing and for playback</string>
+    <string name="usenet_unpacking_7z">Unpacking compressed 7z</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">Compressed 7z (films)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">Compressed 7z (series and anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Usenet releases found to be a compressed 7z once opened. They play, but skipping ahead waits for everything before that point to download.</string>
+    <string name="usenet_compressed_releases">Compressed 7z releases</string>
+    <string name="usenet_compressed_releases_description">A compressed 7z only shows itself when it opens. It plays, but skipping ahead waits for everything before that point to download. Skipped ones are tried no more.</string>
+    <string name="usenet_compressed_play_all">Always play</string>
+    <string name="usenet_compressed_skip_over">Skip over %1$s</string>
+    <string name="usenet_compressed_skip_all">Always skip</string>
+    <string name="usenet_compressed_skipped">Compressed 7z skipped - trying next source</string>
+    <string name="usenet_compressed_unplayable">This release is a compressed 7z, skipped by your Usenet settings</string>
 </resources>

@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Cam- und Screener-Releases ausblenden</string>
     <string name="usenet_exclude_full_disc">Komplette Blu-ray- und DVD-Discs ausblenden</string>
     <string name="usenet_hide_duplicates">Jedes Release nur einmal zeigen</string>
-    <string name="usenet_hide_duplicates_description">Ein Release, das mehrere Indexer gefunden haben, erscheint einmal, vom Indexer mit der höchsten Priorität.</string>
+    <string name="usenet_hide_duplicates_description">Ein mehrfach gefundenes Release (bei mehreren Indexern oder neu hochgeladen) erscheint einmal, vom Indexer mit der höchsten Priorität. Die anderen Uploads bleiben als Reserve und werden versucht, wenn es unvollständig ist.</string>
     <string name="usenet_indexer_fallback">Niedrigere Prioritäten nur bei Bedarf fragen</string>
     <string name="usenet_show_release_names">Release-Namen anzeigen</string>
     <string name="usenet_section_engine">Engine</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">Eigener User-Agent</string>
     <string name="usenet_user_agent_custom_description">Wird mit jeder Indexer-Suche und jedem NZB-Download gesendet.</string>
     <string name="usenet_user_agent_invalid">Nur druckbare Zeichen in einer Zeile, höchstens 256</string>
+    <string name="usenet_search_mode">Suchen nach</string>
+    <string name="usenet_search_mode_description">Automatisch sucht per ID und per Titel, wenn das nichts findet. Manche Indexer beantworten das eine viel besser als das andere. Beides braucht doppelt so viele API-Abfragen.</string>
+    <string name="usenet_search_mode_auto">Automatisch</string>
+    <string name="usenet_search_mode_id">Nur ID</string>
+    <string name="usenet_search_mode_title">Nur Titel</string>
+    <string name="usenet_search_mode_both">Beides</string>
+    <string name="usenet_hide_passworded">Releases mit Passwort ausblenden</string>
+    <string name="usenet_hide_passworded_description">Aus: Sie werden angezeigt. Eines, dessen NZB oder Name das Passwort enthält, spielt ab; ohne es wird es in Sekunden übersprungen und die nächste Quelle versucht.</string>
 </resources>

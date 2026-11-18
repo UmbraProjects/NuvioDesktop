@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Απόκρυψη κυκλοφοριών cam και screener</string>
     <string name="usenet_exclude_full_disc">Απόκρυψη ολόκληρων δίσκων Blu-ray και DVD</string>
     <string name="usenet_hide_duplicates">Κάθε κυκλοφορία μία φορά</string>
-    <string name="usenet_hide_duplicates_description">Μια κυκλοφορία που βρήκαν πολλοί indexers εμφανίζεται μία φορά, από την υψηλότερη προτεραιότητα.</string>
+    <string name="usenet_hide_duplicates_description">Μια κυκλοφορία που βρέθηκε πολλές φορές (σε πολλούς indexers ή ξανανεβασμένη) εμφανίζεται μία φορά, από την υψηλότερη προτεραιότητα. Τα άλλα ανεβάσματα μένουν εφεδρικά και δοκιμάζονται αν είναι ελλιπής.</string>
     <string name="usenet_indexer_fallback">Χαμηλότερες προτεραιότητες μόνο όταν χρειάζεται</string>
     <string name="usenet_show_release_names">Εμφάνιση ονομάτων κυκλοφοριών</string>
     <string name="usenet_section_engine">Μηχανή</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">Προσαρμοσμένο User-Agent</string>
     <string name="usenet_user_agent_custom_description">Στέλνεται με κάθε αναζήτηση σε indexer και κάθε λήψη NZB.</string>
     <string name="usenet_user_agent_invalid">Χρησιμοποιήστε εκτυπώσιμους χαρακτήρες σε μία γραμμή, έως 256</string>
+    <string name="usenet_search_mode">Αναζήτηση με</string>
+    <string name="usenet_search_mode_description">Το Αυτόματο ψάχνει με ID και με τίτλο όταν αυτό δεν βρίσκει τίποτα. Κάποιοι indexers απαντούν πολύ καλύτερα στο ένα. Το Και τα δύο χρησιμοποιεί διπλάσια αιτήματα API.</string>
+    <string name="usenet_search_mode_auto">Αυτόματο</string>
+    <string name="usenet_search_mode_id">Μόνο ID</string>
+    <string name="usenet_search_mode_title">Μόνο τίτλος</string>
+    <string name="usenet_search_mode_both">Και τα δύο</string>
+    <string name="usenet_hide_passworded">Απόκρυψη κυκλοφοριών με κωδικό</string>
+    <string name="usenet_hide_passworded_description">Ανενεργό: εμφανίζονται. Όποια έχει τον κωδικό στο NZB ή στο όνομα παίζει· χωρίς αυτόν παραλείπεται σε λίγα δευτερόλεπτα και δοκιμάζεται η επόμενη πηγή.</string>
 </resources>

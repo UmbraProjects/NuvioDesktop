@@ -32,7 +32,10 @@ object StreamScorer {
         // invent a number for something that cannot be played, and the sort would then move them
         // in among the real sources.
         if (!stream.isScorableStream) return StreamScore.NEUTRAL
-        return score(StreamTraitDetector.detect(stream), profile, context)
+        val traits = StreamTraitDetector.detect(stream)
+        // Learnt after the traits were detected (and cached), when the release is first opened.
+        val compressed = com.nuvio.app.features.usenet.UsenetCompressedReleases.isCompressed(stream)
+        return score(if (compressed) traits.copy(isCompressedArchive = true) else traits, profile, context)
     }
 
     fun score(
@@ -225,6 +228,11 @@ object StreamScorer {
                 }
 
         StreamScoreTrait.DEBRID_CACHED -> traits.isDebridCached
+
+        StreamScoreTrait.COMPRESSED_ARCHIVE_MOVIE ->
+            traits.isCompressedArchive && !context.isEpisode && !context.isAnimation
+        StreamScoreTrait.COMPRESSED_ARCHIVE_SERIES ->
+            traits.isCompressedArchive && (context.isEpisode || context.isAnimation)
 
         StreamScoreTrait.IMPLAUSIBLE_SIZE -> StreamSizeSanity.isImplausiblySmall(traits, context)
         StreamScoreTrait.SIZE_IN_BAND ->

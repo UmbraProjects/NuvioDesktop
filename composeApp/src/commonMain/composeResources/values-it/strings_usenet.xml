@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Nascondi release cam e screener</string>
     <string name="usenet_exclude_full_disc">Nascondi dischi Blu-ray e DVD completi</string>
     <string name="usenet_hide_duplicates">Mostra ogni release una volta</string>
-    <string name="usenet_hide_duplicates_description">Una release trovata da più indexer compare una volta, dalla priorità più alta.</string>
+    <string name="usenet_hide_duplicates_description">Una release trovata più volte (su più indexer o ricaricata) compare una volta, dalla priorità più alta. Gli altri caricamenti restano di riserva e vengono provati se è incompleta.</string>
     <string name="usenet_indexer_fallback">Interroga le priorità basse solo se serve</string>
     <string name="usenet_show_release_names">Mostra i nomi delle release</string>
     <string name="usenet_section_engine">Motore</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">User-Agent personalizzato</string>
     <string name="usenet_user_agent_custom_description">Inviato con ogni ricerca sull’indexer e ogni download NZB.</string>
     <string name="usenet_user_agent_invalid">Usa caratteri stampabili su una sola riga, al massimo 256</string>
+    <string name="usenet_search_mode">Cerca per</string>
+    <string name="usenet_search_mode_description">Automatico cerca per ID, e per titolo se non trova nulla. Alcuni indexer rispondono molto meglio a uno che all’altro. Entrambi usa il doppio delle richieste API.</string>
+    <string name="usenet_search_mode_auto">Automatico</string>
+    <string name="usenet_search_mode_id">Solo ID</string>
+    <string name="usenet_search_mode_title">Solo titolo</string>
+    <string name="usenet_search_mode_both">Entrambi</string>
+    <string name="usenet_hide_passworded">Nascondi le release con password</string>
+    <string name="usenet_hide_passworded_description">Disattivato: vengono elencate. Una il cui NZB o nome contiene la password si riproduce; senza, viene saltata in pochi secondi e si prova la fonte successiva.</string>
 </resources>

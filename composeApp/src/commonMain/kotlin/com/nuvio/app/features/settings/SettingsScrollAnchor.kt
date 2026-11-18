@@ -55,6 +55,7 @@ internal object SettingsScrollAnchor {
     const val TrailerSearch = "trailer_search"
     const val HdrMode = "hdr_mode"
     const val InverseToneMapping = "inverse_tone_mapping"
+    const val MatchRefreshRate = "match_refresh_rate"
     const val ColorProfile = "color_profile"
     const val DesktopRenderer = "desktop_renderer"
     const val MouseMove = "mouse_move"

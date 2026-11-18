@@ -34,7 +34,7 @@
     <string name="usenet_exclude_low_quality">Skrýt vydání cam a screener</string>
     <string name="usenet_exclude_full_disc">Skrýt celé disky Blu-ray a DVD</string>
     <string name="usenet_hide_duplicates">Zobrazit každé vydání jednou</string>
-    <string name="usenet_hide_duplicates_description">Vydání nalezené více indexery se zobrazí jednou, z nejvyšší priority.</string>
+    <string name="usenet_hide_duplicates_description">Vydání nalezené víckrát (na více indexerech nebo znovu nahrané) se zobrazí jednou, z nejvyšší priority. Ostatní nahrání zůstanou jako záloha a zkusí se, když je neúplné.</string>
     <string name="usenet_indexer_fallback">Ptát se nižších priorit jen v případě potřeby</string>
     <string name="usenet_show_release_names">Zobrazit názvy vydání</string>
     <string name="usenet_section_engine">Engine</string>
@@ -77,4 +77,12 @@
     <string name="usenet_user_agent_custom_title">Vlastní User-Agent</string>
     <string name="usenet_user_agent_custom_description">Posílá se s každým hledáním v indexeru a stažením NZB.</string>
     <string name="usenet_user_agent_invalid">Použijte tisknutelné znaky na jednom řádku, nejvýše 256</string>
+    <string name="usenet_search_mode">Hledat podle</string>
+    <string name="usenet_search_mode_description">Automaticky hledá podle ID a podle názvu, když to nic nenajde. Některé indexery odpovídají na jedno mnohem lépe. Obojí spotřebuje dvakrát víc API dotazů.</string>
+    <string name="usenet_search_mode_auto">Automaticky</string>
+    <string name="usenet_search_mode_id">Jen ID</string>
+    <string name="usenet_search_mode_title">Jen název</string>
+    <string name="usenet_search_mode_both">Obojí</string>
+    <string name="usenet_hide_passworded">Skrýt vydání s heslem</string>
+    <string name="usenet_hide_passworded_description">Vypnuto: zobrazí se. Vydání, jehož NZB nebo název nese heslo, se přehraje; bez něj se během pár sekund přeskočí a zkusí se další zdroj.</string>
 </resources>

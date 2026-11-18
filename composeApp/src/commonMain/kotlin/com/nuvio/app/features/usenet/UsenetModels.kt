@@ -56,7 +56,9 @@ data class UsenetIndexer(
      * Path of the Newznab API under [apiUrl], usually /api. New indexers start with /api; indexers
      * saved before this field existed have none, because their URL is already the complete endpoint.
      */
-    val apiPath: String = ""
+    val apiPath: String = "",
+    /** How this indexer is asked: by ID, by title, or both; see [UsenetSearchMode]. */
+    val searchMode: UsenetSearchMode = UsenetSearchMode.AUTO,
 ) {
     /**
      * The Newznab endpoint: [apiUrl] with [apiPath] appended, keeping the URL's query parameters.
@@ -92,6 +94,15 @@ data class UsenetIndexer(
 @Serializable
 enum class UsenetSort { QUALITY, LARGEST, SMALLEST, NEWEST, INDEXER }
 
+/**
+ * How an indexer is searched. Some answer IDs well and titles badly, others the other way round.
+ * [AUTO]: by ID where the indexer takes one, by title when it does not, or when the ID search found
+ * nothing. [ID]: by ID only (titles only where the indexer takes no ID). [TITLE]: by title only.
+ * [BOTH]: both at once, merged (twice the API hits).
+ */
+@Serializable
+enum class UsenetSearchMode { AUTO, ID, TITLE, BOTH }
+
 @Serializable
 data class UsenetSourceConfiguration(
     val enabled: Boolean = false,
@@ -113,6 +124,12 @@ data class UsenetSourceConfiguration(
     val excludeLowQuality: Boolean = true,
     /** On: whole Blu-ray and DVD releases are hidden. Off by default: a Blu-ray plays from its feature clip. */
     val excludeFullDisc: Boolean = false,
+    /**
+     * On: releases the indexer flags as passworded are left out. Off (the default): listed. One
+     * whose NZB (or name, "Name{{password}}") carries the password plays; one without fails at
+     * open within a second or two and the next source is tried.
+     */
+    val hidePassworded: Boolean = false,
     /** On: lower indexer priorities are only searched when higher ones find nothing. */
     val indexerFallback: Boolean = false,
     /** On: a release found by several indexers is shown once, from the highest priority. */

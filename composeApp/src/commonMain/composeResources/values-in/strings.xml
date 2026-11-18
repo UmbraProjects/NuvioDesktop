@@ -1968,6 +1968,8 @@
   <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Nonaktif secara bawaan: proses SDR ke HDR dapat membuat warna anime yang datar menjadi terlalu jenuh. Tidak pernah berlaku saat Anime4K, shader kustom, atau SVP berjalan, kecuali opsi di bawah diaktifkan.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping">SDR ke HDR (mpv)</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_desc">Memperluas video SDR ke HDR di GPU apa pun (inverse tone mapping mpv). Memerlukan HDR Windows aktif; RTX Video True HDR mengambil alih saat berjalan. Berfungsi dengan Anime4K, shader, dan SVP.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Sesuaikan refresh rate layar</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">Saat video diputar, mengubah monitor ke refresh rate yang habis dibagi frame rate video (24 fps ke 24 atau 120 Hz, 25 fps ke 50 Hz) untuk menghilangkan judder, lalu mengembalikannya saat pemutar ditutup. Layar bisa gelap sebentar setiap kali berganti.</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak">Kecerahan puncak SDR ke HDR</string>
   <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">Seberapa terang bagian paling terang. Sekitar puncak HDR layar Anda adalah awal yang baik; nilai lebih rendah terlihat lebih mirip SDR aslinya.</string>
   <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Juga dengan shader anime</string>
@@ -5051,4 +5053,15 @@
     <string name="gamepad_rebind_search_description">Atur ulang tombol kontroler, untuk menjelajah dan pemutaran</string>
     <string name="servers_show_in_local_library">Tampilkan di pustaka lokal</string>
     <string name="servers_show_in_local_library_description">Film dan serial dari server ini masuk ke katalog pustaka lokal Anda, di samping file di PC ini. Semuanya tetap diputar dari server. Judul tanpa ID IMDb atau TMDB tetap di baris server.</string>
+    <string name="usenet_unpacking_7z">Membongkar 7z terkompresi</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">7z terkompresi (film)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">7z terkompresi (serial dan anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Rilisan Usenet yang ternyata 7z terkompresi saat dibuka. Bisa diputar, tetapi melompat maju menunggu semua bagian sebelumnya selesai diunduh.</string>
+    <string name="usenet_compressed_releases">Rilisan 7z terkompresi</string>
+    <string name="usenet_compressed_releases_description">7z terkompresi baru diketahui saat dibuka. Bisa diputar, tetapi melompat maju menunggu semua bagian sebelumnya terunduh. Yang dilewati tidak dicoba lagi.</string>
+    <string name="usenet_compressed_play_all">Selalu putar</string>
+    <string name="usenet_compressed_skip_over">Lewati di atas %1$s</string>
+    <string name="usenet_compressed_skip_all">Selalu lewati</string>
+    <string name="usenet_compressed_skipped">7z terkompresi dilewati - mencoba sumber berikutnya</string>
+    <string name="usenet_compressed_unplayable">Rilisan ini 7z terkompresi, dilewati oleh pengaturan Usenet Anda</string>
 </resources>

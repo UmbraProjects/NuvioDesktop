@@ -882,6 +882,33 @@ object TmdbService {
             ?.also { titleCache[endpoint] = it }
     }
 
+    /** Other names by `type:id`, for the session; see [fetchOtherTitles]. */
+    private val otherTitlesCache = java.util.concurrent.ConcurrentHashMap<String, TmdbOtherTitles>()
+
+    /**
+     * A title's original name and its alternative titles, in TMDB's order: what releases may be
+     * posted under besides the display name (a show's romaji title, a film's English one).
+     */
+    suspend fun fetchOtherTitles(tmdbId: Int, mediaType: String): TmdbOtherTitles? {
+        val apiKey = currentApiKey() ?: return null
+        if (tmdbId <= 0) return null
+        val endpoint = if (normalizeMediaType(mediaType) == "tv") "tv/$tmdbId" else "movie/$tmdbId"
+        otherTitlesCache[endpoint]?.let { return it }
+        val body = fetch<TmdbOtherTitlesResponse>(
+            endpoint = endpoint,
+            apiKey = apiKey,
+            query = mapOf("append_to_response" to "alternative_titles"),
+        ) ?: return null
+        val alternatives = body.alternativeTitles?.let { it.results + it.titles }.orEmpty()
+            .mapNotNull { it.title?.trim()?.takeIf(String::isNotBlank) }
+            .distinct()
+        return TmdbOtherTitles(
+            title = (body.title ?: body.name)?.trim()?.takeIf { it.isNotBlank() },
+            originalTitle = (body.originalTitle ?: body.originalName)?.trim()?.takeIf { it.isNotBlank() },
+            alternativeTitles = alternatives,
+        ).also { otherTitlesCache[endpoint] = it }
+    }
+
     /** Poster URL for a TMDB id, used when a match was made by id (no poster path in hand). */
     suspend fun fetchPosterUrl(tmdbId: Int, mediaType: String, size: String = "w500"): String? =
         fetchArtwork(tmdbId, mediaType, posterSize = size)?.poster
@@ -1087,6 +1114,31 @@ data class TmdbCompanyResult(
     /** Where the company is registered. Two studios share a name often enough for this to matter. */
     @SerialName("origin_country") val originCountry: String? = null,
 )
+
+data class TmdbOtherTitles(
+    val title: String?,
+    val originalTitle: String?,
+    val alternativeTitles: List<String>,
+)
+
+@Serializable
+private data class TmdbOtherTitlesResponse(
+    val title: String? = null,
+    val name: String? = null,
+    @SerialName("original_title") val originalTitle: String? = null,
+    @SerialName("original_name") val originalName: String? = null,
+    @SerialName("alternative_titles") val alternativeTitles: TmdbAlternativeTitles? = null,
+)
+
+/** Shows list them as `results`, films as `titles`. */
+@Serializable
+private data class TmdbAlternativeTitles(
+    val results: List<TmdbAlternativeTitle> = emptyList(),
+    val titles: List<TmdbAlternativeTitle> = emptyList(),
+)
+
+@Serializable
+private data class TmdbAlternativeTitle(val title: String? = null)
 
 @Serializable
 private data class TmdbPosterResponse(

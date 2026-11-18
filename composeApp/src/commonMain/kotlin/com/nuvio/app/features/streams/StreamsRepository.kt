@@ -1192,6 +1192,11 @@ object StreamsRepository {
         )
     }
 
+    /** Rewrites the loaded source rows in place, e.g. a Usenet row's 📖. */
+    internal fun mapGroups(transform: (List<AddonStreamGroup>) -> List<AddonStreamGroup>) {
+        _uiState.update { state -> transform(state.groups).let { if (it === state.groups) state else state.copy(groups = it) } }
+    }
+
     fun clear() {
         preparationJob?.cancel()
         preparationJob = null

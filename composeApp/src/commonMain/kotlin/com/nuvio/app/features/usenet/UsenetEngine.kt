@@ -14,6 +14,7 @@ import java.security.SecureRandom
 import java.time.Duration
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +31,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
@@ -41,6 +43,63 @@ import kotlinx.serialization.json.putJsonObject
 
 /** The engine executable shipped beside Nuvio.exe (or on PATH in a development run); null when missing. */
 internal expect fun usenetEngineExecutable(): File?
+
+/** Whether a marker file of this name sits in the data folder (experiments without a setting). */
+internal expect fun usenetMarker(name: String): Boolean
+
+/**
+ * A seek cancels the articles still downloading for the old position. The engine's own default
+ * closes the connection of any with more than 64 KiB left (it measured faster seeks that way, in a
+ * simulation without TLS); on a real TLS provider every closed socket costs a reconnect. Measured
+ * on the TV, Nov 17 (same film, alternating seeks): finishing articles up to 1 MiB instead took the
+ * median seek from 2.85 s to 1.75 s, reopened 0 connections instead of 111 and had no provider
+ * errors. So Nuvio asks for 1 MiB; a `usenet-no-drain-seek` file in the data folder restores the
+ * engine's default for comparison.
+ */
+internal const val USENET_NO_DRAIN_MARKER = "usenet-no-drain-seek"
+private const val USENET_DRAIN_BYTES = 1L shl 20
+
+internal fun usenetSeekDrain(): Boolean = !usenetMarker(USENET_NO_DRAIN_MARKER)
+
+/**
+ * Experiment: a `usenet-pipeline-1` file queues one body per connection instead of the profile's
+ * four, so a seek's first article never waits behind another (simulated: 24 MiB after a seek in
+ * 1.57 s instead of 1.92 s). Only with [PIPELINE_ONE_MIN_CONNECTIONS] or more connections: with
+ * fewer, one body per connection cannot keep a 4K stream fed.
+ */
+internal const val USENET_PIPELINE_ONE_MARKER = "usenet-pipeline-1"
+internal const val PIPELINE_ONE_MIN_CONNECTIONS = 24
+
+/**
+ * Experiment: a `usenet-readahead-ramp` file makes each player request start with 4 articles in
+ * flight and double as it is read, instead of the whole window at once. Simulated: the first 3 MB
+ * after a seek in 1.12 s instead of 1.57 s, the first 6 MB in about 2.1 s instead of 1.57 s.
+ */
+internal const val USENET_RAMP_MARKER = "usenet-readahead-ramp"
+
+/**
+ * The engine locks a file's fixed article grid (as AIOStreams does) so a seek computes its article
+ * instead of guessing from the NZB's encoded sizes, each wrong guess a provider round trip. A
+ * `usenet-no-grid-lock` file turns that off, to compare the "wrong guesses" in UsenetSeek lines.
+ */
+internal const val USENET_NO_GRID_MARKER = "usenet-no-grid-lock"
+
+/**
+ * Experiment for lines faster than one stream fills (~30 MB/s measured on a ~400 Mbit line): a
+ * `usenet-wide-window` file lets a stream keep 64 articles / 48 MiB in flight instead of 32 / 32.
+ * Needs the Throughput profile, whose article memory (128 MiB) allows 48 MiB of read-ahead.
+ */
+internal const val USENET_WIDE_MARKER = "usenet-wide-window"
+private const val WIDE_READ_AHEAD_ARTICLES = 64
+private const val WIDE_READ_AHEAD_MIB = 48
+private const val USENET_RAMP_FIRST_ARTICLES = 4
+
+internal fun usenetPipelineOne(connections: Int): Boolean =
+    connections >= PIPELINE_ONE_MIN_CONNECTIONS && usenetMarker(USENET_PIPELINE_ONE_MARKER)
+
+/** The connections the first (preferred) server in [servers] allows, from its "/N" suffix. */
+internal fun usenetPreferredConnections(servers: List<String>): Int =
+    servers.firstOrNull()?.substringBefore('?')?.substringAfterLast('/')?.toIntOrNull() ?: 0
 
 /** Where the engine keeps parsed NZBs between sessions (Cache NZB files). */
 internal expect fun usenetNzbCacheDir(): File
@@ -68,23 +127,47 @@ object UsenetEngine {
     }
 
     private var process: Process? = null
-    private var processProfile: String? = null
-    private var endpoint: String? = null
-    private var token: String? = null
-    private var sessionId: String? = null
-    private var playbackUrl: String? = null
+    @Volatile private var processProfile: String? = null
+    @Volatile private var endpoint: String? = null
+    @Volatile private var token: String? = null
+    @Volatile private var sessionId: String? = null
+    @Volatile private var playbackUrl: String? = null
     private var idleStop: Job? = null
 
     val isInstalled: Boolean get() = usenetEngineExecutable() != null
 
     fun isSessionUrl(url: String?): Boolean = url != null && UsenetEngineUrls.isSession(url)
 
+    /** True when [stream]'s release already failed to open this run (see [UsenetFailedReleases]). */
+    fun hasFailed(stream: StreamItem): Boolean =
+        UsenetFailedReleases.hasFailed(stream) || UsenetCompressedReleases.skipped(stream)
+
     /**
      * Opens [stream]'s release in the engine and returns it ready to play: its url is the
      * engine's local link, and the files the release carries as subtitles come with it.
      */
     suspend fun resolve(stream: StreamItem, season: Int?, episode: Int?): StreamItem = withContext(Dispatchers.IO) {
-        mutex.withLock { open(stream, season, episode) }
+        mutex.withLock {
+            try {
+                open(stream, season, episode)
+            } catch (first: UsenetPreparationException) {
+                // Another upload of the same release ("Show each release once" hid it) can have the
+                // articles this one lacks. A release that is unplayable as such (a password, a
+                // compressed 7z over the limit) is the same in every upload: not retried.
+                if (!usenetIncompleteUpload(first)) throw first
+                for (alternate in stream.usenetAlternates) {
+                    val other = stream.copy(nzbUrl = alternate, usenetAlternates = emptyList())
+                    if (UsenetFailedReleases.hasFailed(other)) continue
+                    log.i { "Usenet: trying another upload of \"${stream.name}\"" }
+                    try {
+                        return@withLock open(other, season, episode)
+                    } catch (e: UsenetPreparationException) {
+                        if (!usenetIncompleteUpload(e)) throw e
+                    }
+                }
+                throw first
+            }
+        }
     }
 
     /** Releases the session behind [url], when it is still the one playing. */
@@ -92,6 +175,30 @@ object UsenetEngine {
         if (url == null || !UsenetEngineUrls.isSession(url)) return
         scope.launch { mutex.withLock { if (url == playbackUrl) releaseSessionLocked() } }
     }
+
+    /**
+     * The engine's counters for the session playing [url] (GET /sessions/<id>/diagnostics), or
+     * null when it is not the current session or the engine does not answer within a second.
+     * Never waits for the session lock, so a long open cannot hold it up; the answer holds only
+     * counts and timings, no URLs, names or credentials.
+     */
+    suspend fun diagnostics(url: String): JsonObject? = withContext(Dispatchers.IO) {
+        val id = sessionId ?: return@withContext null
+        val base = endpoint ?: return@withContext null
+        if (url != playbackUrl) return@withContext null
+        val request = HttpRequest.newBuilder(URI("$base/sessions/$id/diagnostics"))
+            .timeout(Duration.ofSeconds(1))
+            .header("Authorization", "Bearer $token")
+            .GET()
+            .build()
+        runCatching {
+            val response = http.sendAsync(request, HttpResponse.BodyHandlers.ofString()).await()
+            if (response.statusCode() in 200..299) json.parseToJsonElement(response.body()).jsonObject else null
+        }.getOrNull()
+    }
+
+    /** The performance profile the running engine was started with. */
+    val runningProfile: String? get() = processProfile
 
     /** New tuning applies to the next session; an idle engine restarts with the new memory target. */
     fun settingsChanged() {
@@ -108,12 +215,25 @@ object UsenetEngine {
         }
         start(configuration)
         val previousId = sessionId
+        val pipelineOne = usenetPipelineOne(
+            usenetPreferredConnections(servers).let { if (configuration.maxConnections > 0) minOf(it, configuration.maxConnections) else it },
+        )
+        UsenetSeekProbe.pipelineOne = pipelineOne
+        val ramp = usenetMarker(USENET_RAMP_MARKER)
+        UsenetSeekProbe.ramp = ramp
+        val noGrid = usenetMarker(USENET_NO_GRID_MARKER)
+        UsenetSeekProbe.noGrid = noGrid
+        val wide = usenetMarker(USENET_WIDE_MARKER)
+        UsenetSeekProbe.wide = wide
         try {
             val request = buildJsonObject {
                 put("keepSessionId", previousId ?: "")
                 put("cacheScope", "unscoped")
                 put("legacyCacheScope", "unscoped")
                 put("nzbUrl", nzbUrl)
+                // An addon's row can carry "{{password}}" in its name too.
+                (stream.usenetPassword ?: usenetNamePassword(stream.behaviorHints.filename ?: stream.title.orEmpty()).second)
+                    ?.let { put("password", it) }
                 putJsonArray("servers") { servers.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } }
                 stream.fileIdx?.let { put("fileIdx", it) }
                 stream.fileMustInclude?.let { put("fileMustInclude", it) }
@@ -124,7 +244,8 @@ object UsenetEngine {
                 }
                 putJsonObject("config") {
                     put("profile", configuration.profile)
-                    put("readAhead", configuration.readAhead)
+                    put("readAhead", if (wide) maxOf(configuration.readAhead, WIDE_READ_AHEAD_ARTICLES) else configuration.readAhead)
+                    put("readAheadMiB", if (wide) WIDE_READ_AHEAD_MIB else 0)
                     put("maxConnections", configuration.maxConnections)
                     put("fastMkvStartup", configuration.fastMkvStartup)
                     put("fastNzbFetch", configuration.fastNzbFetch)
@@ -133,6 +254,11 @@ object UsenetEngine {
                     put("holeFilling", configuration.holeFilling)
                     put("maxMissingArticles", configuration.maxMissingArticles)
                     put("maxConsecutiveMissing", configuration.maxConsecutiveMissing)
+                    put("maxCompressedBytes", configuration.maxCompressedBytes)
+                    put("abortDrainBytes", if (usenetSeekDrain()) USENET_DRAIN_BYTES else 0L)
+                    put("pipeline", if (pipelineOne) 1 else 0)
+                    put("readAheadRamp", if (ramp) USENET_RAMP_FIRST_ARTICLES else 0)
+                    put("noPartGrid", noGrid)
                 }
             }
             val result = json.parseToJsonElement(control("/sessions", request.toString())).jsonObject
@@ -154,6 +280,29 @@ object UsenetEngine {
             sessionId = newId
             playbackUrl = url
             previousId?.let(::retireSession)
+            UsenetFailedReleases.forget(stream)
+            if (result["compressed7z"]?.jsonPrimitive?.booleanOrNull == true) {
+                UsenetCompressedReleases.record(nzbUrl)
+            }
+            val nzbCache = (result["startup"] as? JsonObject)?.get("nzbCache") as? JsonObject
+            log.i {
+                "NZB " + when (nzbCache?.get("lookup")?.jsonPrimitive?.contentOrNull) {
+                    "hit" -> "from the cache (no indexer download)"
+                    "miss" -> "downloaded from the indexer (cache: " +
+                        (nzbCache["reason"]?.jsonPrimitive?.contentOrNull ?: "miss") +
+                        (nzbCache["write"]?.jsonPrimitive?.contentOrNull?.let { ", $it" } ?: "") + ")"
+                    else -> "downloaded from the indexer (Cache NZB files off)"
+                } + (if (usenetSeekDrain()) "" else "; seek drain off (usenet-no-drain-seek)") +
+                    (if (pipelineOne) "; pipeline 1 (usenet-pipeline-1)" else "") +
+                    (if (ramp) "; read-ahead ramp (usenet-readahead-ramp)" else "") +
+                    (if (noGrid) "; grid lock off (usenet-no-grid-lock)" else "") +
+                    if (wide) "; wide window (usenet-wide-window)" else ""
+            }
+            if (configuration.cacheNzb) {
+                UsenetKeptNzbs.remember(nzbUrl, result["nzbCacheKey"]?.jsonPrimitive?.contentOrNull)
+                // Rows listed before this play still read ⚡: switch them to 📖 where they are.
+                if (UsenetKeptNzbs.isKept(nzbUrl)) UsenetKeptRows.mark(nzbUrl)
+            }
             log.i { "Opened Usenet session for \"${stream.name}\"" }
             return stream.copy(
                 url = url,
@@ -169,8 +318,29 @@ object UsenetEngine {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            log.i { "Usenet open failed for \"${stream.name}\": ${(e as? UsenetPreparationException)?.failure ?: e.javaClass.simpleName}" }
-            if (previousId == null || sessionId != previousId || process?.isAlive != true) stopLocked()
+            val preparation = e as? UsenetPreparationException
+            // The engine's message names the archive problem ("encrypted 7z needs a password"); it
+            // never holds URLs or credentials (the engine only passes its own errors through).
+            log.i {
+                "Usenet open failed for \"${stream.name}\": ${preparation?.failure ?: e.javaClass.simpleName}" +
+                    (preparation?.message?.take(160)?.let { " ($it)" } ?: "")
+            }
+            if (preparation?.releaseUnplayable == true) {
+                UsenetFailedReleases.record(stream, preparation.failure ?: "unplayable")
+            }
+            if (preparation != null && usenetCompressedSkip(preparation)) {
+                // Kept across restarts: it is skipped again next time, without asking the engine.
+                UsenetCompressedReleases.record(nzbUrl)
+            }
+            when {
+                // The release is bad, not the engine: keep it running so the next source opens at
+                // once instead of waiting for a restart; it stops after the usual quiet period.
+                preparation != null && preparation.scope != UsenetPreparationException.Scope.ENGINE &&
+                    process?.isAlive == true && sessionId == previousId -> {
+                    if (previousId == null) scheduleIdleStop()
+                }
+                previousId == null || sessionId != previousId || process?.isAlive != true -> stopLocked()
+            }
             throw e
         }
     }
@@ -201,6 +371,10 @@ object UsenetEngine {
             if (answer == null) { stopLocked(); return }
         }
         // Keeps the started engine across episode changes, without provider sockets or buffers.
+        scheduleIdleStop()
+    }
+
+    private fun scheduleIdleStop() {
         idleStop?.cancel()
         idleStop = scope.launch {
             delay(IDLE_STOP_MS)
@@ -280,6 +454,7 @@ object UsenetEngine {
             scope,
             failure,
             providers = response.headers().firstValue("X-Usenet-Providers").orElse(null),
+            releaseUnplayable = isUnplayableRelease(response.statusCode(), failure),
         )
     }
 
@@ -300,6 +475,11 @@ object UsenetEngine {
     private fun drainQuietly(input: InputStream) {
         runCatching { input.use { stream -> val buffer = ByteArray(4096); while (stream.read(buffer) >= 0) Unit } }
     }
+
+    /** 422 is the engine's "this release cannot play"; a provider failure is not the release's. */
+    internal fun isUnplayableRelease(status: Int, failure: String?): Boolean =
+        status == 422 && failure != "provider" && failure != "configuration" &&
+            failure?.startsWith("provider-") != true
 
     private val SESSION_ID = Regex("[0-9a-f]{48}")
     private const val IDLE_STOP_MS = 30_000L

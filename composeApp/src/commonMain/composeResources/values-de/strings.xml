@@ -2510,6 +2510,8 @@
     <string name="settings_playback_nvidia_rtx_hdr_anime_desc">Standardmäßig aus: Die SDR-zu-HDR-Umwandlung kann flache Anime-Farben übersättigen. Wird nie angewendet, solange Anime4K, ein eigener Shader oder SVP läuft, es sei denn, die Option unten ist aktiv.</string>
     <string name="settings_playback_desktop_inverse_tone_mapping">SDR zu HDR (mpv)</string>
     <string name="settings_playback_desktop_inverse_tone_mapping_desc">Erweitert SDR-Video auf jeder GPU zu HDR (inverses Tone-Mapping von mpv). Erfordert aktiviertes Windows-HDR; RTX Video True HDR übernimmt, wenn es läuft. Funktioniert mit Anime4K, Shadern und SVP.</string>
+    <string name="settings_playback_desktop_match_refresh_rate">Bildwiederholrate anpassen</string>
+    <string name="settings_playback_desktop_match_refresh_rate_desc">Schaltet den Monitor während der Wiedergabe auf eine Bildwiederholrate, die zur Bildrate des Videos passt (24 fps auf 24 oder 120 Hz, 25 fps auf 50 Hz), um Ruckeln zu vermeiden, und stellt sie beim Schließen des Players wieder zurück. Beim Umschalten kann der Bildschirm kurz schwarz werden.</string>
     <string name="settings_playback_desktop_inverse_tone_mapping_peak">Spitzenhelligkeit für SDR zu HDR</string>
     <string name="settings_playback_desktop_inverse_tone_mapping_peak_desc">Wie hell die hellsten Lichter werden. Etwa die HDR-Spitzenhelligkeit deines Displays ist ein guter Anfang; niedriger wirkt näher am ursprünglichen SDR.</string>
     <string name="settings_playback_nvidia_rtx_hdr_anime_shaders">Auch mit Anime-Shadern</string>
@@ -5132,4 +5134,15 @@
     <string name="gamepad_rebind_search_description">Controller-Tasten neu belegen, fürs Stöbern und für die Wiedergabe</string>
     <string name="servers_show_in_local_library">In lokaler Bibliothek zeigen</string>
     <string name="servers_show_in_local_library_description">Filme und Serien dieses Servers erscheinen in den Katalogen deiner lokalen Bibliothek, neben den Dateien auf diesem PC. Sie werden weiter vom Server abgespielt. Titel ohne IMDb- oder TMDB-ID bleiben in den Reihen des Servers.</string>
+    <string name="usenet_unpacking_7z">Komprimiertes 7z wird entpackt</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_movie">Komprimiertes 7z (Filme)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_series">Komprimiertes 7z (Serien und Anime)</string>
+    <string name="settings_stream_scoring_trait_compressed_archive_caption">Usenet-Releases, die sich beim Öffnen als komprimiertes 7z erwiesen haben. Sie laufen, aber Vorspulen wartet, bis alles davor heruntergeladen ist.</string>
+    <string name="usenet_compressed_releases">Komprimierte 7z-Releases</string>
+    <string name="usenet_compressed_releases_description">Ein komprimiertes 7z zeigt sich erst beim Öffnen. Es läuft, aber Vorspulen wartet, bis alles davor heruntergeladen ist. Übersprungene werden nicht erneut versucht.</string>
+    <string name="usenet_compressed_play_all">Immer abspielen</string>
+    <string name="usenet_compressed_skip_over">Über %1$s überspringen</string>
+    <string name="usenet_compressed_skip_all">Immer überspringen</string>
+    <string name="usenet_compressed_skipped">Komprimiertes 7z übersprungen - nächste Quelle wird versucht</string>
+    <string name="usenet_compressed_unplayable">Dieses Release ist ein komprimiertes 7z und wird laut Usenet-Einstellungen übersprungen</string>
 </resources>
