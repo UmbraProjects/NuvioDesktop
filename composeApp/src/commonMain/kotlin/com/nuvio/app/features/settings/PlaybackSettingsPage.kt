@@ -3051,6 +3051,18 @@ private fun PlaybackSettingsSection(
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BingeMode),
                         onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayNextEpisodeEnabled,
                     )
+                    // Binge Mode already plays the next episode without a countdown.
+                    if (!autoPlayPlayerSettings.streamAutoPlayNextEpisodeEnabled) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_skip_next_episode_countdown),
+                            description = stringResource(Res.string.settings_playback_skip_next_episode_countdown_description),
+                            checked = autoPlayPlayerSettings.nextEpisodeSkipCountdown,
+                            isTablet = isTablet,
+                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("skip-next-episode-countdown")),
+                            onCheckedChange = PlayerSettingsRepository::setNextEpisodeSkipCountdown,
+                        )
+                    }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_preload_next_episode),

@@ -1949,6 +1949,8 @@
   <string name="settings_playback_prefetch_resolve_links">Προετοιμασία και συνδέσμων αναπαραγωγής</string>
   <string name="settings_playback_preload_next_episode">Προφόρτωση πηγών επόμενου επεισοδίου</string>
   <string name="settings_playback_preload_next_episode_description">Ξεκινά την αναζήτηση πηγών του επόμενου επεισοδίου λίγο πριν εμφανιστεί η κάρτα επόμενου επεισοδίου, ώστε η αυτόματη αναπαραγωγή να ξεκινά αμέσως</string>
+  <string name="settings_playback_skip_next_episode_countdown">Παράλειψη αντίστροφης μέτρησης επόμενου επεισοδίου</string>
+  <string name="settings_playback_skip_next_episode_countdown_description">Όταν τελειώνει ένα επεισόδιο, αναπαράγεται το επόμενο μόλις βρεθεί η πηγή του, χωρίς την αντίστροφη μέτρηση 3 δευτερολέπτων. Η λειτουργία Binge το κάνει πάντα.</string>
   <string name="settings_playback_cw_stream_cache">Διατήρηση πηγών Συνέχειας παρακολούθησης</string>
   <string name="settings_playback_cw_stream_cache_description">Θυμάται για έως και μία εβδομάδα τις πηγές που βρέθηκαν για τίτλους στη Συνέχεια παρακολούθησης, ώστε η λίστα τους να εμφανίζεται αμέσως όσο ανανεώνεται. Διατηρούνται μόνο για κυκλοφορίες τουλάχιστον 3 ημερών με 10 ή περισσότερα αποτελέσματα</string>
   <string name="settings_playback_prefetch_resolve_links_description">Επεκτείνει την Προετοιμασία συνδέσμων στις αναζητήσεις παρασκηνίου: επιλύει επίσης τον σύνδεσμο debrid του κορυφαίου αποτελέσματος, ώστε η αναπαραγωγή να ξεκινά χωρίς αναμονή του παρόχου σας</string>

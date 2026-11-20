@@ -1949,6 +1949,8 @@
   <string name="settings_playback_prefetch_resolve_links">Preparar também as ligações de reprodução</string>
   <string name="settings_playback_preload_next_episode">Pré-carregar fontes do episódio seguinte</string>
   <string name="settings_playback_preload_next_episode_description">Começa a procurar as fontes do episódio seguinte pouco antes de o cartão do episódio seguinte aparecer, para que a reprodução automática possa arrancar de imediato</string>
+  <string name="settings_playback_skip_next_episode_countdown">Pular a contagem do próximo episódio</string>
+  <string name="settings_playback_skip_next_episode_countdown_description">Quando um episódio termina, reproduz o próximo assim que a fonte for encontrada, sem a contagem de 3 segundos. O modo Binge sempre faz isso.</string>
   <string name="settings_playback_cw_stream_cache">Manter fontes de Continuar a Ver</string>
   <string name="settings_playback_cw_stream_cache_description">Memoriza durante até uma semana as fontes encontradas para os títulos em Continuar a Ver, para que a lista apareça de imediato enquanto é atualizada. Só guardado para lançamentos com pelo menos 3 dias e 10 ou mais resultados</string>
   <string name="settings_playback_prefetch_resolve_links_description">Alarga a Preparação de ligações às pesquisas em segundo plano: resolve também a ligação debrid do melhor resultado, para que a reprodução comece sem esperar pelo teu fornecedor</string>

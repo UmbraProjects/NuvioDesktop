@@ -2496,6 +2496,8 @@
     <string name="settings_playback_prefetch_resolve_links">Auch Wiedergabelinks vorbereiten</string>
     <string name="settings_playback_preload_next_episode">Quellen der nächsten Folge vorladen</string>
     <string name="settings_playback_preload_next_episode_description">Startet die Suche nach Quellen der nächsten Folge kurz bevor die Karte der nächsten Folge erscheint, damit die Autowiedergabe sofort starten kann</string>
+    <string name="settings_playback_skip_next_episode_countdown">Countdown zur nächsten Folge überspringen</string>
+    <string name="settings_playback_skip_next_episode_countdown_description">Wenn eine Folge endet, die nächste abspielen, sobald ihre Quelle gefunden ist, ohne den 3-Sekunden-Countdown. Der Binge-Modus macht das immer.</string>
     <string name="settings_playback_cw_stream_cache">Quellen für „Weiterschauen“ behalten</string>
     <string name="settings_playback_cw_stream_cache_description">Merkt sich die gefundenen Quellen für Titel in „Weiterschauen“ bis zu einer Woche, sodass ihre Liste sofort erscheint, während sie aktualisiert wird. Nur bei Releases, die mindestens 3 Tage alt sind und 10 oder mehr Ergebnisse haben</string>
     <string name="settings_playback_prefetch_resolve_links_description">Erweitert die Link-Vorbereitung auf Hintergrundsuchen: löst auch den Debrid-Link des Top-Ergebnisses auf, damit die Wiedergabe startet, ohne auf deinen Anbieter zu warten</string>

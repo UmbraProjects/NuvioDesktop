@@ -1949,6 +1949,8 @@
   <string name="settings_playback_prefetch_resolve_links">Przygotuj także linki do odtwarzania</string>
   <string name="settings_playback_preload_next_episode">Wstępnie wczytaj źródła następnego odcinka</string>
   <string name="settings_playback_preload_next_episode_description">Rozpoczyna wyszukiwanie źródeł następnego odcinka na krótko przed pojawieniem się karty następnego odcinka, aby autoodtwarzanie mogło ruszyć od razu</string>
+  <string name="settings_playback_skip_next_episode_countdown">Pomiń odliczanie do następnego odcinka</string>
+  <string name="settings_playback_skip_next_episode_countdown_description">Po zakończeniu odcinka odtwórz następny, gdy tylko znajdzie się jego źródło, bez 3-sekundowego odliczania. Tryb Binge zawsze tak robi.</string>
   <string name="settings_playback_cw_stream_cache">Zachowaj źródła z Kontynuuj oglądanie</string>
   <string name="settings_playback_cw_stream_cache_description">Zapamiętuje źródła znalezione dla tytułów z Kontynuuj oglądanie przez maksymalnie tydzień, aby ich lista pojawiała się od razu podczas odświeżania. Zachowywane tylko dla premier starszych niż 3 dni i z co najmniej 10 wynikami</string>
   <string name="settings_playback_prefetch_resolve_links_description">Rozszerza przygotowanie linków na wyszukiwania w tle: rozwiązuje też link debrid dla najlepszego wyniku, dzięki czemu odtwarzanie zaczyna się bez czekania na dostawcę</string>

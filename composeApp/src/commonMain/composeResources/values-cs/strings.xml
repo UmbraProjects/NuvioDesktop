@@ -1949,6 +1949,8 @@
   <string name="settings_playback_prefetch_resolve_links">Připravit i odkazy pro přehrávání</string>
   <string name="settings_playback_preload_next_episode">Předem načíst zdroje další epizody</string>
   <string name="settings_playback_preload_next_episode_description">Krátce před zobrazením karty další epizody začne hledat její zdroje, aby mohlo automatické přehrávání začít okamžitě</string>
+  <string name="settings_playback_skip_next_episode_countdown">Přeskočit odpočet další epizody</string>
+  <string name="settings_playback_skip_next_episode_countdown_description">Po skončení epizody přehrát další, jakmile se najde její zdroj, bez 3sekundového odpočtu. Režim Binge to dělá vždy.</string>
   <string name="settings_playback_cw_stream_cache">Uchovávat zdroje z Pokračovat ve sledování</string>
   <string name="settings_playback_cw_stream_cache_description">Zapamatuje si zdroje nalezené pro tituly v Pokračovat ve sledování až na týden, takže se jejich seznam zobrazí okamžitě a mezitím se obnoví. Uchovává se jen u vydání starých alespoň 3 dny s 10 a více výsledky</string>
   <string name="settings_playback_prefetch_resolve_links_description">Rozšiřuje přípravu odkazů na vyhledávání na pozadí: zároveň zpracuje debrid odkaz nejlepšího výsledku, takže přehrávání začne bez čekání na vašeho poskytovatele</string>

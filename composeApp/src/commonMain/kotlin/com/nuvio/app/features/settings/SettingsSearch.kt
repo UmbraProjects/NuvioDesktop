@@ -2185,6 +2185,13 @@ private fun settingsSearchEntries(
         icon = Icons.Rounded.PlayArrow,
         rows = listOf(
             PlaybackSearchRow("auto-play-next", resolve(Res.string.settings_playback_auto_play_next_episode), resolve(Res.string.settings_playback_auto_play_next_episode_description), anchor = SettingsScrollAnchor.BingeMode),
+            // Shown only while Binge Mode is off; the fallback lands on Binge Mode, which hides it.
+            PlaybackSearchRow(
+                "skip-next-episode-countdown",
+                resolve(Res.string.settings_playback_skip_next_episode_countdown),
+                resolve(Res.string.settings_playback_skip_next_episode_countdown_description),
+                fallbackAnchor = SettingsScrollAnchor.BingeMode,
+            ),
             // Shown only while Binge Mode is on; the fallback lands on the switch that reveals it.
             PlaybackSearchRow(
                 "preload-next-episode",

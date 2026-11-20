@@ -1949,6 +1949,8 @@
   <string name="settings_playback_prefetch_resolve_links">Klargjør også avspillingslenker</string>
   <string name="settings_playback_preload_next_episode">Forhåndslast kilder for neste episode</string>
   <string name="settings_playback_preload_next_episode_description">Begynner å lete etter kildene til neste episode kort før kortet for neste episode vises, slik at autoavspilling kan starte umiddelbart</string>
+  <string name="settings_playback_skip_next_episode_countdown">Hopp over nedtellingen til neste episode</string>
+  <string name="settings_playback_skip_next_episode_countdown_description">Når en episode slutter, spilles den neste så snart kilden er funnet, uten nedtellingen på 3 sekunder. Binge-modus gjør alltid dette.</string>
   <string name="settings_playback_cw_stream_cache">Behold kilder for Fortsett å se</string>
   <string name="settings_playback_cw_stream_cache_description">Husker kildene som ble funnet for titler i Fortsett å se i opptil en uke, slik at listen vises med en gang mens den oppdateres. Beholdes bare for utgivelser som er minst 3 dager gamle med 10 eller flere resultater</string>
   <string name="settings_playback_prefetch_resolve_links_description">Utvider lenkeklargjøring til bakgrunnssøk: løser også debrid-lenken for toppresultatet, slik at avspilling starter uten å vente på leverandøren din</string>

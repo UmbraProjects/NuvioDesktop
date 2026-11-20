@@ -1949,6 +1949,8 @@
   <string name="settings_playback_prefetch_resolve_links">Siapkan Juga Tautan Pemutaran</string>
   <string name="settings_playback_preload_next_episode">Muat Awal Sumber Episode Berikutnya</string>
   <string name="settings_playback_preload_next_episode_description">Mulai mencari sumber episode berikutnya sesaat sebelum kartu episode berikutnya muncul, sehingga putar otomatis bisa langsung dimulai</string>
+  <string name="settings_playback_skip_next_episode_countdown">Lewati hitung mundur episode berikutnya</string>
+  <string name="settings_playback_skip_next_episode_countdown_description">Saat episode selesai, putar episode berikutnya begitu sumbernya ditemukan, tanpa hitung mundur 3 detik. Mode Binge selalu melakukannya.</string>
   <string name="settings_playback_cw_stream_cache">Simpan Sumber Lanjutkan Menonton</string>
   <string name="settings_playback_cw_stream_cache_description">Mengingat sumber yang ditemukan untuk judul di Lanjutkan Menonton hingga seminggu, sehingga daftarnya langsung tampil saat disegarkan. Hanya disimpan untuk rilis berusia minimal 3 hari dengan 10 hasil atau lebih</string>
   <string name="settings_playback_prefetch_resolve_links_description">Memperluas Persiapan Tautan ke pencarian latar belakang: juga menyelesaikan tautan debrid untuk hasil teratas, sehingga pemutaran dimulai tanpa menunggu penyedia Anda</string>

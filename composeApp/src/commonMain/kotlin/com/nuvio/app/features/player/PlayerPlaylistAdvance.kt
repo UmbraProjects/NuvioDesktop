@@ -136,7 +136,9 @@ internal fun PlayerScreenRuntime.requestPlaylistAdvance(trigger: String) {
     preparePlaylistAdvance(
         trigger = trigger,
         handOffWhenReady = true,
-        showCountdown = trigger == "eof" && !playerSettingsUiState.streamAutoPlayNextEpisodeEnabled,
+        showCountdown = trigger == "eof" &&
+            !playerSettingsUiState.streamAutoPlayNextEpisodeEnabled &&
+            !playerSettingsUiState.nextEpisodeSkipCountdown,
     )
 }
 

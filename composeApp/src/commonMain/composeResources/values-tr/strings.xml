@@ -1949,6 +1949,8 @@
   <string name="settings_playback_prefetch_resolve_links">Oynatma Bağlantılarını da Hazırla</string>
   <string name="settings_playback_preload_next_episode">Sonraki Bölüm Kaynaklarını Önceden Yükle</string>
   <string name="settings_playback_preload_next_episode_description">Sonraki bölüm kartı görünmeden kısa süre önce sonraki bölümün kaynaklarını aramaya başlar, böylece otomatik oynatma hemen başlayabilir</string>
+  <string name="settings_playback_skip_next_episode_countdown">Sonraki bölüm geri sayımını atla</string>
+  <string name="settings_playback_skip_next_episode_countdown_description">Bir bölüm bittiğinde, kaynağı bulunur bulunmaz sonrakini oynat; 3 saniyelik geri sayım olmadan. Binge Modu bunu her zaman yapar.</string>
   <string name="settings_playback_cw_stream_cache">İzlemeye Devam Et Kaynaklarını Sakla</string>
   <string name="settings_playback_cw_stream_cache_description">İzlemeye Devam Et'teki öğeler için bulunan kaynakları bir haftaya kadar hatırlar, böylece liste yenilenirken hemen görünür. Yalnızca en az 3 gün önce yayımlanmış ve 10 veya daha fazla sonucu olan sürümler için saklanır</string>
   <string name="settings_playback_prefetch_resolve_links_description">Bağlantı Hazırlama'yı arka plan aramalarına da yaygınlaştırır: en üstteki sonucun debrid bağlantısını da çözer, böylece oynatma sağlayıcını beklemeden başlar</string>

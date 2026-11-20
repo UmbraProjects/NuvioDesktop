@@ -2876,6 +2876,8 @@
     <string name="settings_playback_prefetch_resolve_links">Préparer aussi les liens de lecture</string>
     <string name="settings_playback_preload_next_episode">Précharger les sources de l’épisode suivant</string>
     <string name="settings_playback_preload_next_episode_description">Lance la recherche des sources de l’épisode suivant peu avant l’apparition de sa carte, pour que la lecture automatique démarre aussitôt</string>
+    <string name="settings_playback_skip_next_episode_countdown">Passer le compte à rebours de l’épisode suivant</string>
+    <string name="settings_playback_skip_next_episode_countdown_description">À la fin d’un épisode, lancer le suivant dès que sa source est trouvée, sans le compte à rebours de 3 secondes. Le mode Binge le fait toujours.</string>
     <string name="settings_playback_cw_stream_cache">Conserver les sources de Continuer à regarder</string>
     <string name="settings_playback_cw_stream_cache_description">Mémorise jusqu’à une semaine les sources trouvées pour les titres de Continuer à regarder, pour afficher leur liste aussitôt pendant l’actualisation. Conservées uniquement pour les sorties de 3 jours ou plus avec 10 résultats ou plus</string>
     <string name="settings_playback_prefetch_resolve_links_description">Étend la préparation des liens aux recherches en arrière-plan : résout aussi le lien debrid du meilleur résultat, pour que la lecture démarre sans attendre ton fournisseur</string>

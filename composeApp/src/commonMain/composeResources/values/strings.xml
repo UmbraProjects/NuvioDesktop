@@ -2028,6 +2028,8 @@
     <string name="settings_playback_prefetch_resolve_links">Prepare Playback Links Too</string>
     <string name="settings_playback_preload_next_episode">Preload Next Episode Sources</string>
     <string name="settings_playback_preload_next_episode_description">Starts searching for the next episode's sources shortly before the next-episode card appears, so autoplay can start straight away</string>
+    <string name="settings_playback_skip_next_episode_countdown">Skip next-episode countdown</string>
+    <string name="settings_playback_skip_next_episode_countdown_description">When an episode ends, play the next one as soon as its source is found, without the 3-second countdown. Binge Mode always does this.</string>
     <string name="settings_playback_cw_stream_cache">Keep Continue Watching Sources</string>
     <string name="settings_playback_cw_stream_cache_description">Remembers the sources found for titles in Continue Watching for up to a week, so their list shows at once while it refreshes. Only kept for releases at least 3 days old with 10 or more results</string>
     <string name="settings_playback_prefetch_resolve_links_description">Extends Link Preparation to background searches: also resolves the debrid link for the top result, so playback starts without waiting on your provider</string>
