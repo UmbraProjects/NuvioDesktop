@@ -1769,6 +1769,8 @@
     <string name="settings_playback_anime_skip_description">Also search AnimeSkip for skip timestamps (requires client ID).</string>
     <string name="settings_playback_auto_play_next_episode">Binge Mode</string>
     <string name="settings_playback_auto_play_next_episode_description">Auto accept next episode and skip countdown.</string>
+    <string name="settings_playback_hold_binge_until_episode_end">Wait for episode end before switching</string>
+    <string name="settings_playback_hold_binge_until_episode_end_description">Keep playing through credits and post-credit scenes. The next episode only starts when the current one reaches its end, or when you click the next-episode card.</string>
     <string name="settings_playback_decoder_device_only">Device decoders only</string>
     <string name="settings_playback_decoder_prefer_app">Prefer app decoders (FFmpeg)</string>
     <string name="settings_playback_decoder_prefer_device">Prefer device decoders</string>
