@@ -3054,6 +3054,14 @@ private fun PlaybackSettingsSection(
                     if (autoPlayPlayerSettings.streamAutoPlayNextEpisodeEnabled) {
                         SettingsGroupDivider(isTablet = isTablet)
                         SettingsSwitchRow(
+                            title = stringResource(Res.string.settings_playback_hold_binge_until_episode_end),
+                            description = stringResource(Res.string.settings_playback_hold_binge_until_episode_end_description),
+                            checked = autoPlayPlayerSettings.streamAutoPlayHoldUntilEpisodeEnd,
+                            isTablet = isTablet,
+                            onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayHoldUntilEpisodeEnd,
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        SettingsSwitchRow(
                             title = stringResource(Res.string.settings_playback_preload_next_episode),
                             description = stringResource(Res.string.settings_playback_preload_next_episode_description),
                             checked = autoPlayPlayerSettings.preloadNextEpisodeSources,

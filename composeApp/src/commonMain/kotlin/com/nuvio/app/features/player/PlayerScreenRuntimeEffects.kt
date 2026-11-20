@@ -2043,7 +2043,10 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             // time the credits are. That is incompatible with "Apply To Next Episode": there is no
             // search to run ahead, and firing here would pop the source list over the last minute
             // of the episode. Let the end-of-file path open it instead.
-            val willTrigger = playerSettingsUiState.streamAutoPlayNextEpisodeEnabled &&
+            // "Wait for episode end" also leaves the advance to the end-of-file path.
+            val holdBingeUntilEpisodeEnd = playerSettingsUiState.streamAutoPlayHoldUntilEpisodeEnd
+            val willTrigger = !holdBingeUntilEpisodeEnd &&
+                playerSettingsUiState.streamAutoPlayNextEpisodeEnabled &&
                 !shouldOpenManualNextEpisodeSelection(
                     mode = playerSettingsUiState.streamAutoPlayMode,
                     manualNextEpisodeEnabled = playerSettingsUiState.streamAutoPlayManualNextEpisode,
@@ -2062,6 +2065,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                         "samples=$nextEpisodeThresholdStableSamples " +
                         "autoPlayEnabled=${playerSettingsUiState.streamAutoPlayNextEpisodeEnabled} " +
                         "hasAired=${nextEpisodeInfo?.hasAired} advanceInProgress=$nextEpisodeAdvanceInProgress " +
+                        "holdUntilEnd=$holdBingeUntilEpisodeEnd " +
                         "-> triggering=$willTrigger"
                 }
             }

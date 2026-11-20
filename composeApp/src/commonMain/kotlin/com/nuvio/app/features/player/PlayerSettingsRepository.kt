@@ -178,6 +178,9 @@ data class PlayerSettingsUiState(
     val skipDbApiKey: String = "",
     val introSubmitEnabled: Boolean = false,
     val streamAutoPlayNextEpisodeEnabled: Boolean = false,
+    // Binge Mode advances at the end of the file instead of at the next-episode threshold, which
+    // outro timestamps put at the start of the credits.
+    val streamAutoPlayHoldUntilEpisodeEnd: Boolean = false,
     // Whether MANUAL stream selection also governs next-episode transitions. The in-player
     // next-episode path has always substituted FIRST_STREAM for MANUAL so a transition can never
     // stall on a picker; this opts out of that substitution. Off by default: it changes what a
@@ -380,6 +383,7 @@ object PlayerSettingsRepository {
     private var skipDbApiKey = ""
     private var introSubmitEnabled = false
     private var streamAutoPlayNextEpisodeEnabled = false
+    private var streamAutoPlayHoldUntilEpisodeEnd = false
     private var streamAutoPlayManualNextEpisode = false
     private var streamAutoPlayPreferBingeGroup = true
     private var streamAutoPlayReuseBingeGroup = false
@@ -541,6 +545,7 @@ object PlayerSettingsRepository {
         skipDbApiKey = ""
         introSubmitEnabled = false
         streamAutoPlayNextEpisodeEnabled = false
+        streamAutoPlayHoldUntilEpisodeEnd = false
         streamAutoPlayManualNextEpisode = false
         streamAutoPlayPreferBingeGroup = true
         streamAutoPlayReuseBingeGroup = false
@@ -811,6 +816,7 @@ object PlayerSettingsRepository {
         skipDbApiKey = PlayerSettingsStorage.loadSkipDbApiKey() ?: ""
         introSubmitEnabled = PlayerSettingsStorage.loadIntroSubmitEnabled() ?: false
         streamAutoPlayNextEpisodeEnabled = PlayerSettingsStorage.loadStreamAutoPlayNextEpisodeEnabled() ?: false
+        streamAutoPlayHoldUntilEpisodeEnd = PlayerSettingsStorage.loadStreamAutoPlayHoldUntilEpisodeEnd() ?: false
         streamAutoPlayManualNextEpisode = PlayerSettingsStorage.loadStreamAutoPlayManualNextEpisode() ?: false
         streamAutoPlayPreferBingeGroup = PlayerSettingsStorage.loadStreamAutoPlayPreferBingeGroup() ?: true
         streamAutoPlayReuseBingeGroup = PlayerSettingsStorage.loadStreamAutoPlayReuseBingeGroup() ?: false
@@ -1634,6 +1640,14 @@ object PlayerSettingsRepository {
         PlayerSettingsStorage.saveStreamAutoPlayNextEpisodeEnabled(enabled)
     }
 
+    fun setStreamAutoPlayHoldUntilEpisodeEnd(enabled: Boolean) {
+        ensureLoaded()
+        if (streamAutoPlayHoldUntilEpisodeEnd == enabled) return
+        streamAutoPlayHoldUntilEpisodeEnd = enabled
+        publish()
+        PlayerSettingsStorage.saveStreamAutoPlayHoldUntilEpisodeEnd(enabled)
+    }
+
     fun setStreamFailoverEnabled(enabled: Boolean) {
         ensureLoaded()
         if (streamFailoverEnabled == enabled) return
@@ -1958,6 +1972,7 @@ object PlayerSettingsRepository {
             skipDbApiKey = skipDbApiKey,
             introSubmitEnabled = introSubmitEnabled,
             streamAutoPlayNextEpisodeEnabled = streamAutoPlayNextEpisodeEnabled,
+            streamAutoPlayHoldUntilEpisodeEnd = streamAutoPlayHoldUntilEpisodeEnd,
             streamAutoPlayManualNextEpisode = streamAutoPlayManualNextEpisode,
             streamAutoPlayPreferBingeGroup = streamAutoPlayPreferBingeGroup,
             streamAutoPlayReuseBingeGroup = streamAutoPlayReuseBingeGroup,
