@@ -1,5 +1,21 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
+import com.nuvio.app.core.ui.arrowFocusDirection
+import com.nuvio.app.core.ui.requestFocusLogged
+import kotlinx.coroutines.delay
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.style.TextAlign
@@ -319,6 +335,11 @@ internal fun SettingsModernRangeSlider(
     val thumbRadiusPx = with(LocalDensity.current) { SettingsSliderThumbRadius.toPx() }
     val hoverSource = remember { MutableInteractionSource() }
     val hovered by hoverSource.collectIsHoveredAsState()
+    val focusSource = remember { MutableInteractionSource() }
+    val focused by focusSource.collectIsFocusedAsState()
+    // Keys: Left/Right move one thumb, Enter swaps to the other (the upper one first).
+    var keyMovesHigh by remember { mutableStateOf(true) }
+    val keyStep = settingsSliderKeyStep(valueRange, steps)
 
     fun valueFromX(x: Float): Float = settingsSliderValueForX(
         x = x,
@@ -351,6 +372,29 @@ internal fun SettingsModernRangeSlider(
             // Same caveat as SettingsModernSlider: keying this to the measured size would cancel an
             // in-flight mouse gesture on recomposition and freeze the thumb until release.
             .hoverable(hoverSource, enabled)
+            .onKeyEvent { event ->
+                if (!enabled) return@onKeyEvent false
+                if (isEnterDown(event)) {
+                    keyMovesHigh = !keyMovesHigh
+                    return@onKeyEvent true
+                }
+                val direction = horizontalNudge(event) ?: return@onKeyEvent false
+                // As a drag does: the moved thumb pushes the other along rather than crossing it.
+                val delta = direction * keyStep
+                val (low, high) = if (keyMovesHigh) {
+                    val high = (currentHigh + delta).coerceIn(valueRange.start, valueRange.endInclusive)
+                    minOf(currentLow, high) to high
+                } else {
+                    val low = (currentLow + delta).coerceIn(valueRange.start, valueRange.endInclusive)
+                    low to maxOf(currentHigh, low)
+                }
+                if (low != currentLow || high != currentHigh) {
+                    currentOnValueChange(low, high)
+                    currentOnValueChangeFinished()
+                }
+                true
+            }
+            .focusable(enabled, focusSource)
             .sliderPressPeek(enabled, drag)
             .pointerInput(enabled, valueRange.start, valueRange.endInclusive, steps) {
                 if (!enabled) return@pointerInput
@@ -386,7 +430,7 @@ internal fun SettingsModernRangeSlider(
             drawGlassSliderThumb(activeBrush, Offset(lowX, centerY), thumbRadius)
             drawGlassSliderThumb(activeBrush, Offset(highX, centerY), thumbRadius)
         }
-        if (valueLabel != null && (drag.active || drag.pressed || hovered)) {
+        if (valueLabel != null && (drag.active || drag.pressed || hovered || focused)) {
             // Hovering reads the range itself, so the bubble sits over the middle of the band.
             val bandMidX = thumbRadiusPx +
                 (size.width - 2f * thumbRadiusPx).coerceAtLeast(0f) * (lowProgress + highProgress) / 2f
@@ -420,6 +464,8 @@ internal fun SettingsModernSlider(
     val thumbRadiusPx = with(LocalDensity.current) { SettingsSliderThumbRadius.toPx() }
     val hoverSource = remember { MutableInteractionSource() }
     val hovered by hoverSource.collectIsHoveredAsState()
+    val focusSource = remember { MutableInteractionSource() }
+    val focused by focusSource.collectIsFocusedAsState()
 
     fun valueFromX(x: Float): Float = settingsSliderValueForX(
         x = x,
@@ -430,6 +476,7 @@ internal fun SettingsModernSlider(
     )
 
     val coercedValue = value.coerceIn(valueRange.start, valueRange.endInclusive)
+    val keyStep = settingsSliderKeyStep(valueRange, steps)
     val progress = if (valueRange.endInclusive == valueRange.start) {
         0f
     } else {
@@ -447,6 +494,19 @@ internal fun SettingsModernSlider(
             // size (or a freshly-created range object) can cancel an active mouse gesture during
             // recomposition, leaving the thumb frozen until the button is released.
             .hoverable(hoverSource, enabled)
+            // A focus stop: Left and Right move it a step. Both are kept even at either end, so a held
+            // key cannot run off the slider into the sidebar; Up and Down still leave it.
+            .onKeyEvent { event ->
+                if (!enabled) return@onKeyEvent false
+                val direction = horizontalNudge(event) ?: return@onKeyEvent false
+                val next = (coercedValue + direction * keyStep).coerceIn(valueRange.start, valueRange.endInclusive)
+                if (next != coercedValue) {
+                    currentOnValueChange(next)
+                    currentOnValueChangeFinished()
+                }
+                true
+            }
+            .focusable(enabled, focusSource)
             .sliderPressPeek(enabled, drag)
             .pointerInput(enabled, valueRange.start, valueRange.endInclusive, steps) {
                 if (!enabled) return@pointerInput
@@ -476,13 +536,34 @@ internal fun SettingsModernSlider(
             drawGlassSliderFill(activeBrush, trackStart, thumbX, centerY)
             drawGlassSliderThumb(activeBrush, Offset(thumbX, centerY), thumbRadius)
         }
-        if (valueLabel != null && (drag.active || drag.pressed || hovered)) {
+        if (valueLabel != null && (drag.active || drag.pressed || hovered || focused)) {
             // A press without a drag, or a hover, points at the thumb, where the value it reads is.
             val thumbX = thumbRadiusPx + (size.width - 2f * thumbRadiusPx).coerceAtLeast(0f) * progress
             SettingsSliderValueBubble(valueLabel, if (drag.active) drag.x else thumbX)
         }
     }
 }
+
+/**
+ * How far one Left/Right press moves a settings slider: one step where the slider has steps, else a
+ * twentieth of its range. fork:settings-arrows - the sliders were drawn by hand and could not take
+ * focus, so the arrow keys, a pad's D-pad and the phone remote went straight past them (Nov 20 2026).
+ */
+internal fun settingsSliderKeyStep(valueRange: ClosedFloatingPointRange<Float>, steps: Int): Float {
+    val span = valueRange.endInclusive - valueRange.start
+    return if (steps > 0) span / (steps + 1) else span / 20f
+}
+
+/** Left or Right as -1 or 1 for a focused slider or choice, null for any other key. */
+private fun horizontalNudge(event: androidx.compose.ui.input.key.KeyEvent): Int? =
+    when (arrowFocusDirection(event)) {
+        FocusDirection.Left -> -1
+        FocusDirection.Right -> 1
+        else -> null
+    }
+
+private fun isEnterDown(event: androidx.compose.ui.input.key.KeyEvent): Boolean =
+    event.type == KeyEventType.KeyDown && (event.key == Key.Enter || event.key == Key.NumPadEnter)
 
 /** Where the pointer is while a settings slider is being dragged, for its value bubble. */
 @Stable
@@ -1578,12 +1659,16 @@ internal fun SettingsSwitchRow(
                 // Desktop, as Windows Settings: the whole card flips the toggle, not only the
                 // switch. Not for a row whose title is an editable field.
                 if (isTablet && titleContent == null) {
-                    Modifier.toggleable(
-                        value = checked,
-                        onValueChange = onCheckedChange,
-                        enabled = enabled,
-                        role = Role.Switch,
-                    )
+                    // Not a focus stop of its own: the On/Off control is the row's one stop for the keys,
+                    // where the row and both halves used to be three, and Down jumped about between them.
+                    Modifier
+                        .focusProperties { canFocus = false }
+                        .toggleable(
+                            value = checked,
+                            onValueChange = onCheckedChange,
+                            enabled = enabled,
+                            role = Role.Switch,
+                        )
                 } else {
                     Modifier
                 },
@@ -1772,8 +1857,25 @@ internal fun <T> SettingsSegmentedControl(
     // accent, inset by the track padding so its corners follow the track's.
     val controlShape = SettingsSectionGlassShape
     val segmentShape = RoundedCornerShape(SettingsGlassRadius - SegmentedTrackPadding)
+    val selectedIndex = options.indexOfFirst { it.value == selectedValue }
     Row(
         modifier = modifier
+            // One focus stop for the whole control (fork:settings-arrows): Left and Right pick the option
+            // that way, and Enter steps to the next one (On/Off flips). At either end Left or Right goes
+            // on, so the sidebar is still one press away from the first option.
+            .onKeyEvent { event ->
+                if (!enabled || options.isEmpty()) return@onKeyEvent false
+                if (isEnterDown(event)) {
+                    onSelected(options[(selectedIndex + 1).mod(options.size)].value)
+                    return@onKeyEvent true
+                }
+                val direction = horizontalNudge(event) ?: return@onKeyEvent false
+                val next = selectedIndex + direction
+                if (selectedIndex < 0 || next !in options.indices) return@onKeyEvent false
+                onSelected(options[next].value)
+                true
+            }
+            .focusable(enabled)
             .ditheredBackground(SettingsSectionGlassFill, controlShape)
             .border(tokens.borders.thin, SettingsSectionGlassEdge, controlShape)
             .padding(SegmentedTrackPadding),
@@ -1805,6 +1907,8 @@ internal fun <T> SettingsSegmentedControl(
                     // here, and drawn inside one the accent edge came out stair-stepped. The clip
                     // is only there to keep the hover/press feedback inside the rounded corners.
                     .clip(segmentShape)
+                    // Clicked, not focused: the control around them is the focus stop.
+                    .focusProperties { canFocus = false }
                     .clickable(enabled = enabled) { onSelected(option.value) }
                     .padding(horizontal = if (isTablet) SegmentHorizontalPadding else 12.dp, vertical = if (isTablet) 6.dp else 9.dp),
                 contentAlignment = Alignment.Center,
@@ -2019,6 +2123,7 @@ private fun SettingsMenuPanel(
         properties = PopupProperties(focusable = expanded),
     ) {
         com.nuvio.app.core.ui.KeyRouteLayer("settings menu") // the focus router leaves an open menu alone
+        val menuFocusManager = LocalFocusManager.current
         AnimatedVisibility(
             visibleState = transition,
             enter = expandVertically(
@@ -2032,6 +2137,21 @@ private fun SettingsMenuPanel(
         ) {
             Column(
                 modifier = widthModifier
+                    // The list's own keys (fork:settings-arrows): Up/Down walk the options, Escape or
+                    // Backspace closes; Left/Right are kept so they do not wander off the menu.
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        if (event.key == Key.Escape || event.key == Key.Backspace) {
+                            onDismissRequest()
+                            return@onPreviewKeyEvent true
+                        }
+                        when (arrowFocusDirection(event)) {
+                            FocusDirection.Up -> { menuFocusManager.moveFocus(FocusDirection.Previous); true }
+                            FocusDirection.Down -> { menuFocusManager.moveFocus(FocusDirection.Next); true }
+                            FocusDirection.Left, FocusDirection.Right -> true
+                            else -> false
+                        }
+                    }
                     .heightIn(max = placement.maxHeight)
                     // It floats over other rows, so the glass needs a solid base under it to stay
                     // readable; the fill and edge on top match the trigger it hangs from.
@@ -2074,6 +2194,27 @@ internal fun <T> SettingsDropdownChoiceRow(
     }
     val selectedLabel = options.firstOrNull { it.value == selectedValue }?.label.orEmpty()
     var expanded by remember { mutableStateOf(false) }
+    // fork:settings-arrows - an open list takes the keys: focus lands on the chosen option, Up and Down walk
+    // (scrolling the list along), Enter picks, Escape closes, and focus goes back to the trigger after.
+    // Before, the list opened with focus nowhere inside it, so the keys did nothing and it could not scroll.
+    val triggerFocus = remember { FocusRequester() }
+    val optionFocus = remember(options.size) { List(options.size) { FocusRequester() } }
+    var wasExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            wasExpanded = true
+            val target = optionFocus.getOrNull(options.indexOfFirst { it.value == selectedValue }.coerceAtLeast(0))
+                ?: return@LaunchedEffect
+            // The popup and its rows arrive over a few frames.
+            repeat(10) { attempt ->
+                delay(if (attempt == 0) 16L else 40L)
+                if (target.requestFocusLogged()) return@LaunchedEffect
+            }
+        } else if (wasExpanded) {
+            wasExpanded = false
+            triggerFocus.requestFocusLogged()
+        }
+    }
 
     Row(
         modifier = modifier
@@ -2108,6 +2249,7 @@ internal fun <T> SettingsDropdownChoiceRow(
                 enabled = enabled,
                 isTablet = isTablet,
                 onClick = { expanded = true },
+                modifier = Modifier.focusRequester(triggerFocus),
             )
             SettingsMenuPanel(
                 expanded = expanded,
@@ -2132,13 +2274,15 @@ internal fun <T> SettingsDropdownChoiceRow(
                 val markBrush = tokens.colors.selectionTextBrush()
                 val labelStyle = MaterialTheme.typography.bodyMedium
                 val markStyle = markBrush?.let { labelStyle.copy(brush = it) } ?: labelStyle
-                options.forEach { option ->
+                options.forEachIndexed { index, option ->
                     val selected = option.value == selectedValue
                     val interactionSource = remember { MutableInteractionSource() }
                     val hovered by interactionSource.collectIsHoveredAsState()
+                    val focused by interactionSource.collectIsFocusedAsState()
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .then(optionFocus.getOrNull(index)?.let { Modifier.focusRequester(it) } ?: Modifier)
                             .clickable(
                                 interactionSource = interactionSource,
                                 indication = null,
@@ -2152,7 +2296,7 @@ internal fun <T> SettingsDropdownChoiceRow(
                             ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        val marked = selected || hovered
+                        val marked = selected || hovered || focused
                         Text(
                             text = option.label,
                             // Centred on desktop, under the centred value in the trigger.
@@ -2185,6 +2329,7 @@ private fun SettingsDropdownTrigger(
     enabled: Boolean,
     isTablet: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val tokens = MaterialTheme.nuvio
     val shape = placement.triggerShape(expanded)
@@ -2193,7 +2338,7 @@ private fun SettingsDropdownTrigger(
         animationSpec = tween(durationMillis = MenuEnterMillis),
     )
     Layout(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .ditheredBackground(SettingsSectionGlassFill, shape)
             .border(tokens.borders.thin, SettingsSectionGlassEdge, shape)
@@ -2328,6 +2473,23 @@ internal fun <T> SettingsMultiSelectRow(
         selectedLabels.size <= maxSummaryItems -> selectedLabels.joinToString(", ")
         else -> summaryForCount(selectedLabels.size)
     }
+    // The keys, as in SettingsDropdownChoiceRow: focus on the first option when the list opens, Enter ticks,
+    // Escape closes and hands focus back to the trigger.
+    val triggerFocus = remember { FocusRequester() }
+    val firstOptionFocus = remember { FocusRequester() }
+    var wasExpanded by remember { mutableStateOf(false) }
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            wasExpanded = true
+            repeat(10) { attempt ->
+                delay(if (attempt == 0) 16L else 40L)
+                if (firstOptionFocus.requestFocusLogged()) return@LaunchedEffect
+            }
+        } else if (wasExpanded) {
+            wasExpanded = false
+            triggerFocus.requestFocusLogged()
+        }
+    }
 
     Row(
         modifier = modifier
@@ -2359,6 +2521,7 @@ internal fun <T> SettingsMultiSelectRow(
                 enabled = enabled,
                 isTablet = isTablet,
                 onClick = { expanded = true },
+                modifier = Modifier.focusRequester(triggerFocus),
             )
             SettingsMenuPanel(
                 expanded = expanded,
@@ -2371,13 +2534,15 @@ internal fun <T> SettingsMultiSelectRow(
                 val markBrush = tokens.colors.selectionTextBrush()
                 val labelStyle = MaterialTheme.typography.bodyMedium
                 val markStyle = markBrush?.let { labelStyle.copy(brush = it) } ?: labelStyle
-                options.forEach { option ->
+                options.forEachIndexed { index, option ->
                     val selected = option.value in selectedValues
                     val interactionSource = remember { MutableInteractionSource() }
                     val hovered by interactionSource.collectIsHoveredAsState()
+                    val focused by interactionSource.collectIsFocusedAsState()
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .then(if (index == 0) Modifier.focusRequester(firstOptionFocus) else Modifier)
                             // No `expanded = false` here — see the note above.
                             .clickable(interactionSource = interactionSource, indication = null) {
                                 onToggle(option.value)
@@ -2388,7 +2553,7 @@ internal fun <T> SettingsMultiSelectRow(
                             ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        val marked = selected || hovered
+                        val marked = selected || hovered || focused
                         Text(
                             text = option.label,
                             modifier = Modifier.weight(1f),

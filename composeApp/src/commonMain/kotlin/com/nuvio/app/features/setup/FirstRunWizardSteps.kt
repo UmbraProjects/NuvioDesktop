@@ -26,6 +26,7 @@ import com.nuvio.app.core.ui.labelRes
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.home.HomeDisplayMode
 import com.nuvio.app.features.home.HomeTvRowDotsAnchor
+import com.nuvio.app.features.navbar.NavBarEntry
 import com.nuvio.app.features.settings.ApiKeySetupContent
 import com.nuvio.app.features.settings.ApiKeySetupStyle
 import com.nuvio.app.features.settings.DesktopNavigationLayout
@@ -68,8 +69,13 @@ import nuvio.composeapp.generated.resources.settings_home_row_jump_dot_position_
 import nuvio.composeapp.generated.resources.settings_home_row_jump_dot_position_row_description
 import nuvio.composeapp.generated.resources.settings_home_row_jump_dots
 import nuvio.composeapp.generated.resources.settings_home_row_jump_dots_description
-import nuvio.composeapp.generated.resources.settings_home_smooth_scrolling
-import nuvio.composeapp.generated.resources.settings_home_smooth_scrolling_description
+import nuvio.composeapp.generated.resources.settings_home_wheel_scrolling
+import nuvio.composeapp.generated.resources.settings_home_wheel_smooth
+import nuvio.composeapp.generated.resources.settings_home_wheel_smooth_description
+import nuvio.composeapp.generated.resources.settings_home_wheel_snap
+import nuvio.composeapp.generated.resources.settings_home_wheel_snap_description
+import nuvio.composeapp.generated.resources.settings_home_wheel_standard
+import nuvio.composeapp.generated.resources.settings_home_wheel_standard_description
 import nuvio.composeapp.generated.resources.settings_home_tv_ambient_background
 import nuvio.composeapp.generated.resources.settings_home_tv_ambient_background_description
 import nuvio.composeapp.generated.resources.settings_home_tv_full_backdrop
@@ -97,7 +103,21 @@ import nuvio.composeapp.generated.resources.settings_poster_width_dense
 import nuvio.composeapp.generated.resources.settings_poster_width_extra_large
 import nuvio.composeapp.generated.resources.settings_poster_width_large
 import nuvio.composeapp.generated.resources.settings_poster_width_standard
+import nuvio.composeapp.generated.resources.settings_appearance_app_ui_scale
+import nuvio.composeapp.generated.resources.settings_appearance_desktop_discover_tab_description
 import nuvio.composeapp.generated.resources.setup_wizard_cw_subtitle
+import nuvio.composeapp.generated.resources.setup_wizard_panels_games
+import nuvio.composeapp.generated.resources.setup_wizard_panels_later
+import nuvio.composeapp.generated.resources.setup_wizard_panels_live_tv
+import nuvio.composeapp.generated.resources.setup_wizard_panels_music
+import nuvio.composeapp.generated.resources.setup_wizard_panels_subtitle
+import nuvio.composeapp.generated.resources.setup_wizard_panels_title
+import nuvio.composeapp.generated.resources.setup_wizard_panels_tonight
+import nuvio.composeapp.generated.resources.setup_wizard_panels_youtube
+import nuvio.composeapp.generated.resources.setup_wizard_scale_description
+import nuvio.composeapp.generated.resources.setup_wizard_scale_shortcut
+import nuvio.composeapp.generated.resources.setup_wizard_scale_subtitle
+import nuvio.composeapp.generated.resources.setup_wizard_scale_title
 import nuvio.composeapp.generated.resources.setup_wizard_cw_title
 import nuvio.composeapp.generated.resources.setup_wizard_experience_subtitle
 import nuvio.composeapp.generated.resources.setup_wizard_experience_title
@@ -153,6 +173,12 @@ internal fun FirstRunWizardStep.header(): Pair<String, String> = when (this) {
         stringResource(Res.string.setup_wizard_experience_title) to
             stringResource(Res.string.setup_wizard_experience_subtitle)
 
+    FirstRunWizardStep.Scale ->
+        stringResource(Res.string.setup_wizard_scale_title) to stringResource(Res.string.setup_wizard_scale_subtitle)
+
+    FirstRunWizardStep.Panels ->
+        stringResource(Res.string.setup_wizard_panels_title) to stringResource(Res.string.setup_wizard_panels_subtitle)
+
     FirstRunWizardStep.Posters ->
         stringResource(Res.string.setup_wizard_posters_title) to
             stringResource(Res.string.setup_wizard_posters_subtitle)
@@ -185,7 +211,9 @@ internal fun WizardStepContent(
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         when (step) {
             FirstRunWizardStep.Layout -> LayoutStep(draft, onDraftChange, firstFocus)
+            FirstRunWizardStep.Scale -> ScaleStep(draft, onDraftChange, firstFocus)
             FirstRunWizardStep.Posters -> PostersStep(draft, onDraftChange, firstFocus)
+            FirstRunWizardStep.Panels -> PanelsStep(draft, onDraftChange, firstFocus)
             FirstRunWizardStep.ContinueWatching -> ContinueWatchingStep(draft, onDraftChange, firstFocus)
             FirstRunWizardStep.Theme -> ThemeStep(draft, onDraftChange, firstFocus)
             FirstRunWizardStep.Trailers -> TrailersStep(draft, onDraftChange, firstFocus)
@@ -295,13 +323,32 @@ private fun LayoutStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, f
     }
 }
 
+/**
+ * Smooth, Snap or Standard, as Settings > Home shows it: two stored switches behind one choice,
+ * because only one of them can drive the wheel. Snap wins while it is on.
+ */
 @Composable
 private fun SmoothScrollingRow(draft: FirstRunWizardDraft, onDraftChange: DraftChange) {
-    WizardToggleRow(
-        title = stringResource(Res.string.settings_home_smooth_scrolling),
-        description = stringResource(Res.string.settings_home_smooth_scrolling_description),
-        checked = draft.smoothScrollingEnabled,
-        onCheckedChange = { value -> onDraftChange { it.copy(smoothScrollingEnabled = value) } },
+    WizardSectionLabel(stringResource(Res.string.settings_home_wheel_scrolling))
+    val snap = draft.snapScrollingEnabled
+    val smooth = !snap && draft.smoothScrollingEnabled
+    WizardOptionRow(
+        label = stringResource(Res.string.settings_home_wheel_smooth),
+        description = stringResource(Res.string.settings_home_wheel_smooth_description),
+        selected = smooth,
+        onClick = { onDraftChange { it.copy(snapScrollingEnabled = false, smoothScrollingEnabled = true) } },
+    )
+    WizardOptionRow(
+        label = stringResource(Res.string.settings_home_wheel_snap),
+        description = stringResource(Res.string.settings_home_wheel_snap_description),
+        selected = snap,
+        onClick = { onDraftChange { it.copy(snapScrollingEnabled = true) } },
+    )
+    WizardOptionRow(
+        label = stringResource(Res.string.settings_home_wheel_standard),
+        description = stringResource(Res.string.settings_home_wheel_standard_description),
+        selected = !snap && !smooth,
+        onClick = { onDraftChange { it.copy(snapScrollingEnabled = false, smoothScrollingEnabled = false) } },
     )
 }
 
@@ -311,6 +358,35 @@ internal fun stepBias(current: Float, direction: Int): Float =
 internal fun stepHeight(current: Float, direction: Int): Float =
     ((current / HeroHeightStep).roundToInt() + direction).times(HeroHeightStep)
         .coerceIn(HeroHeightRange.start, HeroHeightRange.endInclusive)
+
+// ---------------------------------------------------------------------------------------------
+// Scale — App UI Scale, shown as a plain percentage of normal size
+// ---------------------------------------------------------------------------------------------
+
+/** Settings' range and step for App UI Scale. */
+internal val UiScaleRange = -50..50
+private const val UiScaleStep = 5
+
+@Composable
+private fun ScaleStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, firstFocus: Modifier) {
+    val percent = draft.uiScalePercent
+    WizardStepperRow(
+        title = stringResource(Res.string.settings_appearance_app_ui_scale),
+        description = stringResource(Res.string.setup_wizard_scale_description),
+        // Settings shows the offset ("+10%"); here it reads as a size, which needs no explaining.
+        valueLabel = "${100 + percent}%",
+        canDecrease = percent > UiScaleRange.first,
+        canIncrease = percent < UiScaleRange.last,
+        onDecrease = { onDraftChange { it.copy(uiScalePercent = stepUiScale(percent, -1)) } },
+        onIncrease = { onDraftChange { it.copy(uiScalePercent = stepUiScale(percent, 1)) } },
+        modifier = firstFocus,
+    )
+    WizardNote(text = stringResource(Res.string.setup_wizard_scale_shortcut))
+}
+
+internal fun stepUiScale(current: Int, direction: Int): Int =
+    (((current.toFloat() / UiScaleStep).roundToInt() + direction) * UiScaleStep)
+        .coerceIn(UiScaleRange.first, UiScaleRange.last)
 
 // ---------------------------------------------------------------------------------------------
 // Posters
@@ -473,6 +549,52 @@ private fun ThemeStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, fi
             onCheckedChange = { value -> onDraftChange { it.copy(topBarAlwaysVisible = value) } },
         )
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Panels — which entries the navigation shows. Home, Search and Library always show.
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+private fun PanelsStep(draft: FirstRunWizardDraft, onDraftChange: DraftChange, firstFocus: Modifier) {
+    WizardToggleRow(
+        title = NavBarEntry.Discover.label,
+        description = stringResource(Res.string.settings_appearance_desktop_discover_tab_description),
+        checked = draft.discoverPanel,
+        onCheckedChange = { value -> onDraftChange { it.copy(discoverPanel = value) } },
+        modifier = firstFocus,
+    )
+    WizardToggleRow(
+        title = NavBarEntry.Tonight.label,
+        description = stringResource(Res.string.setup_wizard_panels_tonight),
+        checked = draft.tonightPanel,
+        onCheckedChange = { value -> onDraftChange { it.copy(tonightPanel = value) } },
+    )
+    WizardToggleRow(
+        title = NavBarEntry.LiveTv.label,
+        description = stringResource(Res.string.setup_wizard_panels_live_tv),
+        checked = draft.liveTvPanel,
+        onCheckedChange = { value -> onDraftChange { it.copy(liveTvPanel = value) } },
+    )
+    WizardToggleRow(
+        title = NavBarEntry.YouTube.label,
+        description = stringResource(Res.string.setup_wizard_panels_youtube),
+        checked = draft.youTubePanel,
+        onCheckedChange = { value -> onDraftChange { it.copy(youTubePanel = value) } },
+    )
+    WizardToggleRow(
+        title = NavBarEntry.Music.label,
+        description = stringResource(Res.string.setup_wizard_panels_music),
+        checked = draft.musicPanel,
+        onCheckedChange = { value -> onDraftChange { it.copy(musicPanel = value) } },
+    )
+    WizardToggleRow(
+        title = NavBarEntry.Games.label,
+        description = stringResource(Res.string.setup_wizard_panels_games),
+        checked = draft.gamesPanel,
+        onCheckedChange = { value -> onDraftChange { it.copy(gamesPanel = value) } },
+    )
+    WizardNote(text = stringResource(Res.string.setup_wizard_panels_later))
 }
 
 // ---------------------------------------------------------------------------------------------

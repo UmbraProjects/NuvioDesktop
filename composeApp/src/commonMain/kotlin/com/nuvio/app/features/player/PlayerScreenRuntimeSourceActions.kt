@@ -421,11 +421,18 @@ internal fun PlayerScreenRuntime.switchToEpisodeStream(
     stream: StreamItem,
     episode: MetaVideo,
     sourceIdentityKey: String? = stream.playerSourceIdentityKey(),
+    // Next-episode autoplay's: a Usenet release that cannot be opened hands on to its next pick
+    // instead of leaving the next-episode card up with nothing loading.
+    onPreparationFailed: (suspend (Throwable) -> Unit)? = null,
 ) {
     val seasonNumber = episode.playbackSeasonNumber()
     val episodeNumber = episode.playbackEpisodeNumber()
-    if (resolveServerForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
-    if (resolveUsenetForPlayer(stream, seasonNumber, episodeNumber) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
+    if (resolveServerForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey, onPreparationFailed) }) return
+    if (
+        resolveUsenetForPlayer(stream, seasonNumber, episodeNumber, onFailed = onPreparationFailed) {
+            switchToEpisodeStream(it, episode, sourceIdentityKey)
+        }
+    ) return
     if (resolveYouTubeForPlayer(stream) { switchToEpisodeStream(it, episode, sourceIdentityKey) }) return
     if (
         resolveDebridForPlayer(
@@ -1118,7 +1125,9 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
         currentStreamBingeGroup = currentStreamBingeGroup,
         currentStream = activeStream,
         onDownloadedEpisodeSelected = { item, episode -> switchToDownloadedEpisode(item, episode) },
-        onEpisodeStreamSelected = { stream, episode -> switchToEpisodeStream(stream, episode) },
+        onEpisodeStreamSelected = { stream, episode, onFailed ->
+            switchToEpisodeStream(stream, episode, onPreparationFailed = onFailed)
+        },
         onManualSelectionRequired = { nextVideo ->
             // Auto-select failed: the manual stream list is now the feedback, so drop the card.
             manualEpisodeSwitchInfo = null
@@ -1175,7 +1184,9 @@ internal fun PlayerScreenRuntime.autoPlaySelectedEpisode(episode: MetaVideo) {
         currentStreamBingeGroup = currentStreamBingeGroup,
         currentStream = activeStream,
         onDownloadedEpisodeSelected = { item, video -> switchToDownloadedEpisode(item, video) },
-        onEpisodeStreamSelected = { stream, video -> switchToEpisodeStream(stream, video) },
+        onEpisodeStreamSelected = { stream, video, onFailed ->
+            switchToEpisodeStream(stream, video, onPreparationFailed = onFailed)
+        },
         onManualSelectionRequired = { video ->
             // Auto-select failed: the manual stream list is now the feedback, so drop the card.
             manualEpisodeSwitchInfo = null

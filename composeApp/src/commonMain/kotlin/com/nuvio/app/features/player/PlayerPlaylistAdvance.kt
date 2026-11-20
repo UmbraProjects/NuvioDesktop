@@ -104,7 +104,7 @@ internal fun PlayerScreenRuntime.preparePlaylistAdvance(
         currentStreamBingeGroup = bingeGroup,
         currentStream = activeStream.takeIf { bingeGroup != null },
         onDownloadedEpisodeSelected = { item, _ -> onPlaylistPrepared(PlaylistHandoff.Downloaded(entry, item)) },
-        onEpisodeStreamSelected = { stream, _ -> onPlaylistPrepared(PlaylistHandoff.Stream(entry, stream)) },
+        onEpisodeStreamSelected = { stream, _, _ -> onPlaylistPrepared(PlaylistHandoff.Stream(entry, stream)) },
         onManualSelectionRequired = { onPlaylistPrepared(PlaylistHandoff.SourceList(entry)) },
         onSearchingChanged = { nextEpisodeAutoPlaySearching = it },
         onSourceNameChanged = { nextEpisodeAutoPlaySourceName = it },

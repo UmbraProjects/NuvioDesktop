@@ -122,6 +122,25 @@ object PosterZoomOverlayCoordinator {
     internal fun hide() {
         isVisible = false
     }
+
+    /**
+     * The open sheet's own close (its animation, then its onDismissed). Desktop has no platform back
+     * handler (PlatformBackHandler is a no-op there), so the app's Back (Escape, a pad's B, the mouse's
+     * back button) asks here first; without it Back went to the page behind the sheet (Nov 20 2026).
+     */
+    private var closeHandler: (() -> Unit)? = null
+
+    internal fun setCloseHandler(handler: (() -> Unit)?) {
+        closeHandler = handler
+    }
+
+    /** Closes the open sheet, if there is one. True when Back was used up by it. */
+    fun requestClose(): Boolean {
+        val close = closeHandler ?: return false
+        if (!isVisible) return false
+        close()
+        return true
+    }
 }
 
 class PosterZoomOverlayAction(
@@ -261,6 +280,11 @@ fun NuvioPosterZoomActionOverlay(
 
     PlatformBackHandler(enabled = true) {
         close()
+    }
+    DisposableEffect(Unit) {
+        val handler: () -> Unit = { close() }
+        PosterZoomOverlayCoordinator.setCloseHandler(handler)
+        onDispose { PosterZoomOverlayCoordinator.setCloseHandler(null) }
     }
 
     BoxWithConstraints(

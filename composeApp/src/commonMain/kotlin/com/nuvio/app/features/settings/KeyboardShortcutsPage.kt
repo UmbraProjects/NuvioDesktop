@@ -65,6 +65,20 @@ import com.nuvio.app.features.input.gamepadBindingsVersion
 import com.nuvio.app.features.input.gamepadButtonTargetIds
 import com.nuvio.app.features.input.gamepadTargetChoices
 import com.nuvio.app.features.input.panelRingMouseState
+import com.nuvio.app.features.input.ControllerLightBar
+import com.nuvio.app.features.input.controllerLightBarState
+import com.nuvio.app.features.input.setControllerLightBar
+import com.nuvio.app.features.input.controllerPlayerLightState
+import com.nuvio.app.features.input.setControllerPlayerLight
+import nuvio.composeapp.generated.resources.gamepad_lights_section
+import nuvio.composeapp.generated.resources.gamepad_lights_note
+import nuvio.composeapp.generated.resources.gamepad_light_bar
+import nuvio.composeapp.generated.resources.gamepad_light_bar_description
+import nuvio.composeapp.generated.resources.gamepad_light_bar_leave
+import nuvio.composeapp.generated.resources.gamepad_light_bar_off
+import nuvio.composeapp.generated.resources.gamepad_light_bar_accent
+import nuvio.composeapp.generated.resources.gamepad_player_light
+import nuvio.composeapp.generated.resources.gamepad_player_light_description
 import com.nuvio.app.features.input.panelRingPadButtonChoices
 import com.nuvio.app.features.input.ControllerCursorSpeed
 import com.nuvio.app.features.input.controllerCursorButtonChoices
@@ -203,6 +217,7 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
     item(key = "keyboard-shortcuts-panel-ring") { PanelRingSection(isTablet = isTablet) }
     if (gamepadSupported()) {
         item(key = "keyboard-shortcuts-controller-cursor") { ControllerCursorSection(isTablet = isTablet) }
+        item(key = "keyboard-shortcuts-controller-lights") { ControllerLightsSection(isTablet = isTablet) }
     }
 
     item(key = "keyboard-shortcuts-navigation") {
@@ -593,6 +608,45 @@ private fun ControllerCursorSection(isTablet: Boolean) {
                 isTablet = isTablet,
                 onSelected = { setControllerCursorSpeed(it) },
             )
+        }
+    }
+}
+
+/** A DualSense's light bar and player light, written to the pad itself. */
+@Composable
+private fun ControllerLightsSection(isTablet: Boolean) {
+    LaunchedEffect(Unit) { ensureGamepadSettingsLoaded() }
+    val lightBar by controllerLightBarState().collectAsState()
+    val playerLight by controllerPlayerLightState().collectAsState()
+    SettingsSection(
+        title = stringResource(Res.string.gamepad_lights_section),
+        isTablet = isTablet,
+        subtitle = stringResource(Res.string.gamepad_lights_note),
+    ) {
+        SettingsGroup(isTablet = isTablet) {
+            SettingsChoiceRow(
+                title = stringResource(Res.string.gamepad_light_bar),
+                description = stringResource(Res.string.gamepad_light_bar_description),
+                options = listOf(
+                    SettingsChoiceOption(ControllerLightBar.LeaveAlone, stringResource(Res.string.gamepad_light_bar_leave)),
+                    SettingsChoiceOption(ControllerLightBar.Off, stringResource(Res.string.gamepad_light_bar_off)),
+                    SettingsChoiceOption(ControllerLightBar.Accent, stringResource(Res.string.gamepad_light_bar_accent)),
+                ),
+                selectedValue = lightBar,
+                isTablet = isTablet,
+                onSelected = { setControllerLightBar(it) },
+            )
+            // Leave as is writes nothing, so the player light has nothing to ride on.
+            if (lightBar != ControllerLightBar.LeaveAlone) {
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.gamepad_player_light),
+                    description = stringResource(Res.string.gamepad_player_light_description),
+                    checked = playerLight,
+                    isTablet = isTablet,
+                    onCheckedChange = { setControllerPlayerLight(it) },
+                )
+            }
         }
     }
 }

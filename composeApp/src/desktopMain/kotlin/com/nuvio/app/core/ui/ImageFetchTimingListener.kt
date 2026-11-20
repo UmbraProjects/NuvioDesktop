@@ -90,10 +90,16 @@ internal class ImageFetchTimingListener(
     override fun fetchStart(request: ImageRequest, fetcher: Fetcher, options: Options) {
         fetchStartedAt = now()
         waitNanos = fetchStartedAt - startedAt
+        ImageFetchHangProbe.fetchStarted(this)
     }
 
     override fun fetchEnd(request: ImageRequest, fetcher: Fetcher, options: Options, result: FetchResult?) {
         fetchNanos = now() - fetchStartedAt
+        ImageFetchHangProbe.fetchFinished(this)
+    }
+
+    override fun onCancel(request: ImageRequest) {
+        ImageFetchHangProbe.fetchFinished(this)
     }
 
     override fun decodeStart(request: ImageRequest, decoder: Decoder, options: Options) {
@@ -127,6 +133,7 @@ internal class ImageFetchTimingListener(
     }
 
     override fun onError(request: ImageRequest, result: ErrorResult) {
+        ImageFetchHangProbe.fetchFinished(this)
         val totalMs = (now() - startedAt) / 1_000_000
         val error = result.throwable
         if (fetchNanos >= 0) {

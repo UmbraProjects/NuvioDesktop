@@ -2,6 +2,7 @@ package com.nuvio.app.features.input
 
 import com.nuvio.app.features.voice.VoiceControlRepository
 
+import androidx.compose.ui.graphics.toArgb
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.ui.TextInputFocusTracker
 import com.nuvio.app.features.player.AppShortcutAction
@@ -251,6 +252,10 @@ object GamepadInput {
                     .getOrDefault(0)
                 GamepadSettingsRepository.setConnected(connectedMask != 0)
             }
+            if (now >= nextPadConfigAt) {
+                nextPadConfigAt = now + PAD_CONFIG_INTERVAL_MS
+                syncPadConfig()
+            }
 
             val current = if (connectedMask == 0) emptySet() else readPressed(state, connectedMask)
             dispatch(current, pressed, repeatDueAt, heldKeys, now)
@@ -275,6 +280,44 @@ object GamepadInput {
      * [NativePlayerBridge.ensureNativeLibraryLoaded]. On a dev tree with no native build, or a
      * machine without the runtime, this fails once and parks the thread for good.
      */
+    /** When [syncPadConfig] next runs; the settings it reads change rarely, so twice a second is plenty. */
+    private var nextPadConfigAt = 0L
+    private const val PAD_CONFIG_INTERVAL_MS = 500L
+    private var lastPadConfig: List<Any>? = null
+    private var padConfigUnavailable = false
+
+    /**
+     * Tells the native side what the DualSense itself should do: send its full Bluetooth report only
+     * while voice control is on (the mic button lives in it; otherwise the lighter report saves a little
+     * battery), and the light bar / player light from Settings. Sent only when something changed.
+     */
+    private fun syncPadConfig() {
+        if (padConfigUnavailable) return
+        val fullReports = com.nuvio.app.features.voice.VoiceControlRepository.uiState.value.settings.enabled
+        val lightBar = GamepadSettingsRepository.lightBarState.value
+        val lightMode = when (lightBar) {
+            ControllerLightBar.LeaveAlone -> 0
+            ControllerLightBar.Off -> 1
+            ControllerLightBar.Accent -> 2
+        }
+        val rgb = if (lightBar == ControllerLightBar.Accent) {
+            val theme = com.nuvio.app.features.settings.ThemeSettingsRepository.selectedTheme.value
+            com.nuvio.app.core.ui.ThemeColors.getColorPalette(theme).secondary.toArgb() and 0xFFFFFF
+        } else {
+            0
+        }
+        val playerLight = GamepadSettingsRepository.playerLightState.value
+        val config = listOf(fullReports, lightMode, rgb, playerLight)
+        if (config == lastPadConfig) return
+        runCatching { NativePlayerBridge.configureGamepads(fullReports, lightMode, rgb, playerLight) }
+            .onSuccess { lastPadConfig = config }
+            .onFailure {
+                // An older player_bridge.dll without the call: input still works, the lights do not.
+                log.w(it) { "Controller lights and full reports unavailable in this build" }
+                padConfigUnavailable = true
+            }
+    }
+
     private fun ensureNativeReady(): Boolean {
         val loaded = runCatching { NativePlayerBridge.ensureNativeLibraryLoaded() }
             .onFailure { log.w(it) { "native bridge unavailable; gamepad input disabled for this session" } }

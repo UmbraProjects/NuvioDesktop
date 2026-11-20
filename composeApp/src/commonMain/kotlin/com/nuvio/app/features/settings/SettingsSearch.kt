@@ -839,6 +839,15 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.KeyboardShortcuts,
+            key = "controller-lights",
+            title = resolve(Res.string.gamepad_lights_section),
+            description = resolve(Res.string.gamepad_light_bar_description),
+            pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
+            section = resolve(Res.string.gamepad_lights_section),
+            icon = Icons.Rounded.Keyboard,
+        )
+        addRow(
+            page = SettingsPage.KeyboardShortcuts,
             key = "gamepad-rebind",
             title = resolve(Res.string.settings_shortcuts_controller_buttons),
             description = resolve(Res.string.gamepad_rebind_search_description),
@@ -1690,12 +1699,6 @@ private fun settingsSearchEntries(
                 "loading-overlay",
                 resolve(Res.string.settings_playback_show_loading_overlay),
                 resolve(Res.string.settings_playback_show_loading_overlay_description),
-            ),
-            // fork:pip-browse
-            PlaybackSearchRow(
-                "pip-browse",
-                resolve(Res.string.settings_playback_pip_browse),
-                resolve(Res.string.settings_playback_pip_browse_description),
             ),
             PlaybackSearchRow(
                 "double-click",

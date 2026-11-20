@@ -54,6 +54,26 @@ class ImageDiskCacheStrategyTest {
     }
 
     @Test
+    fun `a failure with a copy on disk stores that copy back unchanged`() = runBlocking<Unit> {
+        // DISABLED here would leak Coil's snapshot of the entry and lock it for the session.
+        val cached = response(code = 200, "cache-control" to "max-age=60", "etag" to "\"a\"")
+            .copy(requestMillis = 1_000L, responseMillis = 2_000L)
+
+        val stored = ImageDiskCacheStrategy.write(
+            cacheResponse = cached,
+            networkRequest = request,
+            networkResponse = response(code = 503),
+            options = options,
+        ).response
+
+        assertNotNull(stored)
+        assertEquals(200, stored.code)
+        assertNull(stored.body, "a null body leaves the existing data file in place")
+        assertEquals(cached.headers, stored.headers)
+        assertEquals(2_000L, stored.responseMillis, "a failure does not make the copy any fresher")
+    }
+
+    @Test
     fun `a success response is written to the cache`() = runBlocking<Unit> {
         val networkResponse = response(code = 200, "cache-control" to "max-age=31536000, immutable")
 

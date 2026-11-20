@@ -267,6 +267,14 @@ internal object NativePlayerBridge {
     external fun pollGamepads(slotMask: Int, out: IntArray): Int
 
     /**
+     * What the PlayStation pads read over raw HID should do themselves, applied on the next
+     * [pollGamepads]: [fullReports] asks a Bluetooth DualSense for its full report (the mic button
+     * is only in that one); [lightMode] 0 leaves the lights alone, 1 turns the light bar off, 2 sets
+     * it to [rgb] (0xRRGGBB); [playerLight] lights the player-1 light while lightMode is not 0.
+     */
+    external fun configureGamepads(fullReports: Boolean, lightMode: Int, rgb: Int, playerLight: Boolean)
+
+    /**
      * Milliseconds since the last keyboard or mouse input anywhere on the desktop (Windows'
      * `GetLastInputInfo`), or -1 if that could not be read. Controllers are not included; see
      * `DesktopScreensaver` for how they are folded in. Same reason for living here as

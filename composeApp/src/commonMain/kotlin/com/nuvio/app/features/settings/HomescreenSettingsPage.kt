@@ -1,5 +1,28 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
+import com.nuvio.app.core.ui.arrowFocusDirection
+import com.nuvio.app.core.ui.requestFocusLogged
+import kotlinx.coroutines.delay
+import nuvio.composeapp.generated.resources.settings_home_hero_info_priority_keys
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.clickable
@@ -308,8 +331,8 @@ internal fun LazyListScope.homescreenSettingsContent(
                         }
                     } else {
                         SettingsGroupDivider(isTablet = isTablet)
-                        // Smooth and snap are two stored switches (the first-run wizard still sets
-                        // only smooth); shown as one choice because only one can drive the wheel.
+                        // Smooth and snap are two stored switches (the first-run wizard offers the
+                        // same three choices); shown as one choice because only one can drive the wheel.
                         val wheelScroll = when {
                             homeSettings.snapScrollingEnabled -> HomeWheelScroll.Snap
                             homeSettings.smoothScrollingEnabled -> HomeWheelScroll.Smooth
@@ -1005,7 +1028,8 @@ private fun HeroInfoPriorityDialog(
     NuvioModalDialog(
         onDismissRequest = onDismiss,
         title = stringResource(Res.string.settings_home_hero_info_priority),
-        subtitle = stringResource(Res.string.settings_home_hero_info_priority_description),
+        subtitle = stringResource(Res.string.settings_home_hero_info_priority_description) + " " +
+            stringResource(Res.string.settings_home_hero_info_priority_keys),
         maxWidth = 640.dp,
         actions = {
             NuvioPrimaryButton(
@@ -1036,6 +1060,31 @@ private fun HeroInfoPriorityList(
     val selectedKeys = fields.filter { it.selected }.map { it.key }
     val hapticFeedback = LocalHapticFeedback.current
     val lazyListState = rememberLazyListState()
+    // fork:settings-arrows - the dialog is a window of its own, where the settings page's arrow keys do not
+    // reach, and nothing in it took focus when it opened, so a keyboard or pad could not use it (Nov 20 2026).
+    // Now each row is one focus stop: Up/Down walk, Enter turns it on or off, Shift+Up/Down (or Left/Right)
+    // moves a turned-on badge earlier or later, the same as dragging it.
+    val focusManager = LocalFocusManager.current
+    val firstRowFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        repeat(10) { attempt ->
+            delay(if (attempt == 0) 32L else 60L)
+            if (firstRowFocus.requestFocusLogged()) return@LaunchedEffect
+        }
+    }
+    fun moveSelected(fieldKey: String, by: Int): Boolean {
+        val reordered = selectedKeys.toMutableList()
+        val from = reordered.indexOf(fieldKey)
+        val to = from + by
+        if (from < 0 || to !in reordered.indices) return false
+        reordered.add(to, reordered.removeAt(from))
+        HomeCatalogSettingsRepository.setHeroInfoPriority(reordered.joinToString(","))
+        return true
+    }
+    fun toggle(fieldKey: String, checked: Boolean) {
+        val nextKeys = if (checked) selectedKeys + fieldKey else selectedKeys.filterNot { it == fieldKey }
+        HomeCatalogSettingsRepository.setHeroInfoPriority(nextKeys.joinToString(","))
+    }
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val fromField = fields.getOrNull(from.index) ?: return@rememberReorderableLazyListState
         val toField = fields.getOrNull(to.index) ?: return@rememberReorderableLazyListState
@@ -1096,10 +1145,61 @@ private fun HeroInfoPriorityList(
                         },
                     ) {
                         Column {
-                            if (index > 0) SettingsGroupDivider(isTablet = isTablet)
+                            // A hairline of the dialog's glass. SettingsGroupDivider is the gap between
+                            // settings cards and paints the page colour outside one: black bars here.
+                            if (index > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp)
+                                        .height(1.dp)
+                                        .background(Color.White.copy(alpha = 0.10f)),
+                                )
+                            }
+                            val rowInteraction = remember { MutableInteractionSource() }
+                            val rowFocused by rowInteraction.collectIsFocusedAsState()
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .then(if (index == 0) Modifier.focusRequester(firstRowFocus) else Modifier)
+                                    .onKeyEvent { event ->
+                                        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                                        val direction = arrowFocusDirection(event)
+                                        val reorderBy = when {
+                                            direction == FocusDirection.Up && event.isShiftPressed -> -1
+                                            direction == FocusDirection.Down && event.isShiftPressed -> 1
+                                            direction == FocusDirection.Left -> -1
+                                            direction == FocusDirection.Right -> 1
+                                            else -> 0
+                                        }
+                                        when {
+                                            reorderBy != 0 -> {
+                                                if (enabled && field.selected) moveSelected(field.key, reorderBy)
+                                                true
+                                            }
+                                            direction == FocusDirection.Up -> {
+                                                focusManager.moveFocus(FocusDirection.Previous)
+                                                true
+                                            }
+                                            direction == FocusDirection.Down -> {
+                                                focusManager.moveFocus(FocusDirection.Next)
+                                                true
+                                            }
+                                            else -> false
+                                        }
+                                    }
+                                    .toggleable(
+                                        value = field.selected,
+                                        enabled = enabled,
+                                        role = Role.Switch,
+                                        interactionSource = rowInteraction,
+                                        indication = null,
+                                        onValueChange = { checked -> toggle(field.key, checked) },
+                                    )
+                                    .background(
+                                        if (rowFocused) Color.White.copy(alpha = 0.08f) else Color.Transparent,
+                                        RoundedCornerShape(12.dp),
+                                    )
                                     .padding(horizontal = 16.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -1123,14 +1223,9 @@ private fun HeroInfoPriorityList(
                                 SettingsSquareSwitch(
                                     checked = field.selected,
                                     enabled = enabled,
-                                    onCheckedChange = { checked ->
-                                        val nextKeys = if (checked) {
-                                            selectedKeys + field.key
-                                        } else {
-                                            selectedKeys.filterNot { it == field.key }
-                                        }
-                                        HomeCatalogSettingsRepository.setHeroInfoPriority(nextKeys.joinToString(","))
-                                    },
+                                    // The row is the focus stop; the switch is only clicked.
+                                    modifier = Modifier.focusProperties { canFocus = false },
+                                    onCheckedChange = { checked -> toggle(field.key, checked) },
                                 )
                             }
                         }

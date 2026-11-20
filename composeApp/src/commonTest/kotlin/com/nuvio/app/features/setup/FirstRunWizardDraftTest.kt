@@ -69,4 +69,23 @@ class FirstRunWizardDraftTest {
         assertFalse(draft.trailerSoundEnabled)
         assertFalse(draft.trailerFullscreen)
     }
+
+    @Test
+    fun `size and panels are offered in every layout`() {
+        HomeDisplayMode.entries.forEach { mode ->
+            val steps = FirstRunWizardStep.visibleSteps(FirstRunWizardDraft(displayMode = mode))
+            assertTrue(FirstRunWizardStep.Scale in steps, mode.name)
+            assertTrue(FirstRunWizardStep.Panels in steps, mode.name)
+        }
+    }
+
+    @Test
+    fun `ui scale steps by five within settings range`() {
+        assertEquals(5, stepUiScale(0, 1))
+        assertEquals(-5, stepUiScale(0, -1))
+        assertEquals(50, stepUiScale(50, 1))
+        assertEquals(-50, stepUiScale(-50, -1))
+        // A value nudged off the grid elsewhere snaps back onto it.
+        assertEquals(10, stepUiScale(7, 1))
+    }
 }

@@ -3,6 +3,10 @@ package com.nuvio.app.features.setup
 import com.nuvio.app.core.ui.PosterCardStyleRepository
 import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import com.nuvio.app.features.home.homeDisplayModeOf
+import com.nuvio.app.features.iptv.IptvRepository
+import com.nuvio.app.features.music.library.MusicLibraryRepository
+import com.nuvio.app.features.navbar.NavBarLayoutRepository
+import com.nuvio.app.features.youtube.YouTubeFeedRepository
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.settings.ApiKeysOnboardingController
@@ -99,7 +103,7 @@ internal object FirstRunWizardController {
     }
 
     /**
-     * "Finish later", ✕ and Escape. A rerun is simply closed; an unfinished first run leaves the
+     * "Finish later" (the panel has no ✕, and Escape steps back instead). A rerun is simply closed; an unfinished first run leaves the
      * completion marker alone so the panel resumes on the next launch.
      */
     fun close() {
@@ -153,6 +157,7 @@ internal object FirstRunWizardController {
         changed(FirstRunWizardDraft::adaptiveHeroHeightMultiplier, home::setAdaptiveHeroHeightMultiplier)
         changed(FirstRunWizardDraft::adaptiveAmbientEnabled, home::setHeroAmbientBackgroundEnabled)
         changed(FirstRunWizardDraft::smoothScrollingEnabled, home::setSmoothScrollingEnabled)
+        changed(FirstRunWizardDraft::snapScrollingEnabled, home::setSnapScrollingEnabled)
         changed(FirstRunWizardDraft::tvFullBackdropEnabled, home::setTvFullBackdropEnabled)
         changed(FirstRunWizardDraft::tvAmbientBackgroundEnabled, home::setTvAmbientBackgroundEnabled)
         changed(FirstRunWizardDraft::tvRowDotsEnabled, home::setTvRowDotsEnabled)
@@ -172,6 +177,17 @@ internal object FirstRunWizardController {
         changed(FirstRunWizardDraft::theme, ThemeSettingsRepository::setTheme)
         changed(FirstRunWizardDraft::navigationLayout, ThemeSettingsRepository::setDesktopNavigationLayout)
         changed(FirstRunWizardDraft::topBarAlwaysVisible, ThemeSettingsRepository::setDesktopTopBarAlwaysVisible)
+        changed(FirstRunWizardDraft::uiScalePercent, ThemeSettingsRepository::setDesktopAppUiScalePercent)
+
+        changed(FirstRunWizardDraft::discoverPanel, ThemeSettingsRepository::setDesktopDiscoverTabVisible)
+        changed(FirstRunWizardDraft::tonightPanel, NavBarLayoutRepository::setTonightInNav)
+        changed(FirstRunWizardDraft::liveTvPanel, IptvRepository::setTabEnabled)
+        changed(FirstRunWizardDraft::youTubePanel, YouTubeFeedRepository::setTabEnabled)
+        changed(FirstRunWizardDraft::gamesPanel, NavBarLayoutRepository::setGamesInNav)
+        changed(FirstRunWizardDraft::musicPanel) { enabled ->
+            val settings = MusicLibraryRepository.state.value.settings
+            MusicLibraryRepository.updateSettings(settings.copy(tabEnabled = enabled))
+        }
 
         val player = PlayerSettingsRepository
         // 0 seconds is "manual" — the trailer plays only on the T shortcut — so autoplay is off
@@ -207,6 +223,8 @@ internal object FirstRunWizardController {
         ThemeSettingsRepository.ensureLoaded()
         TmdbSettingsRepository.ensureLoaded()
         MdbListSettingsRepository.ensureLoaded()
+        IptvRepository.ensureLoaded()
+        MusicLibraryRepository.ensureLoaded()
 
         return FirstRunWizardDraft(
             displayMode = homeDisplayModeOf(home),
@@ -215,6 +233,7 @@ internal object FirstRunWizardController {
             adaptiveHeroHeightMultiplier = home.adaptiveHeroHeightMultiplier,
             adaptiveAmbientEnabled = home.heroAmbientBackgroundEnabled,
             smoothScrollingEnabled = home.smoothScrollingEnabled,
+            snapScrollingEnabled = home.snapScrollingEnabled,
             tvFullBackdropEnabled = home.tvFullBackdropEnabled,
             tvAmbientBackgroundEnabled = home.tvAmbientBackgroundEnabled,
             tvRowDotsEnabled = home.tvRowDotsEnabled,
@@ -236,6 +255,13 @@ internal object FirstRunWizardController {
             trailerDelaySeconds = if (player.heroTvTrailerEnabled) player.heroTvTrailerDelaySeconds else 0,
             trailerSoundEnabled = player.heroTvTrailerSoundEnabled,
             trailerInSearchEnabled = player.heroTvTrailerSearchEnabled,
+            uiScalePercent = ThemeSettingsRepository.desktopAppUiScalePercent.value,
+            discoverPanel = ThemeSettingsRepository.desktopDiscoverTabVisible.value,
+            tonightPanel = NavBarLayoutRepository.tonightInNav.value,
+            liveTvPanel = IptvRepository.settings.value.tabShown,
+            youTubePanel = YouTubeFeedRepository.tabEnabled.value == true,
+            musicPanel = MusicLibraryRepository.state.value.settings.tabEnabled,
+            gamesPanel = NavBarLayoutRepository.gamesInNav.value,
         )
     }
 }

@@ -17,6 +17,28 @@ import okio.Path.Companion.toOkioPath
  * viewport and came back (animated frames are not held in the memory cache the way a static bitmap
  * is, so scrolling away drops them entirely).
  */
+/** The artwork disk cache; called once, by [ImageDiskCacheWarmup]. */
+internal fun buildArtworkDiskCache(): DiskCache {
+    val cacheDir = DesktopStorage.rootDir.resolve(IMAGE_CACHE_DIR_NAME)
+    // Before the cache is opened, not after: the purge edits the journal directly, which is
+    // only safe while Coil is not holding it.
+    ImageDiskCachePurge.purgeCachedFailures(cacheDir)
+    // Read once: Coil sizes a disk cache when it opens it, so a change applies on next launch.
+    ImageCacheSettingsRepository.ensureLoaded()
+    val totalBytes = ImageCacheSettingsRepository.settings.value.diskCacheGb * BytesPerGb
+    val animatedBytes = (totalBytes * AnimatedImageCacheFraction).toLong()
+    return PartitionedImageDiskCache(
+        stills = DiskCache.Builder()
+            .directory(cacheDir.toOkioPath())
+            .maxSizeBytes(totalBytes - animatedBytes)
+            .build(),
+        animated = DiskCache.Builder()
+            .directory(DesktopStorage.rootDir.resolve(ANIMATED_IMAGE_CACHE_DIR_NAME).toOkioPath())
+            .maxSizeBytes(animatedBytes)
+            .build(),
+    )
+}
+
 internal actual fun ImageLoader.Builder.configurePlatformImageLoader(): ImageLoader.Builder =
     memoryCache {
         MemoryCache.Builder()
@@ -26,24 +48,9 @@ internal actual fun ImageLoader.Builder.configurePlatformImageLoader(): ImageLoa
             .also(DesktopArtworkCaches::register)
             .also { HeroArtworkMemory.cache = it }
     }.diskCache {
-        val cacheDir = DesktopStorage.rootDir.resolve(IMAGE_CACHE_DIR_NAME)
-        // Before the cache is opened, not after: the purge edits the journal directly, which is
-        // only safe while Coil is not holding it.
-        ImageDiskCachePurge.purgeCachedFailures(cacheDir)
-        // Read once: Coil sizes a disk cache when it opens it, so a change applies on next launch.
-        ImageCacheSettingsRepository.ensureLoaded()
-        val totalBytes = ImageCacheSettingsRepository.settings.value.diskCacheGb * BytesPerGb
-        val animatedBytes = (totalBytes * AnimatedImageCacheFraction).toLong()
-        PartitionedImageDiskCache(
-            stills = DiskCache.Builder()
-                .directory(cacheDir.toOkioPath())
-                .maxSizeBytes(totalBytes - animatedBytes)
-                .build(),
-            animated = DiskCache.Builder()
-                .directory(DesktopStorage.rootDir.resolve(ANIMATED_IMAGE_CACHE_DIR_NAME).toOkioPath())
-                .maxSizeBytes(animatedBytes)
-                .build(),
-        )
+        // Usually already opened at launch by ImageDiskCacheWarmup; if not, this opens it here.
+        ImageDiskCacheWarmup.install(::buildArtworkDiskCache)
+        ImageDiskCacheWarmup.cache
     }.components { addDesktopArtworkComponents() }
         // Per-image wait/fetch/decode timing for every load that leaves the memory cache; see the
         // listener for the log format and why it exists.
@@ -65,10 +72,14 @@ internal fun ComponentRegistry.Builder.addDesktopArtworkComponents() {
     // it declines falls to the high-quality still decoder, which would otherwise have gone to
     // Coil's own - the one that reduces with nearest-neighbour.
     add(GithubRawImageMapper)
+    // Outermost, so a background refresh starts after the request that asked for it is in memory.
+    add(ImageRevalidationStartInterceptor())
     add(HeroBackdropPrefetchJoinInterceptor())
     add(DesktopArtworkSizeInterceptor())
     // After the size interceptor, so a stale-copy retry keeps the memory key it was sized under.
     add(ImageStaleIfErrorInterceptor())
+    // First of the decoders: a background refresh only writes the disk cache.
+    add(BackgroundRevalidationDecoder.Factory())
     add(AnimatedSkiaImageDecoder.Factory())
     add(HighQualityBitmapDecoder.Factory())
     // Coil finds a Ktor fetcher through the JVM ServiceLoader on its own, but only ever with
@@ -77,10 +88,15 @@ internal fun ComponentRegistry.Builder.addDesktopArtworkComponents() {
     //
     // The concurrent-request strategy makes identical in-flight requests share one download; see
     // CoalescingRequestStrategy.
+    //
+    // Wrapped so the disk strategy can see which loader and request it is serving, which it needs
+    // to start a background refresh of a stale entry (ImageBackgroundRevalidation).
     add(
-        KtorNetworkFetcherFactory(
-            cacheStrategy = { ImageDiskCacheStrategy },
-            concurrentRequestStrategy = { SharedImageRequestCoalescing },
+        ScopedNetworkFetcherFactory(
+            KtorNetworkFetcherFactory(
+                cacheStrategy = { ImageDiskCacheStrategy },
+                concurrentRequestStrategy = { SharedImageRequestCoalescing },
+            ),
         ),
     )
 }

@@ -84,7 +84,20 @@ internal object ImageDiskCacheStrategy : CacheStrategy {
             return CacheStrategy.ReadResult(cacheResponse)
         }
 
-        // Stale. A validator turns the refetch into a 304 that costs no body, so prefer it. With
+        // Stale. Show it now and refresh it in the background, so a slow or hung origin costs one
+        // view of yesterday's poster rather than a blank card (see ImageBackgroundRevalidation).
+        // Not for `no-cache`, which asks for every use to be checked first, nor for the refresh
+        // itself, which is the request that has to go to the network.
+        val fetch = currentCoroutineContext()[ImageFetchScope]
+        if (fetch != null && !options.isBackgroundRevalidation() && !directives.contains(NO_CACHE)) {
+            ImageBackgroundRevalidation.schedule(fetch, options.diskCacheKey ?: networkRequest.url)
+            // Booked for the memory cache's one-minute floor: long enough that the cards showing
+            // it do not each come back here, short enough to pick up what the refresh brings.
+            recordFreshness(networkRequest, options, now, remainingMillis = 0L, bodyChanged = false)
+            return CacheStrategy.ReadResult(cacheResponse)
+        }
+
+        // A validator turns the refetch into a 304 that costs no body, so prefer it. With
         // nothing to validate against the entry is simply re-downloaded: the origin said how long
         // its answer held, and that time is up.
         val conditionalRequest = conditionalRequestOrNull(networkRequest, cacheResponse)
@@ -137,6 +150,17 @@ internal object ImageDiskCacheStrategy : CacheStrategy {
 
         // Everything else — 404 for a still that has not been published yet above all — is a
         // moment-in-time answer, not a fact about the URL. Ask again next time.
+        //
+        // With a copy already on disk, that copy is stored back unchanged instead of answering
+        // DISABLED. Coil 3.5's NetworkFetcher.writeToDiskCache returns null on DISABLED without
+        // closing the snapshot it was handed, and its caller then drops its own reference, so the
+        // entry stayed locked for the rest of the session: after one failed refresh (a 503 while a
+        // poster service restarts) nothing could write that poster again until a restart. Storing
+        // the cached response goes through `closeAndOpenEditor`, which closes it; a null body leaves
+        // the data file as it is, and the original `responseMillis` keeps its age where it was.
+        if (cacheResponse != null) {
+            return CacheStrategy.WriteResult(cacheResponse.copy(body = null))
+        }
         return CacheStrategy.WriteResult.DISABLED
     }
 

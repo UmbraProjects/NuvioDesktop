@@ -1828,6 +1828,10 @@ internal fun ProviderFilterRow(
         resetKey = null,
         activity = chipPointerActivity,
         canHold = { shown -> shown.addonGroups.isNotEmpty() },
+        // A chip landing right of the pointer moves nothing it could be aiming at.
+        movesUnderPointer = { shown, live ->
+            listState.arrangementMovesUnderPointer(chipPointerActivity, shown.lazyKeys(), live.lazyKeys())
+        },
     )
     val addonGroups = chips.addonGroups
     if (addonGroups.isEmpty()) {
@@ -1856,7 +1860,7 @@ internal fun ProviderFilterRow(
         state = listState,
         modifier = Modifier
             .weight(1f)
-            .trackListPointerActivity(chipPointerActivity)
+            .trackListPointerActivity(chipPointerActivity, vertical = false)
             .desktopHorizontalListNavigation(
                 state = listState,
                 treatPlainScrollAsHorizontal = true,
@@ -2076,9 +2080,19 @@ internal fun StreamList(
         StreamBadgeSettingsRepository.ensureLoaded()
         StreamBadgeSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
-    // Late sources wait while the mouse is in use over the list, so a row does not move out from
-    // under a click (see rememberHeldWhilePointerActive). A chip, sort or layout change shows at once.
+    // Late sources wait while the mouse is in use over the list and they would move the row under
+    // it or one above it, so a row does not move out from under a click (see
+    // rememberHeldWhilePointerActive); rows that land below show at once. A chip, sort or layout
+    // change shows at once too.
     val pointerActivity = remember { ListPointerActivity() }
+    val showGroupHeaders = uiState.selectedFilter == null
+    val sharedStream = LocalSharedStream.current
+    fun lazyKeys(groups: List<AddonStreamGroup>): List<Any> = buildList {
+        if (sharedStream != null) add("party_shared_stream")
+        buildStreamListEntries(groups = groups, showGroupHeaders = showGroupHeaders)
+            .let { if (columns >= 2) pairStreamRows(it) else it }
+            .forEach { add(it.key) }
+    }
     val filteredGroups = rememberHeldWhilePointerActive(
         live = liveGroups,
         resetKey = listOf(
@@ -2089,12 +2103,14 @@ internal fun StreamList(
         ),
         activity = pointerActivity,
         canHold = { shown -> shown.any { it.streams.isNotEmpty() } },
+        movesUnderPointer = { shown, live ->
+            listState.arrangementMovesUnderPointer(pointerActivity, lazyKeys(shown), lazyKeys(live))
+        },
     )
     val hasGroups = filteredGroups.isNotEmpty()
     val hasAnyStreams = filteredGroups.any { it.streams.isNotEmpty() }
     // Live, not held: the footer spinner should stop when the last source answers.
     val anyLoading = liveGroups.any { it.isLoading }
-    val showGroupHeaders = uiState.selectedFilter == null
     val entries = remember(filteredGroups, showGroupHeaders, columns) {
         buildStreamListEntries(groups = filteredGroups, showGroupHeaders = showGroupHeaders)
             .let { if (columns >= 2) pairStreamRows(it) else it }
@@ -2176,7 +2192,6 @@ internal fun StreamList(
     }
 
     val formatStreamSize = rememberStreamSizeLabelFormat()
-    val sharedStream = LocalSharedStream.current
     val streamCard: @Composable (StreamItem, Modifier) -> Unit = { stream, cardModifier ->
         StreamRowContextMenu(
             stream = stream,
@@ -2824,6 +2839,13 @@ private fun FooterLoadingBlock(modifier: Modifier = Modifier) {
 }
 
 /** What the provider chip row draws: held as one value while the pointer is in use over it. */
-private data class ProviderChips(val addonGroups: List<ProviderChip>, val showHtpcChip: Boolean)
+private data class ProviderChips(val addonGroups: List<ProviderChip>, val showHtpcChip: Boolean) {
+    /** The filter row's lazy keys, in drawing order. */
+    fun lazyKeys(): List<Any> = buildList {
+        add("all")
+        if (showHtpcChip) add(StreamSourceMerge.HTPC_ADDON_ID)
+        addonGroups.forEach { add(it.addonId) }
+    }
+}
 
 private data class ProviderChip(val addonId: String, val addonName: String)

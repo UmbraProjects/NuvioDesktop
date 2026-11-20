@@ -22,6 +22,7 @@ import com.nuvio.app.features.streams.StreamScoreContexts
 import com.nuvio.app.features.streams.StreamAutoPlaySource
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamsUiState
+import com.nuvio.app.features.usenet.UsenetEngine
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -36,7 +37,14 @@ internal fun eligibleAutoPlayStreams(
 ): List<StreamItem> = when (sourceAffinity) {
     PlayerSourceAffinity.Local -> streams
     PlayerSourceAffinity.Stream -> streams.filterNot { it.streamType.equals("local", ignoreCase = true) }
+}.filterNot { stream ->
+    // A Usenet release that already failed to open this run (missing articles, a password) fails
+    // the same way again; picking it would leave the next-episode card waiting on nothing.
+    stream.needsUsenetPreparation && UsenetEngine.hasFailed(stream)
 }
+
+/** How many more picks next-episode autoplay tries after the selected release fails to open. */
+private const val NEXT_EPISODE_OPEN_FAILOVER_ATTEMPTS = 3
 
 /**
  * Whether the next episode should first try the same binge group as the stream currently playing.
@@ -234,7 +242,12 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     /** The stream playing now, whose release (filename, infohash) is picked again when it is offered. */
     currentStream: StreamItem? = null,
     onDownloadedEpisodeSelected: (DownloadItem, MetaVideo) -> Unit,
-    onEpisodeStreamSelected: (StreamItem, MetaVideo) -> Unit,
+    /**
+     * Plays the picked stream. The third argument is called when the stream cannot be prepared
+     * (a Usenet release missing articles): autoplay then moves on to its next pick, and opens the
+     * source list once it runs out.
+     */
+    onEpisodeStreamSelected: (StreamItem, MetaVideo, suspend (Throwable) -> Unit) -> Unit,
     onManualSelectionRequired: (MetaVideo) -> Unit,
     onSearchingChanged: (Boolean) -> Unit,
     onSourceNameChanged: (String?) -> Unit,
@@ -559,7 +572,28 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                     delay(1000)
                 }
             }
-            onEpisodeStreamSelected(selected, nextVideo)
+            fun play(stream: StreamItem, attemptsLeft: Int) {
+                onEpisodeStreamSelected(stream, nextVideo) { error ->
+                    val next = if (attemptsLeft > 0) {
+                        // The failed release is now recorded, so eligibleAutoPlayStreams drops it.
+                        trySelectStream(eligibleAutoPlayStreams(ownState().groups.flatMap { it.streams }, sourceAffinity))
+                            ?.takeUnless { it == stream }
+                    } else {
+                        null
+                    }
+                    BingeAdvanceLog.i {
+                        "autoplay pick for S${nextSeasonNumber}E${nextEpisodeNumber} could not be opened " +
+                            "(${error.message}); " +
+                            if (next != null) "trying ${next.addonName} next" else "opening manual source selection"
+                    }
+                    if (next != null) {
+                        play(next, attemptsLeft - 1)
+                    } else {
+                        onManualSelectionRequired(nextVideo)
+                    }
+                }
+            }
+            play(selected, NEXT_EPISODE_OPEN_FAILOVER_ATTEMPTS)
             onNextEpisodeCardVisibleChanged(false)
             onCountdownChanged(null)
             onSourceNameChanged(null)

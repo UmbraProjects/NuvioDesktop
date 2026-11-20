@@ -8885,11 +8885,27 @@ struct Pad {
     // Last successfully decoded report. Reads are non-blocking, so a tick that finds nothing new
     // must keep reporting the previous state rather than dropping every held button.
     PadState state;
+    // Settings applied to the pad itself (DualSense only); see applyPadConfig().
+    bool bluetooth = false;
+    USHORT outputReportLength = 0;
+    USHORT featureReportLength = 0;
+    bool fullReportsRequested = false;
+    bool lightSetupDone = false;
+    unsigned int appliedLightGeneration = 0;
+    unsigned char outputSequence = 0;
 };
 
 std::mutex g_mutex;
 std::vector<std::unique_ptr<Pad>> g_pads;
 DWORD g_nextEnumerateAt = 0;
+
+// What the app wants of the pads themselves (configure(), under g_mutex). Light mode: 0 = leave the
+// lights alone (nothing is ever written), 1 = light bar off, 2 = light bar in g_lightRgb.
+bool g_wantFullReports = false;
+int g_lightMode = 0;
+unsigned int g_lightRgb = 0;
+bool g_playerLight = false;
+unsigned int g_configGeneration = 1;
 
 // Converts one HID stick byte (0..255, centred at 128) to the signed range XInput reports. The Y
 // axes are negated because HID counts downward and XInput counts upward.
@@ -8916,8 +8932,11 @@ USHORT decodeHat(unsigned char hat) {
     }
 }
 
-// The three DualSense button bytes, in the order they appear in every layout.
-USHORT decodeButtons(unsigned char b0, unsigned char b1, unsigned char b2) {
+// The three DualSense button bytes, in the order they appear in every layout. [hasSystemByte] says
+// whether b2 really is the PS / touchpad / mic byte: in the short reports (a DualShock 4 on any
+// transport, a DualSense over Bluetooth before full mode) only its low two bits are buttons and
+// the upper six are a frame counter, so 0x04 flickers on and off by itself.
+USHORT decodeButtons(unsigned char b0, unsigned char b1, unsigned char b2, bool hasSystemByte) {
     USHORT buttons = decodeHat(b0);
     if (b0 & 0x10) buttons |= kBtnX; // Square
     if (b0 & 0x20) buttons |= kBtnA; // Cross
@@ -8932,7 +8951,10 @@ USHORT decodeButtons(unsigned char b0, unsigned char b1, unsigned char b2) {
     // b2 carries PS (0x01), touchpad click (0x02) and the mic button (0x04). The PS button belongs
     // to the system, and a touchpad press is far too easy to trigger by accident while holding the
     // pad; the mic button is push-to-talk for voice control.
-    if (b2 & 0x04) buttons |= kBtnMic;
+    // Only read where b2 is the system byte. Reading it from a short report saw the frame counter as
+    // the mic button pressed again and again: "Voice control is off" popped up every few frames and
+    // never cleared, once Bluetooth pads were detected (Nov 20 2026).
+    if (hasSystemByte && (b2 & 0x04)) buttons |= kBtnMic;
     return buttons;
 }
 
@@ -8941,6 +8963,8 @@ struct ReportLayout {
     size_t axes;
     size_t triggers;
     size_t buttons;
+    // The third button byte is PS / touchpad / mic (DualSense full reports), not a frame counter.
+    bool hasSystemByte = false;
 };
 
 /**
@@ -8964,9 +8988,9 @@ bool layoutFor(
 
     if (model == PadModel::DualSense) {
         // USB: axes, triggers, a sequence byte, then the buttons.
-        if (usb && reportId == 0x01 && length >= 11) { out = {1, 5, 8}; return true; }
+        if (usb && reportId == 0x01 && length >= 11) { out = {1, 5, 8, true}; return true; }
         // Bluetooth, full report: the USB layout shifted by one extra header byte.
-        if (bluetooth && reportId == 0x31 && length >= 12) { out = {2, 6, 9}; return true; }
+        if (bluetooth && reportId == 0x31 && length >= 12) { out = {2, 6, 9, true}; return true; }
         // Bluetooth, cut-down report sent until full mode is requested: buttons before triggers.
         if (bluetooth && reportId == 0x01 && length >= 10) { out = {1, 8, 5}; return true; }
         return false;
@@ -9007,7 +9031,7 @@ bool decodeReport(
     state.thumbRY = toThumb(report[axes + 3], true);
     state.leftTrigger = report[triggers + 0];
     state.rightTrigger = report[triggers + 1];
-    state.buttons = decodeButtons(report[buttons + 0], report[buttons + 1], report[buttons + 2]);
+    state.buttons = decodeButtons(report[buttons + 0], report[buttons + 1], report[buttons + 2], layout.hasSystemByte);
     state.packet++;
     return true;
 }
@@ -9078,24 +9102,36 @@ bool alreadyOpen(const std::wstring &path) {
     return false;
 }
 
-// The device interface path carries the ids ("...hid#vid_054c&pid_0ce6#..."), so the wrong devices
-// are rejected on a string compare. That matters: opening every HID interface on the machine just
-// to ask what it is would touch keyboards and mice for no reason.
+// The device interface path carries the ids, so the wrong devices are rejected on a string compare.
+// That matters: opening every HID interface on the machine just to ask what it is would touch
+// keyboards and mice for no reason. openPad() still checks the real ids with HidD_GetAttributes.
+//
+// USB and Bluetooth spell the ids differently, and both have to match:
+//   USB        \?\hid#vid_054c&pid_0ce6&mi_03#...
+//   Bluetooth  \?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0002054c_pid&0ce6#...
+// (Bluetooth's vendor id carries a 4-digit source prefix: 0002 = USB-IF ids, 0001 = Bluetooth SIG.)
+// Matching only the USB form left every Bluetooth pad undetected (Nov 20 2026).
 bool pathLooksLikeSupportedPad(const std::wstring &path) {
     std::wstring lowered = path;
     std::transform(lowered.begin(), lowered.end(), lowered.begin(), ::towlower);
-    if (lowered.find(L"vid_054c") == std::wstring::npos) return false;
+    const bool sony = lowered.find(L"vid_054c") != std::wstring::npos ||
+        lowered.find(L"vid&0002054c") != std::wstring::npos ||
+        lowered.find(L"vid&0001054c") != std::wstring::npos;
+    if (!sony) return false;
     // Matched on the product id too, not just Sony's vendor id: the same vendor ships headsets and
     // cameras, and there is no reason to open those.
     static const wchar_t *kProductIds[] = {
-        L"pid_0ce6", // DualSense
-        L"pid_0df2", // DualSense Edge
-        L"pid_05c4", // DualShock 4 v1
-        L"pid_09cc", // DualShock 4 v2
-        L"pid_0ba0", // DualShock 4 USB wireless adaptor
+        L"0ce6", // DualSense
+        L"0df2", // DualSense Edge
+        L"05c4", // DualShock 4 v1
+        L"09cc", // DualShock 4 v2
+        L"0ba0", // DualShock 4 USB wireless adaptor
     };
     for (const wchar_t *productId : kProductIds) {
-        if (lowered.find(productId) != std::wstring::npos) return true;
+        if (lowered.find(std::wstring(L"pid_") + productId) != std::wstring::npos ||
+            lowered.find(std::wstring(L"pid&") + productId) != std::wstring::npos) {
+            return true;
+        }
     }
     return false;
 }
@@ -9162,6 +9198,9 @@ bool openPad(const std::wstring &path) {
     pad->path = path;
     pad->model = model;
     const bool bluetooth = caps.InputReportByteLength == kBluetoothInputReportLength;
+    pad->bluetooth = bluetooth;
+    pad->outputReportLength = caps.OutputReportByteLength;
+    pad->featureReportLength = caps.FeatureReportByteLength;
     g_pads.push_back(std::move(pad));
     char line[128];
     _snprintf_s(line, sizeof(line), _TRUNCATE, "gamepad %s connected (%s)",
@@ -9199,6 +9238,133 @@ void enumerate() {
     SetupDiDestroyDeviceInfoList(deviceInfo);
 }
 
+// CRC-32 (zlib's), which a DualSense checks on every Bluetooth output report.
+uint32_t crc32(uint32_t crc, const unsigned char *data, size_t length) {
+    static uint32_t table[256];
+    static bool built = false;
+    if (!built) {
+        for (uint32_t i = 0; i < 256; ++i) {
+            uint32_t c = i;
+            for (int k = 0; k < 8; ++k) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            table[i] = c;
+        }
+        built = true;
+    }
+    crc = ~crc;
+    for (size_t i = 0; i < length; ++i) crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+    return ~crc;
+}
+
+// Over Bluetooth a DualSense sends a short report (no mic button, no touchpad) until the host reads
+// its calibration feature report (0x05); from then on, until it reconnects, it sends the full one.
+// Only asked for while voice control is on, so a pad nobody talks to keeps the lighter report.
+void requestFullReports(Pad &pad) {
+    std::vector<unsigned char> buffer(pad.featureReportLength > 0 ? pad.featureReportLength : 64, 0);
+    buffer[0] = 0x05;
+    const BOOLEAN ok = HidD_GetFeature(pad.handle, buffer.data(), static_cast<ULONG>(buffer.size()));
+    nuvioBridgeLog(ok ? "gamepad DualSense full reports requested (bluetooth)"
+                      : "gamepad DualSense full reports request failed");
+}
+
+// Writes the light bar and player light. The layout is Sony's common output block, as the Linux
+// hid-playstation driver documents it: USB sends it behind report id 0x02, Bluetooth behind 0x31,
+// a sequence/tag pair and a trailing CRC. A Bluetooth output report also switches the pad to full
+// input reports, the same as requestFullReports().
+bool writeLights(Pad &pad) {
+    constexpr size_t kCommonSize = 47;
+    const size_t header = pad.bluetooth ? 3 : 1;
+    // Bluetooth's 0x31 report is 78 bytes with the CRC in its last four, wherever Windows' own
+    // (padded) output length ends: the pad reads those 78 and ignores any padding after them.
+    constexpr size_t kBluetoothReportSize = 78;
+    const size_t needed = pad.bluetooth ? kBluetoothReportSize : header + kCommonSize;
+    if (pad.outputReportLength < needed) {
+        char line[128];
+        _snprintf_s(line, sizeof(line), _TRUNCATE, "gamepad lights skipped: output report is %u bytes",
+                    static_cast<unsigned>(pad.outputReportLength));
+        nuvioBridgeLog(line);
+        return false;
+    }
+    std::vector<unsigned char> report(pad.outputReportLength, 0);
+    if (pad.bluetooth) {
+        report[0] = 0x31;
+        report[1] = static_cast<unsigned char>((pad.outputSequence & 0x0F) << 4);
+        report[2] = 0x10; // "HID data" tag
+        pad.outputSequence = static_cast<unsigned char>((pad.outputSequence + 1) & 0x0F);
+    } else {
+        report[0] = 0x02;
+    }
+    unsigned char *common = report.data() + header;
+    common[1] = 0x04 | 0x10; // valid_flag1: light bar control, player indicator control
+    if (!pad.lightSetupDone) {
+        // Fades out the light the pad shows while it waits for a host, so the colour below sticks.
+        common[38] = 0x02; // valid_flag2: light bar setup control
+        common[41] = 0x02; // light bar setup: light out
+    }
+    common[42] = 0x00; // player light brightness: high
+    common[43] = g_playerLight ? 0x04 : 0x00; // the middle of the five player lights: player 1
+    const unsigned int rgb = g_lightMode == 2 ? g_lightRgb : 0u;
+    common[44] = static_cast<unsigned char>((rgb >> 16) & 0xFF);
+    common[45] = static_cast<unsigned char>((rgb >> 8) & 0xFF);
+    common[46] = static_cast<unsigned char>(rgb & 0xFF);
+    if (pad.bluetooth) {
+        const unsigned char seed = 0xA2; // output report header byte the CRC starts from
+        uint32_t crc = crc32(0, &seed, 1);
+        const size_t crcAt = kBluetoothReportSize - 4;
+        crc = crc32(crc, report.data(), crcAt);
+        report[crcAt + 0] = static_cast<unsigned char>(crc & 0xFF);
+        report[crcAt + 1] = static_cast<unsigned char>((crc >> 8) & 0xFF);
+        report[crcAt + 2] = static_cast<unsigned char>((crc >> 16) & 0xFF);
+        report[crcAt + 3] = static_cast<unsigned char>((crc >> 24) & 0xFF);
+    }
+
+    // A separate, blocking handle: the reading one is overlapped and busy with a pending read.
+    HANDLE writer = CreateFileW(pad.path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                nullptr, OPEN_EXISTING, 0, nullptr);
+    if (writer == INVALID_HANDLE_VALUE) {
+        nuvioBridgeLog("gamepad lights: could not open the pad for writing");
+        return false;
+    }
+    DWORD written = 0;
+    const BOOL ok = WriteFile(writer, report.data(), static_cast<DWORD>(report.size()), &written, nullptr);
+    const DWORD error = ok ? 0 : GetLastError();
+    CloseHandle(writer);
+    if (!ok) {
+        char line[96];
+        _snprintf_s(line, sizeof(line), _TRUNCATE, "gamepad lights write failed error=%lu",
+                    static_cast<unsigned long>(error));
+        nuvioBridgeLog(line);
+        return false;
+    }
+    pad.lightSetupDone = true;
+    if (pad.bluetooth) pad.fullReportsRequested = true;
+    nuvioBridgeLog("gamepad DualSense lights set");
+    return true;
+}
+
+// Brings one pad in line with what the app wants. Each step runs once per pad (and the lights once
+// per change), so a pad that refuses is not asked again on every poll.
+void applyPadConfig(Pad &pad) {
+    if (pad.model != PadModel::DualSense) return;
+    if (g_wantFullReports && pad.bluetooth && !pad.fullReportsRequested) {
+        pad.fullReportsRequested = true;
+        requestFullReports(pad);
+    }
+    if (g_lightMode != 0 && pad.appliedLightGeneration != g_configGeneration) {
+        pad.appliedLightGeneration = g_configGeneration;
+        writeLights(pad);
+    }
+}
+
+void configure(bool fullReports, int lightMode, unsigned int rgb, bool playerLight) {
+    std::lock_guard<std::mutex> guard(g_mutex);
+    const bool lightsChanged = g_lightMode != lightMode || g_lightRgb != rgb || g_playerLight != playerLight;
+    g_wantFullReports = fullReports;
+    g_lightMode = lightMode;
+    g_lightRgb = rgb;
+    g_playerLight = playerLight;
+    if (lightsChanged) ++g_configGeneration;
+}
+
 // Refreshes every open pad and drops the ones that have gone away. Returns how many are live.
 size_t poll(PadState *out, size_t capacity) {
     std::lock_guard<std::mutex> guard(g_mutex);
@@ -9221,6 +9387,7 @@ size_t poll(PadState *out, size_t capacity) {
             g_nextEnumerateAt = 0;
             continue;
         }
+        applyPadConfig(pad);
         if (live < capacity) out[live] = pad.state;
         ++live;
         ++it;
@@ -9241,6 +9408,21 @@ static constexpr jint kGamepadSlotStride = 8;
 static constexpr jint kGamepadXInputSlots = 4;
 static constexpr jint kGamepadHidSlots = 4;
 static constexpr jint kGamepadTotalSlots = kGamepadXInputSlots + kGamepadHidSlots;
+
+// What the app wants of the PlayStation pads themselves: full reports over Bluetooth (for the mic
+// button), and the light bar / player light (lightMode 0 = leave alone, 1 = off, 2 = rgb).
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_configureGamepads(
+    JNIEnv *,
+    jobject,
+    jboolean fullReports,
+    jint lightMode,
+    jint rgb,
+    jboolean playerLight
+) {
+    nuvio_gamepad_hid::configure(fullReports == JNI_TRUE, static_cast<int>(lightMode),
+                                 static_cast<unsigned int>(rgb) & 0xFFFFFFu, playerLight == JNI_TRUE);
+}
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_pollGamepads(

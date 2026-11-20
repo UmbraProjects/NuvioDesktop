@@ -38,6 +38,9 @@ internal class CoalescingRequestStrategy : ConcurrentRequestStrategy {
     override suspend fun apply(key: String, block: suspend () -> FetchResult): FetchResult {
         // A follower's own fetch must not queue behind itself.
         if (currentCoroutineContext()[CoalescedFollower] != null) return block()
+        // Nor may a card wait behind a background refresh: that wait is the one the refresh exists
+        // to avoid. The card is served the stale copy from disk while the refresh runs.
+        if (currentCoroutineContext()[ImageFetchScope]?.options?.isBackgroundRevalidation() == true) return block()
 
         var leading: CompletableDeferred<Boolean>? = null
         val waitingOn = synchronized(lock) {

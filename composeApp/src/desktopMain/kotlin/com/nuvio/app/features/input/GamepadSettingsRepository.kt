@@ -53,6 +53,8 @@ object GamepadSettingsRepository {
     private const val KEY_CURSOR_SPEED = "gamepad_cursor_speed"
     private const val KEY_CURSOR_DEFAULT = "gamepad_cursor_default"
     private const val KEY_CURSOR_HINT = "gamepad_cursor_hint"
+    private const val KEY_LIGHT_BAR = "gamepad_light_bar"
+    private const val KEY_PLAYER_LIGHT = "gamepad_player_light"
 
     /** Hold this to turn the left stick into the mouse pointer; a tap still does the button's own action. */
     val DEFAULT_CURSOR_BUTTON: GamepadButton? = GamepadButton.RightThumb
@@ -154,6 +156,12 @@ object GamepadSettingsRepository {
     private val _ringMouseState = MutableStateFlow(DEFAULT_RING_MOUSE)
     val ringMouseState: StateFlow<Boolean> = _ringMouseState.asStateFlow()
 
+    /** A DualSense's light bar and player light; written to the pad by GamepadInput. */
+    private val _lightBarState = MutableStateFlow(ControllerLightBar.LeaveAlone)
+    val lightBarState: StateFlow<ControllerLightBar> = _lightBarState.asStateFlow()
+    private val _playerLightState = MutableStateFlow(true)
+    val playerLightState: StateFlow<Boolean> = _playerLightState.asStateFlow()
+
     /** Bumped on every rebind, so the settings list redraws. */
     private val _bindingsVersion = MutableStateFlow(0)
     val bindingsVersion: StateFlow<Int> = _bindingsVersion.asStateFlow()
@@ -186,6 +194,9 @@ object GamepadSettingsRepository {
         ringButton = decodeRingButton(store.getString(scoped(KEY_RING_BUTTON)))
         _ringSizeState.value = PanelRingSize.fromKey(store.getString(scoped(KEY_RING_SIZE)))
         _ringMouseState.value = store.getBoolean(scoped(KEY_RING_MOUSE)) ?: DEFAULT_RING_MOUSE
+        _lightBarState.value = ControllerLightBar.entries.firstOrNull { it.name == store.getString(scoped(KEY_LIGHT_BAR)) }
+            ?: ControllerLightBar.LeaveAlone
+        _playerLightState.value = store.getBoolean(scoped(KEY_PLAYER_LIGHT)) ?: true
         cursorButton = when (val stored = store.getString(scoped(KEY_CURSOR_BUTTON))) {
             null -> DEFAULT_CURSOR_BUTTON
             RING_BUTTON_OFF -> null
@@ -295,6 +306,18 @@ object GamepadSettingsRepository {
         ensureLoaded()
         if (enabled == DEFAULT_RING_MOUSE) store.remove(scoped(KEY_RING_MOUSE)) else store.putBoolean(scoped(KEY_RING_MOUSE), enabled)
         _ringMouseState.value = enabled
+    }
+
+    fun setLightBar(mode: ControllerLightBar) {
+        ensureLoaded()
+        if (mode == ControllerLightBar.LeaveAlone) store.remove(scoped(KEY_LIGHT_BAR)) else store.putString(scoped(KEY_LIGHT_BAR), mode.name)
+        _lightBarState.value = mode
+    }
+
+    fun setPlayerLight(enabled: Boolean) {
+        ensureLoaded()
+        if (enabled) store.remove(scoped(KEY_PLAYER_LIGHT)) else store.putBoolean(scoped(KEY_PLAYER_LIGHT), false)
+        _playerLightState.value = enabled
     }
 
     /** Never set: the default. "off": no button. Anything else: that button, if it may open the ring. */

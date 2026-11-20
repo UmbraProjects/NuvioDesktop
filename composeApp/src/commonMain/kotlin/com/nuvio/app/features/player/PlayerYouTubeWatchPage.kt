@@ -92,6 +92,7 @@ import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.youtube.WATCH_LATER_PLAYLIST_ID
 import com.nuvio.app.features.youtube.YouTubeComment
 import com.nuvio.app.features.youtube.YouTubeFastStreamState
+import com.nuvio.app.core.ui.middleClickAutoscroll
 import com.nuvio.app.features.youtube.YouTubeFeedRepository
 import com.nuvio.app.features.youtube.YouTubeLikeCounts
 import com.nuvio.app.features.youtube.YouTubeMiniPlayerHost
@@ -299,7 +300,7 @@ private fun PlayerScreenRuntime.YouTubeWatchPage(shown: Boolean, onVideoBox: (Re
                 }
             }
         }
-        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+        Column(Modifier.fillMaxSize().middleClickAutoscroll(scroll).verticalScroll(scroll)) {
             when {
                 theater -> {
                     // Edge to edge, as tall as leaves the title showing.

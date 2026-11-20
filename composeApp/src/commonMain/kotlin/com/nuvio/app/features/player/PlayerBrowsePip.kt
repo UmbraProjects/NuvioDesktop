@@ -19,10 +19,10 @@ import kotlinx.coroutines.flow.drop
  * moved and resized from its HUD, its exit button brings the video back to fill the window and its
  * X closes it.
  *
- * Opt-in (Settings > Player > Browse while in picture in picture), and only for the players App.kt
- * hosts outside the navigation graph (see PlayerHostLayer there): a player inside its route would
- * be disposed by the first screen pushed over it. The setting is read when a video opens, so a
- * change takes effect from the next one. A YouTube tab video in the box hands over to the next
+ * Always on since Nov 20 2026 (it was an opt-in setting, Settings > Player > Browse while in picture
+ * in picture, while it was new). It works only for the players App.kt hosts outside the navigation
+ * graph (see PlayerHostLayer there): a player inside its route would be disposed by the first
+ * screen pushed over it. A YouTube tab video in the box hands over to the next
  * (its queue, autoplay, a related pick) inside the box; its watch page is not drawn there. The
  * app's playlists (each entry is its own route) keep the classic PiP.
  *
@@ -31,19 +31,6 @@ import kotlinx.coroutines.flow.drop
  * drive the app.
  */
 internal object PlayerBrowsePip {
-    private const val KEY_ENABLED = "browse_enabled"
-
-    private val _enabled = MutableStateFlow(PlayerBrowsePipStorage.load(KEY_ENABLED) == "true")
-
-    /** The setting: PiP leaves the app usable around the video (desktop, built-in player). */
-    val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
-
-    fun setEnabled(enabled: Boolean) {
-        if (_enabled.value == enabled) return
-        _enabled.value = enabled
-        PlayerBrowsePipStorage.save(KEY_ENABLED, if (enabled) "true" else null)
-    }
-
     private val _hostedPlayerAvailable = MutableStateFlow(false)
 
     /**

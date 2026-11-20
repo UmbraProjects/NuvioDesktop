@@ -1425,9 +1425,24 @@ fun App() {
  */
 private fun NavController.navigateIfResumed(route: Any) {
     if (currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED) {
+        if (route is DetailRoute) {
+            // launchSingleTop matches on the destination, not its arguments, so it would
+            // replace the current details page with the new one (More like this, cast
+            // credits) and Back would skip straight past it. Push a new details page
+            // instead, and only skip the one case singleTop guarded: the same title on
+            // top of itself, which registers duplicate shared-element keys and freezes
+            // the renderer.
+            val entry = currentBackStackEntry
+            if (entry != null && entry.destination.hasRoute<DetailRoute>()) {
+                val current = entry.toRoute<DetailRoute>()
+                if (current.type == route.type && current.id == route.id) return
+            }
+            navigate(route)
+            return
+        }
         // launchSingleTop avoids stacking a second instance of the same destination
-        // (e.g. the same details page) on top of itself, which would register
-        // duplicate shared-element transition keys and freeze the renderer.
+        // on top of itself, which would register duplicate shared-element transition
+        // keys and freeze the renderer.
         navigate(route) { launchSingleTop = true }
     }
 }
@@ -1624,6 +1639,8 @@ private fun MainAppContent(
                     GameModeController.setActive(false)
                     return@collect
                 }
+                // A poster's long-press sheet closes first, rather than the page behind it going back.
+                if (PosterZoomOverlayCoordinator.requestClose()) return@collect
                 // fork:youtube-mini-player - over the tab the mini player draws, Back steps back inside the
                 // tab and never closes the video (the box's X does). From a YouTube tab video's page, Back
                 // goes to the mini player, as the player's own Back does (handleYouTubeMiniPlayerBack).
@@ -3854,7 +3871,7 @@ private fun MainAppContent(
                         Box(modifier = Modifier.fillMaxSize().background(Color.Black))
                         return@composable
                     }
-                    // fork:pip-browse - with the setting on, the player is drawn outside the graph
+                    // fork:pip-browse - the player is drawn outside the graph
                     // (PlayerHostLayer) so PiP can take this route away and leave it playing. Decided
                     // once per launch; coming back from the corner box picks the same player up.
                     val reattachingHostedPlayer = remember(route.launchId) { hostedPlayer?.launchId == route.launchId }
@@ -3863,8 +3880,7 @@ private fun MainAppContent(
                         when {
                             reattachingHostedPlayer -> hostedPlayer
                             openInBox -> com.nuvio.app.features.player.HostedPlayer(route.launchId).also { it.detached = true }
-                            com.nuvio.app.features.player.PlayerBrowsePip.enabled.value &&
-                                launch.autoPlayMode != PlayerAutoPlayMode.Playlist ->
+                            launch.autoPlayMode != PlayerAutoPlayMode.Playlist ->
                                 com.nuvio.app.features.player.HostedPlayer(route.launchId)
                             else -> null
                         }
@@ -6012,6 +6028,22 @@ private fun MainAppContent(
                                             activeIdentityKey = null,
                                             triedIdentityKeys = pickerFailoverTried,
                                             excludeUsenet = com.nuvio.app.features.usenet.usenetUnavailable(error),
+                                            // The same ranking the player's own failover uses. Without it the
+                                            // walk took the list's order, where Local library comes first, so a
+                                            // release that failed to open fell back to a local file scored -120
+                                            // ahead of the next best Usenet or addon source (Nov 20).
+                                            preferredAudioLanguages = com.nuvio.app.features.player.resolvePreferredAudioLanguageTargets(
+                                                preferredAudioLanguage = playerSettings.preferredAudioLanguage,
+                                                secondaryPreferredAudioLanguage = playerSettings.secondaryPreferredAudioLanguage,
+                                                deviceLanguages = com.nuvio.app.features.player.DeviceLanguagePreferences.preferredLanguageCodes(),
+                                                originalLanguage = OriginalLanguageCache.languageFor(launch.parentMetaId),
+                                            ),
+                                            scoreProfile = com.nuvio.app.features.streams.StreamScoreRepository.profile,
+                                            scoreContext = com.nuvio.app.features.streams.StreamScoreContexts.forPlayback(
+                                                isEpisode = streamLookupEpisodeNumber != null,
+                                                contentId = launch.parentMetaId,
+                                                contentType = launch.type,
+                                            ),
                                         )
                                     } else {
                                         null

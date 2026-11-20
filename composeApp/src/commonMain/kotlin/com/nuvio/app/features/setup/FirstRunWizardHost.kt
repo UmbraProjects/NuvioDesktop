@@ -8,8 +8,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,15 +16,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,7 +55,6 @@ import com.nuvio.app.isDesktop
 import kotlinx.coroutines.delay
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_back
-import nuvio.composeapp.generated.resources.action_close
 import nuvio.composeapp.generated.resources.action_continue
 import nuvio.composeapp.generated.resources.setup_wizard_finish
 import nuvio.composeapp.generated.resources.setup_wizard_finish_later
@@ -162,8 +154,11 @@ fun FirstRunWizardPanel(
                     Key.DirectionDown -> focusManager.moveFocus(FocusDirection.Down)
                     Key.DirectionLeft -> focusManager.moveFocus(FocusDirection.Left)
                     Key.DirectionRight -> focusManager.moveFocus(FocusDirection.Right)
+                    // Escape (and a controller's B) steps back rather than closing: one stray press
+                    // must not throw away a half-made setup. Leaving takes Finish later or Skip
+                    // setup on the first step, which are worded as decisions.
                     Key.Escape, Key.Back -> {
-                        FirstRunWizardController.close()
+                        FirstRunWizardController.back()
                         true
                     }
                     else -> false
@@ -219,7 +214,6 @@ private fun PanelHeader(state: FirstRunWizardUiState) {
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
-            CloseButton()
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -249,30 +243,6 @@ private fun PanelHeader(state: FirstRunWizardUiState) {
             text = subtitle,
             style = MaterialTheme.typography.bodySmall,
             color = tokens.colors.textSecondary,
-        )
-    }
-}
-
-@Composable
-private fun CloseButton() {
-    val tokens = MaterialTheme.nuvio
-    Box(
-        modifier = Modifier
-            .size(28.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.06f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = FirstRunWizardController::close,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Close,
-            contentDescription = stringResource(Res.string.action_close),
-            tint = tokens.colors.textSecondary,
-            modifier = Modifier.size(16.dp),
         )
     }
 }

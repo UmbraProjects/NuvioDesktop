@@ -22,7 +22,8 @@ import java.awt.event.MouseEvent
  * arrows step round, Enter switches to the aimed slot, Escape or the ring key again closes. Holding
  * the ring key and moving the mouse aims; letting go of the key then switches.
  *
- * Mouse: holding the middle button opens the ring at the pointer; dragging aims; letting go switches
+ * Mouse: holding the middle button opens the ring at the pointer (not over a page with middle-click
+ * autoscroll, MiddleClickAutoscroll.claimed, where the button scrolls instead); dragging aims; letting go switches
  * (or, after a quick click, leaves it open to click a slot). A left click switches to the aimed slot,
  * a right click closes. AWT listeners only observe, so the overlay's own scrim is what stops a click
  * reaching the screen beneath.
@@ -153,6 +154,8 @@ internal object PanelRingInput {
                     return
                 }
                 if (!GamepadSettingsRepository.ringMouseState.value || GamepadContext.playerActive) return
+                // Over a page that scrolls on a middle click (the YouTube tab), the button is the scroll's.
+                if (com.nuvio.app.core.ui.MiddleClickAutoscroll.claimed) return
                 val at = event.locationOnScreen
                 PanelRingController.open(PanelRingSource.Mouse, at.x.toFloat(), at.y.toFloat())
                 if (!PanelRingController.isOpen) return

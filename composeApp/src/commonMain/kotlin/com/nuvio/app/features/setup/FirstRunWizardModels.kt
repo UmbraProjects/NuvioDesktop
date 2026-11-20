@@ -14,9 +14,13 @@ private val homeDefaults = HomeCatalogSettingsUiState()
 
 internal enum class FirstRunWizardStep {
     Layout,
+    /** App UI scale: everything after it is judged at the size it sets, this panel included. */
+    Scale,
     Posters,
     ContinueWatching,
     Theme,
+    /** Which panels show in the navigation: Nuvio is more than films and series. */
+    Panels,
     Trailers,
     Metadata,
     ;
@@ -47,6 +51,8 @@ internal data class FirstRunWizardDraft(
     val adaptiveHeroHeightMultiplier: Float = homeDefaults.adaptiveHeroHeightMultiplier,
     val adaptiveAmbientEnabled: Boolean = homeDefaults.heroAmbientBackgroundEnabled,
     val smoothScrollingEnabled: Boolean = true,
+    /** Wins over smooth while on, as on the Settings page (one wheel choice over two stored switches). */
+    val snapScrollingEnabled: Boolean = homeDefaults.snapScrollingEnabled,
     val tvFullBackdropEnabled: Boolean = true,
     val tvAmbientBackgroundEnabled: Boolean = homeDefaults.tvAmbientBackgroundEnabled,
     val tvRowDotsEnabled: Boolean = true,
@@ -69,6 +75,14 @@ internal data class FirstRunWizardDraft(
     val trailerDelaySeconds: Int = 0,
     val trailerSoundEnabled: Boolean = false,
     val trailerInSearchEnabled: Boolean = true,
+    /** -50..50, as Settings > Appearance > App UI Scale. */
+    val uiScalePercent: Int = 0,
+    val discoverPanel: Boolean = true,
+    val tonightPanel: Boolean = true,
+    val liveTvPanel: Boolean = false,
+    val youTubePanel: Boolean = false,
+    val musicPanel: Boolean = true,
+    val gamesPanel: Boolean = false,
 )
 
 internal data class FirstRunWizardUiState(

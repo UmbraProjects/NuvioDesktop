@@ -552,6 +552,10 @@ fun main(args: Array<String>) {
     desktopStartupStep("app font warm request") { com.nuvio.app.core.ui.warmSystemFontCache() }
     // Idle until Home has rows and the user opted in; see ArtworkPrewarmer.
     desktopStartupStep("artwork prewarm") { com.nuvio.app.core.ui.ArtworkPrewarmer.start() }
+    // Opens the image disk cache now, off the UI thread, so the first poster does not pay for it.
+    desktopStartupStep("image disk cache open") {
+        com.nuvio.app.core.ui.ImageDiskCacheWarmup.start { com.nuvio.app.core.ui.buildArtworkDiskCache() }
+    }
     System.out.println("Info: (DesktopStartup) entering Compose application")
 
     application {

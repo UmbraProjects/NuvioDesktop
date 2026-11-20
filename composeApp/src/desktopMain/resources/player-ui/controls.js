@@ -3166,7 +3166,8 @@ const contextMenuItems = [
         { label: "Zoom", textKey: "compose_player_resize_zoom", action: "resizeMode:2", selectedField: "resizeModeLabel" },
         { label: "Auto crop", textKey: "compose_player_resize_auto_crop", action: "resizeMode:3", selectedField: "resizeModeLabel" },
       ] },
-      { label: "Video settings", textKey: "player_hud_video_settings", children: [
+      // Was "Video settings"; it only ever held the HDR modes (2026-11-20).
+      { label: "HDR mode", textKey: "player_hud_hdr_mode_2", children: [
         { label: "Auto", textKey: "player_hdr_mode_auto_label", action: "send:selectDesktopHdrMode:0", selectedField: "desktopHdrModeLabel" },
         { label: "Always Tonemap", textKey: "player_hdr_mode_always_tonemap_label", action: "send:selectDesktopHdrMode:1", selectedField: "desktopHdrModeLabel" },
         { label: "Always Passthrough", textKey: "player_hdr_mode_always_passthrough_label", action: "send:selectDesktopHdrMode:2", selectedField: "desktopHdrModeLabel" },
@@ -3181,6 +3182,10 @@ const contextMenuItems = [
         { label: "Adjust custom color…", textKey: "player_hud_adjust_custom_color", action: "colorGradePanel" },
       ] },
       { label: "Anime shader", textKey: "player_hud_anime_shader", dynamicKey: "animeShaders", children: [] },
+      // Moved here from the mouse menu's Quick actions (2026-11-20). The TV sheet keeps them as tiles too.
+      { label: "SVP interpolation", textKey: "player_hud_svp_interpolation", action: "send:keyboardCycleAnimeSvp:0", toggleKey: "svpInChain" },
+      { label: "RTX True HDR", textKey: "player_hud_rtx_true_hdr", action: "send:toggleRtxTrueHdr:0", toggleKey: "rtxTrueHdrEnabled" },
+      { label: "RTX Super Resolution", textKey: "player_hud_rtx_super_resolution", action: "send:toggleRtxVsr:0", toggleKey: "rtxVsrEnabled" },
       // This session only; the saved defaults stay in Settings > Playback. Neither runs with SVP.
       { label: "MPV settings", textKey: "player_hud_advanced_mpv", dynamicKey: "mpvOptions", children: [] },
       { label: "UI scale", textKey: "player_hud_ui_scale", children: uiScalePresetItems },
@@ -3870,22 +3875,24 @@ const QUICK_TILES = [
   ["SVP", () => send("keyboardCycleAnimeSvp", 0), null, "svpInChain"],
   ["RTX HDR", () => send("toggleRtxTrueHdr", 0), null, "rtxTrueHdrEnabled"],
   ["RTX VSR", () => send("toggleRtxVsr", 0), null, "rtxVsrEnabled"],
-  ["Info", () => {
-    if (root.classList.contains("tv-menus")) {
-      openMenuStreamInfo();
-      return;
-    }
-    closeContextMenu();
-    const info = document.getElementById("streamInfoButton");
-    if (info) info.click();
-  }, null, null],
+  ["Info", () => openStreamInfoFromMenu(), null, null],
   ["Stats", () => executeContextAction("toggleMpvDiagnostics"), null, "mpvDiagnosticsEnabled"],
-  // The failover action sends what state already says, as the menu row flipped it before calling it: flip it here.
-  ["Failover", () => {
-    state = { ...state, streamFailoverEnabled: !state.streamFailoverEnabled };
-    executeContextAction("toggleStreamFailover");
-  }, null, "streamFailoverEnabled", true],
+  ["Failover", () => toggleFailoverFromMenu(), null, "streamFailoverEnabled", true],
 ];
+function openStreamInfoFromMenu() {
+  if (root.classList.contains("tv-menus")) {
+    openMenuStreamInfo();
+    return;
+  }
+  closeContextMenu();
+  const info = document.getElementById("streamInfoButton");
+  if (info) info.click();
+}
+// The failover action sends what state already says, as the menu row flipped it before calling it: flip it here.
+function toggleFailoverFromMenu() {
+  state = { ...state, streamFailoverEnabled: !state.streamFailoverEnabled };
+  executeContextAction("toggleStreamFailover");
+}
 const buildQuickTiles = parent => {
   const row = document.createElement("div");
   row.className = "context-menu-quick";
@@ -3927,11 +3934,17 @@ const buildQuickTiles = parent => {
   });
   parent.appendChild(row);
 };
-// The mouse menu's form of the same actions (2026-11-16): a "Quick actions" row whose flyout lists them, ticked when
-// on, instead of the grid (the grid stays on the centred sheet the keys or a pad open, where tiles are easier to walk).
-// It also carries the pause overlay switch, which the sheet's 3x4 grid has no room for.
-const QUICK_SECTION_EXTRAS = [
-  ["Pause overlay", () => {
+// The mouse menu's form (2026-11-16, slimmed 2026-11-20): a "Diagnostics" row, just above Copy stream link, whose
+// flyout lists what is not already elsewhere in the menu, ticked when on. Aspect, speed, audio, colour, HDR and the
+// shader each have their own rows; SVP and the RTX switches moved into Video. The centred sheet the keys or a pad open
+// keeps the full tile grid, where one press beats walking several pages. Pause overlay lives only here: the sheet's
+// 3x4 grid has no room for it.
+// [label, hud text key, run, (unused), toggle key | null, hidden for a YouTube video].
+const DIAGNOSTICS_ROWS = [
+  ["Stream info", "player_hud_stream_info", () => openStreamInfoFromMenu(), null, null],
+  ["MPV diagnostics", "player_hud_mpv_diagnostics", () => executeContextAction("toggleMpvDiagnostics"), null, "mpvDiagnosticsEnabled"],
+  ["Failover", null, () => toggleFailoverFromMenu(), null, "streamFailoverEnabled", true],
+  ["Pause overlay", null, () => {
     const next = state.pauseOverlayEnabled === false;
     state = { ...state, pauseOverlayEnabled: next };
     send("togglePauseOverlay", next ? 1 : 0);
@@ -3946,7 +3959,8 @@ const buildQuickActionsSection = parent => {
   button.setAttribute("role", "menuitem");
   const label = document.createElement("span");
   label.className = "context-menu-label";
-  label.textContent = "Quick actions";
+  label.textContent = hudText("player_hud_diagnostics", "Diagnostics");
+  label.dataset.i18n = "player_hud_diagnostics";
   button.appendChild(label);
   const arrow = document.createElement("span");
   arrow.className = "context-menu-arrow";
@@ -3955,7 +3969,7 @@ const buildQuickActionsSection = parent => {
   const submenu = document.createElement("div");
   submenu.className = "context-menu-submenu";
   submenu.setAttribute("role", "menu");
-  [...QUICK_TILES, ...QUICK_SECTION_EXTRAS].forEach(([name, run, , toggleKey, youTubeHidden]) => {
+  DIAGNOSTICS_ROWS.forEach(([name, textKey, run, , toggleKey, youTubeHidden]) => {
     const rowGroup = document.createElement("div");
     rowGroup.className = "context-menu-group";
     if (youTubeHidden) rowGroup.dataset.youtubeHidden = "true";
@@ -3966,7 +3980,8 @@ const buildQuickActionsSection = parent => {
     if (toggleKey) row.dataset.quickToggle = toggleKey;
     const rowLabel = document.createElement("span");
     rowLabel.className = "context-menu-label";
-    rowLabel.textContent = name;
+    rowLabel.textContent = textKey ? hudText(textKey, name) : name;
+    if (textKey) rowLabel.dataset.i18n = textKey;
     row.appendChild(rowLabel);
     if (toggleKey) {
       const indicator = document.createElement("span");
@@ -4005,7 +4020,11 @@ const buildQuickActionsSection = parent => {
     positionSubmenu(group);
     openContextMenuGroup(group);
   });
-  parent.appendChild(group);
+  // Above Copy stream link, the menu's last row.
+  const copyLink = parent.querySelector('[data-i18n="player_hud_copy_stream_link"]');
+  const copyGroup = copyLink ? copyLink.closest(".context-menu-group") : null;
+  if (copyGroup && copyGroup.parentNode === parent) parent.insertBefore(group, copyGroup);
+  else parent.appendChild(group);
 };
 const refreshQuickTiles = () => {
   if (!contextMenu) return;
