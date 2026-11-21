@@ -15,6 +15,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.DefaultAlpha
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asComposeImageBitmap
 import androidx.compose.ui.graphics.asSkiaBitmap
@@ -146,13 +147,15 @@ internal actual fun NuvioAsyncImage(
     // folder gets a different model, so the holder resets and cannot show the previous item's
     // artwork. Only a reload of *the same picture* keeps drawing it.
     val retained = remember(model) { RetainedArtwork() }
+    // First picture from the network fades in. The progress starts at 0, so the frame that flips
+    // the flag already draws transparent (no full-strength flash before the fade), and it is read
+    // only inside graphicsLayer, so the fade redraws the layer without recomposing the image.
     var shouldFadeNetworkLoad by remember(model) { mutableStateOf(false) }
-    val networkFadeAlpha = remember(model) { Animatable(1f) }
+    val networkFadeProgress = remember(model) { Animatable(0f) }
     LaunchedEffect(model, shouldFadeNetworkLoad) {
         if (shouldFadeNetworkLoad) {
-            networkFadeAlpha.snapTo(0f)
             UiMotion.markBusy(140L)
-            networkFadeAlpha.animateTo(1f, tween(durationMillis = 140, easing = FastOutSlowInEasing))
+            networkFadeProgress.animateTo(1f, tween(durationMillis = 140, easing = FastOutSlowInEasing))
         }
     }
     val transform: (AsyncImagePainter.State) -> AsyncImagePainter.State = remember(
@@ -229,12 +232,20 @@ internal actual fun NuvioAsyncImage(
         model = requestModel,
         contentDescription = contentDescription,
         // Attached for every path now: the hero sizes from layout as well.
-        modifier = modifier.then(artworkSizeResolver),
+        modifier = modifier
+            .then(artworkSizeResolver)
+            .then(
+                if (shouldFadeNetworkLoad) {
+                    Modifier.graphicsLayer { this.alpha = networkFadeProgress.value }
+                } else {
+                    Modifier
+                },
+            ),
         transform = transform,
         onState = onState,
         alignment = alignment,
         contentScale = contentScale,
-        alpha = alpha * networkFadeAlpha.value,
+        alpha = alpha,
         colorFilter = colorFilter,
         filterQuality = filterQuality ?: FilterQuality.High,
         clipToBounds = clipToBounds,
