@@ -692,6 +692,7 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                     excludeUsenet = failoverSkipsUsenet,
                 )
 
+            val waitForAllProviders = StreamScoreRepository.profile.appliesToFailover()
             var next: StreamItem? = null
             var poll = 0
             while (poll < STREAM_FAILOVER_POLL_COUNT && next == null) {
@@ -701,10 +702,16 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                 val activeKey = activeSourceIdentityKey
                 val activeSourceLoaded = activeKey == null ||
                     streams.any { it.playerSourceIdentityKey() == activeKey }
-                // An early provider result can appear before the group containing the current
-                // source. Wait for that match (or load completion) so "next" is based on the
-                // Sources panel order instead of accidentally jumping back to its first item.
-                next = if (activeSourceLoaded || !state.isAnyLoading) pickNext(streams) else null
+                // When scoring is active, the highest-ranked stream can live in any provider
+                // (e.g. Built-in Usenet finishing slightly after the failed addon), so wait until
+                // all providers finish (or the poll window expires) before picking. Otherwise wait
+                // until the failed source's own group arrives so "next" follows panel order.
+                val readyToPick = if (waitForAllProviders) {
+                    !state.isAnyLoading
+                } else {
+                    activeSourceLoaded || !state.isAnyLoading
+                }
+                next = if (readyToPick) pickNext(streams) else null
                 if (next != null || state.emptyStateReason != null || (!state.isAnyLoading && state.groups.isNotEmpty())) {
                     break
                 }

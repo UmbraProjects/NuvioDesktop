@@ -3581,6 +3581,10 @@ internal fun PlayerControlsState.toControlsJson(
         append(',')
         appendJsonField("nextEpisodePlayable", nextEpisode.nextEpisodePlayable)
         append(',')
+        appendJsonField("nextEpisodeProgress", nextEpisode.nextEpisodeProgress.toDouble())
+        append(',')
+        appendJsonField("nextEpisodeSearching", nextEpisode.nextEpisodeSearching)
+        append(',')
         appendJsonField("playlistPeekTitle", playlistPeekTitle)
         append(',')
         appendJsonArrayField("playlistPeekItems", playlistPeekItems) { appendPlaylistPeekItemJson(it) }

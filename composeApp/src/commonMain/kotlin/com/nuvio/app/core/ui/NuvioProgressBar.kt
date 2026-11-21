@@ -1,5 +1,8 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -7,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -24,6 +28,11 @@ fun NuvioProgressBar(
 ) {
     val tokens = MaterialTheme.nuvio
     val clampedProgress = progress.coerceIn(0f, 1f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = clampedProgress,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "nuvio_progress_bar",
+    )
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -33,7 +42,7 @@ fun NuvioProgressBar(
     ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth(clampedProgress)
+                .fillMaxWidth(animatedProgress)
                 .width(NuvioTokens.Space.none)
                 .height(height)
                 .clip(tokens.shapes.chip)

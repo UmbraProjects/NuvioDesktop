@@ -1335,6 +1335,8 @@
   <string name="settings_stream_player_badges_same">Ίδιο με τα σήματα ροών</string>
   <string name="settings_stream_addon_logo_title">Λογότυπο πρόσθετου</string>
   <string name="settings_stream_addon_logo_description">Εμφάνιση του λογοτύπου και του ονόματος του πρόσθετου δίπλα στις πηγές ροών.</string>
+  <string name="settings_stream_usenet_formatter_title">Μορφή Usenet για όλα τα αποτελέσματα</string>
+  <string name="settings_stream_usenet_formatter_description">Μορφοποίηση των ροών από πρόσθετα και debrid με τη διάταξη του ενσωματωμένου Usenet (ανάλυση, τίτλος, HDR, ομάδα κυκλοφορίας και ήχος).</string>
   <string name="settings_stream_display_section">Εμφάνιση</string>
   <string name="settings_stream_badge_position_title">Θέση σημάτων</string>
   <string name="settings_stream_badge_position_description">Επιλέξτε αν τα σήματα Fusion και μεγέθους εμφανίζονται πάνω ή κάτω από τις κάρτες ροών.</string>

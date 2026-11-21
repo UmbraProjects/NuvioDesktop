@@ -1,10 +1,27 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -50,4 +67,64 @@ object NuvioGlass {
 
     private val NightTintBase = Color(0xFF07080C)
     private const val NightTintAmount = 0.16f
+}
+
+/**
+ * Subtle cursor-tracked specular sheen along the 1 dp edge of a [NuvioGlass] card.
+ *
+ * Reads the pointer offset inside [drawWithContent] so moving the mouse across a card only
+ * invalidates the draw pass and never recomposes the card's children.
+ */
+internal fun Modifier.nuvioGlassHoverSheen(
+    cornerRadius: Dp = NuvioGlass.Radius,
+    radius: Dp = 140.dp,
+    peakAlpha: Float = 0.22f,
+): Modifier = composed {
+    var pointer by remember { mutableStateOf(Offset.Unspecified) }
+    var hovered by remember { mutableStateOf(false) }
+    val sheenAlpha by animateFloatAsState(
+        targetValue = if (hovered) 1f else 0f,
+        animationSpec = tween(durationMillis = 160),
+        label = "nuvio_glass_hover_sheen",
+    )
+
+    this
+        .pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    when (event.type) {
+                        PointerEventType.Enter, PointerEventType.Move -> {
+                            hovered = true
+                            event.changes.firstOrNull()?.position?.let { pointer = it }
+                        }
+                        PointerEventType.Exit -> {
+                            hovered = false
+                        }
+                    }
+                }
+            }
+        }
+        .drawWithContent {
+            drawContent()
+            if (sheenAlpha <= 0f || pointer == Offset.Unspecified) return@drawWithContent
+            val strokePx = 1.dp.toPx()
+            val inset = strokePx / 2f
+            val cr = (cornerRadius.toPx() - inset).coerceAtLeast(0f)
+            val brush = Brush.radialGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = peakAlpha * sheenAlpha),
+                    Color.Transparent,
+                ),
+                center = pointer,
+                radius = radius.toPx().coerceAtLeast(1f),
+            )
+            drawRoundRect(
+                brush = brush,
+                topLeft = Offset(inset, inset),
+                size = Size(size.width - strokePx, size.height - strokePx),
+                cornerRadius = CornerRadius(cr, cr),
+                style = Stroke(width = strokePx),
+            )
+        }
 }

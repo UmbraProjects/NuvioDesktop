@@ -379,12 +379,36 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             nextEpisodeForControls.unairedMessage.orEmpty()
         nextEpisodeAutoPlaySearching -> stringResource(Res.string.player_next_episode_finding_source)
         !nextEpisodeAutoPlaySourceName.isNullOrBlank() && nextEpisodeAutoPlayCountdown != null ->
-            stringResource(
-                Res.string.player_next_episode_playing_via_countdown,
-                nextEpisodeAutoPlaySourceName.orEmpty(),
-                nextEpisodeAutoPlayCountdown ?: 0,
-            )
+            nextEpisodeAutoPlaySourceName.orEmpty()
         else -> ""
+    }
+    val nextEpisodeCardVisible = (nextEpisodeForControls != null || playlistCardEntry != null) && !playerControlsLocked
+    val nextEpisodeCardPlayable = playlistCardEntry != null ||
+        (nextEpisodeForControls?.hasAired == true && !manualSwitchIsNonSequential)
+    val nextEpisodeCardKey = remember(activeVideoId, nextEpisodeForControls, playlistCardEntry) {
+        "${activeVideoId.orEmpty()}:${nextEpisodeForControls?.hashCode() ?: 0}:${playlistCardEntry?.hashCode() ?: 0}"
+    }
+    var nextEpisodeShownAtMs by remember(nextEpisodeCardKey) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(nextEpisodeCardVisible, nextEpisodeCardKey) {
+        if (nextEpisodeCardVisible && nextEpisodeShownAtMs == null) {
+            nextEpisodeShownAtMs = playbackSnapshot.positionMs
+        } else if (!nextEpisodeCardVisible) {
+            nextEpisodeShownAtMs = null
+        }
+    }
+    val nextEpisodeProgress = when {
+        !nextEpisodeCardVisible || !nextEpisodeCardPlayable -> -1f
+        nextEpisodeAutoPlayCountdown != null -> {
+            val remaining = (nextEpisodeAutoPlayCountdown ?: 0).coerceIn(0, 3)
+            ((4 - remaining).coerceIn(1, 3) / 3f)
+        }
+        nextEpisodeAutoPlaySearching -> 0f
+        playbackSnapshot.durationMs > 0L && nextEpisodeShownAtMs != null -> {
+            val start = nextEpisodeShownAtMs ?: 0L
+            val span = (playbackSnapshot.durationMs - start).coerceAtLeast(1_000L)
+            ((playbackSnapshot.positionMs - start).toFloat() / span.toFloat()).coerceIn(0f, 1f)
+        }
+        else -> -1f
     }
     var isAnimeContent by remember(args.parentMetaId) {
         mutableStateOf(
@@ -778,7 +802,7 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
         skipSubmitToast = skipSubmitToastCopy(),
         skipSubmitToastDismissible = isSkipSubmitToastDismissible(),
         nextEpisode = PlayerNextEpisodeState(
-            nextEpisodeVisible = (nextEpisodeForControls != null || playlistCardEntry != null) && !playerControlsLocked,
+            nextEpisodeVisible = nextEpisodeCardVisible,
             nextEpisodeHeaderLabel = if (playlistCardEntry != null) {
                 playlistUpNextHeader
             } else {
@@ -800,8 +824,9 @@ internal fun PlayerScreenRuntime.RenderPlayerRuntimeUi() {
             } else {
                 stableLabels.nextEpisodeUnaired
             },
-            nextEpisodePlayable = playlistCardEntry != null ||
-                (nextEpisodeForControls?.hasAired == true && !manualSwitchIsNonSequential),
+            nextEpisodePlayable = nextEpisodeCardPlayable,
+            nextEpisodeProgress = nextEpisodeProgress,
+            nextEpisodeSearching = nextEpisodeAutoPlaySearching,
         ),
         playlistPeekTitle = playlistPeek.first,
         playlistPeekItems = playlistPeek.second,
@@ -2113,6 +2138,9 @@ private fun PlayerScreenRuntime.buildPlayerControlSourceItems(
     val isEpisode = activeEpisodeNumber != null
     val metaId = parentMetaId
     val metaType = contentType ?: parentMetaType
+    val useUsenetFormatter = StreamBadgeSettingsRepository.uiState.value.useUsenetFormatterForAll
+    val showUsenetReleaseName = com.nuvio.app.features.usenet.UsenetSettingsRepository.uiState.value.sources.showReleaseNames
+    val mediaTitle = title
     return remember(
         groups,
         scoreProfile,
@@ -2125,7 +2153,15 @@ private fun PlayerScreenRuntime.buildPlayerControlSourceItems(
         metaType,
         sortOrder,
         cachedFirst,
+        useUsenetFormatter,
+        showUsenetReleaseName,
+        mediaTitle,
     ) {
+        val usenetSubject = com.nuvio.app.features.usenet.UsenetStreamFormat.Subject(
+            title = mediaTitle,
+            year = null,
+            series = isEpisode,
+        )
         val scoreContext = StreamScoreContexts.forPlayback(
             isEpisode = isEpisode,
             contentId = metaId,
@@ -2159,10 +2195,19 @@ private fun PlayerScreenRuntime.buildPlayerControlSourceItems(
         prioritizeCurrentItem(ordered) { it === current }.map { entry ->
             val (originalIndex, item) = entry
             val (filterId, stream) = item
+            val displayStream = if (useUsenetFormatter) {
+                com.nuvio.app.features.usenet.UsenetStreamFormat.formatForAllResults(
+                    stream = stream,
+                    subject = usenetSubject,
+                    showReleaseName = showUsenetReleaseName,
+                )
+            } else {
+                stream
+            }
             playerControlSourceItem(
                 originalIndex = originalIndex,
                 filterId = filterId,
-                stream = stream,
+                stream = displayStream,
                 // Identity alone cannot decide this: one file offered by two providers — or listed
                 // twice by one — gives both rows the same key, and asking each row on its own
                 // painted "Playing" on every copy.
@@ -2182,7 +2227,24 @@ private fun PlayerScreenRuntime.buildPlayerControlEpisodeStreamItems(): List<Pla
     val groups = episodeStreamsRepoState.groups
     val metaId = parentMetaId
     val metaType = contentType ?: parentMetaType
-    return remember(groups, scoreProfile, canResolveDebrid, metaId, metaType) {
+    val useUsenetFormatter = StreamBadgeSettingsRepository.uiState.value.useUsenetFormatterForAll
+    val showUsenetReleaseName = com.nuvio.app.features.usenet.UsenetSettingsRepository.uiState.value.sources.showReleaseNames
+    val mediaTitle = title
+    return remember(
+        groups,
+        scoreProfile,
+        canResolveDebrid,
+        metaId,
+        metaType,
+        useUsenetFormatter,
+        showUsenetReleaseName,
+        mediaTitle,
+    ) {
+        val usenetSubject = com.nuvio.app.features.usenet.UsenetStreamFormat.Subject(
+            title = mediaTitle,
+            year = null,
+            series = true,
+        )
         val scoreContext = StreamScoreContexts.forPlayback(
             isEpisode = true,
             contentId = metaId,
@@ -2194,10 +2256,19 @@ private fun PlayerScreenRuntime.buildPlayerControlEpisodeStreamItems(): List<Pla
         val scores = scorePlayerControlStreams(indexedStreams, scoreProfile, scoreContext)
         indexedStreams.map { (index, item) ->
             val (filterId, stream) = item
+            val displayStream = if (useUsenetFormatter) {
+                com.nuvio.app.features.usenet.UsenetStreamFormat.formatForAllResults(
+                    stream = stream,
+                    subject = usenetSubject,
+                    showReleaseName = showUsenetReleaseName,
+                )
+            } else {
+                stream
+            }
             playerControlSourceItem(
                 originalIndex = index,
                 filterId = filterId,
-                stream = stream,
+                stream = displayStream,
                 isCurrent = false,
                 canResolveDebrid = canResolveDebrid,
                 score = scores[index]?.takeIf { scoreProfile.showScoreOnStreams },

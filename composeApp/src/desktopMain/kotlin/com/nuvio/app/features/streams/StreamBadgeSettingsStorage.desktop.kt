@@ -14,6 +14,7 @@ internal actual object StreamBadgeSettingsStorage {
     private const val streamBadgeRulesKey = "stream_badge_rules"
     private const val showFileSizeBadgesKey = "show_file_size_badges"
     private const val showAddonLogoKey = "show_addon_logo"
+    private const val useUsenetFormatterForAllKey = "use_usenet_formatter_for_all"
     private const val showInPlayerKey = "show_badges_in_player"
     private const val playerBadgeSourceKey = "player_badge_source"
     private const val streamBadgePlacementKey = "stream_badge_placement"
@@ -32,6 +33,8 @@ internal actual object StreamBadgeSettingsStorage {
     actual fun saveShowFileSizeBadges(enabled: Boolean) = saveBoolean(showFileSizeBadgesKey, enabled)
     actual fun loadShowAddonLogo(): Boolean? = loadBoolean(showAddonLogoKey)
     actual fun saveShowAddonLogo(enabled: Boolean) = saveBoolean(showAddonLogoKey, enabled)
+    actual fun loadUseUsenetFormatterForAll(): Boolean? = loadBoolean(useUsenetFormatterForAllKey)
+    actual fun saveUseUsenetFormatterForAll(enabled: Boolean) = saveBoolean(useUsenetFormatterForAllKey, enabled)
     actual fun loadShowInPlayer(): Boolean? = loadBoolean(showInPlayerKey)
     actual fun saveShowInPlayer(enabled: Boolean) = saveBoolean(showInPlayerKey, enabled)
     actual fun loadPlayerBadgeSource(): String? = loadString(playerBadgeSourceKey)

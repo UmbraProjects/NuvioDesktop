@@ -9,6 +9,7 @@ import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.streams.StreamReleaseGroups
 import com.nuvio.app.features.streams.StreamTraitDetector
 import com.nuvio.app.features.streams.StreamTraits
+import com.nuvio.app.features.streams.isScorableStream
 import java.util.Locale
 
 /**
@@ -53,8 +54,38 @@ internal object UsenetStreamFormat {
         )
     }
 
+    /**
+     * Applies the built-in Usenet layout to any stream row (addon, debrid, P2P, media server) for
+     * display. Built-in Usenet rows are returned unchanged so their indexer age and kept-NZB badge
+     * stay intact, and non-release notice rows (e.g. addon diagnostics) are left alone.
+     */
+    fun formatForAllResults(
+        stream: StreamItem,
+        subject: Subject,
+        showReleaseName: Boolean,
+    ): StreamItem {
+        if (stream.addonId == BuiltInUsenet.GROUP_ID || stream.needsUsenetPreparation) return stream
+        if (!stream.isScorableStream) return stream
+        val traits = StreamTraitDetector.detect(stream)
+        val rawFilename = stream.behaviorHints.filename?.takeIf { it.isNotBlank() }
+        val releaseName = rawFilename
+            ?: stream.description?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
+            ?: stream.name?.trim().orEmpty()
+        val sourceLabel = stream.addonName.takeIf { it.isNotBlank() }
+        val lines = listOf(
+            titleLine(subject, releaseName, kept = false),
+            pictureLine(traits, age = null, indexer = sourceLabel),
+            groupAudioLine(traits, releaseName),
+            rawFilename.takeIf { showReleaseName },
+        ).filterNot { it.isNullOrBlank() }
+        return stream.copy(
+            name = header(traits, fallbackLabel = sourceLabel ?: "Stream"),
+            description = lines.joinToString("\n").ifBlank { stream.description },
+        )
+    }
+
     /** The source's emoji and the resolution: "📀 2160p". */
-    fun header(traits: StreamTraits): String {
+    fun header(traits: StreamTraits, fallbackLabel: String = "Usenet"): String {
         val emoji = when (traits.quality) {
             DebridStreamQuality.BLURAY_REMUX -> "📀"
             DebridStreamQuality.BLURAY -> "💿"
@@ -64,7 +95,7 @@ internal object UsenetStreamFormat {
             else -> "📼"
         }
         val resolution = traits.resolution.takeUnless { it == DebridStreamResolution.UNKNOWN }?.label
-        return listOfNotNull(emoji, resolution ?: "Usenet").joinToString(" ")
+        return listOfNotNull(emoji, resolution ?: fallbackLabel).joinToString(" ")
     }
 
     /**

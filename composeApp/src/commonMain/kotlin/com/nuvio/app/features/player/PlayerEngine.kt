@@ -535,6 +535,10 @@ data class PlayerNextEpisodeState(
     val nextEpisodeStatus: String = "",
     val nextEpisodeActionLabel: String = "Play",
     val nextEpisodePlayable: Boolean = false,
+    /** 0f..1f progress bar along the bottom of the card; negative hides it. */
+    val nextEpisodeProgress: Float = -1f,
+    /** True while searching for the next episode's source (indeterminate shimmer bar). */
+    val nextEpisodeSearching: Boolean = false,
 )
 
 /** The sources panel (comments for a YouTube video). */

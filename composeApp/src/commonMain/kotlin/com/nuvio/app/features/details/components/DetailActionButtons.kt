@@ -3,12 +3,15 @@ package com.nuvio.app.features.details.components
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.collectIsKeyboardFocusedAsState
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
@@ -138,8 +141,21 @@ fun DetailActionButtons(
     // music artist page) moves focus onto the buttons and needs them to show it.
     val playSource = remember { MutableInteractionSource() }
     val playKeyFocused by playSource.collectIsKeyboardFocusedAsState()
+    val playPressed by playSource.collectIsPressedAsState()
     val playFocused = activeFocusedActionIndex == 0 || (playKeyFocused && !searchActive)
-    val playScale by animateFloatAsState(targetValue = if (playFocused) 1.02f else 1f)
+    val playTargetScale = when {
+        playPressed -> 0.975f
+        playFocused -> 1.02f
+        else -> 1f
+    }
+    val playScale by animateFloatAsState(
+        targetValue = playTargetScale,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = if (playPressed) Spring.StiffnessHigh else Spring.StiffnessMedium,
+        ),
+        label = "detail_play_scale",
+    )
     // Focus tints the glass toward the accent rather than outlining it: a stronger wash than the
     // circles' "on" tint, so a focused Play never reads as a toggled state.
     val focusTintAlpha by animateFloatAsState(targetValue = if (playFocused) 1f else 0f)
@@ -362,13 +378,27 @@ internal fun DetailIconAction(
 ) {
     val source = remember { MutableInteractionSource() }
     val keyFocused by source.collectIsKeyboardFocusedAsState()
+    val pressed by source.collectIsPressedAsState()
     // Matches the Play button's ring so a focus move along the row reads as one continuous control.
     val focusRingAlpha by animateFloatAsState(targetValue = if (focused || keyFocused) 1f else 0f)
+    val buttonScale by animateFloatAsState(
+        targetValue = if (pressed) 0.93f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = if (pressed) Spring.StiffnessHigh else Spring.StiffnessMedium,
+        ),
+        label = "detail_icon_scale",
+    )
     val focusRingColor = MaterialTheme.colorScheme.primary
     val activeTint = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
     // Circles, so the secondary actions read as a set of toggles beside the one wide Play button.
     Surface(
-        modifier = modifier.drawWithContent {
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = buttonScale
+                scaleY = buttonScale
+            }
+            .drawWithContent {
             drawContent()
             if (focusRingAlpha <= 0f) return@drawWithContent
             val stroke = 3.dp.toPx()

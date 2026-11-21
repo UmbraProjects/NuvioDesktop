@@ -70,6 +70,13 @@ private const val AmbientWashMinFadeMs = 120
 private const val AmbientWashMaxFadeMs = 650
 
 /**
+ * Shared accent cache across all [HeroAmbientBackdrop] instances (Home main wash, Adaptive hero
+ * underlay, Collections) so an already-decoded backdrop switches synchronously on the same frame
+ * as the hero instead of bouncing through a hidden preload pass.
+ */
+private val HeroAmbientAccentCache = mutableStateMapOf<String, Color>()
+
+/**
  * Shared full-bleed ambient background: a crossfading, blurred, tinted wash of [backdrop] used
  * behind both Home's hero and a Collection's hero. [accent] drives the tint gradient; callers
  * are expected to derive it from the loaded image (see [extractHeroAccentColor]) and feed it
@@ -93,28 +100,36 @@ internal fun HeroAmbientBackdrop(
             ColorMatrix().apply { setToSaturation(1.7f) },
         )
     }
-    // Accent per backdrop URL. onSuccess only fires when an image finishes loading, so scrolling
-    // A -> B -> A quickly (A still loaded in the outgoing crossfade slot) never reported A again and
-    // the wash kept B's tint. Re-applying from this cache on every backdrop change fixes that.
-    // Unspecified stands for "extracted, no usable accent".
-    val accentCache = remember { mutableStateMapOf<String, Color>() }
     val currentOnAccentChanged by rememberUpdatedState(onAccentChanged)
-    val cachedAccent = backdrop?.let { accentCache[it] }
-    LaunchedEffect(backdrop, cachedAccent) {
-        if (cachedAccent != null) {
-            currentOnAccentChanged(cachedAccent.takeIf { it != Color.Unspecified })
-        }
-    }
-    // The wash changes when its new picture is ready, not when the URL does. The crossfade used to
-    // start at once, fading to bare tint while the blurred image loaded, and the accent was only
-    // extracted after that and then eased in, so the wash settled about a second after the hero.
-    // The incoming image is decoded invisibly (same model and size as the wash, so the crossfade then
-    // shows it from cache) and its accent cached; then image and tint change together.
-    var shownBackdrop by remember { mutableStateOf<String?>(null) }
+    // Switch synchronously on the same frame as the hero whenever the backdrop is already cached
+    // (or when there is no previous wash to hold), eliminating the 1-2 frame hidden-preload lag.
+    // Uncached backdrops still preload invisibly so we never flash a blank frame while decoding.
+    var shownBackdrop by remember { mutableStateOf(backdrop) }
     val latestBackdrop by rememberUpdatedState(backdrop)
+    if (backdrop.isNullOrBlank()) {
+        if (shownBackdrop != null) shownBackdrop = null
+    } else if (backdrop != shownBackdrop && (shownBackdrop == null || HeroAmbientAccentCache.containsKey(backdrop))) {
+        shownBackdrop = backdrop
+    }
     val pendingBackdrop = backdrop?.takeIf { it.isNotBlank() && it != shownBackdrop }
     fun showIfCurrent(candidate: String) {
         if (candidate == latestBackdrop) shownBackdrop = candidate
+    }
+    // Read the cached accent for the active wash directly in composition so the tint starts easing
+    // on the exact same frame as the image crossfade instead of waiting for a LaunchedEffect
+    // round-trip through the parent's state.
+    // Unspecified = "extracted, no usable accent": that must clear the tint, not fall back to the
+    // caller's accent (which is still the previous backdrop's, set by onAccentChanged).
+    val cachedShownAccent = shownBackdrop?.let { HeroAmbientAccentCache[it] }
+    val resolvedAccent = when (cachedShownAccent) {
+        null -> accent
+        Color.Unspecified -> null
+        else -> cachedShownAccent
+    }
+    LaunchedEffect(shownBackdrop, resolvedAccent) {
+        if (shownBackdrop != null && HeroAmbientAccentCache.containsKey(shownBackdrop)) {
+            currentOnAccentChanged(resolvedAccent)
+        }
     }
     LaunchedEffect(backdrop) {
         if (backdrop.isNullOrBlank()) {
@@ -134,7 +149,7 @@ internal fun HeroAmbientBackdrop(
         .collectAsState()
     val washFadeMs = homeSettings.heroBackdropCrossfadeMillis.coerceIn(AmbientWashMinFadeMs, AmbientWashMaxFadeMs)
     val ambientAccent by animateColorAsState(
-        targetValue = accent ?: MaterialTheme.colorScheme.background,
+        targetValue = resolvedAccent ?: MaterialTheme.colorScheme.background,
         animationSpec = tween(durationMillis = washFadeMs),
         label = "${label}_accent",
     )
@@ -153,8 +168,8 @@ internal fun HeroAmbientBackdrop(
                     },
                     blurred = variant != AmbientWashVariant.NoBlur,
                     onSuccess = { state ->
-                        if (accentCache.size > 64) accentCache.clear()
-                        accentCache[activeBackdrop] =
+                        if (HeroAmbientAccentCache.size > 128) HeroAmbientAccentCache.clear()
+                        HeroAmbientAccentCache[activeBackdrop] =
                             extractHeroAccentColor(state.result.image) ?: Color.Unspecified
                     },
                 )
@@ -191,8 +206,8 @@ internal fun HeroAmbientBackdrop(
                     colorFilter = if (variant == AmbientWashVariant.NoColorFilter) null else ambientBackdropColorFilter,
                     blurred = variant != AmbientWashVariant.NoBlur,
                     onSuccess = { state ->
-                        if (accentCache.size > 64) accentCache.clear()
-                        accentCache[pendingBackdrop] =
+                        if (HeroAmbientAccentCache.size > 128) HeroAmbientAccentCache.clear()
+                        HeroAmbientAccentCache[pendingBackdrop] =
                             extractHeroAccentColor(state.result.image) ?: Color.Unspecified
                         showIfCurrent(pendingBackdrop)
                     },

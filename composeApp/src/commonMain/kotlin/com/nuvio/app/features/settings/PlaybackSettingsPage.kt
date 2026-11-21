@@ -3051,17 +3051,15 @@ private fun PlaybackSettingsSection(
                         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.BingeMode),
                         onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayNextEpisodeEnabled,
                     )
-                    if (autoPlayPlayerSettings.streamAutoPlayNextEpisodeEnabled) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_preload_next_episode),
-                            description = stringResource(Res.string.settings_playback_preload_next_episode_description),
-                            checked = autoPlayPlayerSettings.preloadNextEpisodeSources,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("preload-next-episode")),
-                            onCheckedChange = PlayerSettingsRepository::setPreloadNextEpisodeSources,
-                        )
-                    }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsSwitchRow(
+                        title = stringResource(Res.string.settings_playback_preload_next_episode),
+                        description = stringResource(Res.string.settings_playback_preload_next_episode_description),
+                        checked = autoPlayPlayerSettings.preloadNextEpisodeSources,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("preload-next-episode")),
+                        onCheckedChange = PlayerSettingsRepository::setPreloadNextEpisodeSources,
+                    )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_prefer_binge_group),

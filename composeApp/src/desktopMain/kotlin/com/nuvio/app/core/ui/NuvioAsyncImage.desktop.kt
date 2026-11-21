@@ -1,7 +1,14 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
@@ -139,6 +146,15 @@ internal actual fun NuvioAsyncImage(
     // folder gets a different model, so the holder resets and cannot show the previous item's
     // artwork. Only a reload of *the same picture* keeps drawing it.
     val retained = remember(model) { RetainedArtwork() }
+    var shouldFadeNetworkLoad by remember(model) { mutableStateOf(false) }
+    val networkFadeAlpha = remember(model) { Animatable(1f) }
+    LaunchedEffect(model, shouldFadeNetworkLoad) {
+        if (shouldFadeNetworkLoad) {
+            networkFadeAlpha.snapTo(0f)
+            UiMotion.markBusy(140L)
+            networkFadeAlpha.animateTo(1f, tween(durationMillis = 140, easing = FastOutSlowInEasing))
+        }
+    }
     val transform: (AsyncImagePainter.State) -> AsyncImagePainter.State = remember(
         placeholder,
         error,
@@ -155,6 +171,10 @@ internal actual fun NuvioAsyncImage(
                 }
                 is AsyncImagePainter.State.Success -> {
                     val image = state.result.image
+                    val wasEmpty = retained.painter == null
+                    if (wasEmpty && state.result.dataSource == DataSource.NETWORK) {
+                        shouldFadeNetworkLoad = true
+                    }
                     DesktopArtworkTelemetry.recordLoad(
                         sourceUrl = state.result.memoryCacheKey?.key ?: state.result.diskCacheKey,
                         fromMemoryCache = state.result.dataSource == DataSource.MEMORY_CACHE,
@@ -214,7 +234,7 @@ internal actual fun NuvioAsyncImage(
         onState = onState,
         alignment = alignment,
         contentScale = contentScale,
-        alpha = alpha,
+        alpha = alpha * networkFadeAlpha.value,
         colorFilter = colorFilter,
         filterQuality = filterQuality ?: FilterQuality.High,
         clipToBounds = clipToBounds,

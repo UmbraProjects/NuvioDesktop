@@ -446,7 +446,20 @@ internal fun NuvioShelfItemSlot(
     // only on a card that draws the glow; any other keeps the enlarge so the row never loses its place.
     val report = remember { NuvioShelfHighlightReport() }
     val enlarge = rememberPosterCardStyleUiState().posterHighlightMode != PosterHighlightMode.Glow || !report.drawsGlow
-    val scale by animateFloatAsState(targetValue = if (focused && enlarge) 1.04f else 1f)
+    var pressed by remember { mutableStateOf(false) }
+    val targetScale = when {
+        pressed -> if (focused && enlarge) 0.99f else 0.975f
+        focused && enlarge -> 1.04f
+        else -> 1f
+    }
+    val scale by animateFloatAsState(
+        targetValue = targetScale,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = if (pressed) Spring.StiffnessHigh else Spring.StiffnessMedium,
+        ),
+        label = "shelf_item_scale",
+    )
     Box(
         modifier = modifier
             .zIndex(if (focused) 1f else 0f)
@@ -470,6 +483,9 @@ internal fun NuvioShelfItemSlot(
                     alpha = lerp(ShuffleDealStartAlpha, 1f, eased)
                 }
             }
+            .onPointerEvent(PointerEventType.Press) { pressed = true }
+            .onPointerEvent(PointerEventType.Release) { pressed = false }
+            .onPointerEvent(PointerEventType.Exit) { pressed = false }
             .then(
                 if (onHover != null) {
                     Modifier.onPointerEvent(PointerEventType.Enter) { onHover() }
@@ -650,8 +666,9 @@ fun NuvioPosterCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(shape.aspectRatio)
-                // Ahead of the clip on purpose — see nuvioPosterHighlight.
+                // Ahead of the clip on purpose — see nuvioPosterHighlight and nuvioCardDepth.
                 .nuvioPosterHighlight(posterCardStyle.cornerRadiusDp.dp, artworkUrl = currentUrl)
+                .nuvioPosterDepth(cardShape)
                 .clip(cardShape)
                 .background(
                     if (!hasArtwork) {
@@ -662,7 +679,7 @@ fun NuvioPosterCard(
                 )
                 .then(
                     if (!hasArtwork) {
-                        Modifier.border(
+                        Modifier.smoothBorder(
                             width = 1.dp,
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
                             shape = cardShape,
@@ -671,7 +688,6 @@ fun NuvioPosterCard(
                         Modifier
                     },
                 )
-                .nuvioPosterDepth(cardShape)
                 .posterCardClickable(
                     onClick = onClick,
                     onLongClick = onLongClick,

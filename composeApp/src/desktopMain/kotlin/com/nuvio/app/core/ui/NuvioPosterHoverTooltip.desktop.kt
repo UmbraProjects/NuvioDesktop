@@ -1,8 +1,11 @@
 package com.nuvio.app.core.ui
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.TooltipArea
 import androidx.compose.foundation.TooltipPlacement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -12,9 +15,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
@@ -35,15 +42,32 @@ actual fun NuvioPosterHoverTooltip(
     }
     TooltipArea(
         tooltip = {
-            // Same surface treatment as the stream selector's right-click actions menu
-            // (StreamActionsContextMenu.desktop.kt) so hover chrome looks consistent.
+            val colors = MaterialTheme.nuvio.colors
+            val shape = RoundedCornerShape(10.dp)
+            val entrance = remember { Animatable(0f) }
+            LaunchedEffect(Unit) {
+                UiMotion.markBusy(130L)
+                entrance.animateTo(1f, tween(durationMillis = 130, easing = FastOutSlowInEasing))
+            }
+            // Matches NuvioGlass / NuvioContextMenu with anti-aliased edges and crisp entrance.
             Surface(
-                modifier = Modifier.widthIn(max = 360.dp),
-                shape = RoundedCornerShape(10.dp),
-                color = Color(0xFA18191D),
+                modifier = Modifier
+                    .widthIn(max = 360.dp)
+                    .graphicsLayer {
+                        val p = entrance.value
+                        alpha = p
+                        val s = 0.97f + 0.03f * p
+                        scaleX = s
+                        scaleY = s
+                        translationY = (1f - p) * (if (aboveControl) 4.dp.toPx() else -4.dp.toPx())
+                    }
+                    .shadow(elevation = 16.dp, shape = shape, clip = false)
+                    .background(NuvioGlass.night(colors.background, colors.accent), shape)
+                    .ditheredBackground(NuvioGlass.Fill, shape)
+                    .smoothBorder(1.dp, NuvioGlass.Edge, shape),
+                shape = shape,
+                color = Color.Transparent,
                 contentColor = Color.White,
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
-                shadowElevation = 16.dp,
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     if (title.isNotBlank()) {

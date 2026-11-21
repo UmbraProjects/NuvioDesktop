@@ -10,8 +10,10 @@ import com.nuvio.app.features.details.CastViewStorage
 import com.nuvio.app.features.mdblist.linkFor
 import com.nuvio.app.features.mdblist.MdbListSettingsRepository
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import com.nuvio.app.core.ui.UiMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -672,9 +674,23 @@ private fun DetailDesktopHeroOverlay(
             mdbListSettings.apiKey.isNotBlank() &&
             mdbListSettings.enabledProvidersInPriorityOrder().isNotEmpty()
         val metadataTop = (if (hasStatusLine) 222.dp else 238.dp) + laneShift
+        // Non-blocking first-appearance stage arrival: logo, metadata, and actions gently rise
+        // and fade in over 180 ms via graphicsLayer while remaining immediately clickable.
+        val stageArrival = remember(meta.id) { Animatable(0f) }
+        LaunchedEffect(meta.id) {
+            UiMotion.markBusy(180L)
+            stageArrival.animateTo(1f, tween(durationMillis = 180, easing = FastOutSlowInEasing))
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    val p = stageArrival.value
+                    if (p < 1f) {
+                        alpha = p
+                        translationY = (1f - p) * 10.dp.toPx()
+                    }
+                }
                 .then(
                     if (laneFadeStart != null && laneFade > 0f) {
                         // Fades whatever runs under the docked picker (overview, cast, actions)
@@ -847,17 +863,68 @@ private fun DetailDesktopHeroOverlay(
             }
 
             if (showOverview && !meta.description.isNullOrBlank()) {
-                // Same footprint as a 4-line clamp (4 * 25.sp line height), but scrollable
-                // instead of ellipsized so a long synopsis can still be read in full.
+                // Same footprint as a 4-line clamp (4 * 25.sp line height), snapped to the exact
+                // 4th-line bottom once laid out so the 5th line never peeks in half-clipped, while
+                // remaining scrollable for long synopses with soft scroll-activated edge fades.
+                val overviewDensity = LocalDensity.current
+                val overviewScroll = remember(meta.id) { androidx.compose.foundation.ScrollState(0) }
+                var overviewMaxHeight by remember(meta.id) { mutableStateOf(100.dp) }
+                val overviewOverflow = overviewScroll.maxValue.takeIf { it != Int.MAX_VALUE } ?: 0
+                val overviewFadePx = with(overviewDensity) { 16.dp.toPx() }
                 Text(
                     text = meta.description,
                     modifier = Modifier
                         .padding(top = 418.dp + laneShift)
                         .width(headingWidth)
-                        .heightIn(max = 100.dp)
-                        .verticalScroll(rememberScrollState()),
+                        .heightIn(max = overviewMaxHeight)
+                        .then(
+                            if (overviewOverflow > 0) {
+                                Modifier
+                                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                                    .drawWithContent {
+                                        drawContent()
+                                        val fade = overviewFadePx.coerceAtMost(size.height / 3f)
+                                        val scrolled = overviewScroll.value.toFloat()
+                                        val topFade = (scrolled / fade).coerceIn(0f, 1f)
+                                        val remainingBelow = ((overviewOverflow - scrolled) / fade).coerceIn(0f, 1f)
+                                        val bottomFade = topFade * remainingBelow
+                                        if (topFade > 0f) {
+                                            drawRect(
+                                                brush = Brush.verticalGradient(
+                                                    colorStops = arrayOf(
+                                                        0f to Color.Black.copy(alpha = 1f - topFade),
+                                                        fade / size.height to Color.Black,
+                                                    ),
+                                                ),
+                                                blendMode = BlendMode.DstIn,
+                                            )
+                                        }
+                                        if (bottomFade > 0f) {
+                                            drawRect(
+                                                brush = Brush.verticalGradient(
+                                                    colorStops = arrayOf(
+                                                        1f - fade / size.height to Color.Black,
+                                                        1f to Color.Black.copy(alpha = 1f - bottomFade),
+                                                    ),
+                                                ),
+                                                blendMode = BlendMode.DstIn,
+                                            )
+                                        }
+                                    }
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .verticalScroll(overviewScroll),
                     style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 25.sp),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                    onTextLayout = { layout ->
+                        overviewMaxHeight = if (layout.lineCount > 4) {
+                            with(overviewDensity) { layout.getLineBottom(3).toDp() }
+                        } else {
+                            androidx.compose.ui.unit.Dp.Unspecified
+                        }
+                    },
                 )
             }
 

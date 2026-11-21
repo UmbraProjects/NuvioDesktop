@@ -2966,6 +2966,10 @@ private fun HeroSynopsis(
                             val scrolled = scrollState.value.toFloat()
                             val enteringFromTop = (scrolled / fade).coerceIn(0f, 1f)
                             val remainingBelow = ((overflowPx - scrolled) / fade).coerceIn(0f, 1f)
+                            // Keep the resting bottom line completely crisp until scrolling starts:
+                            // windowHeight already cuts on an exact full-line boundary, so fading at
+                            // scrolled == 0 erased the bottom half of the last visible line.
+                            val bottomFade = enteringFromTop * remainingBelow
                             if (enteringFromTop > 0f) {
                                 drawRect(
                                     brush = Brush.verticalGradient(
@@ -2977,12 +2981,12 @@ private fun HeroSynopsis(
                                     blendMode = BlendMode.DstIn,
                                 )
                             }
-                            if (remainingBelow > 0f) {
+                            if (bottomFade > 0f) {
                                 drawRect(
                                     brush = Brush.verticalGradient(
                                         colorStops = arrayOf(
                                             1f - fade / size.height to Color.Black,
-                                            1f to Color.Black.copy(alpha = 1f - remainingBelow),
+                                            1f to Color.Black.copy(alpha = 1f - bottomFade),
                                         ),
                                     ),
                                     blendMode = BlendMode.DstIn,

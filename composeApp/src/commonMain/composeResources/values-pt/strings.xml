@@ -1335,6 +1335,8 @@
   <string name="settings_stream_player_badges_same">Igual aos selos das streams</string>
   <string name="settings_stream_addon_logo_title">Logótipo do addon</string>
   <string name="settings_stream_addon_logo_description">Mostrar o logótipo e o nome do addon junto às fontes das streams.</string>
+  <string name="settings_stream_usenet_formatter_title">Usar o formato Usenet em todos os resultados</string>
+  <string name="settings_stream_usenet_formatter_description">Formata as streams de addons e debrid com o esquema do Usenet integrado (resolução, título, HDR, grupo de lançamento e áudio).</string>
   <string name="settings_stream_display_section">Apresentação</string>
   <string name="settings_stream_badge_position_title">Posição dos selos</string>
   <string name="settings_stream_badge_position_description">Escolhe se os selos Fusion e de tamanho aparecem acima ou abaixo dos cartões de streams.</string>

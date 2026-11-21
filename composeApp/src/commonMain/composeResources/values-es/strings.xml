@@ -2036,6 +2036,8 @@
     <string name="settings_stream_player_badges_same">Igual que las insignias de streams</string>
     <string name="settings_stream_addon_logo_title">Logotipo del complemento</string>
     <string name="settings_stream_addon_logo_description">Muestra el logotipo y el nombre del complemento junto a las fuentes de streams.</string>
+    <string name="settings_stream_usenet_formatter_title">Usar el formato de Usenet en todos los resultados</string>
+    <string name="settings_stream_usenet_formatter_description">Muestra los streams de complementos y debrid con el diseño del Usenet integrado (resolución, título, HDR, grupo de lanzamiento y audio).</string>
     <string name="settings_stream_display_section">Visualización</string>
     <string name="settings_stream_badge_position_title">Posición de las insignias</string>
     <string name="settings_stream_badge_position_description">Elige si las insignias Fusion y de tamaño aparecen encima o debajo de las tarjetas de streams.</string>

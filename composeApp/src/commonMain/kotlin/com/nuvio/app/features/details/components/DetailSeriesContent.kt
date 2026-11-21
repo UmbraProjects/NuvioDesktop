@@ -73,6 +73,7 @@ import com.nuvio.app.core.ui.NuvioAnimatedWatchedBadge
 import com.nuvio.app.core.ui.NuvioCardDepthSurface
 import com.nuvio.app.core.ui.nuvioCardDepth
 import com.nuvio.app.core.ui.nuvioPosterHighlight
+import com.nuvio.app.core.ui.smoothBorder
 import com.nuvio.app.core.ui.NuvioProgressBar
 import com.nuvio.app.core.ui.NuvioShelfItemSlot
 import com.nuvio.app.core.ui.desktopHorizontalListNavigation
@@ -1227,23 +1228,28 @@ private fun EpisodeHorizontalCard(
             ?.let(::formatEpisodeRating)
     }
     val formattedDate = remember(video.released) { video.released?.let { formatEpisodeThumbnailDate(it) } }
+    val episodeBorderColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (isPickingSource) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            Color.White.copy(alpha = 0.12f)
+        },
+        animationSpec = androidx.compose.animation.core.tween(150),
+        label = "episode_card_border",
+    )
     Box(
         modifier = Modifier
             .width(metrics.cardWidth)
             .height(metrics.cardHeight)
             .nuvioPosterHighlight(metrics.cornerRadius, artworkUrl = video.thumbnail ?: fallbackImage)
-            .clip(cardShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .nuvioCardDepth(cardShape, NuvioCardDepthSurface.Episodes)
-            .border(
+            .smoothBorder(
                 width = if (isPickingSource) 2.dp else 1.dp,
-                color = if (isPickingSource) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    Color.White.copy(alpha = 0.12f)
-                },
+                color = episodeBorderColor,
                 shape = cardShape,
             )
+            .clip(cardShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .combinedClickable(
                 enabled = onClick != null || onLongPress != null,
                 onClick = { onClick?.invoke() },

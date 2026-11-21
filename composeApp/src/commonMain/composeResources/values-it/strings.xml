@@ -1335,6 +1335,8 @@
   <string name="settings_stream_player_badges_same">Come i badge degli stream</string>
   <string name="settings_stream_addon_logo_title">Logo dell'addon</string>
   <string name="settings_stream_addon_logo_description">Mostra il logo e il nome dell'addon accanto alle sorgenti degli stream.</string>
+  <string name="settings_stream_usenet_formatter_title">Usa il formato Usenet per tutti i risultati</string>
+  <string name="settings_stream_usenet_formatter_description">Formatta gli stream degli addon e del debrid con il layout dell'Usenet integrato (risoluzione, titolo, HDR, gruppo di release e audio).</string>
   <string name="settings_stream_display_section">Visualizzazione</string>
   <string name="settings_stream_badge_position_title">Posizione dei badge</string>
   <string name="settings_stream_badge_position_description">Scegli se i badge Fusion e di dimensione appaiono sopra o sotto le schede degli stream.</string>

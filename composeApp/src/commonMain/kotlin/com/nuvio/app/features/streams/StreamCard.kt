@@ -14,6 +14,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +48,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isOutOfBounds
@@ -59,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.nuvio.app.core.i18n.localizedByteUnit
 import com.nuvio.app.core.ui.nuvio
+import com.nuvio.app.core.ui.nuvioGlassHoverSheen
 import com.nuvio.app.features.debrid.DebridProviders
 import kotlin.math.round
 import nuvio.composeapp.generated.resources.Res
@@ -115,6 +119,9 @@ internal data class SharedStream(
 
 internal val LocalSharedStream = staticCompositionLocalOf<SharedStream?> { null }
 
+/** Subject metadata for applying the built-in Usenet formatter to all stream results. */
+internal val LocalUsenetFormatSubject = staticCompositionLocalOf<com.nuvio.app.features.usenet.UsenetStreamFormat.Subject?> { null }
+
 @Composable
 internal fun StreamCard(
     stream: StreamItem,
@@ -167,6 +174,18 @@ internal fun StreamCard(
     val badgeImages = stream.badges.filter { it.imageURL.isNotBlank() }
     val hasBadges = badgeImages.isNotEmpty() || (showFileSizeBadges && stream.behaviorHints.videoSize != null)
     val glass = LocalStreamCardStyle.current == StreamCardStyle.Glass
+    val cardInteraction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val cardHovered by cardInteraction.collectIsHoveredAsState()
+    val cardBackground by androidx.compose.animation.animateColorAsState(
+        targetValue = when {
+            !glass -> if (enabled && cardHovered) Color.Black.copy(alpha = 0.50f) else Color.Black.copy(alpha = 0.42f)
+            focused -> StreamGlass.Raised
+            enabled && cardHovered -> StreamGlass.Raised.copy(alpha = StreamGlass.Raised.alpha * 0.85f)
+            else -> StreamGlass.Rest
+        },
+        animationSpec = androidx.compose.animation.core.tween(120),
+        label = "stream_card_bg",
+    )
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -189,13 +208,7 @@ internal fun StreamCard(
             // against bright artwork). Glass only sits on a backdrop that is already frosted and
             // dimmed, where that scrim turned the list into a stack of boxes: a faint lift instead,
             // brighter on the focused row. The current-item highlight is layered on top either way.
-            .background(
-                when {
-                    !glass -> Color.Black.copy(alpha = 0.42f)
-                    focused -> StreamGlass.Raised
-                    else -> StreamGlass.Rest
-                },
-            )
+            .background(cardBackground)
             .then(
                 if (marked) {
                     Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
@@ -232,8 +245,17 @@ internal fun StreamCard(
                     Modifier
                 },
             )
+            .then(
+                if (glass) {
+                    Modifier.nuvioGlassHoverSheen(cornerRadius = 12.dp, peakAlpha = 0.22f)
+                } else {
+                    Modifier
+                },
+            )
             .clickSwallowedByScrollingList(enabled = enabled, onClick = onClick)
             .combinedClickable(
+                interactionSource = cardInteraction,
+                indication = androidx.compose.foundation.LocalIndication.current,
                 enabled = enabled,
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -251,9 +273,30 @@ internal fun StreamCard(
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
+            val badgeSettings by StreamBadgeSettingsRepository.uiState.collectAsState()
+            val usenetSettings by com.nuvio.app.features.usenet.UsenetSettingsRepository.uiState.collectAsState()
+            val usenetSubject = LocalUsenetFormatSubject.current
+            val useUsenetFormatter = badgeSettings.useUsenetFormatterForAll
+            val displayStream = remember(
+                stream,
+                useUsenetFormatter,
+                usenetSubject,
+                usenetSettings.sources.showReleaseNames,
+            ) {
+                if (useUsenetFormatter) {
+                    com.nuvio.app.features.usenet.UsenetStreamFormat.formatForAllResults(
+                        stream = stream,
+                        subject = usenetSubject ?: com.nuvio.app.features.usenet.UsenetStreamFormat.Subject(),
+                        showReleaseName = usenetSettings.sources.showReleaseNames,
+                    )
+                } else {
+                    stream
+                }
+            }
+
             StreamNameWithInstantService(
-                stream = stream,
-                appendInstantServiceToDefaultName = appendInstantServiceToDefaultName,
+                stream = displayStream,
+                appendInstantServiceToDefaultName = appendInstantServiceToDefaultName && !useUsenetFormatter,
             ) {
                 if (marked && !markedLabel.isNullOrBlank()) {
                     Spacer(modifier = Modifier.width(8.dp))
@@ -261,7 +304,7 @@ internal fun StreamCard(
                 }
             }
 
-            val subtitle = stream.streamSubtitle
+            val subtitle = displayStream.streamSubtitle
             if (!subtitle.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(

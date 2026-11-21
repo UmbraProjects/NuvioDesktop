@@ -226,8 +226,8 @@ private fun TrailerCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(cornerRadius))
                 .nuvioCardDepth(RoundedCornerShape(cornerRadius), NuvioCardDepthSurface.Trailers)
+                .clip(RoundedCornerShape(cornerRadius))
                 .clickable(onClick = onClick),
         ) {
             AsyncImage(

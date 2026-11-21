@@ -219,8 +219,12 @@ internal fun NuvioContextMenu(
                 )
                 .width(IntrinsicSize.Max)
                 .graphicsLayer {
-                    alpha = fadeIn.value
-                    translationY = (1f - fadeIn.value) * -4.dp.toPx()
+                    val p = fadeIn.value
+                    alpha = p
+                    val s = 0.97f + 0.03f * p
+                    scaleX = s
+                    scaleY = s
+                    translationY = (1f - p) * -4.dp.toPx()
                 },
         ) {
             Column(
@@ -313,18 +317,27 @@ private fun ContextMenuRow(
         action.isDestructive -> MaterialTheme.nuvio.colors.danger
         else -> Color.White
     }
-    val iconTint = when {
-        !enabled -> Color.White.copy(alpha = 0.26f)
-        action.isDestructive -> MaterialTheme.nuvio.colors.danger
-        highlighted -> MaterialTheme.colorScheme.primary
-        else -> Color.White.copy(alpha = 0.76f)
-    }
+    val iconTint by androidx.compose.animation.animateColorAsState(
+        targetValue = when {
+            !enabled -> Color.White.copy(alpha = 0.26f)
+            action.isDestructive -> MaterialTheme.nuvio.colors.danger
+            highlighted -> MaterialTheme.colorScheme.primary
+            else -> Color.White.copy(alpha = 0.76f)
+        },
+        animationSpec = tween(100),
+        label = "context_menu_icon_tint",
+    )
+    val rowBackground by androidx.compose.animation.animateColorAsState(
+        targetValue = if (highlighted) Color.White.copy(alpha = if (tv) 0.14f else 0.10f) else Color.Transparent,
+        animationSpec = tween(100),
+        label = "context_menu_row_bg",
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(if (tv) TvMenuRowHeight else ContextMenuRowHeight)
             .background(
-                color = if (highlighted) Color.White.copy(alpha = if (tv) 0.14f else 0.10f) else Color.Transparent,
+                color = rowBackground,
                 shape = RoundedCornerShape(if (tv) 14.dp else 7.dp),
             )
             // Hovering moves keyboard focus too, so arrow keys continue from under the pointer

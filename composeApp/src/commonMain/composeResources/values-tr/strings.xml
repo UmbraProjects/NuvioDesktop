@@ -1335,6 +1335,8 @@
   <string name="settings_stream_player_badges_same">Yayın rozetleriyle aynı</string>
   <string name="settings_stream_addon_logo_title">Eklenti logosu</string>
   <string name="settings_stream_addon_logo_description">Yayın kaynaklarının yanında eklenti logosunu ve adını göster.</string>
+  <string name="settings_stream_usenet_formatter_title">Tüm sonuçlarda Usenet biçimini kullan</string>
+  <string name="settings_stream_usenet_formatter_description">Eklenti ve debrid yayınlarını yerleşik Usenet düzeniyle biçimlendir (çözünürlük, başlık, HDR, sürüm grubu ve ses).</string>
   <string name="settings_stream_display_section">Görünüm</string>
   <string name="settings_stream_badge_position_title">Rozet konumu</string>
   <string name="settings_stream_badge_position_description">Fusion ve boyut rozetlerinin yayın kartlarının üstünde mi altında mı görüneceğini seç.</string>

@@ -1335,6 +1335,8 @@
   <string name="settings_stream_player_badges_same">Stejný jako odznaky streamů</string>
   <string name="settings_stream_addon_logo_title">Logo doplňku</string>
   <string name="settings_stream_addon_logo_description">Zobrazit logo a název doplňku vedle zdrojů streamů.</string>
+  <string name="settings_stream_usenet_formatter_title">Použít formát Usenetu pro všechny výsledky</string>
+  <string name="settings_stream_usenet_formatter_description">Formátovat streamy z doplňků a debridu podle vestavěného rozvržení Usenetu (rozlišení, název, HDR, skupina vydání a zvuk).</string>
   <string name="settings_stream_display_section">Zobrazení</string>
   <string name="settings_stream_badge_position_title">Poloha odznaků</string>
   <string name="settings_stream_badge_position_description">Vyberte, zda se odznaky Fusion a velikosti zobrazí nad kartami streamů, nebo pod nimi.</string>

@@ -1335,6 +1335,8 @@
   <string name="settings_stream_player_badges_same">Taki sam jak plakietki źródeł</string>
   <string name="settings_stream_addon_logo_title">Logo dodatku</string>
   <string name="settings_stream_addon_logo_description">Pokazuj logo i nazwę dodatku obok źródeł.</string>
+  <string name="settings_stream_usenet_formatter_title">Format Usenetu dla wszystkich wyników</string>
+  <string name="settings_stream_usenet_formatter_description">Formatuj streamy z dodatków i debridu według układu wbudowanego Usenetu (rozdzielczość, tytuł, HDR, grupa wydania i dźwięk).</string>
   <string name="settings_stream_display_section">Wyświetlanie</string>
   <string name="settings_stream_badge_position_title">Pozycja plakietek</string>
   <string name="settings_stream_badge_position_description">Wybierz, czy plakietki Fusion i rozmiaru mają się pojawiać nad kartami źródeł, czy pod nimi.</string>

@@ -18,6 +18,8 @@ data class StreamBadgeSettingsUiState(
     val rules: StreamBadgeRules = StreamBadgeRules(),
     val showFileSizeBadges: Boolean = true,
     val showAddonLogo: Boolean = false,
+    /** Apply the built-in Usenet formatter layout to all stream results for display. */
+    val useUsenetFormatterForAll: Boolean = false,
     /** Badges for the video and audio that is playing, under the player title. */
     val showInPlayer: Boolean = false,
     /** Which imported pack the player badges use; blank = the stream list's active pack. */
@@ -51,6 +53,7 @@ object StreamBadgeSettingsRepository {
     private var streamBadgeRules = StreamBadgeRules()
     private var showFileSizeBadges = true
     private var showAddonLogo = false
+    private var useUsenetFormatterForAll = false
     private var showInPlayer = false
     private var playerBadgeSource = ""
     private var badgePlacement = StreamBadgePlacement.BOTTOM
@@ -72,6 +75,7 @@ object StreamBadgeSettingsRepository {
         streamBadgeRules = StreamBadgeRules()
         showFileSizeBadges = true
         showAddonLogo = false
+        useUsenetFormatterForAll = false
         showInPlayer = false
         playerBadgeSource = ""
         badgePlacement = StreamBadgePlacement.BOTTOM
@@ -167,6 +171,14 @@ object StreamBadgeSettingsRepository {
         StreamBadgeSettingsStorage.saveShowAddonLogo(enabled)
     }
 
+    fun setUseUsenetFormatterForAll(enabled: Boolean) {
+        ensureLoaded()
+        if (useUsenetFormatterForAll == enabled) return
+        useUsenetFormatterForAll = enabled
+        publish()
+        StreamBadgeSettingsStorage.saveUseUsenetFormatterForAll(enabled)
+    }
+
     fun setShowInPlayer(enabled: Boolean) {
         ensureLoaded()
         if (showInPlayer == enabled) return
@@ -226,6 +238,7 @@ object StreamBadgeSettingsRepository {
         streamBadgeRules = storedRules ?: legacyRules ?: StreamBadgeRules()
         showFileSizeBadges = StreamBadgeSettingsStorage.loadShowFileSizeBadges() ?: true
         showAddonLogo = StreamBadgeSettingsStorage.loadShowAddonLogo() ?: false
+        useUsenetFormatterForAll = StreamBadgeSettingsStorage.loadUseUsenetFormatterForAll() ?: false
         showInPlayer = StreamBadgeSettingsStorage.loadShowInPlayer() ?: false
         playerBadgeSource = StreamBadgeSettingsStorage.loadPlayerBadgeSource().orEmpty()
         badgePlacement = StreamBadgeSettingsStorage.loadStreamBadgePlacement()
@@ -252,6 +265,7 @@ object StreamBadgeSettingsRepository {
             rules = streamBadgeRules,
             showFileSizeBadges = showFileSizeBadges,
             showAddonLogo = showAddonLogo,
+            useUsenetFormatterForAll = useUsenetFormatterForAll,
             showInPlayer = showInPlayer,
             playerBadgeSource = playerBadgeSource,
             badgePlacement = badgePlacement,

@@ -1907,11 +1907,10 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         playbackSnapshot.durationMs,
         nextEpisodeInfo,
         playerSettingsUiState.preloadNextEpisodeSources,
-        playerSettingsUiState.streamAutoPlayNextEpisodeEnabled,
     ) {
         val next = nextEpisodeInfo ?: return@LaunchedEffect
         val settings = playerSettingsUiState
-        if (!settings.preloadNextEpisodeSources || !settings.streamAutoPlayNextEpisodeEnabled) return@LaunchedEffect
+        if (!settings.preloadNextEpisodeSources) return@LaunchedEffect
         if (!next.hasAired || nextEpisodePreloadRequestedFor == next.videoId) return@LaunchedEffect
         if (sourceAffinity == PlayerSourceAffinity.Local || isProviderDiagnosticVideoPlayback) return@LaunchedEffect
         if (playbackSnapshot.isLoading || playbackSnapshot.isEnded || playbackSnapshot.durationMs <= 0L || errorMessage != null) {
@@ -2006,18 +2005,23 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             errorMessage != null ||
             nextEpisodeInfo == null ||
             playbackSnapshot.durationMs <= 0L
-        // "Apply To Next Episode" never advances on its own, so the card is the only control the
-        // user has left once the episode ends — and clearing it here (the card normally dies with
-        // playback, because something else was always about to advance) took it away at exactly the
-        // moment it was needed. Hold it instead, until they click it or dismiss it.
+        // Hold the card across EOF when manual selection is active OR when the card is already
+        // up / auto-advance is searching so it flows seamlessly from the outro progress bar into
+        // "Finding source..." instead of vanishing at 100% and popping back in a frame later.
         val holdCardAtEnd = !cardBlocked &&
             playbackSnapshot.isEnded &&
             nextEpisodeInfo?.hasAired == true &&
-            shouldOpenManualNextEpisodeSelection(
-                mode = playerSettingsUiState.streamAutoPlayMode,
-                manualNextEpisodeEnabled = playerSettingsUiState.streamAutoPlayManualNextEpisode,
-                sourceAffinity = sourceAffinity,
-            )
+            (
+                showNextEpisodeCard ||
+                    nextEpisodeAutoPlaySearching ||
+                    nextEpisodeAutoPlayCountdown != null ||
+                    nextEpisodeAdvanceInProgress ||
+                    shouldOpenManualNextEpisodeSelection(
+                        mode = playerSettingsUiState.streamAutoPlayMode,
+                        manualNextEpisodeEnabled = playerSettingsUiState.streamAutoPlayManualNextEpisode,
+                        sourceAffinity = sourceAffinity,
+                    )
+                )
         if (cardBlocked || (playbackSnapshot.isEnded && !holdCardAtEnd)) {
             showNextEpisodeCard = false
             nextEpisodeThresholdStableSamples = 0

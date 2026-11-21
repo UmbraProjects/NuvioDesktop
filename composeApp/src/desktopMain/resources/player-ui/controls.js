@@ -195,6 +195,7 @@ const nextEpisodeHeader = document.getElementById("nextEpisodeHeader");
 const nextEpisodeTitle = document.getElementById("nextEpisodeTitle");
 const nextEpisodeStatus = document.getElementById("nextEpisodeStatus");
 const nextEpisodeAction = document.getElementById("nextEpisodeAction");
+const nextEpisodeProgressFill = document.getElementById("nextEpisodeProgressFill");
 const sourcesButton = document.getElementById("sourcesButton");
 const episodesButton = document.getElementById("episodesButton");
 const episodeNotch = document.getElementById("episodeNotch");
@@ -564,6 +565,8 @@ let state = {
   nextEpisodeStatus: "",
   nextEpisodeActionLabel: "Play",
   nextEpisodePlayable: false,
+  nextEpisodeProgress: -1,
+  nextEpisodeSearching: false,
   showSubmitIntro: false,
   showVideoSettings: false,
   showSources: false,
@@ -6263,6 +6266,26 @@ const renderNativePlaybackPrompts = () => {
   nextEpisodeCard.classList.toggle("visible", showNextEpisode);
   nextEpisodeCard.classList.toggle("playable", Boolean(state.nextEpisodePlayable));
   nextEpisodeCard.classList.toggle("has-thumb", Boolean(nextThumbUrl));
+  const rawNextProgress = Number(state.nextEpisodeProgress);
+  const hasNextProgress = Number.isFinite(rawNextProgress) && rawNextProgress >= 0;
+  const nextSearching = Boolean(state.nextEpisodeSearching);
+  nextEpisodeCard.classList.toggle("has-progress", hasNextProgress);
+  nextEpisodeCard.classList.toggle("searching", nextSearching);
+  if (nextEpisodeProgressFill) {
+    const pct = hasNextProgress ? Math.max(0, Math.min(1, rawNextProgress)) * 100 : 0;
+    const prevPct = Number(nextEpisodeProgressFill.dataset.pct ?? -1);
+    const shouldSnap = !showNextEpisode || !hasNextProgress || prevPct < 0 || pct < prevPct;
+    if (shouldSnap) {
+      nextEpisodeProgressFill.style.transition = "none";
+      nextEpisodeProgressFill.style.width = `${pct.toFixed(2)}%`;
+      // Force layout so the next forward update animates smoothly from this snapped position.
+      void nextEpisodeProgressFill.offsetWidth;
+      nextEpisodeProgressFill.style.transition = "";
+    } else {
+      nextEpisodeProgressFill.style.width = `${pct.toFixed(2)}%`;
+    }
+    nextEpisodeProgressFill.dataset.pct = String(pct);
+  }
 };
 
 const isOpeningOverlayActive = () =>

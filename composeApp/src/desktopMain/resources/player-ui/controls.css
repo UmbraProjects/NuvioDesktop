@@ -59,6 +59,7 @@
   --motion-standard: 180ms;
   --motion-panel: 220ms;
   --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --ease-spring: cubic-bezier(.22, 1, .36, 1);
   --theme-accent: #2f6fed;
   --theme-accent-strong: #3c7bff;
   /* Paint for filled accent surfaces; a gradient when the theme defines a second accent stop. */
@@ -814,8 +815,8 @@ button svg * {
   pointer-events: none;
   transform: translate(-50%, -50%) scale(var(--feedback-hidden-scale));
   transition:
-    opacity 200ms ease,
-    transform 200ms var(--ease-out);
+    opacity 180ms ease,
+    transform 220ms var(--ease-spring);
 }
 
 .gesture-pill.visible {
@@ -1077,26 +1078,41 @@ button svg * {
   right: var(--hp);
   bottom: calc(var(--overlay-bottom) + env(safe-area-inset-bottom));
   z-index: 7;
-  width: min(292px, calc(100vw - (var(--hp) * 2)));
-  display: flex;
-  align-items: center;
-  padding: 8px 9px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, .12);
-  background: rgba(25, 25, 25, .89);
+  width: min(284px, calc(100vw - (var(--hp) * 2)));
+  aspect-ratio: 16 / 9;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, .18);
+  background: rgba(16, 17, 22, .88);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, .58),
+    inset 0 1px 0 rgba(255, 255, 255, .16);
   color: #fff;
+  text-align: left;
   opacity: 0;
   pointer-events: none;
-  transform: translateX(50%) scale(.98);
+  transform: translateY(10px) scale(.96);
   transition:
     opacity 220ms ease,
-    transform 260ms var(--ease-out);
+    transform 280ms var(--ease-spring),
+    border-color 160ms ease,
+    box-shadow 180ms ease;
 }
 
 .next-episode-card.visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translateX(0) scale(1);
+  transform: translateY(0) scale(1);
+}
+
+.next-episode-card.visible.playable:hover {
+  border-color: rgba(255, 255, 255, .32);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, .64),
+    inset 0 1px 0 rgba(255, 255, 255, .24);
+  transform: translateY(-2px) scale(1.015);
 }
 
 .next-episode-card:not(.playable) {
@@ -1104,19 +1120,26 @@ button svg * {
 }
 
 .next-episode-thumb {
-  position: relative;
-  width: 78px;
-  height: 44px;
-  flex: 0 0 auto;
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, .08);
+  border-radius: 0;
+  background: rgba(255, 255, 255, .07);
 }
 
 .next-episode-thumb img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 300ms var(--ease-out);
+}
+
+.next-episode-card.visible.playable:hover .next-episode-thumb img {
+  transform: scale(1.04);
 }
 
 .next-episode-card:not(.has-thumb) .next-episode-thumb img {
@@ -1127,59 +1150,92 @@ button svg * {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, .32));
+  z-index: 1;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, .88) 0%,
+    rgba(0, 0, 0, .54) 40%,
+    rgba(0, 0, 0, .06) 72%,
+    rgba(0, 0, 0, .20) 100%
+  );
+  pointer-events: none;
 }
 
 .next-episode-copy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
   min-width: 0;
-  flex: 1 1 auto;
-  padding-left: 8px;
+  padding: 0 12px 11px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .65);
+}
+
+.next-episode-card.has-progress .next-episode-copy,
+.next-episode-card.searching .next-episode-copy {
+  padding-bottom: 14px;
 }
 
 .next-episode-header {
   display: block;
-  color: rgba(255, 255, 255, .8);
-  font-size: 10px;
+  color: rgba(255, 255, 255, .82);
+  font-size: 10.5px;
   line-height: 1.25;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .next-episode-title {
-  display: block;
+  display: -webkit-box;
   margin-top: 2px;
   color: #fff;
-  font-size: 12px;
+  font-size: 13.5px;
   line-height: 1.25;
-  font-weight: 600;
+  font-weight: 700;
   overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .next-episode-status {
   display: block;
   margin-top: 2px;
-  color: rgba(255, 255, 255, .78);
-  font-size: 10px;
+  color: rgba(255, 255, 255, .74);
+  font-size: 11px;
   line-height: 1.25;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .next-episode-action {
-  display: flex;
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 3;
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
-  flex: 0 0 auto;
-  margin-left: 4px;
-  padding: 5px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, .2);
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: rgba(16, 17, 22, .72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: #fff;
   font-size: 11px;
+  font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.next-episode-card.visible.playable:hover .next-episode-action {
+  background: var(--theme-accent-fill);
+  border-color: rgba(255, 255, 255, .26);
+  color: var(--theme-on-accent);
 }
 
 .next-episode-card:not(.playable) .next-episode-action {
@@ -1187,9 +1243,45 @@ button svg * {
 }
 
 .next-episode-action svg {
-  width: 13px;
-  height: 13px;
+  width: 11px;
+  height: 11px;
   color: inherit;
+}
+
+.next-episode-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: block;
+  height: 4px;
+  border-radius: 0;
+  background: rgba(255, 255, 255, .20);
+  overflow: hidden;
+}
+
+.next-episode-card:not(.has-progress):not(.searching) .next-episode-progress {
+  display: none;
+}
+
+.next-episode-progress-fill {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: 0 999px 999px 0;
+  background: var(--theme-accent-fill);
+  transition: width 1050ms linear;
+}
+
+.next-episode-card.searching .next-episode-progress-fill {
+  width: 38% !important;
+  animation: next-episode-progress-shimmer 1100ms ease-in-out infinite;
+}
+
+@keyframes next-episode-progress-shimmer {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(280%); }
 }
 
 .header-actions {
@@ -2323,6 +2415,7 @@ button svg * {
   overflow: hidden;
   text-overflow: ellipsis;
   box-shadow: 0 4px 16px rgba(0,0,0,.36);
+  animation: hud-popover-in 150ms var(--ease-spring) both;
 }
 
 .seek-thumbnail {
@@ -2337,6 +2430,18 @@ button svg * {
   box-shadow: 0 12px 34px rgba(0,0,0,.48);
   pointer-events: none;
   transform: translateX(-50%);
+  animation: hud-popover-in 160ms var(--ease-spring) both;
+}
+
+@keyframes hud-popover-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
 }
 .seek-thumbnail img {
   display: block;
@@ -4858,32 +4963,43 @@ svg {
 }
 
 .next-episode-card {
-  width: min(calc(var(--user-scale) * 292px), calc(100vw - (var(--hp) * 2)));
-  padding: calc(var(--user-scale) * 8px) calc(var(--user-scale) * 9px);
-  border-radius: calc(var(--user-scale) * 16px);
+  width: min(calc(var(--user-scale) * 284px), calc(100vw - (var(--hp) * 2)));
+  padding: 0;
+  border-radius: calc(var(--user-scale) * 12px);
 }
-.next-episode-thumb {
-  width: calc(var(--user-scale) * 78px);
-  height: calc(var(--user-scale) * 44px);
-  border-radius: calc(var(--user-scale) * 9px);
+.next-episode-copy {
+  padding: 0 calc(var(--user-scale) * 12px) calc(var(--user-scale) * 11px);
 }
-.next-episode-copy { padding-left: calc(var(--user-scale) * 8px); }
-.next-episode-header,
-.next-episode-status { font-size: calc(var(--user-scale) * 10px); }
+.next-episode-card.has-progress .next-episode-copy,
+.next-episode-card.searching .next-episode-copy {
+  padding-bottom: calc(var(--user-scale) * 14px);
+}
+.next-episode-header { font-size: calc(var(--user-scale) * 10.5px); }
 .next-episode-title {
   margin-top: calc(var(--user-scale) * 2px);
-  font-size: calc(var(--user-scale) * 12px);
+  font-size: calc(var(--user-scale) * 13.5px);
 }
-.next-episode-status { margin-top: calc(var(--user-scale) * 2px); }
+.next-episode-status {
+  margin-top: calc(var(--user-scale) * 2px);
+  font-size: calc(var(--user-scale) * 11px);
+}
 .next-episode-action {
-  gap: calc(var(--user-scale) * 3px);
-  margin-left: calc(var(--user-scale) * 4px);
-  padding: calc(var(--user-scale) * 5px) calc(var(--user-scale) * 8px);
+  top: calc(var(--user-scale) * 9px);
+  right: calc(var(--user-scale) * 9px);
+  gap: calc(var(--user-scale) * 4px);
+  padding: calc(var(--user-scale) * 4px) calc(var(--user-scale) * 9px);
+  border-radius: calc(var(--user-scale) * 7px);
   font-size: calc(var(--user-scale) * 11px);
 }
 .next-episode-action svg {
-  width: calc(var(--user-scale) * 13px);
-  height: calc(var(--user-scale) * 13px);
+  width: calc(var(--user-scale) * 11px);
+  height: calc(var(--user-scale) * 11px);
+}
+.next-episode-progress {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--user-scale) * 4px);
 }
 
 .center-status {
@@ -5074,17 +5190,22 @@ svg {
     0 calc(var(--user-scale) * 1px) calc(var(--user-scale) * 3px) rgba(0, 0, 0, .36);
   transform: scale(1);
   transition:
-    transform 130ms var(--ease-out),
-    box-shadow 130ms ease,
-    background-color 130ms ease;
+    transform 160ms var(--ease-spring),
+    box-shadow 160ms ease,
+    background-color 140ms ease;
 }
-.scrub:hover::-webkit-slider-thumb { transform: scale(1.22); }
+.scrub:hover::-webkit-slider-thumb {
+  transform: scale(1.26);
+  box-shadow:
+    0 0 0 calc(var(--user-scale) * 2.5px) rgba(255, 255, 255, .12),
+    0 calc(var(--user-scale) * 1px) calc(var(--user-scale) * 4px) rgba(0, 0, 0, .40);
+}
 .scrub:active::-webkit-slider-thumb {
   background: #fff;
-  transform: scale(1.38);
+  transform: scale(1.42);
   box-shadow:
-    0 0 0 calc(var(--user-scale) * 3px) rgba(255, 255, 255, .14),
-    0 calc(var(--user-scale) * 1px) calc(var(--user-scale) * 4px) rgba(0, 0, 0, .42);
+    0 0 0 calc(var(--user-scale) * 4px) rgba(255, 255, 255, .18),
+    0 calc(var(--user-scale) * 1px) calc(var(--user-scale) * 5px) rgba(0, 0, 0, .44);
 }
 .desktop-control-row {
   min-height: calc(var(--user-scale) * 58px);
@@ -5686,13 +5807,11 @@ svg {
   gap: calc(var(--user-scale) * 6px);
   padding: 0 calc(var(--user-scale) * 10px);
 }
-/* The skip prompt and next-episode card float just above the bar, so on the pills layout they wear
-   the same pill rather than the near-opaque card the other layouts use, which read as a different
-   UI sitting on top of this one. Same tint, edge and blur as the bar; the skip prompt matches its
-   height too. The next-episode card is taller (it carries a thumbnail), so it stays fully round
-   with a pill-shaped thumbnail to echo the ends. */
-.player.minimal-hud.minimal-pills .skip-prompt,
-.player.minimal-hud.minimal-pills .next-episode-card {
+/* The skip prompt floats just above the bar, so on the pills layout it wears the same pill rather
+   than the near-opaque card the other layouts use, which read as a different UI sitting on top of
+   this one. Same tint, edge, blur and height as the bar. The next-episode card is the same 16:9
+   thumbnail card in every layout (see the end of this file). */
+.player.minimal-hud.minimal-pills .skip-prompt {
   border: 0;
   border-radius: 999px;
   background: rgba(28, 28, 34, .26);
@@ -5711,18 +5830,6 @@ svg {
   width: auto;
   margin: 0 calc(var(--user-scale) * 18px) calc(var(--user-scale) * 6px);
   border-radius: 999px;
-}
-.player.minimal-hud.minimal-pills .next-episode-card {
-  padding: calc(var(--user-scale) * 6px) calc(var(--user-scale) * 7px);
-}
-.player.minimal-hud.minimal-pills .next-episode-thumb { border-radius: 999px; }
-.player.minimal-hud.minimal-pills .next-episode-action {
-  border: 0;
-  background: rgba(255, 255, 255, .1);
-  padding: calc(var(--user-scale) * 7px) calc(var(--user-scale) * 12px);
-}
-.player.minimal-hud.minimal-pills .next-episode-card.playable:hover .next-episode-action {
-  background: rgba(255, 255, 255, .18);
 }
 
 /* Ultra layout (the "Player Controls Layout: Ultra Minimal" setting -> .player.ultra-hud).
@@ -7053,30 +7160,10 @@ svg {
 .iptv-group-row.selected { color: #fff; font-weight: 700; background: var(--theme-selected-surface, rgba(47,111,237,.25)); }
 .iptv-group-count { color: rgba(255,255,255,.5); font-size: 13px; }
 
-/* Next-episode card, one piece: thumbnail and text only. The whole card is the button, so there is
-   no separate Play control. The width stays fixed so the card doesn't grow and shrink with the
-   episode title; long titles ellipsize. Declared last so it applies to every layout, pills
-   included. The action label element stays in the markup because the script still writes to it. */
-.next-episode-card {
-  width: min(calc(var(--user-scale) * 292px), calc(100vw - (var(--hp) * 2)));
-  max-width: none;
-  padding: calc(var(--user-scale) * 6px) calc(var(--user-scale) * 20px) calc(var(--user-scale) * 6px) calc(var(--user-scale) * 6px);
-}
-.next-episode-copy {
-  padding-left: calc(var(--user-scale) * 12px);
-  text-align: left;
-}
-.next-episode-action {
-  display: none;
-}
-/* With no button, the card itself answers the pointer. */
+/* Next-episode card: full-bleed 16:9 thumbnail card, uniform across every HUD layout (including
+   minimal-pills). The whole card is clickable; the frosted top-right badge shows Play/Unaired. */
 .next-episode-card.playable {
   cursor: pointer;
-}
-.next-episode-card.playable:hover {
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22);
-  /* Layered over each layout's own fill rather than replacing it. */
-  background-image: linear-gradient(rgba(255, 255, 255, .07), rgba(255, 255, 255, .07));
 }
 
 /* ── Glass modals ────────────────────────────────────────────────────────────────────────────

@@ -45,7 +45,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import com.nuvio.app.core.ui.UiMotion
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.graphics.Brush
@@ -1862,6 +1864,11 @@ private fun TabletSettingsScreen(
                             LocalSettingsSectionCards provides true,
                             LocalSettingsAnchorViewport provides anchorViewport,
                         ) {
+                        val pageReveal = remember(page) { Animatable(0f) }
+                        LaunchedEffect(page) {
+                            UiMotion.markBusy(140L)
+                            pageReveal.animateTo(1f, tween(durationMillis = 140, easing = FastOutSlowInEasing))
+                        }
                         LazyColumn(
                             state = listState,
                             modifier = Modifier
@@ -1869,7 +1876,13 @@ private fun TabletSettingsScreen(
                                 .fillMaxHeight()
                                 // Hidden for the few frames a jump walks the list; see
                                 // SeekSettingsAnchorIntoView.
-                                .graphicsLayer { alpha = if (SettingsScrollAnchor.seeking) 0f else 1f }
+                                .graphicsLayer {
+                                    val p = pageReveal.value
+                                    alpha = if (SettingsScrollAnchor.seeking) 0f else p
+                                    if (p < 1f) {
+                                        translationY = (1f - p) * 6.dp.toPx()
+                                    }
+                                }
                                 .onSizeChanged { listViewportSize.value = it }
                                 .onPlaced { anchorViewport.coordinates = it }
                                 .nestedScroll(rootSearchRevealConnection),

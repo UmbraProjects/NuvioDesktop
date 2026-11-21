@@ -92,6 +92,8 @@ import nuvio.composeapp.generated.resources.settings_stream_player_badges_same
 import nuvio.composeapp.generated.resources.settings_stream_player_badges_title
 import nuvio.composeapp.generated.resources.settings_stream_addon_logo_description
 import nuvio.composeapp.generated.resources.settings_stream_display_section
+import nuvio.composeapp.generated.resources.settings_stream_usenet_formatter_description
+import nuvio.composeapp.generated.resources.settings_stream_usenet_formatter_title
 import org.jetbrains.compose.resources.stringResource
 import com.nuvio.app.core.ui.NuvioTextField
 import androidx.compose.ui.text.input.KeyboardType
@@ -216,6 +218,15 @@ internal fun LazyListScope.streamsSettingsContent(
                     isTablet = isTablet,
                     modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("stream-addon-logo")),
                     onCheckedChange = StreamBadgeSettingsRepository::setShowAddonLogo,
+                )
+                SettingsGroupDivider(isTablet = isTablet)
+                SettingsSwitchRow(
+                    title = stringResource(Res.string.settings_stream_usenet_formatter_title),
+                    description = stringResource(Res.string.settings_stream_usenet_formatter_description),
+                    checked = currentSettings.useUsenetFormatterForAll,
+                    isTablet = isTablet,
+                    modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("stream-usenet-formatter")),
+                    onCheckedChange = StreamBadgeSettingsRepository::setUseUsenetFormatterForAll,
                 )
             }
         }

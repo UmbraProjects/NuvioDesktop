@@ -15,6 +15,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import com.nuvio.app.core.ui.nuvioGlassHoverSheen
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -323,9 +327,10 @@ private fun HomePosterPreviewCard(
         modifier = modifier
             .width(HoverPreviewWidth)
             .shadow(tokens.elevation.overlay, shape)
+            .smoothBorder(tokens.borders.hairline, tokens.colors.borderStrong, shape)
+            .nuvioGlassHoverSheen(cornerRadius = NuvioTokens.Radius.xl, peakAlpha = 0.18f)
             .clip(shape)
             .background(previewBackground)
-            .border(tokens.borders.hairline, tokens.colors.borderStrong, shape)
             .clickable(
                 interactionSource = clickInteractionSource,
                 indication = null,
@@ -447,10 +452,24 @@ private fun HomePosterPreviewCard(
                     horizontalArrangement = Arrangement.spacedBy(NuvioTokens.Space.s10),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    val ctaInteraction = remember { MutableInteractionSource() }
+                    val ctaPressed by ctaInteraction.collectIsPressedAsState()
+                    val ctaScale by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (ctaPressed) 0.975f else 1f,
+                        animationSpec = androidx.compose.animation.core.spring(
+                            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessHigh,
+                        ),
+                        label = "hover_preview_cta_scale",
+                    )
                     Surface(
                         modifier = Modifier
                             .weight(1f)
-                            .height(NuvioTokens.Space.s40),
+                            .height(NuvioTokens.Space.s40)
+                            .graphicsLayer {
+                                scaleX = ctaScale
+                                scaleY = ctaScale
+                            },
                         color = tokens.colors.accent,
                         contentColor = tokens.colors.onAccent,
                         shape = tokens.shapes.button,
@@ -458,7 +477,11 @@ private fun HomePosterPreviewCard(
                         Row(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .clickable(onClick = onClick)
+                                .clickable(
+                                    interactionSource = ctaInteraction,
+                                    indication = androidx.compose.foundation.LocalIndication.current,
+                                    onClick = onClick,
+                                )
                                 .padding(horizontal = NuvioTokens.Space.s16),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically,

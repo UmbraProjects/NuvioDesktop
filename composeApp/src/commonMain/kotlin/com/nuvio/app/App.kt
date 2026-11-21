@@ -6,6 +6,8 @@ import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.accentFill
 import com.nuvio.app.features.settings.settingsGlassGlyph
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import com.nuvio.app.core.ui.smoothBorder
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
@@ -7120,15 +7122,28 @@ private fun DesktopHoverSidebar(
                 )
             }
 
-            if (profileStackVisible) {
+            AnimatedVisibility(
+                visible = profileStackVisible,
+                enter = fadeIn(tween(140)) + scaleIn(
+                    animationSpec = tween(150, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    initialScale = 0.94f,
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f),
+                ),
+                exit = fadeOut(tween(110)) + androidx.compose.animation.scaleOut(
+                    animationSpec = tween(110),
+                    targetScale = 0.94f,
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f),
+                ),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = profileTopPadding + 58.dp)
+                    .width(DesktopSidebarExpandedContentWidth),
+            ) {
                 SidebarProfileSwitcherStack(
                     onProfileSelected = onProfileSelected,
                     onAddProfileRequested = onAddProfileRequested,
                     onDismissRequest = { profileStackVisible = false },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = profileTopPadding + 58.dp)
-                        .width(DesktopSidebarExpandedContentWidth),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
@@ -7391,15 +7406,54 @@ private fun DesktopSidebarItem(
     icon: @Composable (Color) -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val contentColor = if (selected) tokens.colors.textPrimary else tokens.colors.textMuted
-    val iconColor = if (selected) tokens.colors.onAccent else contentColor
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            selected -> tokens.colors.textPrimary
+            hovered -> tokens.colors.textPrimary.copy(alpha = 0.9f)
+            else -> tokens.colors.textMuted
+        },
+        animationSpec = tween(150),
+        label = "desktop_sidebar_content",
+    )
+    val iconColor by animateColorAsState(
+        targetValue = if (selected) tokens.colors.onAccent else contentColor,
+        animationSpec = tween(150),
+        label = "desktop_sidebar_icon",
+    )
+    val pillProgress by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
+        ),
+        label = "desktop_sidebar_pill",
+    )
+    val hoverAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (hovered && !selected) 1f else 0f,
+        animationSpec = tween(130),
+        label = "desktop_sidebar_hover",
+    )
+    val iconScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (hovered) 1.06f else 1f,
+        animationSpec = androidx.compose.animation.core.spring(
+            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
+        ),
+        label = "desktop_sidebar_scale",
+    )
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
             .height(52.dp)
             .padding(horizontal = 10.dp, vertical = 4.dp)
-            .clickable(onClick = onClick),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
         color = Color.Transparent,
         shape = RoundedCornerShape(16.dp),
     ) {
@@ -7416,18 +7470,40 @@ private fun DesktopSidebarItem(
                 ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Surface(
-                    modifier = Modifier
-                        .size(DesktopSidebarIconSlotSize)
-                        .background(
-                            if (selected) tokens.colors.accentFill else SolidColor(Color.Transparent),
-                            RoundedCornerShape(14.dp),
-                        ),
-                    color = Color.Transparent,
-                    shape = RoundedCornerShape(14.dp),
+                Box(
+                    modifier = Modifier.size(DesktopSidebarIconSlotSize),
+                    contentAlignment = Alignment.Center,
                 ) {
+                    if (hoverAlpha > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Color.White.copy(alpha = 0.08f * hoverAlpha),
+                                    RoundedCornerShape(14.dp),
+                                ),
+                        )
+                    }
+                    if (pillProgress > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    alpha = pillProgress
+                                    val s = 0.84f + 0.16f * pillProgress
+                                    scaleX = s
+                                    scaleY = s
+                                }
+                                .background(tokens.colors.accentFill, RoundedCornerShape(14.dp)),
+                        )
+                    }
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = iconScale
+                                scaleY = iconScale
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
                         icon(iconColor)
@@ -8028,101 +8104,137 @@ private fun TabletFloatingTopBar(
                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f),
                 ),
             ) {
-                // Its own glass panel under the bar, same night glass, edge and shadow as the pill.
+                // Uniform night glass matching the nav bar (no shadowElevation cutout through
+                // translucent glass, which darkened the outer rim while leaving the middle lighter).
+                val searchPanelShape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+                val searchPanelColor = NuvioGlass.night(tokens.colors.background, tokens.colors.accent).copy(alpha = 0.94f)
                 Surface(
-                    color = floatingSearchSurfaceColor,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                    color = searchPanelColor,
+                    shape = searchPanelShape,
                     tonalElevation = 0.dp,
-                    shadowElevation = tokens.elevation.overlay,
-                    border = BorderStroke(1.dp, dividerColor),
-                    modifier = Modifier.padding(top = SearchPanelGap).width(topBarWidth),
+                    shadowElevation = 0.dp,
+                    modifier = Modifier
+                        .padding(top = SearchPanelGap)
+                        .width(topBarWidth)
+                        .smoothBorder(1.dp, dividerColor, searchPanelShape),
                 ) {
                     val shownEntries = pickerEntries
                     val shownSelectedIndex = pickerSelectedIndex
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        LazyColumn(
-                            state = pickerListState,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                // Leave the clear-history footer its own room inside the height the
-                                // panel was already budgeted.
-                                .heightIn(max = (pickerMaxHeight - 32.dp).coerceAtLeast(88.dp))
-                                .padding(vertical = 8.dp),
-                        ) {
-                            items(
-                                items = shownEntries,
-                                key = { entry -> "${entry.source}:${entry.text}" },
-                            ) { entry ->
-                                val index = shownEntries.indexOf(entry)
-                                val isSelected = index == shownSelectedIndex
-                                val rowInteraction = remember { MutableInteractionSource() }
-                                val rowHovered by rowInteraction.collectIsHoveredAsState()
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(
-                                            when {
-                                                isSelected -> Color.White.copy(alpha = 0.1f)
-                                                rowHovered -> Color.White.copy(alpha = 0.06f)
-                                                else -> Color.Transparent
-                                            },
-                                        )
-                                        .hoverable(rowInteraction)
-                                        .clickable(interactionSource = rowInteraction, indication = null) {
-                                            runSearch(entry.text)
-                                        }
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = when (entry.source) {
-                                            com.nuvio.app.features.search.PredictionSource.History -> Icons.Rounded.History
-                                            com.nuvio.app.features.search.PredictionSource.Title -> Icons.Rounded.Movie
-                                            com.nuvio.app.features.search.PredictionSource.YouTube -> Icons.Rounded.SmartDisplay
-                                            com.nuvio.app.features.search.PredictionSource.Music -> Icons.Rounded.MusicNote
-                                            com.nuvio.app.features.search.PredictionSource.Channel -> Icons.Rounded.LiveTv
+                    LazyColumn(
+                        state = pickerListState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = pickerMaxHeight.coerceAtLeast(88.dp)),
+                    ) {
+                        items(
+                            items = shownEntries,
+                            key = { entry -> "${entry.source}:${entry.text}" },
+                        ) { entry ->
+                            val index = shownEntries.indexOf(entry)
+                            val isFirst = index == 0
+                            val isLast = index == shownEntries.lastIndex
+                            val isSelected = index == shownSelectedIndex
+                            val rowInteraction = remember { MutableInteractionSource() }
+                            val rowHovered by rowInteraction.collectIsHoveredAsState()
+                            val rowBg by animateColorAsState(
+                                targetValue = when {
+                                    isSelected -> Color.White.copy(alpha = 0.1f)
+                                    rowHovered -> Color.White.copy(alpha = 0.06f)
+                                    else -> Color.Transparent
+                                },
+                                animationSpec = tween(100),
+                                label = "search_dropdown_row_bg",
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(rowBg)
+                                    .hoverable(rowInteraction)
+                                    .clickable(interactionSource = rowInteraction, indication = null) {
+                                        runSearch(entry.text)
+                                    }
+                                    .padding(
+                                        start = 16.dp,
+                                        end = 16.dp,
+                                        top = if (isFirst) 15.dp else 11.dp,
+                                        bottom = if (isLast) 15.dp else 11.dp,
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(
+                                    imageVector = when (entry.source) {
+                                        com.nuvio.app.features.search.PredictionSource.History -> Icons.Rounded.History
+                                        com.nuvio.app.features.search.PredictionSource.Title -> Icons.Rounded.Movie
+                                        com.nuvio.app.features.search.PredictionSource.YouTube -> Icons.Rounded.SmartDisplay
+                                        com.nuvio.app.features.search.PredictionSource.Music -> Icons.Rounded.MusicNote
+                                        com.nuvio.app.features.search.PredictionSource.Channel -> Icons.Rounded.LiveTv
+                                    },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(NuvioTokens.Space.s16),
+                                    tint = inactiveIconTint,
+                                )
+                                androidx.compose.material3.Text(
+                                    text = boldMatch(entry.text, picker.typed),
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = activeIconTint,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                )
+                                // Inline pill button on the bottom history row so clearing history
+                                // does not expand the dropdown panel with an extra footer row.
+                                if (showingHistory && picker.held == null && isLast) {
+                                    val clearInteraction = remember { MutableInteractionSource() }
+                                    val clearHovered by clearInteraction.collectIsHoveredAsState()
+                                    val clearBg by animateColorAsState(
+                                        targetValue = if (clearHovered) {
+                                            Color.White.copy(alpha = 0.16f)
+                                        } else {
+                                            Color.White.copy(alpha = 0.08f)
                                         },
-                                        contentDescription = null,
-                                        modifier = Modifier.size(NuvioTokens.Space.s16),
-                                        tint = inactiveIconTint,
+                                        animationSpec = tween(120),
+                                        label = "search_clear_history_bg",
                                     )
-                                    androidx.compose.material3.Text(
-                                        text = boldMatch(entry.text, picker.typed),
-                                        modifier = Modifier.weight(1f),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = activeIconTint,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    val clearTextColor by animateColorAsState(
+                                        targetValue = if (clearHovered) {
+                                            Color.White.copy(alpha = 0.95f)
+                                        } else {
+                                            Color.White.copy(alpha = 0.72f)
+                                        },
+                                        animationSpec = tween(120),
+                                        label = "search_clear_history_fg",
                                     )
+                                    val clearShape = RoundedCornerShape(999.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .smoothBorder(1.dp, Color.White.copy(alpha = 0.14f), clearShape)
+                                            .clip(clearShape)
+                                            .background(clearBg)
+                                            .hoverable(clearInteraction)
+                                            .clickable(
+                                                interactionSource = clearInteraction,
+                                                indication = null,
+                                            ) {
+                                                when (searchScope) {
+                                                    BarSearchScope.Music -> com.nuvio.app.features.music.library.MusicSearchHistory.clear()
+                                                    BarSearchScope.YouTube -> com.nuvio.app.features.youtube.YouTubeSearchHistory.clear()
+                                                    else -> com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
+                                                }
+                                                picker = picker.typed(searchQuery)
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        androidx.compose.material3.Text(
+                                            text = stringResource(Res.string.compose_search_clear_history),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = clearTextColor,
+                                            maxLines = 1,
+                                        )
+                                    }
                                 }
                             }
-                        }
-
-                        // Mouse-only footer, and only under the recent searches: the arrow keys walk the
-                        // entries above, so this stays out of the picker.
-                        if (showingHistory && picker.held == null) Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 8.dp, end = 8.dp, bottom = 4.dp),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            androidx.compose.material3.Text(
-                                text = stringResource(Res.string.compose_search_clear_history),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = Color.White.copy(alpha = 0.55f),
-                                modifier = Modifier
-                                    .clickable {
-                                        when (searchScope) {
-                                            BarSearchScope.Music -> com.nuvio.app.features.music.library.MusicSearchHistory.clear()
-                                            BarSearchScope.YouTube -> com.nuvio.app.features.youtube.YouTubeSearchHistory.clear()
-                                            else -> com.nuvio.app.features.search.SearchHistoryRepository.clearHistory()
-                                        }
-                                        picker = picker.typed(searchQuery)
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                            )
                         }
                     }
                 }

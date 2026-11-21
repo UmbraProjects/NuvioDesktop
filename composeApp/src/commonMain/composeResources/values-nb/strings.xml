@@ -1335,6 +1335,8 @@
   <string name="settings_stream_player_badges_same">Samme som strømmemerker</string>
   <string name="settings_stream_addon_logo_title">Tilleggslogo</string>
   <string name="settings_stream_addon_logo_description">Vis tilleggets logo og navn ved siden av strømmekilder.</string>
+  <string name="settings_stream_usenet_formatter_title">Bruk Usenet-formatet for alle resultater</string>
+  <string name="settings_stream_usenet_formatter_description">Formater strømmer fra tillegg og debrid med oppsettet til innebygd Usenet (oppløsning, tittel, HDR, utgivelsesgruppe og lyd).</string>
   <string name="settings_stream_display_section">Visning</string>
   <string name="settings_stream_badge_position_title">Merkeposisjon</string>
   <string name="settings_stream_badge_position_description">Velg om Fusion- og størrelsesmerker vises over eller under strømmekortene.</string>

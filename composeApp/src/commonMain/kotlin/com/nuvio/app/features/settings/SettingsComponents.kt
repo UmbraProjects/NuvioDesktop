@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.nuvioGlassHoverSheen
 import com.nuvio.app.core.ui.ditheredBackground
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -860,17 +861,48 @@ internal fun SettingsSidebarItem(
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
-    val transparent = SolidColor(Color.Transparent)
-    val background = if (selected) tokens.colors.accentFill(tokens.opacity.hover) else transparent
-    val iconChip = if (selected) tokens.colors.accentFill(tokens.opacity.selected) else transparent
-    val contentColor = if (selected) tokens.colors.textPrimary else tokens.colors.textMuted
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val selectionProgress by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(150),
+        label = "settings_sidebar_select",
+    )
+    val hoverProgress by animateFloatAsState(
+        targetValue = if (hovered && !selected) 1f else 0f,
+        animationSpec = tween(120),
+        label = "settings_sidebar_hover",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            selected -> tokens.colors.textPrimary
+            hovered -> tokens.colors.textPrimary.copy(alpha = 0.88f)
+            else -> tokens.colors.textMuted
+        },
+        animationSpec = tween(150),
+        label = "settings_sidebar_content",
+    )
+    val background = when {
+        selectionProgress > 0f -> tokens.colors.accentFill(tokens.opacity.hover * selectionProgress)
+        hoverProgress > 0f -> SolidColor(Color.White.copy(alpha = 0.05f * hoverProgress))
+        else -> SolidColor(Color.Transparent)
+    }
+    val iconChip = if (selectionProgress > 0f) {
+        tokens.colors.accentFill(tokens.opacity.selected * selectionProgress)
+    } else {
+        SolidColor(Color.Transparent)
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = tokens.spacing.listGap, vertical = NuvioTokens.Space.s2)
             .background(background, RoundedCornerShape(NuvioTokens.Space.s10))
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
             .padding(horizontal = tokens.spacing.screenHorizontal, vertical = tokens.spacing.listGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1226,7 +1258,8 @@ private fun SettingsSectionCardSurface(
             .fillMaxWidth()
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .ditheredBackground(SettingsSectionGlassFill, SettingsSectionGlassShape)
-            .border(tokens.borders.thin, SettingsSectionGlassEdge, SettingsSectionGlassShape),
+            .border(tokens.borders.thin, SettingsSectionGlassEdge, SettingsSectionGlassShape)
+            .nuvioGlassHoverSheen(cornerRadius = SettingsGlassRadius),
         color = Color.Transparent,
         contentColor = contentColorFor(tokens.colors.surface),
         shape = SettingsSectionGlassShape,

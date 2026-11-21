@@ -998,9 +998,17 @@ fun StreamsScreen(
             isEpisodeView = isEpisode,
         )
 
+        val usenetFormatSubject = remember(title, releaseYear, isEpisode) {
+            com.nuvio.app.features.usenet.UsenetStreamFormat.Subject(
+                title = title,
+                year = releaseYear,
+                series = isEpisode,
+            )
+        }
         CompositionLocalProvider(
             LocalStreamRowActions provides streamRowActions,
             LocalStreamPickerHeaderFocus provides StreamPickerHeaderFocus(headerFocus, openSortTick),
+            LocalUsenetFormatSubject provides usenetFormatSubject,
         ) {
         if (isPanel) {
             PanelStreamsLayout(

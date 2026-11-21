@@ -1335,6 +1335,8 @@
   <string name="settings_stream_player_badges_same">Sama dengan badge stream</string>
   <string name="settings_stream_addon_logo_title">Logo addon</string>
   <string name="settings_stream_addon_logo_description">Tampilkan logo dan nama addon di samping sumber stream.</string>
+  <string name="settings_stream_usenet_formatter_title">Gunakan format Usenet untuk semua hasil</string>
+  <string name="settings_stream_usenet_formatter_description">Format stream addon dan debrid dengan tata letak Usenet bawaan (resolusi, judul, HDR, grup rilis, dan audio).</string>
   <string name="settings_stream_display_section">Tampilan</string>
   <string name="settings_stream_badge_position_title">Posisi badge</string>
   <string name="settings_stream_badge_position_description">Pilih apakah badge Fusion dan ukuran muncul di atas atau di bawah kartu stream.</string>
