@@ -11,4 +11,13 @@ internal actual object UsenetStorage {
     actual fun savePayload(profileId: Int, payload: String) {
         store.putString("usenet_$profileId", payload)
     }
+
+    // A store of its own: written every few seconds while something plays.
+    private val stats = DesktopStorage.store("nuvio_usenet_stats")
+
+    actual fun loadStats(): String? = stats.getString("stats")
+
+    actual fun saveStats(payload: String) {
+        stats.putString("stats", payload)
+    }
 }

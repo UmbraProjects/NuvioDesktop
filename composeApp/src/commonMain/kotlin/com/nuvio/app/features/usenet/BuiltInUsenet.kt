@@ -111,15 +111,30 @@ object BuiltInUsenet {
         indexer: UsenetIndexer,
         request: UsenetSearchRequest,
         config: UsenetSourceConfiguration,
-    ): List<UsenetRelease>? = try {
-        val caps = client.capabilities(indexer)
-        client.search(indexer, request, caps, config.indexerResults)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        // Never the message of an HTTP failure: it can name the URL, which carries the key.
-        log.i { "${indexer.name}: search failed (${e.javaClass.simpleName})" }
-        null
+    ): List<UsenetRelease>? {
+        val started = System.nanoTime()
+        fun elapsedMs() = (System.nanoTime() - started) / 1_000_000
+        return try {
+            val caps = client.capabilities(indexer)
+            client.search(indexer, request, caps, config.indexerResults).also { found ->
+                val ms = elapsedMs()
+                UsenetStats.search(indexer.id, ms, found.size)
+                UsenetStats.found(found)
+                log.i { "${indexer.name}: ${found.size} releases in $ms ms" }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: IndexerCooldownException) {
+            // Paused for its limit: not asked, so neither a search nor a failure.
+            log.i { "${indexer.name}: skipped (limit pause)" }
+            null
+        } catch (e: Exception) {
+            val ms = elapsedMs()
+            UsenetStats.search(indexer.id, ms, null)
+            // Never the message of an HTTP failure: it can name the URL, which carries the key.
+            log.i { "${indexer.name}: search failed after $ms ms (${e.javaClass.simpleName})" }
+            null
+        }
     }
 
     /** Fills in the ids, title and year the indexers are asked with, and for anime its numbering. */

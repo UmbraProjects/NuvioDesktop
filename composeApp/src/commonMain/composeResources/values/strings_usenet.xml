@@ -85,4 +85,25 @@
     <string name="usenet_search_mode_both">Both</string>
     <string name="usenet_hide_passworded">Hide passworded releases</string>
     <string name="usenet_hide_passworded_description">Off: they are listed. One whose NZB or name carries the password plays; without it, it is skipped within seconds and the next source is tried.</string>
+    <string name="usenet_info_title">Usenet info</string>
+    <string name="usenet_info_description">Response times, grabs and missing articles for each provider and indexer</string>
+    <string name="usenet_info_since">Counted since %1$s</string>
+    <string name="usenet_info_reset">Reset counts</string>
+    <string name="usenet_info_close">Close</string>
+    <string name="usenet_info_nothing">Nothing counted yet: search or play something from Usenet.</string>
+    <string name="usenet_info_downloaded">%1$s downloaded · %2$s articles · %3$d sessions</string>
+    <string name="usenet_info_missing">Missing articles %1$s · other errors %2$s</string>
+    <string name="usenet_info_speed">First byte ~%1$s · connecting ~%2$s</string>
+    <string name="usenet_info_response">Response %1$s average · %2$s slowest · %3$s failed</string>
+    <string name="usenet_info_searches">%1$d searches · %2$s average · %3$d releases · %4$d empty · %5$d failed</string>
+    <string name="usenet_info_grabs">%1$d NZBs grabbed · %2$d played · %3$d missing articles (%4$s) · %5$d other failures</string>
+    <string name="usenet_info_limits">Paused %1$d times for its API limit</string>
+    <string name="usenet_info_left">%1$s API hits and %2$s grabs left today</string>
+    <string name="usenet_info_last_used">Last used %1$s</string>
+    <string name="usenet_info_slowest">Slowest to search: %1$s, %2$s on average</string>
+    <string name="usenet_info_most_missing">Most missing articles: %1$s, %2$s</string>
+    <string name="usenet_info_avg_row">%1$s average response</string>
+    <string name="usenet_info_missing_row">%1$s missing articles</string>
+    <string name="usenet_info_providers">Providers</string>
+    <string name="usenet_info_indexers">Indexers</string>
 </resources>

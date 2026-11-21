@@ -85,4 +85,25 @@
     <string name="usenet_search_mode_both">Les deux</string>
     <string name="usenet_hide_passworded">Masquer les releases protégées par mot de passe</string>
     <string name="usenet_hide_passworded_description">Désactivé : elles sont listées. Celle dont le NZB ou le nom porte le mot de passe se lit ; sans lui, elle est ignorée en quelques secondes et la source suivante est essayée.</string>
+    <string name="usenet_info_title">Infos Usenet</string>
+    <string name="usenet_info_description">Temps de réponse, NZB récupérés et articles manquants pour chaque fournisseur et indexeur</string>
+    <string name="usenet_info_since">Compté depuis le %1$s</string>
+    <string name="usenet_info_reset">Remettre à zéro</string>
+    <string name="usenet_info_close">Fermer</string>
+    <string name="usenet_info_nothing">Rien de compté pour l’instant : recherchez ou lisez quelque chose depuis Usenet.</string>
+    <string name="usenet_info_downloaded">%1$s téléchargés · %2$s articles · %3$d sessions</string>
+    <string name="usenet_info_missing">Articles manquants %1$s · autres erreurs %2$s</string>
+    <string name="usenet_info_speed">Premier octet ~%1$s · connexion ~%2$s</string>
+    <string name="usenet_info_response">Réponse moyenne %1$s · la plus lente %2$s · %3$s en échec</string>
+    <string name="usenet_info_searches">%1$d recherches · moyenne %2$s · %3$d releases · %4$d vides · %5$d en échec</string>
+    <string name="usenet_info_grabs">%1$d NZB récupérés · %2$d lus · %3$d avec articles manquants (%4$s) · %5$d autres échecs</string>
+    <string name="usenet_info_limits">Mis en pause %1$d fois pour sa limite d’API</string>
+    <string name="usenet_info_left">Il reste aujourd’hui %1$s appels API et %2$s NZB</string>
+    <string name="usenet_info_last_used">Dernière utilisation %1$s</string>
+    <string name="usenet_info_slowest">Recherche la plus lente : %1$s, %2$s en moyenne</string>
+    <string name="usenet_info_most_missing">Le plus d’articles manquants : %1$s, %2$s</string>
+    <string name="usenet_info_avg_row">réponse moyenne %1$s</string>
+    <string name="usenet_info_missing_row">%1$s d’articles manquants</string>
+    <string name="usenet_info_providers">Fournisseurs</string>
+    <string name="usenet_info_indexers">Indexeurs</string>
 </resources>

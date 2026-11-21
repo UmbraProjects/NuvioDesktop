@@ -85,4 +85,25 @@
     <string name="usenet_search_mode_both">Begge</string>
     <string name="usenet_hide_passworded">Skjul utgivelser med passord</string>
     <string name="usenet_hide_passworded_description">Av: de vises. En utgivelse der NZB-en eller navnet har passordet spilles av; uten blir den hoppet over på sekunder og neste kilde prøves.</string>
+    <string name="usenet_info_title">Usenet-info</string>
+    <string name="usenet_info_description">Svartider, NZB-nedlastinger og manglende artikler for hver leverandør og indekser</string>
+    <string name="usenet_info_since">Telt siden %1$s</string>
+    <string name="usenet_info_reset">Nullstill</string>
+    <string name="usenet_info_close">Lukk</string>
+    <string name="usenet_info_nothing">Ingenting telt ennå: søk etter eller spill av noe fra Usenet.</string>
+    <string name="usenet_info_downloaded">%1$s lastet ned · %2$s artikler · %3$d økter</string>
+    <string name="usenet_info_missing">Manglende artikler %1$s · andre feil %2$s</string>
+    <string name="usenet_info_speed">Første byte ~%1$s · tilkobling ~%2$s</string>
+    <string name="usenet_info_response">Svar i snitt %1$s · tregeste %2$s · %3$s mislyktes</string>
+    <string name="usenet_info_searches">%1$d søk · snitt %2$s · %3$d utgivelser · %4$d tomme · %5$d mislyktes</string>
+    <string name="usenet_info_grabs">%1$d NZB-er lastet ned · %2$d spilt av · %3$d med manglende artikler (%4$s) · %5$d andre feil</string>
+    <string name="usenet_info_limits">Satt på pause %1$d ganger for API-grensen</string>
+    <string name="usenet_info_left">%1$s API-kall og %2$s nedlastinger igjen i dag</string>
+    <string name="usenet_info_last_used">Sist brukt %1$s</string>
+    <string name="usenet_info_slowest">Tregeste søk: %1$s, %2$s i snitt</string>
+    <string name="usenet_info_most_missing">Flest manglende artikler: %1$s, %2$s</string>
+    <string name="usenet_info_avg_row">%1$s svartid i snitt</string>
+    <string name="usenet_info_missing_row">%1$s manglende artikler</string>
+    <string name="usenet_info_providers">Leverandører</string>
+    <string name="usenet_info_indexers">Indeksere</string>
 </resources>

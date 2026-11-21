@@ -166,4 +166,7 @@ object UsenetSettingsRepository {
 internal expect object UsenetStorage {
     fun loadPayload(profileId: Int): String?
     fun savePayload(profileId: Int, payload: String)
+    /** Usenet info counts ([UsenetStats]), per account. */
+    fun loadStats(): String?
+    fun saveStats(payload: String)
 }

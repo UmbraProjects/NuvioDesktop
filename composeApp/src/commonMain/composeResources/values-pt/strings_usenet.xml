@@ -85,4 +85,25 @@
     <string name="usenet_search_mode_both">Ambos</string>
     <string name="usenet_hide_passworded">Ocultar lançamentos com palavra-passe</string>
     <string name="usenet_hide_passworded_description">Desligado: são listados. Um cujo NZB ou nome traz a palavra-passe reproduz; sem ela, é ignorado em segundos e tenta-se a próxima fonte.</string>
+    <string name="usenet_info_title">Info do Usenet</string>
+    <string name="usenet_info_description">Tempos de resposta, NZB obtidos e artigos em falta de cada fornecedor e indexador</string>
+    <string name="usenet_info_since">Contado desde %1$s</string>
+    <string name="usenet_info_reset">Repor contagens</string>
+    <string name="usenet_info_close">Fechar</string>
+    <string name="usenet_info_nothing">Nada contado ainda: pesquise ou reproduza algo do Usenet.</string>
+    <string name="usenet_info_downloaded">%1$s transferidos · %2$s artigos · %3$d sessões</string>
+    <string name="usenet_info_missing">Artigos em falta %1$s · outros erros %2$s</string>
+    <string name="usenet_info_speed">Primeiro byte ~%1$s · ligação ~%2$s</string>
+    <string name="usenet_info_response">Resposta média %1$s · mais lenta %2$s · %3$s falharam</string>
+    <string name="usenet_info_searches">%1$d pesquisas · média %2$s · %3$d lançamentos · %4$d vazias · %5$d falharam</string>
+    <string name="usenet_info_grabs">%1$d NZB obtidos · %2$d reproduzidos · %3$d com artigos em falta (%4$s) · %5$d outras falhas</string>
+    <string name="usenet_info_limits">Em pausa %1$d vezes pelo limite da API</string>
+    <string name="usenet_info_left">Restam hoje %1$s chamadas API e %2$s transferências</string>
+    <string name="usenet_info_last_used">Último uso %1$s</string>
+    <string name="usenet_info_slowest">Pesquisa mais lenta: %1$s, %2$s em média</string>
+    <string name="usenet_info_most_missing">Mais artigos em falta: %1$s, %2$s</string>
+    <string name="usenet_info_avg_row">resposta média %1$s</string>
+    <string name="usenet_info_missing_row">%1$s de artigos em falta</string>
+    <string name="usenet_info_providers">Fornecedores</string>
+    <string name="usenet_info_indexers">Indexadores</string>
 </resources>

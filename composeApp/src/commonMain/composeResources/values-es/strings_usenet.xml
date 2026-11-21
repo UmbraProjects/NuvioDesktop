@@ -85,4 +85,25 @@
     <string name="usenet_search_mode_both">Ambos</string>
     <string name="usenet_hide_passworded">Ocultar lanzamientos con contraseña</string>
     <string name="usenet_hide_passworded_description">Desactivado: se muestran. Uno cuyo NZB o nombre lleva la contraseña se reproduce; sin ella, se omite en segundos y se prueba la siguiente fuente.</string>
+    <string name="usenet_info_title">Información de Usenet</string>
+    <string name="usenet_info_description">Tiempos de respuesta, descargas de NZB y artículos que faltan de cada proveedor e indexador</string>
+    <string name="usenet_info_since">Contado desde %1$s</string>
+    <string name="usenet_info_reset">Reiniciar contadores</string>
+    <string name="usenet_info_close">Cerrar</string>
+    <string name="usenet_info_nothing">Aún no hay nada contado: busca o reproduce algo de Usenet.</string>
+    <string name="usenet_info_downloaded">%1$s descargados · %2$s artículos · %3$d sesiones</string>
+    <string name="usenet_info_missing">Artículos que faltan %1$s · otros errores %2$s</string>
+    <string name="usenet_info_speed">Primer byte ~%1$s · conexión ~%2$s</string>
+    <string name="usenet_info_response">Respuesta media %1$s · la más lenta %2$s · %3$s fallidas</string>
+    <string name="usenet_info_searches">%1$d búsquedas · media %2$s · %3$d lanzamientos · %4$d vacías · %5$d fallidas</string>
+    <string name="usenet_info_grabs">%1$d NZB descargados · %2$d reproducidos · %3$d con artículos que faltan (%4$s) · %5$d otros fallos</string>
+    <string name="usenet_info_limits">En pausa %1$d veces por el límite de la API</string>
+    <string name="usenet_info_left">Quedan hoy %1$s llamadas API y %2$s descargas</string>
+    <string name="usenet_info_last_used">Último uso %1$s</string>
+    <string name="usenet_info_slowest">Búsqueda más lenta: %1$s, %2$s de media</string>
+    <string name="usenet_info_most_missing">Más artículos que faltan: %1$s, %2$s</string>
+    <string name="usenet_info_avg_row">respuesta media %1$s</string>
+    <string name="usenet_info_missing_row">%1$s de artículos que faltan</string>
+    <string name="usenet_info_providers">Proveedores</string>
+    <string name="usenet_info_indexers">Indexadores</string>
 </resources>

@@ -85,4 +85,25 @@
     <string name="usenet_search_mode_both">Και τα δύο</string>
     <string name="usenet_hide_passworded">Απόκρυψη κυκλοφοριών με κωδικό</string>
     <string name="usenet_hide_passworded_description">Ανενεργό: εμφανίζονται. Όποια έχει τον κωδικό στο NZB ή στο όνομα παίζει· χωρίς αυτόν παραλείπεται σε λίγα δευτερόλεπτα και δοκιμάζεται η επόμενη πηγή.</string>
+    <string name="usenet_info_title">Πληροφορίες Usenet</string>
+    <string name="usenet_info_description">Χρόνοι απόκρισης, λήψεις NZB και άρθρα που λείπουν για κάθε πάροχο και indexer</string>
+    <string name="usenet_info_since">Μετρήσεις από %1$s</string>
+    <string name="usenet_info_reset">Μηδενισμός</string>
+    <string name="usenet_info_close">Κλείσιμο</string>
+    <string name="usenet_info_nothing">Τίποτα ακόμη: αναζητήστε ή παίξτε κάτι από το Usenet.</string>
+    <string name="usenet_info_downloaded">%1$s λήψη · %2$s άρθρα · %3$d συνεδρίες</string>
+    <string name="usenet_info_missing">Άρθρα που λείπουν %1$s · άλλα σφάλματα %2$s</string>
+    <string name="usenet_info_speed">Πρώτο byte ~%1$s · σύνδεση ~%2$s</string>
+    <string name="usenet_info_response">Απόκριση κατά μέσο όρο %1$s · πιο αργή %2$s · αποτυχίες %3$s</string>
+    <string name="usenet_info_searches">%1$d αναζητήσεις · μέσος όρος %2$s · %3$d κυκλοφορίες · %4$d κενές · %5$d αποτυχίες</string>
+    <string name="usenet_info_grabs">%1$d NZB · %2$d αναπαραγωγές · %3$d με άρθρα που λείπουν (%4$s) · %5$d άλλες αποτυχίες</string>
+    <string name="usenet_info_limits">Σε παύση %1$d φορές λόγω ορίου API</string>
+    <string name="usenet_info_left">Απομένουν σήμερα %1$s κλήσεις API και %2$s λήψεις</string>
+    <string name="usenet_info_last_used">Τελευταία χρήση %1$s</string>
+    <string name="usenet_info_slowest">Πιο αργή αναζήτηση: %1$s, %2$s κατά μέσο όρο</string>
+    <string name="usenet_info_most_missing">Τα περισσότερα άρθρα που λείπουν: %1$s, %2$s</string>
+    <string name="usenet_info_avg_row">μέση απόκριση %1$s</string>
+    <string name="usenet_info_missing_row">%1$s άρθρα λείπουν</string>
+    <string name="usenet_info_providers">Πάροχοι</string>
+    <string name="usenet_info_indexers">Indexers</string>
 </resources>

@@ -85,4 +85,25 @@
     <string name="usenet_search_mode_both">Keduanya</string>
     <string name="usenet_hide_passworded">Sembunyikan rilisan berkata sandi</string>
     <string name="usenet_hide_passworded_description">Mati: tetap ditampilkan. Rilisan yang NZB atau namanya memuat kata sandi bisa diputar; tanpa itu, dilewati dalam beberapa detik dan sumber berikutnya dicoba.</string>
+    <string name="usenet_info_title">Info Usenet</string>
+    <string name="usenet_info_description">Waktu respons, unduhan NZB, dan artikel yang hilang untuk tiap penyedia dan indexer</string>
+    <string name="usenet_info_since">Dihitung sejak %1$s</string>
+    <string name="usenet_info_reset">Atur ulang hitungan</string>
+    <string name="usenet_info_close">Tutup</string>
+    <string name="usenet_info_nothing">Belum ada yang dihitung: cari atau putar sesuatu dari Usenet.</string>
+    <string name="usenet_info_downloaded">%1$s diunduh · %2$s artikel · %3$d sesi</string>
+    <string name="usenet_info_missing">Artikel hilang %1$s · galat lain %2$s</string>
+    <string name="usenet_info_speed">Byte pertama ~%1$s · menyambung ~%2$s</string>
+    <string name="usenet_info_response">Respons rata-rata %1$s · paling lambat %2$s · %3$s gagal</string>
+    <string name="usenet_info_searches">%1$d pencarian · rata-rata %2$s · %3$d rilis · %4$d kosong · %5$d gagal</string>
+    <string name="usenet_info_grabs">%1$d NZB diunduh · %2$d diputar · %3$d dengan artikel hilang (%4$s) · %5$d kegagalan lain</string>
+    <string name="usenet_info_limits">Dijeda %1$d kali karena batas API</string>
+    <string name="usenet_info_left">Sisa hari ini %1$s panggilan API dan %2$s unduhan</string>
+    <string name="usenet_info_last_used">Terakhir dipakai %1$s</string>
+    <string name="usenet_info_slowest">Pencarian paling lambat: %1$s, rata-rata %2$s</string>
+    <string name="usenet_info_most_missing">Artikel hilang terbanyak: %1$s, %2$s</string>
+    <string name="usenet_info_avg_row">respons rata-rata %1$s</string>
+    <string name="usenet_info_missing_row">%1$s artikel hilang</string>
+    <string name="usenet_info_providers">Penyedia</string>
+    <string name="usenet_info_indexers">Indexer</string>
 </resources>

@@ -41,6 +41,8 @@ import com.nuvio.app.features.usenet.UsenetSettingsRepository
 import com.nuvio.app.features.usenet.UsenetSort
 import com.nuvio.app.features.usenet.UsenetSearchMode
 import com.nuvio.app.features.usenet.UsenetSourceConfiguration
+import com.nuvio.app.features.usenet.UsenetStats
+import com.nuvio.app.features.usenet.UsenetInfoFormat
 import com.nuvio.app.features.usenet.USENET_PRIORITIES
 import com.nuvio.app.features.usenet.replaceOrAdd
 import kotlinx.coroutines.CancellationException
@@ -51,7 +53,7 @@ import org.jetbrains.compose.resources.stringResource
 /*
  * Settings > Usenet: built-in Usenet (NuvioTV PR 4679), laid out as the app's other settings pages.
  * Providers and indexers are edited in the app's glass dialogs; the TV's phone set-up page, ranking
- * presets, statistics and diagnostics are not ported.
+ * presets and diagnostics are not ported. Usenet info ([UsenetInfoDialog]) is Nuvio's own.
  */
 
 private sealed interface UsenetEditor {
@@ -67,6 +69,8 @@ internal fun LazyListScope.usenetSettingsContent(isTablet: Boolean) {
         }.collectAsStateWithLifecycle()
         val indexerRevision by BuiltInUsenet.client.statusChanges.collectAsStateWithLifecycle()
         var editor by remember { mutableStateOf<UsenetEditor?>(null) }
+        var infoOpen by remember { mutableStateOf(false) }
+        val stats by UsenetStats.book.collectAsStateWithLifecycle()
         val sources = state.sources
         val engine = state.engine
         val invalidAgent = stringResource(Res.string.usenet_user_agent_invalid)
@@ -125,6 +129,13 @@ internal fun LazyListScope.usenetSettingsContent(isTablet: Boolean) {
                             },
                         )
                     }
+                    SettingsGroupDivider(isTablet = isTablet)
+                    SettingsNavigationRow(
+                        title = stringResource(Res.string.usenet_info_title),
+                        description = stringResource(Res.string.usenet_info_description),
+                        isTablet = isTablet,
+                        onClick = { infoOpen = true },
+                    )
                 }
             }
 
@@ -142,6 +153,9 @@ internal fun LazyListScope.usenetSettingsContent(isTablet: Boolean) {
                                 stringResource(Res.string.usenet_connections_count, provider.connections),
                                 stringResource(Res.string.usenet_priority_value, provider.priority),
                                 stringResource(Res.string.usenet_disabled).takeUnless { provider.enabled },
+                                stats.providers[provider.id]?.missingPercent?.let {
+                                    stringResource(Res.string.usenet_info_missing_row, UsenetInfoFormat.percent(it))
+                                },
                             ).joinToString(" · "),
                             isTablet = isTablet,
                             onClick = { editor = UsenetEditor.Provider(provider, isNew = false) },
@@ -178,6 +192,9 @@ internal fun LazyListScope.usenetSettingsContent(isTablet: Boolean) {
                                 stringResource(Res.string.usenet_priority_value, indexer.priority),
                                 status.apiHitsLeft?.let { stringResource(Res.string.usenet_hits_left, it) },
                                 stringResource(Res.string.usenet_disabled).takeUnless { indexer.enabled },
+                                stats.indexers[indexer.id]?.averageRequestMs?.let {
+                                    stringResource(Res.string.usenet_info_avg_row, UsenetInfoFormat.duration(it))
+                                },
                                 problem,
                             ).joinToString(" · "),
                             isTablet = isTablet,
@@ -322,6 +339,8 @@ internal fun LazyListScope.usenetSettingsContent(isTablet: Boolean) {
                 }
             }
         }
+
+        if (infoOpen) UsenetInfoDialog(sources = sources, onDismiss = { infoOpen = false })
 
         when (val open = editor) {
             is UsenetEditor.Provider -> ProviderDialog(

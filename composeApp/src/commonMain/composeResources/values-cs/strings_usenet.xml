@@ -85,4 +85,25 @@
     <string name="usenet_search_mode_both">Obojí</string>
     <string name="usenet_hide_passworded">Skrýt vydání s heslem</string>
     <string name="usenet_hide_passworded_description">Vypnuto: zobrazí se. Vydání, jehož NZB nebo název nese heslo, se přehraje; bez něj se během pár sekund přeskočí a zkusí se další zdroj.</string>
+    <string name="usenet_info_title">Informace o Usenetu</string>
+    <string name="usenet_info_description">Doby odezvy, stažená NZB a chybějící články pro každého poskytovatele a indexer</string>
+    <string name="usenet_info_since">Počítáno od %1$s</string>
+    <string name="usenet_info_reset">Vynulovat</string>
+    <string name="usenet_info_close">Zavřít</string>
+    <string name="usenet_info_nothing">Zatím nic nezapočítáno: vyhledejte nebo přehrajte něco z Usenetu.</string>
+    <string name="usenet_info_downloaded">Staženo %1$s · %2$s článků · %3$d relací</string>
+    <string name="usenet_info_missing">Chybějící články %1$s · jiné chyby %2$s</string>
+    <string name="usenet_info_speed">První bajt ~%1$s · připojení ~%2$s</string>
+    <string name="usenet_info_response">Odezva průměrně %1$s · nejpomalejší %2$s · selhalo %3$s</string>
+    <string name="usenet_info_searches">%1$d hledání · průměrně %2$s · %3$d vydání · %4$d prázdných · %5$d selhalo</string>
+    <string name="usenet_info_grabs">%1$d stažených NZB · %2$d přehráno · %3$d s chybějícími články (%4$s) · %5$d jiných selhání</string>
+    <string name="usenet_info_limits">%1$dx pozastaveno kvůli limitu API</string>
+    <string name="usenet_info_left">Dnes zbývá %1$s dotazů API a %2$s stažení</string>
+    <string name="usenet_info_last_used">Naposledy použito %1$s</string>
+    <string name="usenet_info_slowest">Nejpomalejší hledání: %1$s, průměrně %2$s</string>
+    <string name="usenet_info_most_missing">Nejvíce chybějících článků: %1$s, %2$s</string>
+    <string name="usenet_info_avg_row">průměrná odezva %1$s</string>
+    <string name="usenet_info_missing_row">%1$s chybějících článků</string>
+    <string name="usenet_info_providers">Poskytovatelé</string>
+    <string name="usenet_info_indexers">Indexery</string>
 </resources>

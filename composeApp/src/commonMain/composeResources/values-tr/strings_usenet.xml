@@ -85,4 +85,25 @@
     <string name="usenet_search_mode_both">İkisi de</string>
     <string name="usenet_hide_passworded">Parolalı yayınları gizle</string>
     <string name="usenet_hide_passworded_description">Kapalı: listelenirler. NZB’si ya da adı parolayı taşıyan yayın oynatılır; parola yoksa saniyeler içinde atlanır ve sonraki kaynak denenir.</string>
+    <string name="usenet_info_title">Usenet bilgisi</string>
+    <string name="usenet_info_description">Her sağlayıcı ve indeksleyici için yanıt süreleri, NZB indirmeleri ve eksik makaleler</string>
+    <string name="usenet_info_since">%1$s tarihinden beri sayılıyor</string>
+    <string name="usenet_info_reset">Sayaçları sıfırla</string>
+    <string name="usenet_info_close">Kapat</string>
+    <string name="usenet_info_nothing">Henüz sayılan bir şey yok: Usenet üzerinden bir şey arayın veya oynatın.</string>
+    <string name="usenet_info_downloaded">%1$s indirildi · %2$s makale · %3$d oturum</string>
+    <string name="usenet_info_missing">Eksik makaleler %1$s · diğer hatalar %2$s</string>
+    <string name="usenet_info_speed">İlk bayt ~%1$s · bağlanma ~%2$s</string>
+    <string name="usenet_info_response">Ortalama yanıt %1$s · en yavaş %2$s · %3$s başarısız</string>
+    <string name="usenet_info_searches">%1$d arama · ortalama %2$s · %3$d sürüm · %4$d boş · %5$d başarısız</string>
+    <string name="usenet_info_grabs">%1$d NZB indirildi · %2$d oynatıldı · %3$d eksik makaleli (%4$s) · %5$d diğer hata</string>
+    <string name="usenet_info_limits">API sınırı nedeniyle %1$d kez duraklatıldı</string>
+    <string name="usenet_info_left">Bugün %1$s API çağrısı ve %2$s indirme kaldı</string>
+    <string name="usenet_info_last_used">Son kullanım %1$s</string>
+    <string name="usenet_info_slowest">En yavaş arama: %1$s, ortalama %2$s</string>
+    <string name="usenet_info_most_missing">En çok eksik makale: %1$s, %2$s</string>
+    <string name="usenet_info_avg_row">ortalama yanıt %1$s</string>
+    <string name="usenet_info_missing_row">%1$s eksik makale</string>
+    <string name="usenet_info_providers">Sağlayıcılar</string>
+    <string name="usenet_info_indexers">İndeksleyiciler</string>
 </resources>

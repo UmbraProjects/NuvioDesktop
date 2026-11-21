@@ -52,7 +52,11 @@ internal object UsenetFailedReleases {
  */
 /** The upload is missing or damaged data, which another upload of the same release may not be. */
 internal fun usenetIncompleteUpload(error: Throwable): Boolean =
-    (error as? UsenetPreparationException)?.failure in setOf("missing-article", "hole-limit", "invalid-article", "blank-content")
+    usenetIncompleteFailure((error as? UsenetPreparationException)?.failure)
+
+/** An engine failure that means the upload lacks articles (or holds broken ones). */
+internal fun usenetIncompleteFailure(failure: String?): Boolean =
+    failure in setOf("missing-article", "hole-limit", "invalid-article", "blank-content")
 
 /** The engine skipped a compressed 7z over the size limit (Settings > Usenet). */
 internal fun usenetCompressedSkip(error: Throwable): Boolean =

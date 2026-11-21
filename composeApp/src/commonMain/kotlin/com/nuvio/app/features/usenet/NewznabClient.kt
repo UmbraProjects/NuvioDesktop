@@ -21,8 +21,8 @@ import kotlinx.coroutines.withContext
 /*
  * NuvioTV's NewznabClient (BuiltInUsenetService.kt), ported: the same paging, season-search reuse
  * and quota cooldowns. Changes: JDK HttpClient for OkHttp, and indexer state (caps, cooldowns,
- * problems, hits left) kept in memory for the session rather than in SharedPreferences, and no
- * usage statistics.
+ * problems, hits left) kept in memory for the session rather than in SharedPreferences. Request
+ * times and failures go to [UsenetStats] (Settings > Usenet > Usenet info).
  */
 
 class IndexerCooldownException(val until: Long) : IllegalStateException("Indexer limit reached")
@@ -282,17 +282,24 @@ class NewznabClient(
     ): T {
         val blockedUntil = states[key(indexer)]?.blockedUntil ?: 0
         if (!ignoreCooldown && blockedUntil > now()) throw IndexerCooldownException(blockedUntil)
+        val started = System.nanoTime()
+        fun elapsedMs() = (System.nanoTime() - started) / 1_000_000
         val response = try {
             get(url)
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
+            UsenetStats.request(indexer.id, elapsedMs(), ok = false)
             note(indexer, IndexerProblem.UNREACHABLE); throw e
         } catch (e: Exception) {
+            UsenetStats.request(indexer.id, elapsedMs(), ok = false)
             note(indexer, IndexerProblem.RESPONSE); throw e
         }
+        // The indexer's answer time, before parsing: what Usenet info shows as its response time.
+        UsenetStats.request(indexer.id, elapsedMs(), ok = response.statusCode() in 200..299)
         val retryAfter = retryAfterMs(response.headers.firstValue("Retry-After").orElse(null))
         if (response.statusCode() == 429) {
+            UsenetStats.limited(indexer.id)
             throw cooldown(indexer, retryAfter?.coerceAtMost(MAX_THROTTLE_MS) ?: THROTTLE_MS)
         }
         val body = response.body()
@@ -314,6 +321,7 @@ class NewznabClient(
                 }
             }
         } catch (_: NewznabQuotaException) {
+            UsenetStats.limited(indexer.id)
             throw cooldown(indexer, retryAfter ?: QUOTA_MS)
         } catch (e: NewznabAuthException) {
             note(indexer, IndexerProblem.AUTH); throw e

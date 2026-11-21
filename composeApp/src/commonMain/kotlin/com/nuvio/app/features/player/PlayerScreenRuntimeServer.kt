@@ -93,6 +93,7 @@ private fun PlayerScreenRuntime.BindUsenetStreamFailureEffect() {
                     (if (started) " during playback" else " before the first frame")
             }
             activeStream?.let { UsenetFailedReleases.record(it, failure) }
+            activeStream?.nzbUrl?.let { com.nuvio.app.features.usenet.UsenetStats.failedWhilePlaying(it, com.nuvio.app.features.usenet.usenetIncompleteFailure(failure)) }
             StreamFailoverLog.event("usenet_stream_failed", buildJsonObject {
                 put("attemptId", attemptId)
                 put("failure", failure)

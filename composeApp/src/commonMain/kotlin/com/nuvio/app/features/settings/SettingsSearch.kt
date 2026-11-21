@@ -597,7 +597,7 @@ private fun settingsSearchEntries(
         page = SettingsPage.Usenet,
         key = "usenet",
         title = resolve(Res.string.compose_settings_page_usenet),
-        description = "Usenet · NNTP · Newznab · NZB · User-Agent · 7z",
+        description = "Usenet · NNTP · Newznab · NZB · User-Agent · 7z · Usenet info · statistics",
         icon = Icons.Rounded.Newspaper,
     )
     addPage(
