@@ -1930,7 +1930,13 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             )
         ) return@LaunchedEffect
         val leadMs = nextEpisodePreloadLeadMs(settings.streamAutoPlayTimeoutSeconds)
-        val dueSoon = PlayerNextEpisodeRules.shouldShowNextEpisodeCard(
+        // Once the last tenth of the episode starts (at least two minutes from the end), or earlier
+        // when the next-episode card is due sooner than that.
+        val dueSoon = isNextEpisodePreloadDue(
+            positionMs = playbackSnapshot.positionMs,
+            durationMs = playbackSnapshot.durationMs,
+            cacheMinutes = settings.streamPrefetchCacheMinutes,
+        ) || PlayerNextEpisodeRules.shouldShowNextEpisodeCard(
             positionMs = playbackSnapshot.positionMs + leadMs,
             durationMs = playbackSnapshot.durationMs,
             skipIntervals = skipIntervals,
@@ -1942,7 +1948,10 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         nextEpisodePreloadRequestedFor = next.videoId
         // The same identity launchPlayerNextEpisodeAutoPlay loads, or the cache key would differ.
         val nextVideo = playerMetaVideos.firstOrNull { it.id == next.videoId }
-        BingeAdvanceLog.i { "preloading next episode sources for ${next.videoId} lead=${leadMs}ms" }
+        BingeAdvanceLog.i {
+            "preloading next episode sources for ${next.videoId} " +
+                "remaining=${playbackSnapshot.durationMs - playbackSnapshot.positionMs}ms"
+        }
         val nextSeason = nextVideo?.playbackSeasonNumber() ?: next.season
         val nextEpisode = nextVideo?.playbackEpisodeNumber() ?: next.episode
         // Captured now: the sweep answers on a background thread, after the player may have moved on.
@@ -1979,7 +1988,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                         contentType = type,
                     )
                     fun predict() = picker.predict(
-                        eligibleAutoPlayStreams(groups.flatMap { it.streams }, affinity, titleId = metaId),
+                        eligibleAutoPlayStreams(groups.flatMap { it.streams }, affinity, avoid = placeholderSources),
                     )
                     scope.launch {
                         var predicted = predict()
@@ -1993,10 +2002,10 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                             val headers = sanitizePlaybackHeaders(pick.behaviorHints.proxyHeaders?.request)
                             val diagnostic = resolveProviderDiagnosticVideo(url, headers) ?: break
                             releaseProviderDiagnosticVideo(diagnostic.sourceUrl)
-                            PlaceholderSourceMemory.record(metaId, pick)
+                            placeholderSources.record(pick)
                             BingeAdvanceLog.i {
                                 "predicted next-episode link for ${next.videoId} via ${pick.addonName} " +
-                                    "is a placeholder clip; its addon goes last for this show"
+                                    "is a placeholder clip; its addon goes last for this binge"
                             }
                             predicted = predict()
                         }
@@ -2293,6 +2302,27 @@ private const val NEXT_EPISODE_PRELOAD_SAMPLE_MS = 1_000L
  */
 internal fun nextEpisodePreloadLeadMs(autoPlayTimeoutSeconds: Int): Long =
     (autoPlayTimeoutSeconds.toLong().coerceIn(0L, 30L) * 1_000L).coerceIn(10_000L, 30_000L)
+
+/**
+ * Whether the next episode's sources should be searched now: from the last 10% of this one, and
+ * never later than two minutes before its end. Ten seconds before the card was too late once the
+ * outro and credits were auto-skipped. Capped a minute short of the prefetch cache's retention
+ * ([cacheMinutes]), or the answers would age out before autoplay reads them at the end.
+ */
+internal fun isNextEpisodePreloadDue(positionMs: Long, durationMs: Long, cacheMinutes: Int): Boolean {
+    if (durationMs <= 0L || positionMs < 0L) return false
+    val leadMs = nextEpisodePreloadWindowMs(durationMs, cacheMinutes)
+    return durationMs - positionMs <= leadMs
+}
+
+/** How long before the end [isNextEpisodePreloadDue] starts the search. */
+internal fun nextEpisodePreloadWindowMs(durationMs: Long, cacheMinutes: Int): Long {
+    val wanted = maxOf(durationMs / 10L, NEXT_EPISODE_PRELOAD_MIN_WINDOW_MS)
+    val cacheCapMs = cacheMinutes * 60_000L - 60_000L
+    return wanted.coerceAtMost(cacheCapMs.coerceAtLeast(NEXT_EPISODE_PRELOAD_MIN_WINDOW_MS))
+}
+
+private const val NEXT_EPISODE_PRELOAD_MIN_WINDOW_MS = 2 * 60_000L
 
 /** How far before the end a playlist starts searching for its next entry's source. */
 private const val PLAYLIST_PREFETCH_LEAD_MS = 4 * 60_000L

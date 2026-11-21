@@ -17,40 +17,68 @@ class PlaceholderSourcesTest {
 
     @AfterTest
     fun reset() {
-        PlaceholderSourceMemory.clearForTest()
         ProviderProbeGate.clearForTest()
     }
 
     @Test
-    fun `an addon that gave a placeholder goes last for that show only`() {
-        PlaceholderSourceMemory.record("tt0121955", comet)
+    fun `an addon that gave a placeholder goes last for the rest of the binge`() {
+        val memory = PlaceholderSourceMemory()
+        memory.record(comet)
 
-        assertEquals(listOf(usenet), PlaceholderSourceMemory.prefer("tt0121955", listOf(comet, usenet)))
-        assertEquals(listOf(comet, usenet), PlaceholderSourceMemory.prefer("tt0000001", listOf(comet, usenet)))
+        assertEquals(listOf(usenet), memory.prefer(listOf(comet, usenet)))
         // Another release from the same addon is skipped too.
-        assertTrue(PlaceholderSourceMemory.isMarked("tt0121955", stream("comet", "Comet | TB", "S01E05")))
+        assertTrue(memory.isMarked(stream("comet", "Comet | TB", "S01E05")))
+    }
+
+    @Test
+    fun `a new player session starts with nothing marked`() {
+        PlaceholderSourceMemory().record(comet)
+
+        assertEquals(listOf(comet, usenet), PlaceholderSourceMemory().prefer(listOf(comet, usenet)))
     }
 
     @Test
     fun `marked addons are still used when nothing else is left, once every answer is in`() {
-        PlaceholderSourceMemory.record("tt0121955", comet)
+        val memory = PlaceholderSourceMemory()
+        memory.record(comet)
 
-        assertEquals(listOf(comet), PlaceholderSourceMemory.prefer("tt0121955", listOf(comet)))
-        assertEquals(emptyList(), PlaceholderSourceMemory.prefer("tt0121955", listOf(comet), keepMarkedIfOnly = false))
+        assertEquals(listOf(comet), memory.prefer(listOf(comet)))
+        assertEquals(emptyList(), memory.prefer(listOf(comet), keepMarkedIfOnly = false))
     }
 
     @Test
-    fun `failover tries the marked addon last`() {
-        PlaceholderSourceMemory.record("tt0121955", comet)
-        val other = stream("comet", "Comet | TB", "other")
+    fun `autoplay only avoids marked addons when it is given the memory`() {
+        val memory = PlaceholderSourceMemory()
+        memory.record(comet)
 
+        assertEquals(listOf(usenet), eligibleAutoPlayStreams(listOf(comet, usenet), PlayerSourceAffinity.Stream, avoid = memory))
+        assertEquals(listOf(comet, usenet), eligibleAutoPlayStreams(listOf(comet, usenet), PlayerSourceAffinity.Stream))
+    }
+
+    @Test
+    fun `failover does not use the memory`() {
         val next = nextFailoverStream(
-            streams = listOf(other, usenet),
+            streams = listOf(comet, usenet),
             activeIdentityKey = null,
             triedIdentityKeys = emptySet(),
-            placeholderTitleId = "tt0121955",
         )
-        assertEquals(usenet, next)
+        assertEquals(comet, next)
+    }
+
+    @Test
+    fun `preload starts with a tenth of the episode left, at least two minutes`() {
+        val min = 60_000L
+        // 22-minute episode: 10% is 2.2 min.
+        assertEquals(132_000L, nextEpisodePreloadWindowMs(22 * min, cacheMinutes = 10))
+        // 15-minute episode: the two-minute floor.
+        assertEquals(2 * min, nextEpisodePreloadWindowMs(15 * min, cacheMinutes = 10))
+        // 60-minute episode: 6 min.
+        assertEquals(6 * min, nextEpisodePreloadWindowMs(60 * min, cacheMinutes = 10))
+        // 2-hour special: capped a minute short of the 10-minute cache.
+        assertEquals(9 * min, nextEpisodePreloadWindowMs(120 * min, cacheMinutes = 10))
+        assertFalse(isNextEpisodePreloadDue(positionMs = 19 * min, durationMs = 22 * min, cacheMinutes = 10))
+        assertTrue(isNextEpisodePreloadDue(positionMs = 20 * min, durationMs = 22 * min, cacheMinutes = 10))
+        assertFalse(isNextEpisodePreloadDue(positionMs = 0, durationMs = 0, cacheMinutes = 10))
     }
 
     @Test

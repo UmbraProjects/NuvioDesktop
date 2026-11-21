@@ -34,8 +34,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal fun eligibleAutoPlayStreams(
     streams: List<StreamItem>,
     sourceAffinity: PlayerSourceAffinity,
-    /** The show: its addons that gave a placeholder this session go last (PlaceholderSourceMemory). */
-    titleId: String? = null,
+    /** This binge's addons that gave a placeholder go last; null when the memory does not apply. */
+    avoid: PlaceholderSourceMemory? = null,
     keepMarkedIfOnly: Boolean = true,
 ): List<StreamItem> = when (sourceAffinity) {
     PlayerSourceAffinity.Local -> streams
@@ -44,7 +44,7 @@ internal fun eligibleAutoPlayStreams(
     // A Usenet release that already failed to open this run (missing articles, a password) fails
     // the same way again; picking it would leave the next-episode card waiting on nothing.
     stream.needsUsenetPreparation && UsenetEngine.hasFailed(stream)
-}.let { PlaceholderSourceMemory.prefer(titleId, it, keepMarkedIfOnly) }
+}.let { streams -> avoid?.prefer(streams, keepMarkedIfOnly) ?: streams }
 
 /** How many more picks next-episode autoplay tries after the selected release fails to open. */
 private const val NEXT_EPISODE_OPEN_FAILOVER_ATTEMPTS = 3
@@ -244,6 +244,8 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
     currentStreamBingeGroup: String?,
     /** The stream playing now, whose release (filename, infohash) is picked again when it is offered. */
     currentStream: StreamItem? = null,
+    /** The binge's placeholder memory, when it applies (Preload Next Episode Sources on). */
+    placeholderSources: PlaceholderSourceMemory? = null,
     onDownloadedEpisodeSelected: (DownloadItem, MetaVideo) -> Unit,
     /**
      * Plays the picked stream. The third argument is called when the stream cannot be prepared
@@ -396,7 +398,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 val allStreams = eligibleAutoPlayStreams(
                     streams = state.groups.flatMap { it.streams },
                     sourceAffinity = sourceAffinity,
-                    titleId = parentMetaId,
+                    avoid = placeholderSources,
                     keepMarkedIfOnly = !state.isAnyLoading,
                 )
 
@@ -449,7 +451,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                     val allStreams = eligibleAutoPlayStreams(
                         ownState().groups.flatMap { it.streams },
                         sourceAffinity,
-                        titleId = parentMetaId,
+                        avoid = placeholderSources,
                     )
                     // Deliberately no give-up branch here: streams having arrived tells us nothing
                     // about whether a *selectable* one is still in flight. When auto-play is scoped
@@ -489,7 +491,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                         val allStreams = eligibleAutoPlayStreams(
                             ownState().groups.flatMap { it.streams },
                             sourceAffinity,
-                            titleId = parentMetaId,
+                            avoid = placeholderSources,
                         )
                         if (allStreams.isNotEmpty()) {
                             selectedStream = trySelectStream(allStreams)
@@ -505,7 +507,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 val allStreams = eligibleAutoPlayStreams(
                     ownState().groups.flatMap { it.streams },
                     sourceAffinity,
-                    titleId = parentMetaId,
+                    avoid = placeholderSources,
                 )
                 if (allStreams.isNotEmpty()) {
                     trySelectStream(allStreams)?.let(::selectStream)
@@ -517,7 +519,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 val allStreams = eligibleAutoPlayStreams(
                     ownState().groups.flatMap { it.streams },
                     sourceAffinity,
-                    titleId = parentMetaId,
+                    avoid = placeholderSources,
                 )
                 if (allStreams.isNotEmpty()) {
                     selectedStream = trySelectStream(allStreams)
@@ -555,6 +557,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 sourceAffinity = sourceAffinity,
                 currentStreamBingeGroup = currentStreamBingeGroup,
                 currentStream = currentStream,
+                placeholderSources = placeholderSources,
                 onDownloadedEpisodeSelected = onDownloadedEpisodeSelected,
                 onEpisodeStreamSelected = onEpisodeStreamSelected,
                 onManualSelectionRequired = onManualSelectionRequired,
@@ -585,7 +588,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 onEpisodeStreamSelected(stream, nextVideo) { error ->
                     val next = if (attemptsLeft > 0) {
                         // The failed release is now recorded, so eligibleAutoPlayStreams drops it.
-                        trySelectStream(eligibleAutoPlayStreams(ownState().groups.flatMap { it.streams }, sourceAffinity, parentMetaId))
+                        trySelectStream(eligibleAutoPlayStreams(ownState().groups.flatMap { it.streams }, sourceAffinity, placeholderSources))
                             ?.takeUnless { it == stream }
                     } else {
                         null

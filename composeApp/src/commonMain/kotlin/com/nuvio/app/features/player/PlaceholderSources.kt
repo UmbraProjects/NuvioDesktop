@@ -7,42 +7,36 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Addons whose link for a title turned out to be a placeholder clip ("not cached" and the like),
- * remembered for the rest of the session so autoplay, failover and the next-episode warm-up stop
- * opening them first. Comet's South Park links gave its clip three times out of three on Nov 21:
- * each episode re-picked it, because nothing remembered.
+ * Addons whose link turned out to be a placeholder clip ("not cached" and the like) during one
+ * player session: the binge from one episode to the next. Next-episode autoplay opens their links
+ * last, and only while Preload Next Episode Sources is on, whose early check finds them without
+ * costing playback anything. Closing the player drops it; nothing carries to another title.
  *
- * A preference, not a ban: when only marked addons are left, they are still tried.
+ * Comet's South Park links gave its clip three times out of three on Nov 21: each episode re-picked
+ * it, because nothing remembered. A preference, not a ban: when only marked addons are left, they
+ * are still tried.
  */
-internal object PlaceholderSourceMemory {
+internal class PlaceholderSourceMemory {
     private val marked = MutableStateFlow<Set<String>>(emptySet())
-
-    private fun key(titleId: String, addonId: String) = "$titleId|$addonId"
 
     private fun StreamItem.addonKey(): String = addonId.ifBlank { addonName }
 
-    fun record(titleId: String?, stream: StreamItem?) {
-        if (titleId.isNullOrBlank() || stream == null) return
-        val addon = stream.addonKey()
+    fun record(stream: StreamItem?) {
+        val addon = stream?.addonKey().orEmpty()
         if (addon.isBlank()) return
-        marked.update { it + key(titleId, addon) }
+        marked.update { it + addon }
     }
 
-    fun isMarked(titleId: String?, stream: StreamItem): Boolean =
-        !titleId.isNullOrBlank() && key(titleId, stream.addonKey()) in marked.value
+    fun isMarked(stream: StreamItem): Boolean = stream.addonKey() in marked.value
 
     /**
-     * [streams] without the marked addons' rows for [titleId]. When that leaves nothing, all of them
-     * if [keepMarkedIfOnly] (every answer is in), else none (later answers may bring a better one).
+     * [streams] without the marked addons' rows. When that leaves nothing, all of them if
+     * [keepMarkedIfOnly] (every answer is in), else none (later answers may bring a better one).
      */
-    fun prefer(titleId: String?, streams: List<StreamItem>, keepMarkedIfOnly: Boolean = true): List<StreamItem> {
-        if (titleId.isNullOrBlank() || marked.value.isEmpty()) return streams
-        val kept = streams.filterNot { isMarked(titleId, it) }
+    fun prefer(streams: List<StreamItem>, keepMarkedIfOnly: Boolean = true): List<StreamItem> {
+        if (marked.value.isEmpty()) return streams
+        val kept = streams.filterNot(::isMarked)
         return if (kept.isEmpty() && keepMarkedIfOnly) streams else kept
-    }
-
-    internal fun clearForTest() {
-        marked.value = emptySet()
     }
 }
 

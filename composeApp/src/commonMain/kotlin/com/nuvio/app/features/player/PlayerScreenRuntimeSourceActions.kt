@@ -562,8 +562,8 @@ private const val STREAM_FAILOVER_POLL_INTERVAL_MS = 250L
  * replacement plays (see placeholderHeldSourceUrl). Lets it play on if nothing could be started.
  */
 internal suspend fun PlayerScreenRuntime.failOverFromPlaceholder(placeholderUrl: String) {
-    // This addon's links for the title are opened last from now on (PlaceholderSourceMemory).
-    PlaceholderSourceMemory.record(parentMetaId, activeStream)
+    // The next episodes of this binge open this addon's links last (PlaceholderSourceMemory).
+    placeholderSources.record(activeStream)
     placeholderHeldSourceUrl = placeholderUrl
     playerController?.pause()
     val started = tryFailoverToNextSource(
@@ -723,7 +723,6 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                         contentType = contentType ?: parentMetaType,
                     ),
                     excludeUsenet = failoverSkipsUsenet,
-                    placeholderTitleId = parentMetaId,
                 )
 
             val waitForAllProviders = StreamScoreRepository.profile.appliesToFailover()
@@ -928,8 +927,6 @@ internal fun nextFailoverStream(
     scoreContext: StreamScoreContext = StreamScoreContext.MOVIE,
     // After an engine or provider failure no Usenet release can open; skip them all.
     excludeUsenet: Boolean = false,
-    /** The show: its addons that gave a placeholder this session are tried last. */
-    placeholderTitleId: String? = null,
 ): StreamItem? {
     // The repository order is the quality/ranking order. Always restart at its top and exclude the
     // failed/tried identities, rather than starting after the failed stream's old index. Autoplay or
@@ -952,7 +949,7 @@ internal fun nextFailoverStream(
             return@filter false
         }
         true
-    }.let { PlaceholderSourceMemory.prefer(placeholderTitleId, it) }
+    }
     // Scoring replaces the repository order as the within-tier tiebreak, and drops anything below
     // the profile's minimum so failover cannot land on a release the user has effectively banned.
     val ordered = if (scoreProfile.appliesToFailover()) {
@@ -1183,6 +1180,7 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
         sourceAffinity = sourceAffinity,
         currentStreamBingeGroup = currentStreamBingeGroup,
         currentStream = activeStream,
+        placeholderSources = placeholderSources.takeIf { playerSettingsUiState.preloadNextEpisodeSources },
         onDownloadedEpisodeSelected = { item, episode -> switchToDownloadedEpisode(item, episode) },
         onEpisodeStreamSelected = { stream, episode, onFailed ->
             switchToEpisodeStream(stream, episode, onPreparationFailed = onFailed)

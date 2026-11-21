@@ -137,6 +137,8 @@ internal class PlayerScreenRuntime(
     // A placeholder clip failover is replacing: kept paused, and its position never saved, until
     // the replacement source takes over (the probe answers after the clip has started loading).
     var placeholderHeldSourceUrl by mutableStateOf<String?>(null)
+    // Addons whose link was a placeholder during this player session (the binge); see the class.
+    val placeholderSources = PlaceholderSourceMemory()
     var activeSourceAudioUrl by mutableStateOf(sourceAudioUrl)
     var activeSourceHeaders by mutableStateOf(sanitizePlaybackHeaders(sourceHeaders))
     var activeSourceResponseHeaders by mutableStateOf(sanitizePlaybackResponseHeaders(sourceResponseHeaders))
