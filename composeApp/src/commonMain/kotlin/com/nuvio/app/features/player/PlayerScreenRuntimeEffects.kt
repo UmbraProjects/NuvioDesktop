@@ -213,39 +213,44 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         playerSettingsUiState.streamFailoverEnabled,
     ) {
         val probedUrl = activeSourceUrl
-        if (
-            shouldSkipProviderDiagnosticVideo(playerSettingsUiState.streamFailoverEnabled) &&
-            isExplicitProviderDiagnosticVideoUrl(probedUrl)
-        ) {
-            providerDiagnosticVideoSourceUrl = null
-            failOverFromPlaceholder(probedUrl)
-            return@LaunchedEffect
+        val failoverOn = shouldSkipProviderDiagnosticVideo(playerSettingsUiState.streamFailoverEnabled)
+        // The desktop attach waits on this answer for these links (ProviderProbeGate).
+        if (isProviderPlaybackEndpoint(probedUrl) || (failoverOn && isExplicitProviderDiagnosticVideoUrl(probedUrl))) {
+            ProviderProbeGate.pending(probedUrl)
         }
-        if (!isProviderPlaybackEndpoint(probedUrl)) {
-            if (providerDiagnosticProbePendingSourceUrl == probedUrl) {
-                providerDiagnosticProbePendingSourceUrl = null
+        try {
+            if (failoverOn && isExplicitProviderDiagnosticVideoUrl(probedUrl)) {
+                providerDiagnosticVideoSourceUrl = null
+                failOverFromPlaceholder(probedUrl)
+                return@LaunchedEffect
             }
-            return@LaunchedEffect
-        }
+            if (!isProviderPlaybackEndpoint(probedUrl)) {
+                if (providerDiagnosticProbePendingSourceUrl == probedUrl) {
+                    providerDiagnosticProbePendingSourceUrl = null
+                }
+                return@LaunchedEffect
+            }
 
-        providerDiagnosticProbePendingSourceUrl = probedUrl
-        providerDiagnosticRecoveryAttemptedSourceUrl = probedUrl
-        val diagnostic = resolveProviderDiagnosticVideo(
-            sourceUrl = probedUrl,
-            sourceHeaders = activeSourceHeaders,
-        )
-        if (activeSourceUrl != probedUrl) {
-            diagnostic?.let { releaseProviderDiagnosticVideo(it.sourceUrl) }
-            return@LaunchedEffect
-        }
-        providerDiagnosticProbePendingSourceUrl = null
-        if (diagnostic != null) {
-            if (shouldSkipProviderDiagnosticVideo(playerSettingsUiState.streamFailoverEnabled)) {
+            providerDiagnosticProbePendingSourceUrl = probedUrl
+            providerDiagnosticRecoveryAttemptedSourceUrl = probedUrl
+            val diagnostic = resolveProviderDiagnosticVideo(
+                sourceUrl = probedUrl,
+                sourceHeaders = activeSourceHeaders,
+            )
+            if (activeSourceUrl != probedUrl) {
+                diagnostic?.let { releaseProviderDiagnosticVideo(it.sourceUrl) }
+                return@LaunchedEffect
+            }
+            providerDiagnosticProbePendingSourceUrl = null
+            if (diagnostic != null && failoverOn) {
                 releaseProviderDiagnosticVideo(diagnostic.sourceUrl)
                 failOverFromPlaceholder(probedUrl)
             } else {
-                activateProviderDiagnosticVideo(diagnostic)
+                ProviderProbeGate.attach(probedUrl)
+                diagnostic?.let { activateProviderDiagnosticVideo(it) }
             }
+        } finally {
+            ProviderProbeGate.abandon(probedUrl)
         }
     }
 
@@ -1963,8 +1968,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                 // Autoplay will pick from these same answers: make its pick now and warm that
                 // stream's link, so the attach after this episode does not wait on it.
                 onSwept = if (!warmPredictedPick) null else { groups ->
-                    val streams = eligibleAutoPlayStreams(groups.flatMap { it.streams }, affinity)
-                    val predicted = nextEpisodeAutoPlayPicker(
+                    val picker = nextEpisodeAutoPlayPicker(
                         settings = pickerSettings,
                         sourceAffinity = affinity,
                         currentStreamBingeGroup = bingeGroup,
@@ -1973,10 +1977,34 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                         nextEpisodeNumber = nextEpisode,
                         parentMetaId = metaId,
                         contentType = type,
-                    ).predict(streams)
-                    if (predicted != null && PlaybackSourceWarmup.warm(predicted)) {
-                        BingeAdvanceLog.i {
-                            "warming the predicted next-episode link for ${next.videoId} via ${predicted.addonName}"
+                    )
+                    fun predict() = picker.predict(
+                        eligibleAutoPlayStreams(groups.flatMap { it.streams }, affinity, titleId = metaId),
+                    )
+                    scope.launch {
+                        var predicted = predict()
+                        // A link that may be a placeholder is checked now rather than at the end of
+                        // the episode: if it is one, its addon is marked and autoplay's pick (and this
+                        // warm-up) moves to the next stream. At most two checks.
+                        for (check in 0 until 2) {
+                            val pick = predicted ?: break
+                            val url = pick.playableDirectUrl ?: break
+                            if (!isProviderPlaybackEndpoint(url)) break
+                            val headers = sanitizePlaybackHeaders(pick.behaviorHints.proxyHeaders?.request)
+                            val diagnostic = resolveProviderDiagnosticVideo(url, headers) ?: break
+                            releaseProviderDiagnosticVideo(diagnostic.sourceUrl)
+                            PlaceholderSourceMemory.record(metaId, pick)
+                            BingeAdvanceLog.i {
+                                "predicted next-episode link for ${next.videoId} via ${pick.addonName} " +
+                                    "is a placeholder clip; its addon goes last for this show"
+                            }
+                            predicted = predict()
+                        }
+                        val warmed = predicted
+                        if (warmed != null && PlaybackSourceWarmup.warm(warmed)) {
+                            BingeAdvanceLog.i {
+                                "warming the predicted next-episode link for ${next.videoId} via ${warmed.addonName}"
+                            }
                         }
                     }
                 },

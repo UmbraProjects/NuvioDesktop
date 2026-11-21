@@ -561,7 +561,9 @@ private const val STREAM_FAILOVER_POLL_INTERVAL_MS = 250L
  * Fails over from [placeholderUrl], a provider's placeholder clip, holding it paused until the
  * replacement plays (see placeholderHeldSourceUrl). Lets it play on if nothing could be started.
  */
-internal suspend fun PlayerScreenRuntime.failOverFromPlaceholder(placeholderUrl: String?) {
+internal suspend fun PlayerScreenRuntime.failOverFromPlaceholder(placeholderUrl: String) {
+    // This addon's links for the title are opened last from now on (PlaceholderSourceMemory).
+    PlaceholderSourceMemory.record(parentMetaId, activeStream)
     placeholderHeldSourceUrl = placeholderUrl
     playerController?.pause()
     val started = tryFailoverToNextSource(
@@ -570,9 +572,15 @@ internal suspend fun PlayerScreenRuntime.failOverFromPlaceholder(placeholderUrl:
         tryingNextToast = getString(Res.string.player_failover_trying_next),
         trigger = StreamFailoverTrigger.ProviderDiagnosticVideo,
     )
-    if (!started && placeholderHeldSourceUrl == placeholderUrl) {
-        placeholderHeldSourceUrl = null
-        if (shouldPlay) playerController?.play()
+    if (started) {
+        // Not opened at all when the attach is still waiting on this answer.
+        ProviderProbeGate.skip(placeholderUrl)
+    } else {
+        ProviderProbeGate.attach(placeholderUrl)
+        if (placeholderHeldSourceUrl == placeholderUrl) {
+            placeholderHeldSourceUrl = null
+            if (shouldPlay) playerController?.play()
+        }
     }
 }
 
@@ -715,6 +723,7 @@ internal fun PlayerScreenRuntime.tryFailoverToNextSource(
                         contentType = contentType ?: parentMetaType,
                     ),
                     excludeUsenet = failoverSkipsUsenet,
+                    placeholderTitleId = parentMetaId,
                 )
 
             val waitForAllProviders = StreamScoreRepository.profile.appliesToFailover()
@@ -919,6 +928,8 @@ internal fun nextFailoverStream(
     scoreContext: StreamScoreContext = StreamScoreContext.MOVIE,
     // After an engine or provider failure no Usenet release can open; skip them all.
     excludeUsenet: Boolean = false,
+    /** The show: its addons that gave a placeholder this session are tried last. */
+    placeholderTitleId: String? = null,
 ): StreamItem? {
     // The repository order is the quality/ranking order. Always restart at its top and exclude the
     // failed/tried identities, rather than starting after the failed stream's old index. Autoplay or
@@ -941,7 +952,7 @@ internal fun nextFailoverStream(
             return@filter false
         }
         true
-    }
+    }.let { PlaceholderSourceMemory.prefer(placeholderTitleId, it) }
     // Scoring replaces the repository order as the within-tier tiebreak, and drops anything below
     // the profile's minimum so failover cannot land on a release the user has effectively banned.
     val ordered = if (scoreProfile.appliesToFailover()) {

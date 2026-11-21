@@ -753,6 +753,17 @@ private fun NativePlayerSurface(
             return@LaunchedEffect
         }
         delay(16L)
+        // A link that may resolve to a provider's placeholder clip waits for the probe, and is not
+        // opened at all when it is one: failover's replacement re-runs this effect instead.
+        if (
+            (isProviderPlaybackEndpoint(sourceUrl) || isExplicitProviderDiagnosticVideoUrl(sourceUrl)) &&
+            !ProviderProbeGate.awaitAttach(sourceUrl)
+        ) {
+            BingeAdvanceLog.i {
+                "desktop attach skipped attemptId=$playbackAttemptId: placeholder link, failover replacing it"
+            }
+            return@LaunchedEffect
+        }
         PlaybackStartTrace.mark("playerAttach")
         // The attach below uses the last reading; this one reaches the profile pass when it lands.
         NvidiaRtxDriverState.refreshAsync()
