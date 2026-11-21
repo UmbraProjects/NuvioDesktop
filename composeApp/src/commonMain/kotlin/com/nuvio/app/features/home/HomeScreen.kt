@@ -3555,7 +3555,7 @@ fun HomeScreen(
                 return items.getOrNull(focusedIndex.coerceAtMost(items.size - 1))
             }
             val sameRow = tvRows.getOrNull(tvFocusedRowIndex)?.metaItems.orEmpty()
-            val models = listOfNotNull(
+            val landingItems = listOfNotNull(
                 sameRow.getOrNull(focusedIndex + itemStep),
                 landingCard(tvFocusedRowIndex + rowStep),
                 sameRow.getOrNull(focusedIndex - itemStep),
@@ -3564,14 +3564,20 @@ fun HomeScreen(
                 val enriched = heroEnrichmentMap[canonicalHeroKey(raw.type, raw.id)]
                 val normalized = raw.withNormalizedHeroBackdrop()
                 when {
-                    enriched != null -> heroBackdropModel(enriched)
+                    enriched != null -> enriched
                     isHomeMode || normalized.hasFinalHeroBackdrop(
                         tmdbSettingsUiState.heroImageSource == HeroImageSource.TmdbMoviesTvdbShows,
-                    ) -> heroBackdropModel(normalized)
+                    ) -> normalized
                     else -> null
                 }
-            }.distinct()
+            }
+            val models = landingItems.mapNotNull(::heroBackdropModel).distinct()
             HeroBackdropPrefetcher.request(platformContext, imageLoader, models)
+            // The wash's own URL for each (what onActiveItemChanged hands it), so it can decode its
+            // blurred copy ahead too and switch with the hero instead of after it.
+            com.nuvio.app.core.ui.HeroAmbientWashPrefetch.upcoming.value = landingItems
+                .mapNotNull { it.banner ?: it.poster }
+                .distinct()
         }
     }
 
@@ -4074,6 +4080,7 @@ fun HomeScreen(
                     accent = activeHeroAccent,
                     onAccentChanged = { activeHeroAccent = it },
                     label = "home_hero_ambient_background",
+                    prefetchNeighbours = true,
                     modifier = Modifier.frameBudgetProbe("ambient"),
                 )
             }

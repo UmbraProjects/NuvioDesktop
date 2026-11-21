@@ -77,6 +77,23 @@ private const val AmbientWashMaxFadeMs = 650
 private val HeroAmbientAccentCache = mutableStateMapOf<String, Color>()
 
 /**
+ * The wash backdrops of the cards either side of the focused one, nearest first, published by
+ * Home's focus prefetch beside [com.nuvio.app.features.home.components.HeroBackdropPrefetcher].
+ *
+ * The hero's neighbours were already decoded ahead, but the wash draws its own pre-blurred copy
+ * of a different URL, so it still had to decode and blur on every move and arrived several frames
+ * after the hero (most visible in Adaptive, where the hero follows focus). A wash given
+ * `prefetchNeighbours` decodes these invisibly, which also caches their accent, so a move onto one
+ * takes the same-frame path below.
+ */
+internal object HeroAmbientWashPrefetch {
+    val upcoming = kotlinx.coroutines.flow.MutableStateFlow<List<String>>(emptyList())
+}
+
+/** Hidden wash decodes at a time; each is a full decode plus blur, competing with the hero's own. */
+private const val AmbientWashPrefetchCount = 2
+
+/**
  * Shared full-bleed ambient background: a crossfading, blurred, tinted wash of [backdrop] used
  * behind both Home's hero and a Collection's hero. [accent] drives the tint gradient; callers
  * are expected to derive it from the loaded image (see [extractHeroAccentColor]) and feed it
@@ -94,6 +111,12 @@ internal fun HeroAmbientBackdrop(
      * On for every mode (Adaptive Ambient, TV ambient, Collections); false restores the dip.
      */
     holdBottom: Boolean = true,
+    /**
+     * Decode [HeroAmbientWashPrefetch.upcoming] invisibly. One wash per screen is enough: the
+     * Adaptive underlay is laid out at the same size as the screen's wash, so it shares the
+     * decoded bitmaps through Coil's memory cache and the accents through [HeroAmbientAccentCache].
+     */
+    prefetchNeighbours: Boolean = false,
 ) {
     val ambientBackdropColorFilter = remember {
         ColorFilter.colorMatrix(
@@ -214,6 +237,29 @@ internal fun HeroAmbientBackdrop(
                     onError = { showIfCurrent(pendingBackdrop) },
                 )
             }
+        }
+        if (prefetchNeighbours) {
+            val upcoming by HeroAmbientWashPrefetch.upcoming.collectAsState()
+            upcoming.asSequence()
+                .filter { it.isNotBlank() && it != shownBackdrop && it != pendingBackdrop }
+                .filterNot { HeroAmbientAccentCache.containsKey(it) }
+                .take(AmbientWashPrefetchCount)
+                .forEach { url ->
+                    androidx.compose.runtime.key(url) {
+                        Box(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = 0f }) {
+                            CheapBlurredBackdropImage(
+                                imageUrl = url,
+                                colorFilter = if (variant == AmbientWashVariant.NoColorFilter) null else ambientBackdropColorFilter,
+                                blurred = variant != AmbientWashVariant.NoBlur,
+                                onSuccess = { state ->
+                                    if (HeroAmbientAccentCache.size > 128) HeroAmbientAccentCache.clear()
+                                    HeroAmbientAccentCache[url] =
+                                        extractHeroAccentColor(state.result.image) ?: Color.Unspecified
+                                },
+                            )
+                        }
+                    }
+                }
         }
         if (variant == AmbientWashVariant.NoCrossfade) {
             Box(modifier = Modifier.fillMaxSize()) { washContent(shownBackdrop) }
