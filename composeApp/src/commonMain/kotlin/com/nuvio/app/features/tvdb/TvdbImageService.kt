@@ -49,6 +49,10 @@ object TvdbImageService {
     private val tokenMutex = Mutex()
     private var cachedToken: String? = null
     private var tokenExpiryMs: Long = 0L
+    /** The key [cachedToken] was issued for: a changed key logs in again rather than reusing it. */
+    private var tokenApiKey: String? = null
+    private var loginRetryAfterMs: Long = 0L
+    private const val LOGIN_RETRY_AFTER_MS = 60_000L
 
     // Image cache keyed by "tvdb:{numericId}"
     private val imageCache = mutableMapOf<String, TvdbImages>()
@@ -302,10 +306,18 @@ object TvdbImageService {
 
     // ── Token management ───────────────────────────────────────────────────────
 
-    private suspend fun acquireToken(apiKey: String): String? {
-        tokenMutex.withLock {
-            val now = System.currentTimeMillis()
-            if (cachedToken != null && now < tokenExpiryMs - 60_000) return cachedToken
+    /**
+     * One login for everyone waiting. The check and the POST used to sit in separate lock blocks,
+     * so every caller that arrived on a cold cache missed and logged in on its own: 11 concurrent
+     * `/v4/login` POSTs in the first five seconds of the 2026-11-21 18:46 launch. Held across the
+     * request, the callers behind the first find its token. A failed login is remembered for
+     * [LOGIN_RETRY_AFTER_MS], or the queue behind it would retry a down TVDB one after another.
+     */
+    private suspend fun acquireToken(apiKey: String): String? = tokenMutex.withLock {
+        val now = System.currentTimeMillis()
+        if (tokenApiKey == apiKey) {
+            if (cachedToken != null && now < tokenExpiryMs - 60_000) return@withLock cachedToken
+            if (now < loginRetryAfterMs) return@withLock null
         }
 
         val response = runCatching {
@@ -315,27 +327,26 @@ object TvdbImageService {
                 headers = mapOf("Content-Type" to "application/json"),
                 body = """{"apikey":"$apiKey"}""",
             )
-        }.getOrNull()
+        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
 
-        if (response == null || response.status !in 200..299) {
-            log.w { "TVDB login failed: ${response?.status}" }
-            return null
+        val token = response?.takeIf { it.status in 200..299 }?.let { ok ->
+            runCatching { json.decodeFromString<TvdbLoginResponse>(ok.body).data?.token }.getOrNull()
         }
-
-        val token = runCatching {
-            json.decodeFromString<TvdbLoginResponse>(response.body).data?.token
-        }.getOrNull()
-
+        tokenApiKey = apiKey
         if (token != null) {
-            tokenMutex.withLock {
-                cachedToken = token
-                // TVDB tokens are valid for 30 days; refresh well before expiry.
-                tokenExpiryMs = System.currentTimeMillis() + 23L * 60 * 60 * 1000
-            }
+            cachedToken = token
+            // TVDB tokens are valid for 30 days; refresh well before expiry.
+            tokenExpiryMs = System.currentTimeMillis() + 23L * 60 * 60 * 1000
+            loginRetryAfterMs = 0L
         } else {
-            log.w { "TVDB login returned no token" }
+            log.w {
+                if (response == null || response.status !in 200..299) "TVDB login failed: ${response?.status}"
+                else "TVDB login returned no token"
+            }
+            cachedToken = null
+            loginRetryAfterMs = System.currentTimeMillis() + LOGIN_RETRY_AFTER_MS
         }
-        return token
+        token
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────

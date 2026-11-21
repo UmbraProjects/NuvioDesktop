@@ -88,7 +88,16 @@ fun configureDesktopFileLogging() {
                 "(line stamps are local time, ${ZoneId.systemDefault()} = UTC${localUtcOffset()}; " +
                 "now ${Instant.now()})"
         )
-        relocateJvmDiagnosticArtifacts(logDirectory)
+        // Off main(): nothing at startup reads what it moves or prunes (previous sessions' files
+        // only; this run's carry its PID and are skipped). Even listing names only, %TEMP%'s ~20k
+        // entries took 1.76 s on the first launch after a native build (cold directory cache,
+        // 2026-11-21), against ~50 ms on the launches after it.
+        Thread({ runCatching { relocateJvmDiagnosticArtifacts(logDirectory) } }, "nuvio-log-artifacts")
+            .apply {
+                isDaemon = true
+                priority = Thread.MIN_PRIORITY
+            }
+            .start()
         if (System.getProperty("os.name").orEmpty().contains("Windows", ignoreCase = true)) {
             enableSafepointLog(logDirectory)
         }
@@ -142,13 +151,16 @@ private fun relocateJvmDiagnosticArtifacts(logDirectory: File) {
     for ((dir, broad) in sources) {
         val key = runCatching { dir.canonicalPath }.getOrDefault(dir.absolutePath)
         if (!seenDirs.add(key) || !dir.isDirectory) continue
-        val artifacts = dir.listFiles { file ->
-            file.isFile && (
-                file.name.startsWith("nuvio_hs_err_pid") ||
-                    file.name.startsWith("nuvio_safepoint_pid") ||
-                    (broad && file.name.startsWith("hs_err_pid"))
-                ) && !file.name.contains(currentPidMarker)
-        } ?: continue
+        // Name first, then isFile: isFile is a disk lookup per entry, and TEMP holds tens of
+        // thousands of other programs' files (20,794 on 2026-11-21; stat-ing them all held main()
+        // back 2-3.35 s on every launch). The name test is free and almost nothing passes it.
+        val artifacts = dir.listFiles { _, name ->
+            (
+                name.startsWith("nuvio_hs_err_pid") ||
+                    name.startsWith("nuvio_safepoint_pid") ||
+                    (broad && name.startsWith("hs_err_pid"))
+                ) && !name.contains(currentPidMarker)
+        }?.filter(File::isFile) ?: continue
         for (source in artifacts) {
             val destination = File(logDirectory, source.name)
             runCatching {

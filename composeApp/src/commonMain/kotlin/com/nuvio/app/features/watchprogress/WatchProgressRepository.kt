@@ -41,7 +41,6 @@ import com.nuvio.app.features.trakt.TraktProgressRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
 import com.nuvio.app.features.trakt.isTraktCompatibleId
 import com.nuvio.app.features.trakt.resolveEffectiveContentId
-import com.nuvio.app.features.trakt.shouldUseTraktProgress as shouldUseTraktProgressSource
 import com.nuvio.app.features.watching.application.WatchingActions
 import com.nuvio.app.features.watching.sync.ProgressDeltaEvent
 import com.nuvio.app.features.watching.sync.ProgressSyncRecord
@@ -188,12 +187,13 @@ object WatchProgressRepository {
 
     init {
         syncScope.launch {
-            TraktAuthRepository.isAuthenticated.collectLatest { authenticated ->
-                if (shouldUseTraktProgressSource(
-                        isAuthenticated = authenticated,
-                        source = TraktSettingsRepository.uiState.value.watchProgressSource,
-                    )
-                ) {
+            // Gated on the Continue Watching source, not Trakt's legacy `watchProgressSource` flag:
+            // that flag only seeds the one-time migration into ContinueWatchingSourceRepository and
+            // keeps its old value, so with another source selected it still ran a full Trakt
+            // refresh and a 110-show metadata hydration nothing ever read (2026-11-21 log: 263
+            // TMDB season requests a minute after launch).
+            TraktAuthRepository.isAuthenticated.collectLatest {
+                if (shouldUseTraktProgress()) {
                     runCatching { TraktProgressRepository.refreshNow() }
                         .onFailure { error ->
                             if (error is CancellationException) throw error
@@ -205,12 +205,8 @@ object WatchProgressRepository {
         }
 
         syncScope.launch {
-            TraktSettingsRepository.uiState.collectLatest { settings ->
-                if (shouldUseTraktProgressSource(
-                        isAuthenticated = TraktAuthRepository.isAuthenticated.value,
-                        source = settings.watchProgressSource,
-                    )
-                ) {
+            TraktSettingsRepository.uiState.collectLatest {
+                if (shouldUseTraktProgress()) {
                     runCatching { TraktProgressRepository.refreshNow() }
                         .onFailure { error ->
                             if (error is CancellationException) throw error

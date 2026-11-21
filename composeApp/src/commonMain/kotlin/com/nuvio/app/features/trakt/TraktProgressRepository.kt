@@ -7,6 +7,8 @@ import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.tmdb.TmdbService
+import com.nuvio.app.features.tracking.ContinueWatchingSource
+import com.nuvio.app.features.tracking.ContinueWatchingSourceRepository
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.WatchProgressSourceTraktHistory
@@ -96,12 +98,7 @@ object TraktProgressRepository {
             while (true) {
                 delay(refreshIntervalMs)
                 TraktAuthRepository.ensureLoaded()
-                TraktSettingsRepository.ensureLoaded()
-                if (!shouldUseTraktProgress(
-                        isAuthenticated = TraktAuthRepository.isAuthenticated.value,
-                        source = TraktSettingsRepository.uiState.value.watchProgressSource,
-                    )
-                ) {
+                if (!drivesContinueWatching()) {
                     updateRefreshBackoff(success = true)
                     continue
                 }
@@ -121,6 +118,19 @@ object TraktProgressRepository {
         if (hasLoaded) return
         hasLoaded = true
     }
+
+    /**
+     * Whether Trakt is the Continue Watching source, the only case anything reads this repository's
+     * rows (every reader in WatchProgressRepository checks the same thing).
+     *
+     * Not Trakt's legacy `watchProgressSource` flag: since ContinueWatchingSourceRepository replaced
+     * it, that flag only feeds the one-time migration and keeps whatever it last held. Gating on it
+     * meant a user on another source still paid for Trakt's history sync, the 60 s activity poll and
+     * a full metadata hydration of up to 110 shows (every season decorated from TMDB) per launch.
+     */
+    internal fun drivesContinueWatching(): Boolean =
+        TraktAuthRepository.isAuthenticated.value &&
+            ContinueWatchingSourceRepository.selectedSource() == ContinueWatchingSource.TRAKT
 
     fun isShowHiddenFromProgress(contentId: String): Boolean {
         val ids = hiddenProgressShowIds.value
@@ -162,6 +172,9 @@ object TraktProgressRepository {
     }
 
     suspend fun refreshNow() {
+        // Scrobble stops and any future caller included: nothing reads the result otherwise.
+        TraktAuthRepository.ensureLoaded()
+        if (!drivesContinueWatching()) return
         PerfTelemetry.count("TraktProgressRepository.refreshNow")
         ensureLoaded()
         val refresh = refreshJobMutex.withLock {
@@ -1021,6 +1034,16 @@ object TraktProgressRepository {
             .map { entry -> entry.parentMetaType to entry.parentMetaId }
             .distinct()
             .take(METADATA_HYDRATION_LIMIT)
+        // Only the seasons these entries sit in (and the one after, for an episode the addon
+        // numbers differently and the remap below moves on) are decorated from TMDB. Unscoped, a
+        // sweep fetched every season of every show for one episode each: 263 season requests for
+        // ~45 shows on 2026-11-21, all 30 of South Park's. An episode the remap lands outside the
+        // scope still matches, from the addon's own list, just without TMDB's still and title.
+        val seasonsByContent = entries
+            .groupBy({ entry -> entry.parentMetaType to entry.parentMetaId }, { it.seasonNumber })
+            .mapValues { (_, seasons) ->
+                seasons.filterNotNull().filter { it >= 0 }.flatMap { listOf(it, it + 1) }.toSet()
+            }
 
         val semaphore = Semaphore(METADATA_FETCH_CONCURRENCY)
         val metadataByContent = uniqueContent
@@ -1032,7 +1055,13 @@ object TraktProgressRepository {
                             else -> "series"
                         }
                         val meta = withTimeoutOrNull(METADATA_FETCH_TIMEOUT_MS) {
-                            MetaDetailsRepository.fetch(type = normalizedType, id = metaId)
+                            MetaDetailsRepository.fetch(
+                                type = normalizedType,
+                                id = metaId,
+                                // Empty (movies, entries without a season) means every season, as before.
+                                episodeSeasons = seasonsByContent[metaType to metaId]
+                                    ?.takeIf { normalizedType == "series" && it.isNotEmpty() },
+                            )
                         }
                         (metaType to metaId) to meta
                     }
