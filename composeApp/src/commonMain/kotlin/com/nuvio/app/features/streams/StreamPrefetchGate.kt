@@ -66,3 +66,43 @@ internal fun evaluatePrefetchGate(inputs: PrefetchGateInputs): PrefetchDecision 
     inputs.hasInstantSourceAlready -> PrefetchDecision.AlreadyInstant
     else -> PrefetchDecision.Proceed
 }
+
+/** The kinds of source that can make a search ahead pointless, in the order they are checked. */
+internal enum class InstantSource {
+    /** Streams supplied with the episode's own meta listing. */
+    Embedded,
+
+    /** Local streams the details meta carries. */
+    LocalStream,
+
+    /** A file found by the local folder scan. */
+    LocalLibrary,
+
+    /** A finished download. */
+    Download,
+
+    /** A still-valid last link (Reuse last link). */
+    LastLink,
+}
+
+/**
+ * Whether [source] means the target will start without a search, for the surface that asked.
+ *
+ * Home and Details open through the streams screen, which plays any of these straight away. The
+ * next-episode preload only runs while an online stream is playing, and next-episode autoplay then
+ * drops local streams from its pick and never reads the last link: it plays a download first (when
+ * the title keeps its local copy for local playback) and otherwise searches, embedded streams
+ * included. Counting a local file there skipped the preload for every show also kept on disk, and
+ * the pick at the end of the episode ran its full search cold (Nov 21, South Park S1E3).
+ */
+internal fun InstantSource.skipsPrefetchFor(
+    trigger: StreamPrefetchService.Trigger,
+    localCopyIsBackup: Boolean,
+): Boolean = when (trigger) {
+    StreamPrefetchService.Trigger.NextEpisode -> when (this) {
+        InstantSource.Embedded -> true
+        InstantSource.Download -> !localCopyIsBackup
+        InstantSource.LocalStream, InstantSource.LocalLibrary, InstantSource.LastLink -> false
+    }
+    else -> true
+}

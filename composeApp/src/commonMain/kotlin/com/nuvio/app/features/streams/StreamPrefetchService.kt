@@ -436,10 +436,24 @@ internal object StreamPrefetchService {
         effectiveEpisode: Int?,
         settings: PlayerSettingsUiState,
     ): Boolean {
-        if (MetaDetailsRepository.findEmbeddedStreams(effectiveVideoId).isNotEmpty()) return true
-        if (MetaDetailsRepository.findLocalStreams(effectiveVideoId).isNotEmpty()) return true
-        if (LocalLibraryRepository.localStreamsFor(target.parentMetaId, effectiveVideoId).isNotEmpty()) return true
+        // Only what the asking surface would actually play counts (see skipsPrefetchFor).
+        val localCopyIsBackup = target.trigger == Trigger.NextEpisode &&
+            LocalLibraryRepository.routingFor(target.parentMetaId, target.videoId).ignoresLocalFile
+        fun counts(source: InstantSource) = source.skipsPrefetchFor(target.trigger, localCopyIsBackup)
         if (
+            counts(InstantSource.Embedded) &&
+            MetaDetailsRepository.findEmbeddedStreams(effectiveVideoId).isNotEmpty()
+        ) return true
+        if (
+            counts(InstantSource.LocalStream) &&
+            MetaDetailsRepository.findLocalStreams(effectiveVideoId).isNotEmpty()
+        ) return true
+        if (
+            counts(InstantSource.LocalLibrary) &&
+            LocalLibraryRepository.localStreamsFor(target.parentMetaId, effectiveVideoId).isNotEmpty()
+        ) return true
+        if (
+            counts(InstantSource.Download) &&
             AppFeaturePolicy.downloadsEnabled &&
             DownloadsRepository.findPlayableDownload(
                 parentMetaId = target.parentMetaId,
@@ -450,7 +464,7 @@ internal object StreamPrefetchService {
         ) {
             return true
         }
-        if (settings.streamReuseLastLinkEnabled) {
+        if (counts(InstantSource.LastLink) && settings.streamReuseLastLinkEnabled) {
             val linkKey = StreamLinkCacheRepository.contentKey(
                 type = target.type,
                 videoId = effectiveVideoId,

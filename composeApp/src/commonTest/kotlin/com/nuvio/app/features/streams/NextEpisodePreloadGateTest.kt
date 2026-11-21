@@ -3,6 +3,8 @@ package com.nuvio.app.features.streams
 import com.nuvio.app.features.player.nextEpisodePreloadLeadMs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class NextEpisodePreloadGateTest {
 
@@ -37,6 +39,28 @@ class NextEpisodePreloadGateTest {
             PrefetchDecision.PlaybackActive,
             evaluatePrefetchGate(inputs(trigger = StreamPrefetchService.Trigger.Details, scope = StreamPrefetchScope.DETAILS)),
         )
+    }
+
+    @Test
+    fun `next episode preload only skips for sources autoplay plays`() {
+        val next = StreamPrefetchService.Trigger.NextEpisode
+        // A show also kept on disk: autoplay streams the next episode, so it must still be searched.
+        assertFalse(InstantSource.LocalLibrary.skipsPrefetchFor(next, localCopyIsBackup = false))
+        assertFalse(InstantSource.LocalStream.skipsPrefetchFor(next, localCopyIsBackup = false))
+        assertFalse(InstantSource.LastLink.skipsPrefetchFor(next, localCopyIsBackup = false))
+        assertTrue(InstantSource.Embedded.skipsPrefetchFor(next, localCopyIsBackup = false))
+        assertTrue(InstantSource.Download.skipsPrefetchFor(next, localCopyIsBackup = false))
+        // A title set to play online keeps its download as a backup; autoplay searches instead.
+        assertFalse(InstantSource.Download.skipsPrefetchFor(next, localCopyIsBackup = true))
+    }
+
+    @Test
+    fun `home and details prefetch still skip for every instant source`() {
+        for (trigger in listOf(StreamPrefetchService.Trigger.Details, StreamPrefetchService.Trigger.ContinueWatching)) {
+            for (source in InstantSource.entries) {
+                assertTrue(source.skipsPrefetchFor(trigger, localCopyIsBackup = true), "$trigger $source")
+            }
+        }
     }
 
     @Test
