@@ -364,6 +364,30 @@ class PlayerStreamFailoverTest {
     }
 
     @Test
+    fun `failover from a placeholder clip resumes where the source was asked to start`() {
+        // The next episode's source turned out to be an 8 s error clip that had played to 7.4 s.
+        assertEquals(
+            0L,
+            selectFailoverResumePositionMs(
+                lastTrustedPositionMs = 7_389L,
+                initialPositionMs = 0L,
+                snapshotPositionMs = 7_944L,
+                placeholderPlaying = true,
+            ),
+        )
+        // A resumed episode keeps its resume point.
+        assertEquals(
+            1_026_776L,
+            selectFailoverResumePositionMs(
+                lastTrustedPositionMs = 7_389L,
+                initialPositionMs = 1_026_776L,
+                snapshotPositionMs = 7_944L,
+                placeholderPlaying = true,
+            ),
+        )
+    }
+
+    @Test
     fun `failover does not select an external addon homepage`() {
         val active = stream("active")
         val homepage = StreamItem(

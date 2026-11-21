@@ -76,6 +76,7 @@ internal class PlayerScreenRuntime(
             playbackSourceFailureActive ||
             isProviderDiagnosticVideoPlayback ||
             isProviderDiagnosticProbePending ||
+            activeSourceUrl == placeholderHeldSourceUrl ||
             // A live event has no position worth keeping and no tracker that could take a scrobble
             // for it; see isLiveEventContentType.
             contentType.isLiveEventContentType() ||
@@ -133,6 +134,9 @@ internal class PlayerScreenRuntime(
         sourceUrl.takeIf(::isProviderPlaybackEndpoint),
     )
     var providerDiagnosticRecoveryAttemptedSourceUrl by mutableStateOf<String?>(null)
+    // A placeholder clip failover is replacing: kept paused, and its position never saved, until
+    // the replacement source takes over (the probe answers after the clip has started loading).
+    var placeholderHeldSourceUrl by mutableStateOf<String?>(null)
     var activeSourceAudioUrl by mutableStateOf(sourceAudioUrl)
     var activeSourceHeaders by mutableStateOf(sanitizePlaybackHeaders(sourceHeaders))
     var activeSourceResponseHeaders by mutableStateOf(sanitizePlaybackResponseHeaders(sourceResponseHeaders))

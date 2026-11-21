@@ -218,12 +218,7 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
             isExplicitProviderDiagnosticVideoUrl(probedUrl)
         ) {
             providerDiagnosticVideoSourceUrl = null
-            tryFailoverToNextSource(
-                message = getString(Res.string.player_error_unable_to_play_stream),
-                playbackFailedToast = getString(Res.string.player_error_playback_failed),
-                tryingNextToast = getString(Res.string.player_failover_trying_next),
-                trigger = StreamFailoverTrigger.ProviderDiagnosticVideo,
-            )
+            failOverFromPlaceholder(probedUrl)
             return@LaunchedEffect
         }
         if (!isProviderPlaybackEndpoint(probedUrl)) {
@@ -247,16 +242,23 @@ internal fun PlayerScreenRuntime.BindPlayerRuntimeEffects() {
         if (diagnostic != null) {
             if (shouldSkipProviderDiagnosticVideo(playerSettingsUiState.streamFailoverEnabled)) {
                 releaseProviderDiagnosticVideo(diagnostic.sourceUrl)
-                tryFailoverToNextSource(
-                    message = getString(Res.string.player_error_unable_to_play_stream),
-                    playbackFailedToast = getString(Res.string.player_error_playback_failed),
-                    tryingNextToast = getString(Res.string.player_failover_trying_next),
-                    trigger = StreamFailoverTrigger.ProviderDiagnosticVideo,
-                )
+                failOverFromPlaceholder(probedUrl)
             } else {
                 activateProviderDiagnosticVideo(diagnostic)
             }
         }
+    }
+
+    // Keeps a placeholder clip paused while failover looks for its replacement. Its startup can
+    // undo a single pause (the probe answers after the clip begins loading), and a clip left
+    // playing showed its error card, with sound, through every failed pick that followed.
+    LaunchedEffect(placeholderHeldSourceUrl, activeSourceUrl, playbackSnapshot.isPlaying) {
+        val held = placeholderHeldSourceUrl ?: return@LaunchedEffect
+        if (activeSourceUrl != held) {
+            placeholderHeldSourceUrl = null
+            return@LaunchedEffect
+        }
+        if (playbackSnapshot.isPlaying) playerController?.pause()
     }
 
     LaunchedEffect(
