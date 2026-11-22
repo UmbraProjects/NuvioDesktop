@@ -2356,6 +2356,7 @@ val nativeJniSources = fileTree("src/desktopMain/native") {
 /** One `reflection` entry of a reachability-metadata.json. */
 class NativeMetadataEntry(val type: String) {
     var allDeclared = false
+    var allDeclaredMethods = false
     var jniAccessible = false
     val methods = sortedMapOf<String, List<String>>()
     val fields = sortedSetOf<String>()
@@ -2367,6 +2368,8 @@ class NativeMetadataEntry(val type: String) {
             put("allDeclaredConstructors", true)
             put("allDeclaredMethods", true)
             put("allDeclaredFields", true)
+        } else if (allDeclaredMethods) {
+            put("allDeclaredMethods", true)
         }
         if (methods.isNotEmpty()) {
             put("methods", methods.map { (key, params) -> mapOf("name" to key.substringBefore('('), "parameterTypes" to params) })
@@ -2376,12 +2379,15 @@ class NativeMetadataEntry(val type: String) {
 }
 
 /**
- * Serializers: every `X$$serializer` in the app's jars registers `X`, `X$Companion` (when it
- * exists) and `X$$serializer`, plus every named class of `kotlinx.serialization.json`. Native
- * sign-in once failed with "Serializer for class 'JsonLiteral' is not found" because one of these
- * was missing; the spike listed ~1,900 of them by hand.
+ * Serializers: kotlinx.serialization's JVM reflective lookup (`PlatformKt.constructSerializerForGivenTypeArgs`)
+ * finds `X.Companion` via `getDeclaredField("Companion")` and invokes `X$Companion.serializer(...)` via
+ * `getDeclaredMethod`, never reflecting on `X`'s data-class getters/copy/componentN/equals/hashCode.
+ * Registering only `X.Companion`, `X$Companion`'s declared methods, and `X$$serializer.INSTANCE` avoids
+ * ~35k unnecessary reflected methods and ~12k fields on the ~1,000 `@Serializable` data classes.
+ * Classes without a default `Companion` (named companions/objects) and `kotlinx.serialization.json.*`
+ * keep `allDeclared = true`.
  */
-fun collectSerializerTypes(jars: Collection<File>): Set<String> {
+fun collectSerializerEntries(jars: Collection<File>, into: MutableMap<String, NativeMetadataEntry>) {
     val classes = HashSet<String>()
     jars.forEach { jar ->
         ZipFile(jar).use { zip ->
@@ -2392,19 +2398,24 @@ fun collectSerializerTypes(jars: Collection<File>): Set<String> {
         }
     }
     val anonymous = Regex("""\$\d""")
-    return buildSet {
-        classes.filter { it.endsWith("\$\$serializer") }.forEach { serializer ->
-            val owner = serializer.removeSuffix("\$\$serializer")
-            add(owner)
-            add(serializer)
-            "$owner\$Companion".takeIf { it in classes }?.let(::add)
+    fun entry(name: String) = into.getOrPut(name) { NativeMetadataEntry(name) }
+    classes.filter { it.endsWith("\$\$serializer") }.forEach { serializer ->
+        val owner = serializer.removeSuffix("\$\$serializer")
+        val companion = "$owner\$Companion"
+        if (companion in classes) {
+            entry(owner).fields += "Companion"
+            entry(companion).allDeclaredMethods = true
+            entry(serializer).fields += "INSTANCE"
+        } else {
+            entry(owner).allDeclared = true
+            entry(serializer).allDeclared = true
         }
-        classes.filter { name ->
-            name.startsWith("kotlinx.serialization.json.") &&
-                '.' !in name.removePrefix("kotlinx.serialization.json.") &&
-                !anonymous.containsMatchIn(name)
-        }.forEach(::add)
     }
+    classes.filter { name ->
+        name.startsWith("kotlinx.serialization.json.") &&
+            '.' !in name.removePrefix("kotlinx.serialization.json.") &&
+            !anonymous.containsMatchIn(name)
+    }.forEach { entry(it).allDeclared = true }
 }
 
 /** `(Ljava/lang/String;[BJ)V` -> `["java.lang.String", "byte[]", "long"]`. */
@@ -2484,9 +2495,7 @@ val generateNativeMetadata = tasks.register("generateNativeMetadata") {
     outputs.dir(nativeImageGeneratedDir)
     doLast {
         val entries = sortedMapOf<String, NativeMetadataEntry>()
-        collectSerializerTypes(jars.get().files).forEach { type ->
-            entries.getOrPut(type) { NativeMetadataEntry(type) }.allDeclared = true
-        }
+        collectSerializerEntries(jars.get().files, entries)
         val serializerCount = entries.size
         collectJniEntries(nativeJniSources.files, entries)
         val out = nativeImageGeneratedDir.get().asFile.apply { deleteRecursively(); mkdirs() }
