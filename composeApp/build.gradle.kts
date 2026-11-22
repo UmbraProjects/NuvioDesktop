@@ -2577,7 +2577,7 @@ val nativeCompile = tasks.register<Exec>("nativeCompile") {
             add("-Dcompose.application.configure.swing.globals=true")
             add("-Djpackage.app-version=$desktopReleasePackageVersion")
             add("-march=$nativeImageMarch")
-            if (nativeImageQuick) add("-Ob")
+            if (nativeImageQuick) add("-Ob") else add("-Os")
             // native-image enables only file: and resource: URLs by default; without this every
             // java.net.URL http(s) connection throws (OkHttp is unaffected). The Discord artwork
             // probe read that as "proxy down" and sent posters un-letterboxed, so they rendered
@@ -2703,11 +2703,31 @@ val createNativeDistributable = tasks.register("createNativeDistributable") {
             .filterNot { it.extension == "jar" || it.extension == "jsa" || it.name == "startup-classes.lst" }
             .forEach { entry -> entry.copyRecursively(dist.resolve("app/${entry.name}")) }
         work.resolve("Nuvio.exe").copyTo(dist.resolve("Nuvio.exe"))
-        // The JDK libraries native-image emits (awt, jawt, fontmanager, ...): beside the exe, where
-        // the image loads them, and in runtime\bin, where skiko opens jawt via java.home.
+        // Unpack onnxruntime's win-x64 DLLs beside the app instead of embedding 16.5 MB
+        // uncompressed inside Nuvio.exe; OnnxRuntimeNatives.install() picks up app\onnxruntime.
+        val ortJar = root.resolve("app").listFiles { file ->
+            file.isFile && file.name.startsWith("onnxruntime") && file.name.endsWith(".jar")
+        }.orEmpty().singleOrNull()
+        if (ortJar != null) {
+            val ortOut = dist.resolve("app/onnxruntime").apply { mkdirs() }
+            ZipFile(ortJar).use { zip ->
+                zip.entries().asSequence()
+                    .filter { !it.isDirectory && it.name.startsWith("ai/onnxruntime/native/win-x64/") && it.name.endsWith(".dll") }
+                    .forEach { entry ->
+                        val outFile = ortOut.resolve(entry.name.substringAfterLast('/'))
+                        zip.getInputStream(entry).use { input -> outFile.outputStream().use { input.copyTo(it) } }
+                    }
+            }
+        }
+        // The JDK libraries native-image emits (awt, jawt, fontmanager, ...) live beside the exe,
+        // where the image loads them; runtime\bin only needs jawt.dll (plus the tiny java/jvm shims)
+        // for Skiko's java.home lookup, avoiding ~4.3 MB of duplicate awt/fontmanager/freetype DLLs.
+        val runtimeBinDlls = setOf("jawt.dll", "java.dll", "jvm.dll")
         work.listFiles { file -> file.extension == "dll" }.orEmpty().forEach { dll ->
             dll.copyTo(dist.resolve(dll.name))
-            dll.copyTo(dist.resolve("runtime/bin/${dll.name}"))
+            if (dll.name.lowercase() in runtimeBinDlls) {
+                dll.copyTo(dist.resolve("runtime/bin/${dll.name}"))
+            }
         }
         // AWT's font manager reads %java.home%\lib\fontconfig.bfc.
         resolveGraalVmHome().resolve("lib").listFiles { file ->

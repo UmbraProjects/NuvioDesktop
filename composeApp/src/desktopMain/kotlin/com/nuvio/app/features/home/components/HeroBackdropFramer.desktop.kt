@@ -412,6 +412,17 @@ internal object OnnxRuntimeNatives {
     fun install() {
         // An explicit location (a developer's, or a test's) wins.
         if (System.getProperty(NativePathProperty) != null) return
+        // Packaged native builds unpack onnxruntime's win-x64 DLLs to <install>/app/onnxruntime
+        // so the 16.5 MB native library doesn't sit uncompressed inside Nuvio.exe's image heap.
+        val packagedDir = System.getProperty("java.home")
+            ?.takeIf { it.isNotBlank() }
+            ?.let { Path.of(it).parent?.resolve("app")?.resolve("onnxruntime") }
+            ?.takeIf { dir -> libraries.all { lib -> dir.resolve(lib).exists() } }
+        if (packagedDir != null) {
+            System.setProperty(NativePathProperty, packagedDir.toAbsolutePath().toString())
+            preloadBundledCppRuntime()
+            return
+        }
         val directory = DesktopStorage.rootDir.resolve("native").resolve("onnxruntime-$Version")
         Files.createDirectories(directory)
         for (library in libraries) {

@@ -4,7 +4,7 @@
       "glob": "composeResources/**"
     },
     {
-      "glob": "native/**"
+      "glob": "native/windows/runtime-files.txt"
     },
     {
       "glob": "player-shaders/**"
@@ -16,19 +16,16 @@
       "glob": "player-scripts/**"
     },
     {
-      "glob": "icons/**"
+      "glob": "icons/*.png"
+    },
+    {
+      "glob": "icons/*.ico"
     },
     {
       "glob": "hero_discovery.json"
     },
     {
       "glob": "META-INF/services/**"
-    },
-    {
-      "glob": "jni/windows_x64/**"
-    },
-    {
-      "glob": "ai/onnxruntime/native/win-x64/**"
     }
   ]
 }
