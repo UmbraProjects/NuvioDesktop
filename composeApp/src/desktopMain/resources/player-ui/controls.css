@@ -1075,8 +1075,8 @@ button svg * {
 
 .next-episode-card {
   position: absolute;
-  right: var(--hp);
-  bottom: calc(var(--overlay-bottom) + env(safe-area-inset-bottom));
+  right: calc(var(--hp) + 18px);
+  bottom: calc(var(--slider-bottom) + var(--slider-touch) + 78px + env(safe-area-inset-bottom));
   z-index: 7;
   width: min(284px, calc(100vw - (var(--hp) * 2)));
   aspect-ratio: 16 / 9;
@@ -5105,7 +5105,7 @@ svg {
 }
 .pause-status-label {
   color: rgba(255, 255, 255, .62);
-  font-size: calc(var(--user-scale) * 15px);
+  font-size: calc(var(--user-scale) * 17px);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -5113,20 +5113,20 @@ svg {
 }
 .pause-status-divider {
   width: 1px;
-  height: calc(var(--user-scale) * 18px);
+  height: calc(var(--user-scale) * 20px);
   background: rgba(255, 255, 255, .20);
   flex: 0 0 auto;
 }
 .pause-status-time {
   color: #fff;
-  font-size: calc(var(--user-scale) * 18px);
+  font-size: calc(var(--user-scale) * 21px);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .pause-status-duration {
   color: rgba(255, 255, 255, .50);
-  font-size: calc(var(--user-scale) * 16px);
+  font-size: calc(var(--user-scale) * 19px);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -5150,8 +5150,9 @@ svg {
 }
 
 /* Edge-to-edge bottom cast dock (E2a):
-   full-width frosted cinema bar with a hairline playback progress lip along its top edge,
-   a minimalist rotated CAST spine on the left, and evenly distributed 3:4 portrait tiles. */
+   full-width black-glass bar matching the Source/Episodes panels, with a hairline playback
+   progress lip along its top edge, a centred rotated CAST spine on the left, and evenly
+   distributed 3:4 portrait tiles. */
 .pause-cast {
   position: relative;
   flex: 0 0 auto;
@@ -5163,11 +5164,14 @@ svg {
     calc(var(--user-scale) * 22px)
     calc(var(--hp) + env(safe-area-inset-right) + calc(var(--user-scale) * 36px))
     calc(var(--user-scale) * 24px)
-    calc(var(--hp) + env(safe-area-inset-left) + calc(var(--user-scale) * 28px));
-  background: rgba(8, 8, 10, .74);
-  border-top: 1px solid rgba(255, 255, 255, .14);
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
+    env(safe-area-inset-left);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 40%),
+    rgba(10, 10, 13, .92);
+  border-top: 1px solid rgba(255, 255, 255, .12);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 calc(var(--user-scale) * -12px) calc(var(--user-scale) * 40px) rgba(0, 0, 0, .42);
 }
 .pause-cast[hidden] { display: none; }
 .pause-progress-track {
@@ -5186,20 +5190,22 @@ svg {
 }
 .pause-cast-spine {
   flex: 0 0 auto;
+  width: calc(var(--hp) + calc(var(--user-scale) * 68px));
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-right: calc(var(--user-scale) * 20px);
-  border-right: 1px solid rgba(255, 255, 255, .14);
+  padding: 0;
+  border-right: 1px solid rgba(255, 255, 255, .12);
 }
 .pause-cast-label {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
-  color: rgba(255, 255, 255, .55);
-  font-size: calc(var(--user-scale) * 14px);
+  color: rgba(255, 255, 255, .62);
+  font-size: calc(var(--user-scale) * 18px);
   line-height: 1;
   font-weight: 600;
   letter-spacing: 0.34em;
+  text-indent: 0.34em;
   text-transform: uppercase;
 }
 .pause-cast-list {
@@ -5277,31 +5283,31 @@ svg {
   line-height: 1.25;
 }
 .pause-logo {
-  width: min(calc(var(--user-scale) * 640px), 64vw);
-  height: calc(var(--user-scale) * 168px);
+  width: min(calc(var(--user-scale) * 768px), 68vw);
+  height: calc(var(--user-scale) * 202px);
   margin-top: 0;
 }
 .pause-title {
   margin-top: 0;
-  font-size: max(calc(var(--title) * 2.4), calc(var(--user-scale) * 54px));
+  font-size: max(calc(var(--title) * 2.88), calc(var(--user-scale) * 65px));
 }
 .pause-episode-line {
-  column-gap: calc(var(--user-scale) * 12px);
-  row-gap: calc(var(--user-scale) * 4px);
-  margin-top: calc(var(--user-scale) * 20px);
-  font-size: calc(var(--user-scale) * 26px);
+  column-gap: calc(var(--user-scale) * 14px);
+  row-gap: calc(var(--user-scale) * 5px);
+  margin-top: calc(var(--user-scale) * 22px);
+  font-size: calc(var(--user-scale) * 31px);
 }
 .pause-description {
-  width: min(calc(var(--user-scale) * 920px), 58vw);
-  margin-top: calc(var(--user-scale) * 14px);
-  font-size: calc(var(--user-scale) * 20px);
-  line-height: calc(var(--user-scale) * 28px);
+  width: min(calc(var(--user-scale) * 1060px), 62vw);
+  margin-top: calc(var(--user-scale) * 16px);
+  font-size: calc(var(--user-scale) * 24px);
+  line-height: calc(var(--user-scale) * 34px);
 }
 .pause-source {
-  width: min(calc(var(--user-scale) * 920px), 58vw);
+  width: min(calc(var(--user-scale) * 1060px), 62vw);
   gap: calc(var(--user-scale) * 8px);
-  margin-top: calc(var(--user-scale) * 14px);
-  font-size: calc(var(--user-scale) * 15px);
+  margin-top: calc(var(--user-scale) * 16px);
+  font-size: calc(var(--user-scale) * 18px);
 }
 
 /* .side-control never got a scaled box, so it kept the flat 48x48 from the desktop transport
@@ -5342,16 +5348,19 @@ svg {
   inset-inline: calc(var(--user-scale) * 14px);
   width: calc(100% - (var(--user-scale) * 28px));
 }
-.scrub::-webkit-slider-runnable-track { height: calc(var(--user-scale) * 3px); }
+.scrub::-webkit-slider-runnable-track {
+  height: calc(var(--user-scale) * 4px);
+  border-radius: 999px;
+}
 /* .scrub is squashed by scaleY(--slider-scale) (.72-.82), which flattened the thumb into an
-   ellipse; the height is authored pre-squash so it lands as a 9px circle. The margin re-centres
-   that taller box on the 3px track in the same unscaled space. The radius must be 50%, not a
+   ellipse; the height is authored pre-squash so it lands as an 11px circle. The margin re-centres
+   that taller box on the 4px track in the same unscaled space. The radius must be 50%, not a
    large px value: on a non-square box 999px clamps to a stadium (straight sides), and a squashed
    stadium is still not a circle -- only a squashed ellipse is. */
 .scrub::-webkit-slider-thumb {
-  width: calc(var(--user-scale) * 9px);
-  height: calc(var(--user-scale) * 9px / var(--slider-scale));
-  margin-top: calc((var(--user-scale) * 3px - var(--user-scale) * 9px / var(--slider-scale)) / 2);
+  width: calc(var(--user-scale) * 11px);
+  height: calc(var(--user-scale) * 11px / var(--slider-scale));
+  margin-top: calc((var(--user-scale) * 4px - var(--user-scale) * 11px / var(--slider-scale)) / 2);
   border-radius: 50%;
   border: 0;
   background: rgba(255, 255, 255, .96);
@@ -5817,6 +5826,9 @@ svg {
   --slider-bottom: calc(var(--user-scale) * 14px);
   --side-icon: calc(var(--user-scale) * var(--control-icon-scale) * 24px);
 }
+.player.minimal-hud .next-episode-card {
+  bottom: calc(var(--slider-bottom) + var(--slider-touch) + 56px + env(safe-area-inset-bottom));
+}
 .player.minimal-hud .timeline-row {
   grid-template-columns: minmax(0, 1fr);
   /* The scrub keeps its inset so the thumb has room at 0%/100%; pull the row out by the same
@@ -6017,6 +6029,9 @@ svg {
 .player.ultra-hud {
   --slider-bottom: calc(var(--user-scale) * 10px);
 }
+.player.ultra-hud .next-episode-card {
+  bottom: calc(var(--slider-bottom) + var(--slider-touch) + 54px + env(safe-area-inset-bottom));
+}
 /* The picture carries most of the frame here; the edge gradient only needs to keep the seek line
    and the two glyphs legible. */
 .player.ultra-hud .bottom-gradient {
@@ -6170,6 +6185,9 @@ svg {
 .player.official-hud {
   --slider-bottom: calc(var(--user-scale) * 28px);
 }
+.player.official-hud .next-episode-card {
+  bottom: calc(var(--slider-bottom) + var(--slider-touch) + 84px + env(safe-area-inset-bottom));
+}
 .player.official-hud .progress {
   left: calc(var(--user-scale) * 28px);
   right: calc(var(--user-scale) * 28px);
@@ -6184,7 +6202,7 @@ svg {
    a 5 CSS px target on a 1080p screen. The row gap below is shortened by the difference so the
    visible track-to-buttons spacing still matches upstream's 16px. */
 .player.official-hud .timeline {
-  height: calc(var(--user-scale) * 22px);
+  height: calc(var(--user-scale) * 26px);
 }
 .player.official-hud .scrub {
   inset: 0;
@@ -6194,7 +6212,7 @@ svg {
   cursor: pointer;
 }
 .player.official-hud .scrub::-webkit-slider-runnable-track {
-  height: calc(var(--user-scale) * 10px);
+  height: calc(var(--user-scale) * 12px);
   border-radius: 999px;
   /* Upstream paints the played part with the theme gradient when there is one, white otherwise;
      the buffered band between played and unplayed is this fork's and is kept. */
@@ -6207,13 +6225,13 @@ svg {
       var(--theme-timeline-buffered, rgba(255, 255, 255, .45)) var(--progress, 0%) var(--buffered, 0%),
       var(--theme-timeline-track) var(--buffered, 0%) 100%);
 }
-/* No handle upstream; the thumb stays as a transparent 10px box so the input still maps its value
+/* No handle upstream; the thumb stays as a transparent 12px box so the input still maps its value
    the same way and drags from anywhere on the strip. */
 .player.official-hud .scrub::-webkit-slider-thumb,
 .player.official-hud .scrub:hover::-webkit-slider-thumb,
 .player.official-hud .scrub:active::-webkit-slider-thumb {
-  width: calc(var(--user-scale) * 10px);
-  height: calc(var(--user-scale) * 10px);
+  width: calc(var(--user-scale) * 12px);
+  height: calc(var(--user-scale) * 12px);
   margin-top: 0;
   opacity: 0;
   box-shadow: none;
