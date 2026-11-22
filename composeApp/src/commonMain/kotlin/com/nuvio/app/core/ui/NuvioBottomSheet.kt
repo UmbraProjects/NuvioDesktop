@@ -56,7 +56,11 @@ fun NuvioModalBottomSheet(
             onDismissRequest = onDismissRequest,
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            NuvioDialogSurface(modifier = modifier.widthIn(max = DesktopSheetMaxWidth)) {
+            NuvioDialogSurface(
+                modifier = modifier
+                    .padding(horizontal = 24.dp, vertical = 20.dp)
+                    .widthIn(max = DesktopSheetMaxWidth),
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()

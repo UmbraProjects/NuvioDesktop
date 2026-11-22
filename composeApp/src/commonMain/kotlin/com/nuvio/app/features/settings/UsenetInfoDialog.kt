@@ -97,9 +97,13 @@ internal fun UsenetInfoDialog(sources: UsenetSourceConfiguration, onDismiss: () 
                                 F.percent(stats.failedRequestPercent),
                             ),
                             stringResource(
-                                Res.string.usenet_info_searches,
-                                stats.searches.toInt(), F.duration(stats.averageSearchMs), stats.releases.toInt(),
-                                stats.emptySearches.toInt(), stats.failedSearches.toInt(),
+                                Res.string.usenet_info_searches_timed,
+                                stats.searches.toInt(),
+                                F.duration(stats.averageSearchMs),
+                                F.duration(stats.slowestSearchMs.takeIf { stats.searches > 0 }),
+                                stats.releases.toInt(),
+                                stats.emptySearches.toInt(),
+                                stats.failedSearches.toInt(),
                             ),
                             stringResource(
                                 Res.string.usenet_info_grabs,

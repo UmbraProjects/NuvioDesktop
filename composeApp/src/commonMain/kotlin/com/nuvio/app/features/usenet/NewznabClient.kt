@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 
 /*
  * NuvioTV's NewznabClient (BuiltInUsenetService.kt), ported: the same paging, season-search reuse
@@ -48,6 +52,12 @@ private data class IndexerState(
     val leftAt: Long = 0,
 )
 
+@Serializable
+private data class CachedCaps(
+    val caps: NewznabCapabilities,
+    val fetchedAt: Long,
+)
+
 class NewznabClient(
     /** The User-Agent of the next request, null for the JDK's own; settings can change it at any time. */
     private val agent: () -> String? = { null },
@@ -57,11 +67,21 @@ class NewznabClient(
         .connectTimeout(Duration.ofSeconds(10))
         .followRedirects(HttpClient.Redirect.NORMAL)
         .build()
+    private val capsJson = Json { ignoreUnknownKeys = true; encodeDefaults = false }
+    private val capsSerializer = MapSerializer(String.serializer(), CachedCaps.serializer())
     private val states = ConcurrentHashMap<String, IndexerState>()
+    private val persistedCaps = ConcurrentHashMap<String, CachedCaps>()
+    @Volatile
+    private var capsLoadedFromDisk = false
     private val revision = MutableStateFlow(0)
     private val seasons = object : LinkedHashMap<String, Pair<Long, List<UsenetRelease>>>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, List<UsenetRelease>>>) =
             size > MAX_SEASONS
+    }
+    /** Short-lived in-memory cache of finished title searches so reopening a picker or player Sources does not re-hit indexers. */
+    private val searchCache = object : LinkedHashMap<String, Pair<Long, List<UsenetRelease>>>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, List<UsenetRelease>>>) =
+            size > MAX_SEARCH_CACHE
     }
 
     /** Increments whenever an indexer status may have changed. */
@@ -70,6 +90,55 @@ class NewznabClient(
     /** States are keyed by the endpoint and key, which identify the account behind the indexer. */
     private fun key(indexer: UsenetIndexer) = indexer.endpoint + "|" + indexer.apiKey
 
+    private fun searchCacheKey(indexer: UsenetIndexer, request: UsenetSearchRequest, results: Int): String =
+        "${key(indexer)}|${indexer.searchMode}|$results|$request"
+
+    /** Returns cached releases for this indexer and title if fresh, or null when a live search is needed. */
+    internal fun cachedSearch(
+        indexer: UsenetIndexer,
+        request: UsenetSearchRequest,
+        results: Int = UsenetSourceConfiguration.DEFAULT_INDEXER_RESULTS,
+    ): List<UsenetRelease>? {
+        val hit = synchronized(searchCache) { searchCache[searchCacheKey(indexer, request, results)] }
+            ?.takeIf { now() - it.first < SEARCH_CACHE_TTL_MS }
+            ?: return null
+        return hit.second.map { it.copy(indexerId = indexer.id, indexerName = indexer.name) }
+    }
+
+    internal fun cacheSearch(
+        indexer: UsenetIndexer,
+        request: UsenetSearchRequest,
+        results: Int,
+        releases: List<UsenetRelease>,
+    ) {
+        synchronized(searchCache) { searchCache[searchCacheKey(indexer, request, results)] = now() to releases }
+    }
+
+    private fun ensureCapsLoaded() {
+        if (capsLoadedFromDisk) return
+        synchronized(persistedCaps) {
+            if (capsLoadedFromDisk) return
+            capsLoadedFromDisk = true
+            runCatching {
+                UsenetStorage.loadCaps()?.let { raw ->
+                    capsJson.decodeFromString(capsSerializer, raw)
+                }
+            }.getOrNull()?.let { loaded ->
+                val cutoff = now() - CAPS_TTL_MS
+                loaded.forEach { (endpoint, entry) ->
+                    if (entry.fetchedAt >= cutoff) persistedCaps[endpoint] = entry
+                }
+            }
+        }
+    }
+
+    private fun savePersistedCaps() {
+        runCatching {
+            val snapshot = synchronized(persistedCaps) { persistedCaps.toMap() }
+            UsenetStorage.saveCaps(capsJson.encodeToString(capsSerializer, snapshot))
+        }
+    }
+
     private fun update(indexer: UsenetIndexer, change: (IndexerState) -> IndexerState) {
         states.compute(key(indexer)) { _, old -> change(old ?: IndexerState()) }
         revision.value += 1
@@ -77,17 +146,28 @@ class NewznabClient(
 
     /** Caps cost an API hit on most indexers and rarely change; [live] skips the cache and any cooldown. */
     suspend fun capabilities(indexer: UsenetIndexer, live: Boolean = false): NewznabCapabilities {
+        ensureCapsLoaded()
         val cached = states[key(indexer)]?.takeIf { it.caps != null }
         if (!live && cached != null && now() - cached.capsFetchedAt < CAPS_TTL_MS) return cached.caps!!
+        val diskCached = persistedCaps[indexer.endpoint]
+        if (!live && diskCached != null && now() - diskCached.fetchedAt < CAPS_TTL_MS) {
+            update(indexer) { it.copy(caps = diskCached.caps, capsFetchedAt = diskCached.fetchedAt) }
+            return diskCached.caps
+        }
         val caps = try {
             request(indexer, NewznabProtocol.apiUrl(indexer, "caps").build(), live, parse = NewznabProtocol::capabilities)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // An expired copy still describes the indexer better than failing the search.
-            if (!live && cached != null) return cached.caps!! else throw e
+            if (!live && cached != null) return cached.caps!!
+            if (!live && diskCached != null) return diskCached.caps
+            throw e
         }
-        update(indexer) { it.copy(caps = caps, capsFetchedAt = now()) }
+        val fetchedAt = now()
+        update(indexer) { it.copy(caps = caps, capsFetchedAt = fetchedAt) }
+        persistedCaps[indexer.endpoint] = CachedCaps(caps, fetchedAt)
+        savePersistedCaps()
         return caps
     }
 
@@ -382,6 +462,8 @@ class NewznabClient(
         const val EXHAUSTED_MS = 15 * 60_000L
         const val SEASON_TTL_MS = 2 * 3600_000L
         const val MAX_SEASONS = 50
+        const val SEARCH_CACHE_TTL_MS = 10 * 60_000L
+        const val MAX_SEARCH_CACHE = 64
         const val LEFT_TTL_MS = 24 * 3600_000L
         val API_LEFT_HEADERS = listOf("X-RateLimit-Daily-Remaining", "x-api-remaining")
         val GRABS_LEFT_HEADERS = listOf("X-DNZBLimit-Daily-Remaining", "x-grab-remaining")

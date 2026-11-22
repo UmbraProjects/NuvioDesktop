@@ -11,12 +11,18 @@ import com.nuvio.app.features.metadata.nativeAnimeBase
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamBehaviorHints
 import com.nuvio.app.features.streams.StreamItem
+import com.nuvio.app.features.streams.StreamScoreContexts
+import com.nuvio.app.features.streams.StreamScoreRepository
+import com.nuvio.app.features.streams.StreamScorer
 import com.nuvio.app.features.tmdb.TmdbService
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Built-in Usenet search (NuvioTV's BuiltInUsenetService, ported in its core): the user's
@@ -59,6 +65,126 @@ object BuiltInUsenet {
         )
     }
 
+    /**
+     * Searches all enabled indexers and calls [onUpdate] as each indexer answers, so fast indexers
+     * appear in the picker immediately instead of waiting behind the slowest one.
+     */
+    suspend fun searchProgressive(
+        type: String,
+        videoId: String,
+        season: Int?,
+        episode: Int?,
+        onUpdate: suspend (AddonStreamGroup) -> Unit,
+    ) {
+        try {
+            val config = UsenetSettingsRepository.sources
+            if (!config.ready) {
+                onUpdate(AddonStreamGroup(GROUP_NAME, GROUP_ID, emptyList(), isLoading = false))
+                return
+            }
+            val series = !type.equals("movie", ignoreCase = true)
+            val (idSeason, idEpisode) = episodeNumbers(videoId)
+            val request = metadata(
+                UsenetSearchRequest(
+                    season = season ?: idSeason,
+                    episode = episode ?: idEpisode,
+                    series = series,
+                ),
+                videoId = videoId,
+                type = type,
+            )
+            val indexers = config.indexers.filter { it.enabled }
+            if (indexers.isEmpty()) {
+                onUpdate(AddonStreamGroup(GROUP_NAME, GROUP_ID, emptyList(), isLoading = false))
+                return
+            }
+            val subject = UsenetStreamFormat.Subject(request.title, request.year, series)
+            val engine = UsenetSettingsRepository.engine
+            val releases = mutableListOf<UsenetRelease>()
+            var failures = 0
+            val lock = Mutex()
+
+            fun formatStreams(snapshot: List<UsenetRelease>): List<StreamItem> {
+                val candidates = if (config.hideDuplicates) {
+                    NewznabProtocol.withoutDuplicates(snapshot, config, series = series)
+                } else {
+                    snapshot
+                }
+                return NewznabProtocol.arrange(candidates, config, series = series)
+                    .filterNot { UsenetCompressedReleases.isCompressed(it.nzbUrl) && engine.skipsCompressed(it.size.takeIf { size -> size > 0 }) }
+                    .map { it.toStream(config, series, subject) }
+            }
+
+            if (config.indexerFallback) {
+                val isAnime = request.anime != null || type.equals("anime", ignoreCase = true)
+                val byPriority = indexers.groupBy { it.priority }.toSortedMap()
+                val priorities = byPriority.values.toList()
+                for ((groupIndex, group) in priorities.withIndex()) {
+                    var remainingInGroup = group.size
+                    coroutineScope {
+                        group.forEach { indexer ->
+                            launch {
+                                val found = searchOne(indexer, request, config)
+                                val update = lock.withLock {
+                                    remainingInGroup -= 1
+                                    if (found == null) failures += 1 else releases += found
+                                    if (found != null && found.isNotEmpty()) {
+                                        val streams = formatStreams(releases.toList())
+                                        val morePriorities = groupIndex < priorities.lastIndex &&
+                                            !hasViableFallbackRelease(streams, config, series, isAnime)
+                                        val stillLoading = remainingInGroup > 0 || morePriorities
+                                        AddonStreamGroup(GROUP_NAME, GROUP_ID, streams, isLoading = stillLoading)
+                                    } else {
+                                        null
+                                    }
+                                }
+                                if (update != null) onUpdate(update)
+                            }
+                        }
+                    }
+                    if (hasViableFallbackRelease(formatStreams(releases), config, series, isAnime)) break
+                }
+            } else {
+                var remaining = indexers.size
+                coroutineScope {
+                    indexers.forEach { indexer ->
+                        launch {
+                            val found = searchOne(indexer, request, config)
+                            val update = lock.withLock {
+                                remaining -= 1
+                                if (found == null) failures += 1 else releases += found
+                                if (remaining > 0 && found != null && found.isNotEmpty()) {
+                                    AddonStreamGroup(GROUP_NAME, GROUP_ID, formatStreams(releases.toList()), isLoading = true)
+                                } else {
+                                    null
+                                }
+                            }
+                            if (update != null) onUpdate(update)
+                        }
+                    }
+                }
+            }
+
+            if (releases.isEmpty() && failures == indexers.size) {
+                onUpdate(AddonStreamGroup(GROUP_NAME, GROUP_ID, emptyList(), isLoading = false, error = "No indexer answered"))
+            } else {
+                onUpdate(AddonStreamGroup(GROUP_NAME, GROUP_ID, formatStreams(releases), isLoading = false))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            onUpdate(
+                AddonStreamGroup(
+                    addonName = GROUP_NAME,
+                    addonId = GROUP_ID,
+                    streams = emptyList(),
+                    isLoading = false,
+                    error = e.message ?: "Usenet search failed",
+                ),
+            )
+        }
+    }
+
     suspend fun search(type: String, videoId: String, season: Int?, episode: Int?): List<StreamItem> {
         val config = UsenetSettingsRepository.sources
         if (!config.ready) return emptyList()
@@ -77,14 +203,27 @@ object BuiltInUsenet {
         val byPriority = indexers.groupBy { it.priority }.toSortedMap()
         val releases = mutableListOf<UsenetRelease>()
         var failures = 0
+        val subject = UsenetStreamFormat.Subject(request.title, request.year, series)
+        val engine = UsenetSettingsRepository.engine
+        val isAnime = request.anime != null || type.equals("anime", ignoreCase = true)
+        fun format(snapshot: List<UsenetRelease>): List<StreamItem> {
+            val candidates = if (config.hideDuplicates) {
+                NewznabProtocol.withoutDuplicates(snapshot, config, series = series)
+            } else {
+                snapshot
+            }
+            return NewznabProtocol.arrange(candidates, config, series = series)
+                .filterNot { UsenetCompressedReleases.isCompressed(it.nzbUrl) && engine.skipsCompressed(it.size.takeIf { size -> size > 0 }) }
+                .map { it.toStream(config, series, subject) }
+        }
         coroutineScope {
             if (config.indexerFallback) {
-                // Lower priorities only when the higher ones found nothing.
+                // Lower priorities only when the higher ones found no viable release.
                 for ((_, group) in byPriority) {
                     val found = group.map { indexer -> async { searchOne(indexer, request, config) } }.awaitAll()
                     failures += found.count { it == null }
                     releases += found.filterNotNull().flatten()
-                    if (releases.isNotEmpty()) break
+                    if (hasViableFallbackRelease(format(releases), config, series, isAnime)) break
                 }
             } else {
                 val found = indexers.map { indexer -> async { searchOne(indexer, request, config) } }.awaitAll()
@@ -95,16 +234,30 @@ object BuiltInUsenet {
         if (releases.isEmpty() && failures == indexers.size && indexers.isNotEmpty()) {
             error("No indexer answered")
         }
-        val candidates = if (config.hideDuplicates) {
-            NewznabProtocol.withoutDuplicates(releases, config, series = series)
-        } else {
-            releases
+        return format(releases)
+    }
+
+    /**
+     * Whether [streams] already contains at least one release good enough to skip lower-priority
+     * indexers. When stream scoring is enabled, requires a non-rejected release meeting the
+     * configured minimum score for this content type; when scoring is off, any surviving release
+     * counts.
+     */
+    private fun hasViableFallbackRelease(
+        streams: List<StreamItem>,
+        config: UsenetSourceConfiguration,
+        series: Boolean,
+        isAnime: Boolean,
+    ): Boolean {
+        if (streams.isEmpty()) return false
+        val profile = StreamScoreRepository.profile
+        if (!profile.enabled) return true
+        val minScore = config.fallbackMinScoreFor(series = series, isAnime = isAnime)
+        val context = StreamScoreContexts.forPlayback(isEpisode = series).copy(isAnimation = isAnime)
+        return streams.any { stream ->
+            val score = StreamScorer.score(stream, profile, context)
+            !score.rejected && score.total >= minScore
         }
-        val subject = UsenetStreamFormat.Subject(request.title, request.year, series)
-        val engine = UsenetSettingsRepository.engine
-        return NewznabProtocol.arrange(candidates, config, series = series)
-            .filterNot { UsenetCompressedReleases.isCompressed(it.nzbUrl) && engine.skipsCompressed(it.size.takeIf { size -> size > 0 }) }
-            .map { it.toStream(config, series, subject) }
     }
 
     private suspend fun searchOne(
@@ -112,12 +265,18 @@ object BuiltInUsenet {
         request: UsenetSearchRequest,
         config: UsenetSourceConfiguration,
     ): List<UsenetRelease>? {
+        client.cachedSearch(indexer, request, config.indexerResults)?.let { cached ->
+            UsenetStats.found(cached)
+            log.i { "${indexer.name}: ${cached.size} releases (cached)" }
+            return cached
+        }
         val started = System.nanoTime()
         fun elapsedMs() = (System.nanoTime() - started) / 1_000_000
         return try {
             val caps = client.capabilities(indexer)
             client.search(indexer, request, caps, config.indexerResults).also { found ->
                 val ms = elapsedMs()
+                client.cacheSearch(indexer, request, config.indexerResults, found)
                 UsenetStats.search(indexer.id, ms, found.size)
                 UsenetStats.found(found)
                 log.i { "${indexer.name}: ${found.size} releases in $ms ms" }

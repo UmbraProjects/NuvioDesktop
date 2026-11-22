@@ -1129,12 +1129,38 @@ const cssColorOrFallback = (value, fallback) => {
   return /^(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))$/.test(text) ? text : fallback;
 };
 
+const isNearWhiteColor = color => {
+  const clean = String(color || "").trim().replace(/^#/, "");
+  let r;
+  let g;
+  let b;
+  if (clean.length === 3) {
+    r = parseInt(clean[0] + clean[0], 16);
+    g = parseInt(clean[1] + clean[1], 16);
+    b = parseInt(clean[2] + clean[2], 16);
+  } else if (clean.length === 6) {
+    r = parseInt(clean.slice(0, 2), 16);
+    g = parseInt(clean.slice(2, 4), 16);
+    b = parseInt(clean.slice(4, 6), 16);
+  } else if (clean.length === 8) {
+    r = parseInt(clean.slice(0, 2), 16);
+    g = parseInt(clean.slice(2, 4), 16);
+    b = parseInt(clean.slice(4, 6), 16);
+  } else {
+    return false;
+  }
+  return r >= 220 && g >= 220 && b >= 220 && (Math.max(r, g, b) - Math.min(r, g, b)) <= 24;
+};
+
 const applyTheme = () => {
   const style = document.documentElement.style;
   const setColor = (name, value, fallback) => {
     style.setProperty(name, cssColorOrFallback(value, fallback));
   };
-  setColor("--theme-accent", state.themeAccentColor, "#2f6fed");
+  const accentColor = cssColorOrFallback(state.themeAccentColor, "#2f6fed");
+  style.setProperty("--theme-accent", accentColor);
+  // Matches ThemeColors.kt selectionTextFallback (#D4AF37) when the theme's accent is white.
+  style.setProperty("--theme-accent-text", isNearWhiteColor(accentColor) ? "#d4af37" : accentColor);
   setColor("--theme-accent-strong", state.themeAccentStrongColor, "#3c7bff");
   // A paint, not a colour: cssColorOrFallback would reject the gradient form.
   const accentFill = typeof state.themeAccentFill === "string" ? state.themeAccentFill.trim() : "";
@@ -3059,6 +3085,7 @@ const playbackSpeedMenuItem = (speed, fineSpeeds = []) => ({
   selectedField: "playbackSpeedValue",
   selectedValue: speed.toFixed(1),
   ...(fineSpeeds.length > 0 ? {
+    compactSubmenu: true,
     children: fineSpeeds.map(fineSpeed => ({
       label: `${fineSpeed.toFixed(1).replace(/\.0$/, "")}x`,
       action: `speed:${fineSpeed.toFixed(1)}`,
@@ -3119,13 +3146,15 @@ const currentHudLayoutValue = () => {
   return "standard";
 };
 
+const CONTEXT_MENU_CHEVRON_SVG = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg>`;
+
 const contextMenuItems = [
   {
     label: "Playback", textKey: "player_hud_playback",
     children: [
       // Labels carry the configured step, so they are rewritten by refreshSeekStepLabels()
       // whenever the setting changes rather than baked in at build time.
-      { label: "Playback speed", textKey: "player_hud_playback_speed", children: playbackSpeedMenuItems },
+      { label: "Playback speed", textKey: "player_hud_playback_speed", compactSubmenu: true, children: playbackSpeedMenuItems },
       { label: "Previous episode", textKey: "player_hud_previous_episode", action: "send:previousEpisode", youTube: false },
       { label: "Next episode", textKey: "player_hud_next_episode", action: "send:nextEpisode", youTube: false },
       { label: "Picture in picture", textKey: "player_hud_picture_in_picture", action: "send:pictureInPicture" },
@@ -3242,7 +3271,7 @@ const contextMenuItems = [
     ],
   },
   {
-    label: "Tools", textKey: "player_hud_tools",
+    label: "Tools", textKey: "player_hud_tools", dividerBefore: true,
     children: [
       { label: "Sources", textKey: "player_hud_sources", action: "modal:sources" },
       { label: "Episodes", textKey: "player_hud_episodes", action: "modal:episodes" },
@@ -3256,7 +3285,7 @@ const contextMenuItems = [
       { label: "Close playback", textKey: "player_hud_close_playback", action: "send:back", shortcut: "Esc" },
     ],
   },
-  { label: "Copy stream link", textKey: "player_hud_copy_stream_link", action: "copyStreamUrl" },
+  { label: "Copy stream link", textKey: "player_hud_copy_stream_link", dividerBefore: true, action: "copyStreamUrl" },
 ];
 
 let contextMenuOpen = false;
@@ -3316,6 +3345,7 @@ const contextMenuValue = key => {
   if (key === "uiScalePercentValue") return String(Number(state.uiScalePercent) || 0);
   if (key === "hudLayoutValue") return currentHudLayoutValue();
   if (key === "playbackSpeedValue") return parsedPlaybackSpeed().toFixed(1);
+  if (key === "playbackSpeedLabel") return `${parsedPlaybackSpeed().toFixed(2).replace(/\.?0+$/, "")}x`;
   if (key === "outlineEnabled" || key === "shadowEnabled" || key === "bold" || key === "italic") {
     return Boolean(state.subtitleStyle && state.subtitleStyle[key]);
   }
@@ -3327,7 +3357,13 @@ const contextMenuValue = key => {
 const applyOptimisticContextSelection = button => {
   const selectedField = button.dataset.selectedField;
   if (selectedField) {
-    state = { ...state, [selectedField]: button.dataset.selectedValue };
+    if (selectedField === "playbackSpeedValue") {
+      const speedNum = Number.parseFloat(button.dataset.selectedValue || "1");
+      const speedLabel = Number.isFinite(speedNum) ? `${speedNum.toFixed(2).replace(/\.?0+$/, "")}x` : "1x";
+      state = { ...state, playbackSpeedLabel: speedLabel };
+    } else {
+      state = { ...state, [selectedField]: button.dataset.selectedValue };
+    }
     return;
   }
   const toggleKey = button.dataset.toggleKey;
@@ -3377,13 +3413,17 @@ const refreshContextMenuIndicators = () => {
       const toggleKey = button.dataset.toggleKey;
       const selectedField = button.dataset.selectedField;
       const indicator = button.querySelector(".context-menu-state");
-      if (!indicator) return;
       if (toggleKey) {
         const enabled = Boolean(contextMenuValue(toggleKey));
-        indicator.textContent = enabled ? (state.onLabel || "On") : (state.offLabel || "Off");
-        indicator.classList.toggle("is-on", enabled);
+        button.classList.toggle("is-active", enabled);
+        if (indicator) {
+          indicator.textContent = "";
+          indicator.classList.toggle("is-on", enabled);
+        }
       } else if (selectedField) {
-        indicator.textContent = contextMenuValue(selectedField) === button.dataset.selectedValue ? "✓" : "";
+        const selected = contextMenuValue(selectedField) === button.dataset.selectedValue;
+        button.classList.toggle("is-active", selected);
+        if (indicator) indicator.textContent = "";
       }
     });
 };
@@ -3821,6 +3861,7 @@ const buildContextMenu = (items, parent) => {
   items.forEach(item => {
     const group = document.createElement("div");
     group.className = "context-menu-group";
+    if (item.dividerBefore) group.classList.add("context-menu-group-divider");
     // Rows that do nothing for a YouTube tab video (no episodes, other sources or embedded subtitles):
     // hidden while one plays (.youtube-video in controls.css).
     if (item.youTube === false) group.dataset.youtubeHidden = "true";
@@ -3837,6 +3878,9 @@ const buildContextMenu = (items, parent) => {
       button.dataset.selectedValue = String(item.selectedValue ?? hudText(item.textKey, item.label));
       if (item.selectedValue == null && item.textKey) button.dataset.i18nSelectedValue = item.textKey;
     }
+    if (item.selected) {
+      button.classList.add("is-active");
+    }
     if (item.swatch) {
       const dot = document.createElement("span");
       dot.className = "context-menu-swatch";
@@ -3848,17 +3892,16 @@ const buildContextMenu = (items, parent) => {
     label.textContent = hudText(item.textKey, item.label);
     if (item.textKey) label.dataset.i18n = item.textKey;
     button.appendChild(label);
-    if (item.toggleKey || item.selectedField || item.selected) {
+    if (item.toggleKey) {
       const indicator = document.createElement("span");
       indicator.className = "context-menu-state";
-      if (item.selected) indicator.textContent = "✓";
       button.appendChild(indicator);
     }
     if (item.action) {
       button.addEventListener("click", event => {
         event.preventDefault();
         event.stopPropagation();
-        // Optimistically reflect the choice so the checkmark/On-Off moves immediately, even while
+        // Optimistically reflect the choice so the highlight/On pill moves immediately, even while
         // paused (some options only reach mpv once playback resumes); the real state sync corrects
         // it later if needed.
         applyOptimisticContextSelection(button);
@@ -3872,10 +3915,12 @@ const buildContextMenu = (items, parent) => {
     if (item.children) {
       const arrow = document.createElement("span");
       arrow.className = "context-menu-arrow";
-      arrow.textContent = "›";
+      arrow.innerHTML = CONTEXT_MENU_CHEVRON_SVG;
       button.appendChild(arrow);
       const submenu = document.createElement("div");
-      submenu.className = "context-menu-submenu";
+      submenu.className = item.compactSubmenu
+        ? "context-menu-submenu context-menu-submenu-compact"
+        : "context-menu-submenu";
       submenu.setAttribute("role", "menu");
       if (item.dynamicKey) contextMenuDynamicSubmenus.set(item.dynamicKey, submenu);
       buildContextMenu(item.children, submenu);
@@ -4013,7 +4058,7 @@ const buildQuickActionsSection = parent => {
   button.appendChild(label);
   const arrow = document.createElement("span");
   arrow.className = "context-menu-arrow";
-  arrow.textContent = "›";
+  arrow.innerHTML = CONTEXT_MENU_CHEVRON_SVG;
   button.appendChild(arrow);
   const submenu = document.createElement("div");
   submenu.className = "context-menu-submenu";
@@ -4082,8 +4127,13 @@ const refreshQuickTiles = () => {
     if (toggleKey) tile.classList.toggle("is-on", Boolean(contextMenuValue(toggleKey)));
   });
   contextMenu.querySelectorAll(".context-menu-quick-section .context-menu-item[data-quick-toggle]").forEach(row => {
+    const enabled = Boolean(contextMenuValue(row.dataset.quickToggle));
+    row.classList.toggle("is-active", enabled);
     const indicator = row.querySelector(".context-menu-state");
-    if (indicator) indicator.textContent = contextMenuValue(row.dataset.quickToggle) ? "✓" : "";
+    if (indicator) {
+      indicator.textContent = "";
+      indicator.classList.toggle("is-on", enabled);
+    }
   });
 };
 
@@ -4267,13 +4317,9 @@ const applyMpvOptionSelection = (submenu, list) => {
       const group = choiceGroups[choiceIndex];
       const button = group && group.querySelector(":scope > .context-menu-item");
       if (!button) return;
-      let indicator = button.querySelector(".context-menu-state");
-      if (!indicator) {
-        indicator = document.createElement("span");
-        indicator.className = "context-menu-state";
-        button.appendChild(indicator);
-      }
-      indicator.textContent = choice.selected ? "✓" : "";
+      button.classList.toggle("is-active", Boolean(choice.selected));
+      const indicator = button.querySelector(".context-menu-state");
+      if (indicator) indicator.textContent = "";
     });
   });
 };

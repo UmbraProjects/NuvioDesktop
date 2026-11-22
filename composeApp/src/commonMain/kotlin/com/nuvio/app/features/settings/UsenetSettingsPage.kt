@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.DialogButton
 import com.nuvio.app.core.ui.DialogButtonStyle
 import com.nuvio.app.core.ui.NuvioModalDialog
+import com.nuvio.app.core.ui.NuvioNumberStepper
 import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.core.ui.nuvio
@@ -300,10 +301,34 @@ internal fun LazyListScope.usenetSettingsContent(isTablet: Boolean) {
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.usenet_indexer_fallback),
+                        description = stringResource(Res.string.usenet_indexer_fallback_description),
                         checked = sources.indexerFallback,
                         isTablet = isTablet,
                         onCheckedChange = { on -> save { it.copy(indexerFallback = on) } },
                     )
+                    if (sources.indexerFallback) {
+                        SettingsGroupDivider(isTablet = isTablet)
+                        UsenetFallbackScoreRow(
+                            title = stringResource(Res.string.usenet_fallback_min_score_movie),
+                            value = sources.fallbackMinScoreMovie,
+                            isTablet = isTablet,
+                            onValueChange = { v -> save { it.copy(fallbackMinScoreMovie = v) } },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        UsenetFallbackScoreRow(
+                            title = stringResource(Res.string.usenet_fallback_min_score_tv),
+                            value = sources.fallbackMinScoreTv,
+                            isTablet = isTablet,
+                            onValueChange = { v -> save { it.copy(fallbackMinScoreTv = v) } },
+                        )
+                        SettingsGroupDivider(isTablet = isTablet)
+                        UsenetFallbackScoreRow(
+                            title = stringResource(Res.string.usenet_fallback_min_score_anime),
+                            value = sources.fallbackMinScoreAnime,
+                            isTablet = isTablet,
+                            onValueChange = { v -> save { it.copy(fallbackMinScoreAnime = v) } },
+                        )
+                    }
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.usenet_show_release_names),
@@ -627,6 +652,37 @@ private fun IndexerDialog(
                 onSelected = { priority = it },
             )
         }
+    }
+}
+
+@Composable
+private fun UsenetFallbackScoreRow(
+    title: String,
+    value: Int,
+    isTablet: Boolean,
+    onValueChange: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = if (isTablet) DesktopRowVerticalPadding else 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.nuvio.colors.textPrimary,
+        )
+        NuvioNumberStepper(
+            value = value.toDouble(),
+            step = 20.0,
+            min = 0.0,
+            max = 1000.0,
+            onChange = { onValueChange(it.toInt()) },
+            format = { it.toInt().toString() },
+        )
     }
 }
 

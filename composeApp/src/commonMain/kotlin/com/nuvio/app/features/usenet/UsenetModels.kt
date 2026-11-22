@@ -130,8 +130,14 @@ data class UsenetSourceConfiguration(
      * open within a second or two and the next source is tried.
      */
     val hidePassworded: Boolean = false,
-    /** On: lower indexer priorities are only searched when higher ones find nothing. */
+    /** On: lower indexer priorities are only searched when higher ones find no viable release. */
     val indexerFallback: Boolean = false,
+    /** Minimum stream score a higher-priority movie release must reach to skip lower-priority indexers. */
+    val fallbackMinScoreMovie: Int = DEFAULT_FALLBACK_MIN_SCORE_MOVIE,
+    /** Minimum stream score a higher-priority TV release must reach to skip lower-priority indexers. */
+    val fallbackMinScoreTv: Int = DEFAULT_FALLBACK_MIN_SCORE_TV,
+    /** Minimum stream score a higher-priority anime release must reach to skip lower-priority indexers. */
+    val fallbackMinScoreAnime: Int = DEFAULT_FALLBACK_MIN_SCORE_ANIME,
     /** On: a release found by several indexers is shown once, from the highest priority. */
     val hideDuplicates: Boolean = false,
     /** On: each result shows its release name above its size, age and indexer. */
@@ -183,12 +189,21 @@ data class UsenetSourceConfiguration(
         require((addonsAbove?.size ?: 0) <= 500) { "Too many addons above built-in Usenet" }
     }
 
+    fun fallbackMinScoreFor(series: Boolean, isAnime: Boolean): Int = when {
+        !series -> fallbackMinScoreMovie
+        isAnime -> fallbackMinScoreAnime
+        else -> fallbackMinScoreTv
+    }
+
     companion object {
         const val UNLIMITED_RESULTS = 0
         const val MAX_LISTED_RESULTS = 500
         const val DEFAULT_INDEXER_RESULTS = 200
         const val MAX_INDEXER_RESULTS = 1000
         const val AUTO_INDEXER_RESULTS = 0
+        const val DEFAULT_FALLBACK_MIN_SCORE_MOVIE = 100
+        const val DEFAULT_FALLBACK_MIN_SCORE_TV = 80
+        const val DEFAULT_FALLBACK_MIN_SCORE_ANIME = 60
         /** The choices offered for [indexerResultsLimit]; indexers send at most 100 per page. */
         val INDEXER_RESULT_CHOICES = listOf(100, 200, 500, MAX_INDEXER_RESULTS)
     }

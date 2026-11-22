@@ -96,6 +96,7 @@
     <string name="usenet_info_speed">First byte ~%1$s · connecting ~%2$s</string>
     <string name="usenet_info_response">Response %1$s average · %2$s slowest · %3$s failed</string>
     <string name="usenet_info_searches">%1$d searches · %2$s average · %3$d releases · %4$d empty · %5$d failed</string>
+    <string name="usenet_info_searches_timed">%1$d searches · %2$s average · %3$s slowest · %4$d releases · %5$d empty · %6$d failed</string>
     <string name="usenet_info_grabs">%1$d NZBs grabbed · %2$d played · %3$d missing articles (%4$s) · %5$d other failures</string>
     <string name="usenet_info_limits">Paused %1$d times for its API limit</string>
     <string name="usenet_info_left">%1$s API hits and %2$s grabs left today</string>
@@ -106,4 +107,8 @@
     <string name="usenet_info_missing_row">%1$s missing articles</string>
     <string name="usenet_info_providers">Providers</string>
     <string name="usenet_info_indexers">Indexers</string>
+    <string name="usenet_indexer_fallback_description">Skip lower-priority indexers once a higher priority finds a release meeting the minimum stream score below (requires Stream Scoring; otherwise any surviving release stops fallback).</string>
+    <string name="usenet_fallback_min_score_movie">Minimum score (Movies)</string>
+    <string name="usenet_fallback_min_score_tv">Minimum score (TV)</string>
+    <string name="usenet_fallback_min_score_anime">Minimum score (Anime)</string>
 </resources>

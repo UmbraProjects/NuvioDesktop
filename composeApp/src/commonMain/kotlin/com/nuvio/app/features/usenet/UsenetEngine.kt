@@ -352,12 +352,20 @@ object UsenetEngine {
                 UsenetFailedReleases.record(stream, preparation.failure ?: "unplayable")
             }
             // The release's fault, so its indexer's; a provider or engine failure is neither.
+            // Still record missing articles / provider errors on the providers that answered, since
+            // failed opens never reach sessionOpened() and would otherwise leave providers at 0%.
             if (preparation != null && preparation.scope == UsenetPreparationException.Scope.SOURCE) {
+                val incomplete = usenetIncompleteUpload(preparation)
                 UsenetStats.opened(
                     nzbUrl,
                     grabbed = !cachedNzb,
-                    outcome = if (usenetIncompleteUpload(preparation)) UsenetOpenOutcome.INCOMPLETE else UsenetOpenOutcome.FAILED,
+                    outcome = if (incomplete) UsenetOpenOutcome.INCOMPLETE else UsenetOpenOutcome.FAILED,
                 )
+                if (incomplete) {
+                    UsenetStats.providerOpenFailed(providerIds, incomplete = true)
+                }
+            } else if (preparation != null && preparation.scope == UsenetPreparationException.Scope.PROVIDER) {
+                UsenetStats.providerOpenFailed(providerIds, incomplete = false)
             }
             if (preparation != null && usenetCompressedSkip(preparation)) {
                 // Kept across restarts: it is skipped again next time, without asking the engine.

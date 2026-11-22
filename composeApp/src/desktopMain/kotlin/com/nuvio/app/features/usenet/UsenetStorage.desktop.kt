@@ -20,4 +20,10 @@ internal actual object UsenetStorage {
     actual fun saveStats(payload: String) {
         stats.putString("stats", payload)
     }
+
+    actual fun loadCaps(): String? = stats.getString("caps")
+
+    actual fun saveCaps(payload: String) {
+        stats.putString("caps", payload)
+    }
 }

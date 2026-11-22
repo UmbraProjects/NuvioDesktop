@@ -169,4 +169,7 @@ internal expect object UsenetStorage {
     /** Usenet info counts ([UsenetStats]), per account. */
     fun loadStats(): String?
     fun saveStats(payload: String)
+    /** Cached indexer capabilities (`t=caps`), keyed by endpoint without API keys. */
+    fun loadCaps(): String?
+    fun saveCaps(payload: String)
 }

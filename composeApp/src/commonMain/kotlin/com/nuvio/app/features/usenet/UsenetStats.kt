@@ -39,6 +39,7 @@ data class IndexerStats(
     /** Searches for a title, each of which can take several requests. */
     val searches: Long = 0,
     val searchMs: Long = 0,
+    val slowestSearchMs: Long = 0,
     val failedSearches: Long = 0,
     val emptySearches: Long = 0,
     val releases: Long = 0,
@@ -313,6 +314,7 @@ object UsenetStats {
             it.copy(
                 searches = it.searches + 1,
                 searchMs = it.searchMs + elapsedMs,
+                slowestSearchMs = maxOf(it.slowestSearchMs, elapsedMs),
                 failedSearches = it.failedSearches + if (releases == null) 1 else 0,
                 emptySearches = it.emptySearches + if (releases == 0) 1 else 0,
                 releases = it.releases + (releases ?: 0),
@@ -359,6 +361,30 @@ object UsenetStats {
 
     internal fun sessionOpened(sessionId: String, providerIds: List<String>) = synchronized(sessions) {
         sessions[sessionId] = providerIds to null
+    }
+
+    /**
+     * Records a failed open before a session was created (most commonly missing articles / 430
+     * during startup probing) so the provider's missing/error counts reflect it instead of staying
+     * at 0%.
+     */
+    internal fun providerOpenFailed(providerIds: List<String>, incomplete: Boolean) {
+        if (providerIds.isEmpty()) return
+        val at = now()
+        change { initial ->
+            var book = initial
+            providerIds.forEach { id ->
+                book = book.provider(id) {
+                    it.copy(
+                        missing = it.missing + if (incomplete) 1 else 0,
+                        errors = it.errors + if (incomplete) 0 else 1,
+                        sessions = it.sessions + 1,
+                        lastUsed = at,
+                    )
+                }
+            }
+            book
+        }
     }
 
     internal fun sessionCounters(sessionId: String, diagnostics: JsonObject?) {

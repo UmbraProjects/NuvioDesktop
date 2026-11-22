@@ -203,15 +203,15 @@ button:disabled {
 .context-menu {
   position: fixed;
   z-index: 100;
-  min-width: calc(var(--panel-scale) * clamp(196px, 15vw, 238px));
-  max-width: calc(var(--panel-scale) * clamp(264px, 20vw, 320px));
-  padding: calc(var(--panel-scale) * clamp(4px, .38vw, 6px));
-  border: 1px solid rgba(255, 255, 255, .18);
-  border-radius: 4px;
-  background: rgba(47, 47, 47, .98);
-  color: rgba(255, 255, 255, .92);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, .52), 0 2px 7px rgba(0, 0, 0, .35);
-  font-size: calc(var(--panel-scale) * clamp(11.5px, .88vw, 14px));
+  min-width: calc(var(--panel-scale) * clamp(196px, 15vw, 232px));
+  max-width: calc(var(--panel-scale) * clamp(268px, 20.5vw, 326px));
+  padding: calc(var(--panel-scale) * clamp(5px, .4vw, 6px)) calc(var(--panel-scale) * clamp(6px, .48vw, 8px));
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 12px;
+  background: rgba(24, 27, 33, .96);
+  color: rgba(240, 243, 247, .88);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .56), 0 2px 8px rgba(0, 0, 0, .32);
+  font-size: calc(var(--panel-scale) * clamp(11.5px, .84vw, 13.5px));
   line-height: 1.25;
   user-select: none;
 }
@@ -226,27 +226,45 @@ button:disabled {
   padding: 0;
 }
 
-.context-menu > .context-menu-group + .context-menu-group {
-  margin-top: 2px;
+.context-menu > .context-menu-group + .context-menu-group,
+.context-menu-submenu > .context-menu-group + .context-menu-group {
+  margin-top: 1px;
+}
+
+.context-menu-group-divider {
+  margin-top: calc(var(--panel-scale) * 6px) !important;
+  padding-top: calc(var(--panel-scale) * 6px);
+}
+
+.context-menu-group-divider::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: calc(var(--panel-scale) * 8px);
+  right: calc(var(--panel-scale) * 8px);
+  height: 1px;
+  background: rgba(255, 255, 255, .08);
+  pointer-events: none;
 }
 
 .context-menu-item {
   position: relative;
   display: flex;
   align-items: center;
-  gap: calc(var(--panel-scale) * clamp(13px, 1.13vw, 18px));
+  gap: calc(var(--panel-scale) * clamp(10px, .82vw, 12px));
   width: 100%;
-  min-height: calc(var(--panel-scale) * clamp(28px, 2.13vw, 34px));
-  padding: calc(var(--panel-scale) * clamp(5.5px, .44vw, 7px)) calc(var(--panel-scale) * clamp(8px, .63vw, 10px));
-  border-radius: 2px;
+  min-height: calc(var(--panel-scale) * clamp(27px, 2vw, 32px));
+  padding: calc(var(--panel-scale) * clamp(5px, .4vw, 6.5px)) calc(var(--panel-scale) * clamp(11px, .9vw, 14px));
+  border-radius: 7px;
   text-align: left;
   white-space: nowrap;
   color: inherit;
+  transition: background-color .1s ease, color .1s ease, box-shadow .1s ease;
 }
 
 .context-menu-item:hover,
 .context-menu-item:focus-visible {
-  background: rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .08);
   color: #fff;
   outline: none;
 }
@@ -262,25 +280,53 @@ button:disabled {
 .context-menu-item .context-menu-arrow {
   flex: 0 0 auto;
   margin-left: auto;
-  color: rgba(255, 255, 255, .62);
+  color: rgba(255, 255, 255, .42);
   font-size: calc(var(--panel-scale) * clamp(10px, .75vw, 12px));
+}
+
+.context-menu-item .context-menu-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--panel-scale) * clamp(11px, .82vw, 13px));
+  height: calc(var(--panel-scale) * clamp(11px, .82vw, 13px));
+}
+
+.context-menu-item .context-menu-arrow svg {
+  width: 100%;
+  height: 100%;
 }
 
 .context-menu-item .context-menu-swatch {
   flex: 0 0 auto;
   width: calc(var(--panel-scale) * clamp(11.5px, .88vw, 14px));
   height: calc(var(--panel-scale) * clamp(11.5px, .88vw, 14px));
-  border-radius: 3px;
+  border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, .45);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .35);
 }
 
-.context-menu-item .context-menu-state {
+.context-menu-item .context-menu-state,
+.context-menu-item .context-menu-value {
   flex: 0 0 auto;
-  min-width: calc(var(--panel-scale) * clamp(23px, 1.75vw, 28px));
-  color: rgba(255, 255, 255, .62);
-  font-size: calc(var(--panel-scale) * clamp(10px, .75vw, 12px));
-  text-align: right;
+  margin-left: auto;
+  padding: 1px calc(var(--panel-scale) * 6px);
+  border-radius: 999px;
+  font-size: calc(var(--panel-scale) * clamp(9.5px, .7vw, 10.5px));
+  font-weight: 700;
+  letter-spacing: .03em;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.context-menu-item .context-menu-state:empty,
+.context-menu-item .context-menu-value:empty {
+  display: none;
+}
+
+.context-menu-item .context-menu-value + .context-menu-arrow,
+.context-menu-item .context-menu-state + .context-menu-arrow {
+  margin-left: 0;
 }
 
 /* Flyouts that flip to leaf lists get a capped height (set inline by positionSubmenu); keep the
@@ -297,9 +343,14 @@ button:disabled {
   border-radius: 4px;
 }
 
+.context-menu-item .context-menu-state.is-on,
+.context-menu-item .context-menu-value {
+  color: var(--theme-accent-text, var(--theme-accent, #38bdf8));
+  background: color-mix(in srgb, var(--theme-accent-text, var(--theme-accent, #38bdf8)) 16%, transparent);
+}
+
 .context-menu-item .context-menu-state.is-on {
-  color: #fff;
-  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .context-menu-empty {
@@ -311,24 +362,38 @@ button:disabled {
 
 .context-menu-item:hover .context-menu-shortcut,
 .context-menu-item:hover .context-menu-arrow {
-  color: rgba(255, 255, 255, .86);
+  color: rgba(255, 255, 255, .82);
 }
 
 .context-menu-submenu {
   position: absolute;
-  top: -7px;
-  left: calc(100% + 4px);
-  min-width: calc(var(--panel-scale) * clamp(196px, 15vw, 238px));
-  max-width: calc(var(--panel-scale) * clamp(264px, 20vw, 320px));
-  padding: calc(var(--panel-scale) * clamp(4px, .38vw, 6px));
-  border: 1px solid rgba(255, 255, 255, .18);
-  border-radius: 4px;
-  background: rgba(47, 47, 47, .98);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, .52), 0 2px 7px rgba(0, 0, 0, .35);
+  top: calc(var(--panel-scale) * -5px);
+  left: calc(100% + 8px);
+  min-width: calc(var(--panel-scale) * clamp(186px, 14.5vw, 224px));
+  max-width: calc(var(--panel-scale) * clamp(268px, 20.5vw, 326px));
+  padding: calc(var(--panel-scale) * clamp(5px, .4vw, 6px)) calc(var(--panel-scale) * clamp(6px, .48vw, 8px));
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 12px;
+  background: rgba(24, 27, 33, .96);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .56), 0 2px 8px rgba(0, 0, 0, .32);
   visibility: hidden;
   opacity: 0;
   transform: translateX(-4px);
   transition: opacity 100ms ease, transform 100ms ease, visibility 100ms;
+}
+
+/* Invisible hover bridge spanning the 8px gap so moving horizontally into a flyout never drops hover. */
+.context-menu-submenu::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -10px;
+  width: 10px;
+}
+
+.context-menu-submenu-compact {
+  min-width: calc(var(--panel-scale) * clamp(104px, 8.4vw, 130px));
 }
 
 .context-menu-group:hover > .context-menu-submenu,
@@ -341,8 +406,13 @@ button:disabled {
 
 .context-menu.context-menu-left .context-menu-submenu {
   left: auto;
-  right: calc(100% + 4px);
+  right: calc(100% + 8px);
   transform: translateX(4px);
+}
+
+.context-menu.context-menu-left .context-menu-submenu::before {
+  left: auto;
+  right: -10px;
 }
 
 .context-menu.context-menu-left .context-menu-group:hover > .context-menu-submenu,
@@ -7959,28 +8029,52 @@ svg {
 #subtitleModal .style-group .delay-controls .stepper { width: calc(var(--style-control-width) - 40px); }
 
 /* ── Glass right-click menu ──────────────────────────────────────────────────────────────────
- * The player's context menu and its flyouts in the same settings glass as the panels: the night
- * base under a faint white fill, a one-pixel light edge, rounded rows that light up as glass. */
+ * The player's context menu and its flyouts in the same settings glass as the panels: obsidian
+ * glass with a subtle top rim, active-path highlighting on open ancestors, and accent text color
+ * (gold #D4AF37 when the theme accent is white) for enabled/selected options. */
 .context-menu,
 .context-menu-submenu {
   border: 1px solid var(--glass-edge);
   border-radius: 12px;
-  background: var(--glass-fill), var(--glass-night);
-  color: #f5f7f8;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .05);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, 0) 42%),
+    var(--glass-fill),
+    var(--glass-night);
+  color: rgba(242, 245, 248, .88);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .56), 0 2px 8px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(255, 255, 255, .07);
 }
 .context-menu-item {
-  border-radius: 8px;
-  transition: background-color .1s ease;
+  border-radius: 7px;
+  transition: background-color .1s ease, color .1s ease, box-shadow .1s ease;
 }
+.context-menu-group.is-open > .context-menu-item,
 .context-menu-item:hover,
 .context-menu-item:focus-visible {
   background: rgba(255, 255, 255, .08);
-  box-shadow: inset 0 0 0 1px var(--glass-edge);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .09);
+}
+.context-menu-group.is-open > .context-menu-item .context-menu-arrow {
+  color: rgba(255, 255, 255, .82);
+}
+.context-menu-item.is-active {
+  color: var(--theme-accent-text, var(--theme-accent));
+  font-weight: 600;
+}
+.context-menu-item.is-active:hover,
+.context-menu-item.is-active:focus-visible {
+  background: rgba(255, 255, 255, .08);
+  color: var(--theme-accent-text, var(--theme-accent));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .09);
+}
+.context-menu-item.is-active .context-menu-arrow {
+  color: var(--theme-accent-text, var(--theme-accent));
 }
 .context-menu-item .context-menu-swatch { border-radius: 50%; }
-.context-menu-item .context-menu-state.is-on {
-  color: color-mix(in srgb, var(--theme-accent) 55%, #fff);
+.context-menu-item .context-menu-state.is-on,
+.context-menu-item .context-menu-value {
+  color: var(--theme-accent-text, var(--theme-accent));
+  background: color-mix(in srgb, var(--theme-accent-text, var(--theme-accent)) 16%, transparent);
 }
 
 /* ── Glass seek line with chapter gaps ───────────────────────────────────────────────────────

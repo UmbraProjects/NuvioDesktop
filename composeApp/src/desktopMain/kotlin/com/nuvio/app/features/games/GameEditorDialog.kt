@@ -2,7 +2,14 @@ package com.nuvio.app.features.games
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.ui.draw.clip
+import com.nuvio.app.core.ui.NuvioGlass
+import com.nuvio.app.core.ui.ditheredBackground
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,9 +20,12 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -290,6 +300,12 @@ internal fun GameEditorDialog(
             }
         },
     ) {
+      Column(
+          modifier = Modifier
+              .fillMaxWidth()
+              .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Bottom,
@@ -423,7 +439,7 @@ internal fun GameEditorDialog(
             )
         }
 
-        Box(Modifier.fillMaxWidth().weight(1f)) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 210.dp)) {
             when {
                 searching -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 results.isEmpty() -> Text(
@@ -491,6 +507,7 @@ internal fun GameEditorDialog(
                 onClick = ::loadLogos,
             )
         }
+      }
     }
 
     if (showBackdropPicker) {
@@ -541,14 +558,32 @@ private fun GameRowPicker(
     val tokens = MaterialTheme.nuvio
     val automaticLabel = stringResource(Res.string.games_editor_row_automatic)
     val selectedLabel = rows.firstOrNull { it.id == selectedRowId }?.name ?: automaticLabel
+    val interactionSource = remember { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val shape = NuvioGlass.Shape
+    val borderColor = when {
+        expanded -> tokens.colors.accent
+        hovered -> tokens.colors.borderStrong
+        else -> NuvioGlass.EdgeColor
+    }
+    val borderWidth = if (expanded) tokens.borders.medium else tokens.borders.thin
+
     Box(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(tokens.colors.surface, tokens.shapes.compactCard)
-                .clickable { onExpandedChange(true) }
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .heightIn(min = 46.dp)
+                .ditheredBackground(NuvioGlass.Fill, shape)
+                .background(
+                    if (expanded) tokens.colors.accent.copy(alpha = tokens.opacity.subtle) else Color.Transparent,
+                    shape,
+                )
+                .border(borderWidth, borderColor, shape)
+                .clip(shape)
+                .hoverable(interactionSource)
+                .clickable(interactionSource = interactionSource, indication = null) { onExpandedChange(true) }
+                .padding(start = 14.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val dotColor = rows.firstOrNull { it.id == selectedRowId }?.color
@@ -571,16 +606,33 @@ private fun GameRowPicker(
                 imageVector = Icons.Rounded.KeyboardArrowDown,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
-                tint = tokens.colors.textMuted,
+                tint = if (expanded) tokens.colors.accent else tokens.colors.textMuted,
             )
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { onExpandedChange(false) }) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { onExpandedChange(false) },
+            containerColor = tokens.colors.surfacePopover,
+            shape = shape,
+            border = BorderStroke(tokens.borders.thin, NuvioGlass.EdgeColor),
+        ) {
             com.nuvio.app.core.ui.KeyRouteLayer("game editor menu") // the focus router leaves an open menu alone
             DropdownMenuItem(
-                text = { Text(automaticLabel) },
+                text = {
+                    Text(
+                        text = automaticLabel,
+                        color = if (selectedRowId == null) tokens.colors.accent else tokens.colors.textPrimary,
+                        fontWeight = if (selectedRowId == null) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                },
                 trailingIcon = {
                     if (selectedRowId == null) {
-                        Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = tokens.colors.accent,
+                        )
                     }
                 },
                 onClick = {
@@ -589,8 +641,15 @@ private fun GameRowPicker(
                 },
             )
             rows.forEach { row ->
+                val isSelected = selectedRowId == row.id
                 DropdownMenuItem(
-                    text = { Text(row.name) },
+                    text = {
+                        Text(
+                            text = row.name,
+                            color = if (isSelected) tokens.colors.accent else tokens.colors.textPrimary,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
                     leadingIcon = {
                         Box(
                             Modifier
@@ -602,8 +661,13 @@ private fun GameRowPicker(
                         )
                     },
                     trailingIcon = {
-                        if (selectedRowId == row.id) {
-                            Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        if (isSelected) {
+                            Icon(
+                                Icons.Rounded.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = tokens.colors.accent,
+                            )
                         }
                     },
                     onClick = {
@@ -740,7 +804,10 @@ private fun BackdropPickerDialog(
         actions = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_close)) } },
     ) {
         if (candidates.isEmpty()) {
-            Box(Modifier.fillMaxWidth().height(520.dp), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(min = 180.dp, max = 520.dp),
+                contentAlignment = Alignment.Center,
+            ) {
                 if (loadingAnySource) {
                     CircularProgressIndicator()
                 } else {
@@ -755,7 +822,7 @@ private fun BackdropPickerDialog(
         }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 260.dp),
-            modifier = Modifier.fillMaxWidth().height(520.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 520.dp),
             contentPadding = PaddingValues(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -823,7 +890,7 @@ private fun LogoPickerDialog(
     ) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 260.dp),
-            modifier = Modifier.fillMaxWidth().height(520.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = 520.dp),
             contentPadding = PaddingValues(bottom = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),

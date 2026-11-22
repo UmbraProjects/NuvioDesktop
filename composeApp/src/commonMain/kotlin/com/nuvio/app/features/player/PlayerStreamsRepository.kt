@@ -488,11 +488,14 @@ object PlayerStreamsRepository {
             }
             if (searchUsenet) {
                 launch {
-                    publishStreamGroup(
-                        presentStreamGroup(
-                            com.nuvio.app.features.usenet.BuiltInUsenet.group(type, effectiveVideoId, effectiveSeason, effectiveEpisode),
-                        ),
-                    )
+                    com.nuvio.app.features.usenet.BuiltInUsenet.searchProgressive(
+                        type = type,
+                        videoId = effectiveVideoId,
+                        season = effectiveSeason,
+                        episode = effectiveEpisode,
+                    ) { group ->
+                        publishStreamGroup(presentStreamGroup(group))
+                    }
                 }
             }
 
