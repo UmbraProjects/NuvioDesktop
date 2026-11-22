@@ -305,23 +305,35 @@
       </section>
 
       <section class="pause-metadata-overlay" id="pauseMetadataOverlay" aria-hidden="true">
-        <div class="pause-cast" id="pauseCast" hidden>
-          <ul class="pause-cast-list" id="pauseCastList"></ul>
-        </div>
         <div class="pause-metadata-content">
-          <div class="pause-kicker" id="pauseWatchingLabel" data-i18n="player_hud_youre_watching">You're watching</div>
           <img class="pause-logo" id="pauseLogo" alt="">
           <div class="pause-title" id="pauseTitle"></div>
           <div class="pause-episode-line" id="pauseEpisodeLine">
-            <span class="pause-episode-info" id="pauseEpisodeInfo"></span>
-            <span class="pause-episode-separator" id="pauseEpisodeSeparator">•</span>
             <span class="pause-episode-title" id="pauseEpisodeTitle"></span>
+            <span class="pause-episode-separator" id="pauseEpisodeSeparator">•</span>
+            <span class="pause-episode-info" id="pauseEpisodeInfo"></span>
           </div>
           <div class="pause-description" id="pauseDescription"></div>
+          <div class="pause-status-pill" id="pauseStatusPill" hidden>
+            <span class="pause-status-icon" aria-hidden="true"><span></span><span></span></span>
+            <span class="pause-status-label">Paused</span>
+            <span class="pause-status-divider" aria-hidden="true"></span>
+            <span class="pause-status-time" id="pauseStatusTime"></span>
+            <span class="pause-status-duration" id="pauseStatusDuration"></span>
+          </div>
           <div class="pause-source" id="pauseSource">
             <span class="pause-source-title" id="pauseSourceTitle"></span>
             <span class="pause-source-provider" id="pauseSourceProvider"></span>
           </div>
+        </div>
+        <div class="pause-cast" id="pauseCast" hidden>
+          <div class="pause-progress-track" id="pauseProgressTrack" hidden>
+            <div class="pause-progress-fill" id="pauseProgressFill"></div>
+          </div>
+          <div class="pause-cast-spine">
+            <span class="pause-cast-label">Cast</span>
+          </div>
+          <ul class="pause-cast-list" id="pauseCastList"></ul>
         </div>
       </section>
 

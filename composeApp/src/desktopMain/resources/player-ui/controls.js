@@ -98,6 +98,9 @@ const playbackErrorMessage = document.getElementById("playbackErrorMessage");
 const playbackErrorAction = document.getElementById("playbackErrorAction");
 const playbackErrorActionLabel = document.getElementById("playbackErrorActionLabel");
 const pauseMetadataOverlay = document.getElementById("pauseMetadataOverlay");
+const pauseStatusPill = document.getElementById("pauseStatusPill");
+const pauseStatusTime = document.getElementById("pauseStatusTime");
+const pauseStatusDuration = document.getElementById("pauseStatusDuration");
 const pauseWatchingLabel = document.getElementById("pauseWatchingLabel");
 const pauseLogo = document.getElementById("pauseLogo");
 const pauseTitle = document.getElementById("pauseTitle");
@@ -106,6 +109,8 @@ const pauseSourceTitle = document.getElementById("pauseSourceTitle");
 const pauseSourceProvider = document.getElementById("pauseSourceProvider");
 const pauseCast = document.getElementById("pauseCast");
 const pauseCastList = document.getElementById("pauseCastList");
+const pauseProgressTrack = document.getElementById("pauseProgressTrack");
+const pauseProgressFill = document.getElementById("pauseProgressFill");
 const pauseEpisodeLine = document.getElementById("pauseEpisodeLine");
 const pauseEpisodeInfo = document.getElementById("pauseEpisodeInfo");
 const pauseEpisodeSeparator = document.getElementById("pauseEpisodeSeparator");
@@ -1287,6 +1292,9 @@ const setProgress = (positionMs, durationMs) => {
   // Read through the same helper the click handler uses, so a countdown keeps counting down as
   // playback advances rather than freezing at whatever it read when the label was tapped.
   durationLabel.textContent = durationLabelText(durationMs, positionMs);
+  if (pauseMetadataOverlay && pauseMetadataOverlay.classList.contains("visible")) {
+    renderPauseProgress(positionMs, durationMs);
+  }
 };
 
 // --- Seek track ----------------------------------------------------------------------------------
@@ -1880,13 +1888,49 @@ const renderPauseCast = () => {
   }));
 };
 
+const formatPauseEpisodeInfo = raw => {
+  const trimmed = String(raw || "").trim();
+  const match = /^S0*(\d+)\s*E0*(\d+)$/i.exec(trimmed);
+  return match ? `Season ${match[1]} Episode ${match[2]}` : trimmed;
+};
+
+const renderPauseProgress = (positionMs = state.positionMs, durationMs = state.durationMs) => {
+  const pos = Math.max(0, Number(positionMs) || 0);
+  const dur = Math.max(0, Number(durationMs) || 0);
+  if (pauseStatusPill) {
+    if (dur > 0) {
+      pauseStatusTime.textContent = formatTime(pos);
+      pauseStatusDuration.textContent = `/ ${formatTime(dur)}`;
+      pauseStatusDuration.hidden = false;
+      pauseStatusPill.hidden = false;
+    } else if (pos > 0) {
+      pauseStatusTime.textContent = formatTime(pos);
+      pauseStatusDuration.textContent = "";
+      pauseStatusDuration.hidden = true;
+      pauseStatusPill.hidden = false;
+    } else {
+      pauseStatusPill.hidden = true;
+    }
+  }
+  if (pauseProgressTrack && pauseProgressFill) {
+    if (dur > 0) {
+      const pct = Math.max(0, Math.min(100, (pos / dur) * 100));
+      pauseProgressFill.style.width = `${pct}%`;
+      pauseProgressTrack.hidden = false;
+    } else {
+      pauseProgressTrack.hidden = true;
+    }
+  }
+};
+
 const renderPauseMetadataOverlay = showOpening => {
   syncPauseMetadataTimer(showOpening);
   renderPauseCast();
+  renderPauseProgress();
 
   const logoUrl = usableLogoSource(pauseLogo, state.pauseOverlayLogo);
   const titleText = String(state.title || "").trim();
-  const episodeInfo = String(state.pauseOverlayEpisodeInfo || "").trim();
+  const episodeInfo = formatPauseEpisodeInfo(state.pauseOverlayEpisodeInfo);
   const episodeTitleText = String(state.pauseOverlayEpisodeTitle || "").trim();
   const descriptionText = String(state.pauseOverlayDescription || "").trim();
   const showOverlay = Boolean(
@@ -1898,12 +1942,14 @@ const renderPauseMetadataOverlay = showOpening => {
     !showOpening,
   );
 
-  pauseWatchingLabel.textContent = state.pauseOverlayWatchingLabel || "You're watching";
+  if (pauseWatchingLabel) {
+    pauseWatchingLabel.textContent = state.pauseOverlayWatchingLabel || "You're watching";
+  }
   pauseLogo.hidden = !logoUrl;
   pauseTitle.textContent = titleText;
   pauseTitle.hidden = Boolean(logoUrl || !titleText);
-  // S02E05 and the episode title share one line; the bullet only earns its place when both sides
-  // of it are present.
+  // Episode title • Season X Episode X share one line; the bullet only earns its place when both
+  // sides of it are present.
   pauseEpisodeInfo.textContent = episodeInfo;
   pauseEpisodeInfo.hidden = !episodeInfo;
   pauseEpisodeTitle.textContent = episodeTitleText;
