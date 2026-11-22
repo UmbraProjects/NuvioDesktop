@@ -565,11 +565,70 @@ internal object TorrServerP2pBackend : DesktopP2pBackend {
 
             extractBundledBinary(platform)?.let { return it.also { resolved -> resolvedBinaryFile = resolved } }
 
+            resolveCachedOrDownloadBinary(platform)?.let { return it.also { resolved -> resolvedBinaryFile = resolved } }
+
             throw P2pStreamingException(
                 "TorrServer desktop binary not found for ${platform.resourceDir}. " +
                     "Set -Dnuvio.torrserver.binary=/absolute/path/to/TorrServer or " +
                     "NUVIO_TORRSERVER_BINARY, or bundle /torrserver/${platform.resourceDir}/${platform.binaryName}.",
             )
+        }
+
+        private fun resolveCachedOrDownloadBinary(platform: DesktopTorrServerPlatform): File? {
+            val dir = DesktopStorage.rootDir.resolve("torrserver/bin/${platform.resourceDir}").toFile().apply {
+                if (!mkdirs() && !isDirectory) return null
+            }
+            val dot = platform.binaryName.lastIndexOf('.')
+            val baseName = if (dot >= 0) platform.binaryName.substring(0, dot) else platform.binaryName
+            val suffix = if (dot >= 0) platform.binaryName.substring(dot) else ""
+            val existing = dir.listFiles { file ->
+                file.isFile && file.length() > 1_000_000L &&
+                    file.name.startsWith("$baseName-") && file.name.endsWith(suffix)
+            }.orEmpty().maxByOrNull { it.lastModified() }
+            if (existing != null) {
+                existing.setExecutable(true)
+                return existing
+            }
+
+            val downloadUrl = "https://github.com/YouROK/TorrServer/releases/latest/download/${platform.distFileName}"
+            log.i { "TorrServer not bundled; downloading on demand from $downloadUrl" }
+            _state.value = P2pStreamingState.Connecting(phase = "download_torrserver")
+            val downloadClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(15))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build()
+            val request = HttpRequest.newBuilder(URI.create(downloadUrl))
+                .timeout(Duration.ofMinutes(3))
+                .header("User-Agent", "NuvioDesktop")
+                .GET()
+                .build()
+            val temporary = Files.createTempFile(dir.toPath(), ".TorrServer-dl-", ".tmp")
+            try {
+                val response = downloadClient.send(request, HttpResponse.BodyHandlers.ofFile(temporary))
+                if (response.statusCode() !in 200..299 || Files.size(temporary) < 1_000_000L) {
+                    throw P2pStreamingException(
+                        "Failed to download TorrServer (HTTP ${response.statusCode()}) from $downloadUrl",
+                    )
+                }
+                val digest = Files.newInputStream(temporary).use(::sha256)
+                val destination = File(dir, contentAddressedBinaryName(platform.binaryName, digest))
+                try {
+                    Files.move(
+                        temporary,
+                        destination.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE,
+                    )
+                } catch (_: AtomicMoveNotSupportedException) {
+                    Files.move(temporary, destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+                destination.setExecutable(true)
+                cleanupOutdatedBundledBinaries(dir, destination)
+                log.i { "Downloaded TorrServer to ${destination.absolutePath}" }
+                return destination
+            } finally {
+                runCatching { Files.deleteIfExists(temporary) }
+            }
         }
 
         private fun configuredBinaryPath(): String? =

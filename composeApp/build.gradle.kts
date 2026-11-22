@@ -1183,6 +1183,18 @@ val windowsUnusedLibmpvRuntimeDllsAll = listOf(
     "libsyn123-0.dll", "libsystre-0.dll", "libtheora-1.dll", "libtiffxx-6.dll", "libtre-5.dll",
     "libturbojpeg.dll", "libudf-0.dll", "libvamp-hostsdk.dll", "libvamp-sdk.dll",
     "libvorbisfile-3.dll", "libwebpdecoder-3.dll", "libwebpdemux-2.dll", "tcl86.dll", "tk86.dll",
+    // Dropped by Nuvio's slim decoder-focused FFmpeg 9.0.2 build (scripts/ffmpeg-no-whisper.patch):
+    // software video encoders, SVG/JXL image chains, unused avdevice outputs, and gettext CLI libs.
+    // Verified unreachable from player_bridge/libmpv/vapoursynth/svpflow/ffmpeg/ffprobe PE imports.
+    "libx265-217.dll", "librsvg-2-2.dll", "libaom.dll", "libSvtAv1Enc-4.dll",
+    "libjxl.dll", "libjxl_cms.dll", "libjxl_threads.dll", "libhwy.dll",
+    "libvpx-1.dll", "librav1e.dll", "libopenal-1.dll", "SDL2.dll",
+    "libx264-165.dll", "xvidcore.dll", "libmp3lame-0.dll", "libmpg123-0.dll",
+    "libcaca++-0.dll",
+    "libcairo-2.dll", "libcairo-gobject-2.dll", "libpixman-1-0.dll",
+    "libpango-1.0-0.dll", "libpangoft2-1.0-0.dll", "libpangowin32-1.0-0.dll", "libpangocairo-1.0-0.dll",
+    "libthai-0.dll", "libdatrie-1.0-0.dll",
+    "libgettextlib-1-0.dll", "libtextstyle-0.dll", "libgettextpo-0.dll", "libgettextsrc-1-0.dll",
 )
 
 // CI escape hatch #2: the exclusion list above was traced against Nuvio's own FFmpeg/mpv build.
@@ -1279,20 +1291,26 @@ val leanDesktopJar = providers.gradleProperty("nuvio.desktop.leanJar")
     .map(String::toBoolean)
     .getOrElse(true)
 
+// TorrServer.exe is ~55 MB and only used if a user manually switches P2P away from the built-in
+// nuvio_engine.dll; omitted by default and downloaded on demand by TorrServerP2pBackend.
+val bundleTorrServer = providers.gradleProperty("nuvio.windows.bundleTorrServer")
+    .map(String::toBoolean)
+    .getOrElse(false)
+
 // Large desktop resources that rarely change. The app jar changes every release, so everything in
 // it is re-downloaded on every update; these ~30MB (compressed) instead ship as loose files under
 // <install>\resources\ with the same relative path, staged by the app-image step below, and only
 // download again when they actually change. Readers go through PackagedResources, which falls back
 // to the classpath — so with -Pnuvio.desktop.leanJar=false they simply stay in the jar.
-val externalDesktopResources = listOf(
-    "torrserver/**",
-    "backdrop-framing/**",
+val externalDesktopResources = buildList {
+    if (bundleTorrServer) add("torrserver/**")
+    add("backdrop-framing/**")
     // fork:visualiser - the Beat This! beat grid models (about 11 MB).
-    "beat-tracking/**",
-    "anime-list-mini.json",
-    // Third-party licence texts, so they ship beside the binaries they cover (<install>esources\licenses).
-    "licenses/**",
-)
+    add("beat-tracking/**")
+    add("anime-list-mini.json")
+    // Third-party licence texts, so they ship beside the binaries they cover (<install>\resources\licenses).
+    add("licenses/**")
+}
 val desktopResourcesSourceDir = layout.projectDirectory.dir("src/desktopMain/resources").asFile
 
 tasks.withType<Jar>().configureEach {
@@ -1322,6 +1340,8 @@ tasks.withType<Jar>().configureEach {
         from(windowsPythonLibOutput) {
             into("native/windows/pylib")
         }
+        // Never embed the 55 MB TorrServer.exe into the jar; it's downloaded on demand.
+        exclude("torrserver/**")
         // Shipped as loose files under <install>\resources instead; see externalDesktopResources.
         if (leanDesktopJar) {
             exclude(externalDesktopResources)
@@ -1446,9 +1466,7 @@ if (isWindowsHost) {
                         }
                         into(imageDir.resolve("resources"))
                     }
-                    // TorrServer.exe is gitignored, so a checkout without it builds an image
-                    // without TorrServer exactly as the jar used to.
-                    if (!imageDir.resolve("resources/torrserver/windows-amd64/TorrServer.exe").isFile) {
+                    if (bundleTorrServer && !imageDir.resolve("resources/torrserver/windows-amd64/TorrServer.exe").isFile) {
                         logger.warn("TorrServer.exe not found under $desktopResourcesSourceDir; the app image ships without it.")
                     }
                 }

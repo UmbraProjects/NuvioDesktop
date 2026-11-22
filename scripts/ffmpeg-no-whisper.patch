@@ -1,21 +1,115 @@
 diff --git a/mingw-w64-ffmpeg/PKGBUILD b/mingw-w64-ffmpeg/PKGBUILD
-index 89e0af8..a16b2c4 100644
+index 89e0af8..27673a7 100644
 --- a/mingw-w64-ffmpeg/PKGBUILD
 +++ b/mingw-w64-ffmpeg/PKGBUILD
-@@ -61,9 +61,6 @@ depends=("${MINGW_PACKAGE_PREFIX}-aom"
+@@ -17,8 +17,7 @@ msys2_references=(
+   "cpe: cpe:/a:ffmpeg:ffmpeg"
+ )
+ license=('spdx:GPL-3.0-or-later')
+-depends=("${MINGW_PACKAGE_PREFIX}-aom"
+-         "${MINGW_PACKAGE_PREFIX}-bzip2"
++depends=("${MINGW_PACKAGE_PREFIX}-bzip2"
+          "${MINGW_PACKAGE_PREFIX}-dav1d"
+          "${MINGW_PACKAGE_PREFIX}-fontconfig"
+          "${MINGW_PACKAGE_PREFIX}-freetype"
+@@ -28,45 +27,30 @@ depends=("${MINGW_PACKAGE_PREFIX}-aom"
+          "${MINGW_PACKAGE_PREFIX}-gnutls"
+          "${MINGW_PACKAGE_PREFIX}-gsm"
+          "${MINGW_PACKAGE_PREFIX}-harfbuzz"
+-         "${MINGW_PACKAGE_PREFIX}-lame"
+          "${MINGW_PACKAGE_PREFIX}-libass"
+          "${MINGW_PACKAGE_PREFIX}-libbluray"
+-         "${MINGW_PACKAGE_PREFIX}-libcaca"
+          "${MINGW_PACKAGE_PREFIX}-libexif"
+          "${MINGW_PACKAGE_PREFIX}-libgme"
+          "${MINGW_PACKAGE_PREFIX}-libiconv"
+-         "${MINGW_PACKAGE_PREFIX}-libjxl"
+          "${MINGW_PACKAGE_PREFIX}-libmodplug"
+          "${MINGW_PACKAGE_PREFIX}-libssh"
+          $([[ "${CARCH}" == "i686" ]] || echo "${MINGW_PACKAGE_PREFIX}-libplacebo")
+-         $([[ "${CARCH}" == "i686" ]] || echo "${MINGW_PACKAGE_PREFIX}-librsvg")
+          "${MINGW_PACKAGE_PREFIX}-libsoxr"
+          "${MINGW_PACKAGE_PREFIX}-libtheora"
+          "${MINGW_PACKAGE_PREFIX}-libva"
+          "${MINGW_PACKAGE_PREFIX}-libvorbis"
+-         "${MINGW_PACKAGE_PREFIX}-libvpx"
+          "${MINGW_PACKAGE_PREFIX}-libwebp"
+          "${MINGW_PACKAGE_PREFIX}-libxml2"
+          "${MINGW_PACKAGE_PREFIX}-libvpl"
+-         "${MINGW_PACKAGE_PREFIX}-openal"
+          "${MINGW_PACKAGE_PREFIX}-opencore-amr"
+          "${MINGW_PACKAGE_PREFIX}-openjpeg2"
+          "${MINGW_PACKAGE_PREFIX}-opus"
+-         $([[ "${CARCH}" == "i686" ]] || echo "${MINGW_PACKAGE_PREFIX}-rav1e")
+          "${MINGW_PACKAGE_PREFIX}-rtmpdump"
+-         "${MINGW_PACKAGE_PREFIX}-SDL2"
+          "${MINGW_PACKAGE_PREFIX}-speex"
+          "${MINGW_PACKAGE_PREFIX}-srt"
+-         $([[ "${CARCH}" == "i686" ]] || echo "${MINGW_PACKAGE_PREFIX}-svt-av1")
           $([[ "${CARCH}" == "i686" ]] || echo "${MINGW_PACKAGE_PREFIX}-liblc3")
           "${MINGW_PACKAGE_PREFIX}-vid.stab"
           "${MINGW_PACKAGE_PREFIX}-vulkan"
 -         $([[ "${CARCH}" == "i686" ]] || echo \
 -           "${MINGW_PACKAGE_PREFIX}-ggml" \
 -           "${MINGW_PACKAGE_PREFIX}-whisper.cpp")
-          "${MINGW_PACKAGE_PREFIX}-libx264"
-          "${MINGW_PACKAGE_PREFIX}-x265"
-          "${MINGW_PACKAGE_PREFIX}-xvidcore"
-@@ -182,7 +179,6 @@ build() {
-        --enable-librav1e
-        --enable-librsvg
-        --enable-libsvtav1
+-         "${MINGW_PACKAGE_PREFIX}-libx264"
+-         "${MINGW_PACKAGE_PREFIX}-x265"
+-         "${MINGW_PACKAGE_PREFIX}-xvidcore"
+          "${MINGW_PACKAGE_PREFIX}-zimg"
+          "${MINGW_PACKAGE_PREFIX}-zlib"
+          "${MINGW_PACKAGE_PREFIX}-zvbi")
+@@ -123,6 +107,7 @@ build() {
+     --disable-debug
+     --disable-stripping
+     --disable-doc
++    --disable-sdl2
+     --enable-dxva2
+     --enable-d3d11va
+     --enable-d3d12va
+@@ -131,10 +116,8 @@ build() {
+     --enable-gnutls
+     --enable-gpl
+     --enable-iconv
+-    --enable-libaom
+     --enable-libass
+     --enable-libbluray
+-    --enable-libcaca
+     --enable-libdav1d
+     --enable-libfontconfig
+     --enable-libfreetype
+@@ -142,9 +125,7 @@ build() {
+     --enable-libgme
+     --enable-libgsm
+     --enable-libharfbuzz
+-    --enable-libjxl
+     --enable-libmodplug
+-    --enable-libmp3lame
+     --enable-libopencore_amrnb
+     --enable-libopencore_amrwb
+     --enable-libopenjpeg
+@@ -157,15 +138,10 @@ build() {
+     --enable-libtheora
+     --enable-libvidstab
+     --enable-libvorbis
+-    --enable-libx264
+-    --enable-libx265
+-    --enable-libxvid
+-    --enable-libvpx
+     --enable-libwebp
+     --enable-libxml2
+     --enable-libzimg
+     --enable-libzvbi
+-    --enable-openal
+     --enable-pic
+     --enable-runtime-cpudetect
+     --enable-swresample
+@@ -179,10 +155,6 @@ build() {
+     common_config+=(
+        --enable-liblc3
+        --enable-libplacebo
+-       --enable-librav1e
+-       --enable-librsvg
+-       --enable-libsvtav1
 -       --enable-whisper
      )
    fi
