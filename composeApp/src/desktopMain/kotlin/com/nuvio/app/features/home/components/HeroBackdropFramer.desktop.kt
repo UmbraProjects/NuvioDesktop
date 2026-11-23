@@ -28,6 +28,9 @@ import kotlin.math.sqrt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
@@ -45,12 +48,51 @@ internal actual object HeroBackdropFramer {
     }
     private val inFlight = HashMap<String, CompletableDeferred<HeroBackdropFramingProfile?>>()
 
+    // On-screen analyses go first. The artwork prewarmer analyses hundreds of hero backdrops in the
+    // background on the same single thread, and the hero's own request queued behind them, missed
+    // its 700 ms wait, faded in at the fallback crop and then slid into place in view (user, Nov 23).
+    // A background analysis now waits while any on-screen one is waiting, so at most one (~250 ms)
+    // is ever ahead of it.
+    private val analysisLock = Mutex()
+    private val foregroundWaiting = java.util.concurrent.atomic.AtomicInteger(0)
+
     actual fun peek(key: String): HeroBackdropFramingProfile? = synchronized(memory) { memory[key] }
 
     /** Loads onnxruntime and both models (once; the result is cached). For the native self-test. */
     fun modelsAvailable(): Boolean = FramingModels.get() != null
 
-    actual suspend fun profile(key: String, image: Image?): HeroBackdropFramingProfile? {
+    actual suspend fun profile(key: String, image: Image?): HeroBackdropFramingProfile? =
+        profile(key, image, background = false)
+
+    /** [profile] for work nobody is looking at yet (the artwork prewarmer): yields to on-screen analyses. */
+    suspend fun profileInBackground(key: String, image: Image?): HeroBackdropFramingProfile? =
+        profile(key, image, background = true)
+
+    private suspend fun <T> analysisTurn(background: Boolean, block: suspend () -> T): T {
+        if (!background) {
+            foregroundWaiting.incrementAndGet()
+            try {
+                return analysisLock.withLock { block() }
+            } finally {
+                foregroundWaiting.decrementAndGet()
+            }
+        }
+        while (true) {
+            while (foregroundWaiting.get() > 0) delay(BackgroundYieldPollMs)
+            analysisLock.lock()
+            // An on-screen request may have arrived while this one waited for the lock.
+            if (foregroundWaiting.get() == 0) {
+                try {
+                    return block()
+                } finally {
+                    analysisLock.unlock()
+                }
+            }
+            analysisLock.unlock()
+        }
+    }
+
+    private suspend fun profile(key: String, image: Image?, background: Boolean): HeroBackdropFramingProfile? {
         peek(key)?.let { return it }
         withContext(Dispatchers.IO) { FramingDiskCache.read(key) }?.let { stored ->
             synchronized(memory) { memory[key] = stored }
@@ -67,7 +109,7 @@ internal actual object HeroBackdropFramer {
         if (!owner) return deferred.await()
         var result: HeroBackdropFramingProfile? = null
         try {
-            result = withContext(analysisDispatcher) {
+            result = analysisTurn(background) { withContext(analysisDispatcher) {
                 readRgba(bitmap)?.let { pixels ->
                     val started = System.nanoTime()
                     analyzeHeroBackdropPixels(pixels, bitmap.width, bitmap.height)?.also {
@@ -77,7 +119,7 @@ internal actual object HeroBackdropFramer {
                         }
                     }
                 }
-            }
+            } }
         } catch (cancelled: CancellationException) {
             // The layer that asked went away (the user scrolled on). Queued analyses for it are
             // dropped before they run, which is what keeps a held arrow key from piling up work.
@@ -102,6 +144,7 @@ internal actual object HeroBackdropFramer {
     }
 
     private const val MemoryEntries = 512
+    private const val BackgroundYieldPollMs = 20L
 }
 
 /**

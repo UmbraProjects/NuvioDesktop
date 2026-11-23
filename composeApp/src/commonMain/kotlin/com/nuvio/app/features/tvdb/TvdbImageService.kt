@@ -4,6 +4,8 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.httpGetTextWithHeaders
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.addons.httpRequestRaw
+import com.nuvio.app.features.watchprogress.WatchProgressClock
+import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
@@ -86,6 +88,43 @@ object TvdbImageService {
         acquireToken(apiKey) // no-op if already cached
     }
 
+    // Shared single-flight + short-lived cache for `/series/{id}/extended` and `/movies/{id}/extended`
+    // so resolveImdbId, fetchAirSchedule and fetchCharacters opening a Details page share one trip.
+    private val extendedMutex = Mutex()
+    private val extendedInFlight = mutableMapOf<String, kotlinx.coroutines.Deferred<String?>>()
+    private val extendedCache = object : LinkedHashMap<String, Pair<Long, String>>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, String>>?): Boolean = size > 64
+    }
+    private val extendedScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
+    )
+
+    private suspend fun fetchExtendedBody(endpoint: String, token: String): String? {
+        val now = WatchProgressClock.nowEpochMs()
+        extendedMutex.withLock {
+            extendedCache[endpoint]?.takeIf { now - it.first < 5 * 60_000L }?.let { return it.second }
+        }
+        val deferred = extendedMutex.withLock {
+            extendedInFlight.getOrPut(endpoint) {
+                extendedScope.async {
+                    try {
+                        val body = runCatching {
+                            httpGetTextWithHeaders("$BASE_URL/$endpoint", authHeaders(token))
+                        }.onFailure { log.w { "TVDB extended fetch failed for $endpoint: ${it.message}" } }
+                            .getOrNull()
+                        if (body != null) {
+                            extendedMutex.withLock { extendedCache[endpoint] = WatchProgressClock.nowEpochMs() to body }
+                        }
+                        body
+                    } finally {
+                        extendedMutex.withLock { extendedInFlight.remove(endpoint) }
+                    }
+                }
+            }
+        }
+        return deferred.await()
+    }
+
     /**
      * Resolves the IMDB id for a TVDB-native id straight from TVDB's own /extended endpoint
      * (its `remoteIds` list) — unlike the TMDB cross-reference, this needs only a TVDB key.
@@ -97,10 +136,7 @@ object TvdbImageService {
         imdbIdCacheMutex.withLock { imdbIdCache[tvdbId] }?.let { return it }
         val token = acquireToken(apiKey) ?: return null
         val endpoint = if (isTvType(type)) "series" else "movies"
-        val body = runCatching {
-            httpGetTextWithHeaders("$BASE_URL/$endpoint/$tvdbId/extended", authHeaders(token))
-        }.onFailure { log.w { "TVDB extended fetch failed for $endpoint/$tvdbId: ${it.message}" } }
-            .getOrNull() ?: return null
+        val body = fetchExtendedBody("$endpoint/$tvdbId/extended", token) ?: return null
 
         val imdbId = runCatching {
             json.decodeFromString<TvdbExtendedResponse>(body)
@@ -128,7 +164,7 @@ object TvdbImageService {
         }
         val token = acquireToken(apiKey) ?: return null
         val schedule = runCatching {
-            val body = httpGetTextWithHeaders("$BASE_URL/series/$tvdbId/extended", authHeaders(token))
+            val body = fetchExtendedBody("series/$tvdbId/extended", token) ?: return@runCatching null
             val data = json.decodeFromString<TvdbExtendedResponse>(body).data
             TvdbAirSchedule(
                 airsTime = data?.airsTime?.trim()?.takeIf(String::isNotBlank),
@@ -166,9 +202,8 @@ object TvdbImageService {
                 ).data.firstOrNull()?.movie?.id ?: return emptyList()
                 "movies/$found/extended"
             }
-            json.decodeFromString<TvdbCharactersResponse>(
-                httpGetTextWithHeaders("$BASE_URL/$endpoint", authHeaders(token)),
-            ).data?.characters.orEmpty()
+            val body = fetchExtendedBody(endpoint, token) ?: return emptyList()
+            json.decodeFromString<TvdbCharactersResponse>(body).data?.characters.orEmpty()
                 .filter { (it.peopleType.equals("Actor", ignoreCase = true) || it.type == 3) && !it.image.isNullOrBlank() }
                 .map { TvdbCharacter(person = it.personName.orEmpty(), character = it.name.orEmpty(), image = it.image!!) }
         }.onFailure { log.w { "TVDB characters failed for $type/$id: ${it.message}" } }

@@ -222,6 +222,15 @@ object UsenetEngine {
         scope.launch { mutex.withLock { if (sessionId == null) stopLocked() } }
     }
 
+    /** Stops the child process immediately on application exit or OS shutdown. */
+    fun shutdown() {
+        val child = process
+        if (child != null) {
+            runCatching { child.outputStream.close() }
+            runCatching { child.destroyForcibly() }
+        }
+    }
+
     private suspend fun open(stream: StreamItem, season: Int?, episode: Int?): StreamItem {
         val sources = UsenetSettingsRepository.sources
         val configuration = UsenetSettingsRepository.engine

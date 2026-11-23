@@ -1876,6 +1876,9 @@
   <string name="settings_playback_desktop_custom_mpv_options">Επιλογές MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Μία επιλογή ανά γραμμή ως key=value. Εφαρμόζονται πάνω από τις προεπιλογές του Nuvio· οι μη έγκυρες επιλογές αγνοούνται.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">π.χ.&#10;profile=gpu-hq&#10;deband=no</string>
+  <string name="settings_playback_desktop_custom_player_css">Προσαρμοσμένο CSS αναπαραγωγής</string>
+  <string name="settings_playback_desktop_custom_player_css_desc">CSS που προστίθεται στο φύλλο στυλ των χειριστηρίων αναπαραγωγής στην επόμενη αναπαραγωγή. Χρησιμοποιήστε !important για να αντικαταστήσετε μεταβλητές θέματος.</string>
+  <string name="settings_playback_desktop_custom_player_css_hint">π.χ.&#10;:root {&#10;  --theme-accent: #ff4d8d !important;&#10;}</string>
   <string name="settings_playback_hero_tv_trailer">Αναπαραγωγή τρέιλερ στην κεφαλίδα</string>
   <string name="settings_playback_hero_tv_trailer_description">Πατήστε T για αναπαραγωγή του τρέιλερ σε αυτή τη θέση.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Αναμονή πριν την αναπαραγωγή</string>
@@ -5093,4 +5096,5 @@
     <string name="usenet_compressed_unplayable">Αυτή η κυκλοφορία είναι συμπιεσμένο 7z και παραλείπεται από τις ρυθμίσεις Usenet</string>
     <string name="tonight_twelve_hour">12ωρη μορφή ώρας</string>
     <string name="tonight_twelve_hour_description">Εμφάνιση ωρών ως 11:30 PM αντί για 23:30.</string>
+    <string name="player_hud_ends_at">%1$s τελειώνει στις %2$s</string>
 </resources>

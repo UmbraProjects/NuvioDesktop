@@ -167,6 +167,7 @@ internal object AnimeArtworkService {
                         "Accept" to "application/json",
                     ),
                     body = body,
+                    callTimeoutMs = FETCH_TIMEOUT_MS,
                 )
                 if (response.status !in 200..299) return@withTimeoutOrNull null
                 json.decodeFromString<AniListResponse>(response.body)
@@ -191,11 +192,15 @@ internal object AnimeArtworkService {
                 kitsuScope.async {
                     val attributes = runCatchingNonCancellable {
                         withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-                            val payload = httpGetTextWithHeaders(
+                            val response = httpRequestRaw(
+                                method = "GET",
                                 url = "https://kitsu.io/api/edge/anime/$kitsuId",
                                 headers = mapOf("Accept" to "application/vnd.api+json"),
+                                body = "",
+                                callTimeoutMs = FETCH_TIMEOUT_MS,
                             )
-                            json.decodeFromString<KitsuResponse>(payload).data?.attributes ?: KitsuAttributes()
+                            if (response.status !in 200..299 || response.body.isBlank()) return@withTimeoutOrNull null
+                            json.decodeFromString<KitsuResponse>(response.body).data?.attributes ?: KitsuAttributes()
                         }
                     }
                     if (attributes == null) cacheMutex.withLock { kitsuEntries.remove(kitsuId) }
@@ -218,6 +223,7 @@ internal object AnimeArtworkService {
                         "Accept" to "application/json",
                     ),
                     body = body,
+                    callTimeoutMs = FETCH_TIMEOUT_MS,
                 )
                 if (response.status !in 200..299) return@withTimeoutOrNull null
                 val cover = json.decodeFromString<AniListResponse>(response.body).data?.media?.coverImage

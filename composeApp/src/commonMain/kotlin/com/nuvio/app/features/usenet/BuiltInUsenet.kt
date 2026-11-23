@@ -265,8 +265,8 @@ object BuiltInUsenet {
         request: UsenetSearchRequest,
         config: UsenetSourceConfiguration,
     ): List<UsenetRelease>? {
+        // No UsenetStats here: the live search already counted these releases.
         client.cachedSearch(indexer, request, config.indexerResults)?.let { cached ->
-            UsenetStats.found(cached)
             log.i { "${indexer.name}: ${cached.size} releases (cached)" }
             return cached
         }

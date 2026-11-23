@@ -7140,7 +7140,7 @@ const updatePlayerClock = () => {
   // Live TV never ends; the same spot (and its click, "back") is the way out.
   playerEndTime.textContent = state.iptv
     ? (state.iptv.exitLabel || state.closeLabel || "Exit")
-    : `${contentLabel} ends at ${playerClockFormatter.format(endTime)}`;
+    : hudFormat("player_hud_ends_at", "%1$s ends at %2$s", contentLabel, playerClockFormatter.format(endTime));
 };
 window.setInterval(updatePlayerClock, 1000);
 
@@ -9014,6 +9014,9 @@ window.nuvioOpenKeyboardPanel = panel => {
 };
 
 window.nuvioHandleKeyboardPanelKey = code => {
+  if (!keyboardPanelMode && (activeModal === "sources" || activeModal === "episodes")) {
+    keyboardPanelMode = activeModal;
+  }
   if (!keyboardPanelMode) return;
   if (keyboardPanelMode === "controls") {
     handleBarNavKey(code);
@@ -10137,7 +10140,11 @@ document.addEventListener("keydown", event => {
   }
   // In the channel search box Left/Right move the caret; Up/Down/Enter still walk the list.
   const caretKey = isTextEntryTarget(event.target) && (event.code === "ArrowLeft" || event.code === "ArrowRight");
-  if (keyboardPanelMode && !caretKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "NumpadEnter"].includes(event.code)) {
+  const navKey = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "NumpadEnter"].includes(event.code);
+  if (!keyboardPanelMode && !isTextEntryTarget(event.target) && (activeModal === "sources" || activeModal === "episodes") && navKey) {
+    keyboardPanelMode = activeModal;
+  }
+  if (keyboardPanelMode && !caretKey && navKey) {
     event.preventDefault();
     window.nuvioHandleKeyboardPanelKey(event.code === "NumpadEnter" ? "Enter" : event.code);
     return;

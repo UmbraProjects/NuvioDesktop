@@ -1876,6 +1876,9 @@
   <string name="settings_playback_desktop_custom_mpv_options">MPV-alternativer</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Ett alternativ per linje som nøkkel=verdi. Brukes oppå Nuvios standarder; ugyldige alternativer ignoreres.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">f.eks.&#10;profile=gpu-hq&#10;deband=no</string>
+  <string name="settings_playback_desktop_custom_player_css">Egendefinert spiller-CSS</string>
+  <string name="settings_playback_desktop_custom_player_css_desc">CSS som legges til stilarket for spillerkontrollene ved neste avspilling. Bruk !important for å overstyre temavariabler.</string>
+  <string name="settings_playback_desktop_custom_player_css_hint">f.eks.&#10;:root {&#10;  --theme-accent: #ff4d8d !important;&#10;}</string>
   <string name="settings_playback_hero_tv_trailer">Avspilling av hero-trailer</string>
   <string name="settings_playback_hero_tv_trailer_description">Trykk T for å spille av traileren her.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Vent før avspilling</string>
@@ -5095,4 +5098,5 @@
     <string name="usenet_compressed_unplayable">Denne utgivelsen er en komprimert 7z, hoppet over av Usenet-innstillingene</string>
     <string name="tonight_twelve_hour">12-timers klokke</string>
     <string name="tonight_twelve_hour_description">Vis klokkeslett som 11:30 PM i stedet for 23:30.</string>
+    <string name="player_hud_ends_at">%1$s slutter kl. %2$s</string>
 </resources>

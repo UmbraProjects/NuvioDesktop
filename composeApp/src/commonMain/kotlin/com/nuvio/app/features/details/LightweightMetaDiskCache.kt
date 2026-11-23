@@ -14,7 +14,7 @@ import kotlinx.serialization.json.Json
 import java.io.InputStream
 import java.io.OutputStream
 
-/** Streamed in and out (see encodeJsonMap): the file is ~8 MB on a well-used install. */
+/** Streamed in and out (see encodeJsonMap): a few MB; it was ~40 MB while it kept episode lists. */
 internal expect object LightweightMetaCacheStorage {
     fun <T> read(decode: (InputStream) -> T): T?
     fun write(encode: (OutputStream) -> Unit)
@@ -30,8 +30,8 @@ internal expect object LightweightMetaCacheStorage {
  * 3-minute session (2026-10-14), nearly all of them the same titles as the launch before.
  *
  * Only what the lightweight consumers read is kept - artwork, text, rating, runtime, genres,
- * country, language, ids - plus a slim episode list (id, title, date, coordinates), because Random
- * Play counts episodes and the player's episode resolver reads ids and coordinates. No cast,
+ * country, language, ids - plus the number of episodes (Random Play reads it as a hint that a title
+ * is a show). Not the episodes themselves since 2026-11-23 (see fetchLightweightMeta). No cast,
  * trailers, thumbnails or streams: the lightweight path never had them to begin with.
  *
  * Every entry carries a fingerprint of what shaped it (TMDB settings, hero image source, the TVDB
@@ -127,8 +127,15 @@ internal object LightweightMetaDiskCache {
         // Expired entries stay (served stale while they refresh); only very old ones are dropped,
         // and the next write leaves those out of the file too.
         val kept = loaded.filterValues { now - it.savedAtMs <= STALE_LIMIT_MS }
+            // Episode lists from older files are counted and dropped, and the file is rewritten without them.
+            .mapValues { (_, stored) -> stored.slimmed() }
+        val slimmed = kept.count { (key, stored) -> stored !== loaded[key] }
         val fresh = kept.values.count { now - it.savedAtMs <= lifetime }
-        log.i { "Loaded ${kept.size} of ${loaded.size} cached lightweight meta entries ($fresh fresh, ${kept.size - fresh} to refresh)" }
+        log.i {
+            "Loaded ${kept.size} of ${loaded.size} cached lightweight meta entries ($fresh fresh, ${kept.size - fresh} to refresh" +
+                (if (slimmed > 0) ", $slimmed episode lists dropped)" else ")")
+        }
+        if (slimmed > 0) persister.schedule()
         return LinkedHashMap(kept).also { entries = it }
     }
 }
@@ -160,8 +167,14 @@ internal data class StoredLightweightMeta(
     val language: String? = null,
     val hasScheduledVideos: Boolean = false,
     val identityTrusted: Boolean = true,
+    /** Only in files written before 2026-11-23; read once to count, then dropped (see [slimmed]). */
     val videos: List<StoredLightweightVideo> = emptyList(),
-)
+    val episodeCount: Int = 0,
+) {
+    /** Without an episode list: lightweight results no longer keep one (MetaDetailsRepository.fetchLightweightMeta). */
+    fun slimmed(): StoredLightweightMeta =
+        if (videos.isEmpty()) this else copy(videos = emptyList(), episodeCount = maxOf(episodeCount, videos.size))
+}
 
 @Serializable
 internal data class StoredLightweightVideo(
@@ -198,15 +211,7 @@ internal fun MetaDetails.toStored(context: String, savedAtMs: Long) = StoredLigh
     language = language,
     hasScheduledVideos = hasScheduledVideos,
     identityTrusted = imdbTmdbIdentityTrusted,
-    videos = videos.map { video ->
-        StoredLightweightVideo(
-            id = video.id,
-            title = video.title,
-            released = video.released,
-            season = video.season,
-            episode = video.episode,
-        )
-    },
+    episodeCount = maxOf(lightweightEpisodeCount, videos.size),
 )
 
 internal fun StoredLightweightMeta.toMetaDetails() = MetaDetails(
@@ -233,13 +238,5 @@ internal fun StoredLightweightMeta.toMetaDetails() = MetaDetails(
     language = language,
     hasScheduledVideos = hasScheduledVideos,
     imdbTmdbIdentityTrusted = identityTrusted,
-    videos = videos.map { video ->
-        MetaVideo(
-            id = video.id,
-            title = video.title,
-            released = video.released,
-            season = video.season,
-            episode = video.episode,
-        )
-    },
+    lightweightEpisodeCount = maxOf(episodeCount, videos.size),
 )

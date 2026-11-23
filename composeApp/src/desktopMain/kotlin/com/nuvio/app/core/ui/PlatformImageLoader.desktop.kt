@@ -7,6 +7,7 @@ import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.annotation.ExperimentalCoilApi
 import coil3.network.ktor3.KtorNetworkFetcherFactory
+import coil3.svg.SvgDecoder
 import com.nuvio.app.core.storage.DesktopStorage
 import okio.Path.Companion.toOkioPath
 
@@ -76,10 +77,22 @@ internal fun ComponentRegistry.Builder.addDesktopArtworkComponents() {
     add(ImageRevalidationStartInterceptor())
     add(HeroBackdropPrefetchJoinInterceptor())
     add(DesktopArtworkSizeInterceptor())
+    // Ahead of the network-facing interceptors: a URL the server already answered 400/404 for
+    // fails at once instead of being requested again.
+    add(ImageNotFoundInterceptor())
+    // Retries outside the stale-copy fallback: a poster with a copy on disk falls back to it at once on a transient
+    // failure, and only one with nothing to show is retried. The other way round, every background refresh that met a
+    // restarting poster service was sent twice more before its stale copy was used (ImageCacheHeadersIntegrationTest).
+    add(TransientImageErrorRetryInterceptor())
     // After the size interceptor, so a stale-copy retry keeps the memory key it was sized under.
     add(ImageStaleIfErrorInterceptor())
     // First of the decoders: a background refresh only writes the disk cache.
     add(BackgroundRevalidationDecoder.Factory())
+    // SVG decoders MUST be registered inside this single components {} block: in Coil 3, a second
+    // components {} call replaces the previous ComponentRegistry, which previously wiped out
+    // SvgDecoder and sent .svg logos to HighQualityBitmapDecoder (Failed to Image::makeFromEncoded).
+    addPlatformSvgDecoders()
+    add(SvgDecoder.Factory())
     add(AnimatedSkiaImageDecoder.Factory())
     add(HighQualityBitmapDecoder.Factory())
     // Coil finds a Ktor fetcher through the JVM ServiceLoader on its own, but only ever with

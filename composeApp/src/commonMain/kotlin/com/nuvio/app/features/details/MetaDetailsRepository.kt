@@ -50,6 +50,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -615,8 +616,15 @@ object MetaDetailsRepository {
     // result for text metadata, then ALWAYS also runs the TMDB fallback to get a proper
     // TMDB backdrop/logo. Merges the two so text comes from the addon and images from TMDB.
     // This is simpler and more reliable than a separate TMDB image service.
+    //
+    // Lightweight results carry no episode list, only its length (MetaDetails.lightweightEpisodeCount).
+    // None of its callers read episodes, but every result stayed in this cache for the session and in
+    // the disk cache with every episode's id, title and date: 281,000 episodes for 4,650 titles, 80-90
+    // MB of the ~420 MB live heap (heap dump 2026-11-23). Code that wants episodes and might be handed
+    // a lightweight record (peekAny) treats an empty list as "fetch the full meta".
     suspend fun fetchLightweightMeta(type: String, id: String, preferTmdbImages: Boolean = false): MetaDetails? {
         val meta = fetchLightweightMetaInternal(type = type, id = id, preferTmdbImages = preferTmdbImages)
+            ?.withoutEpisodeList()
         // Native anime ids are per-season entries, but TMDB/TVDB art is franchise-wide — every
         // season of a kitsu catalog would show the same backdrop. Swap in the entry's own
         // AniList/Kitsu banner when one exists (service-cached, so repeat calls are free).
@@ -693,6 +701,9 @@ object MetaDetailsRepository {
      * Refreshes a disk entry that outlived the Metadata Cache setting, one title at a time with a
      * pause between, while the stale copy keeps serving. After a long break nearly every entry is
      * stale at once, so this is what turns a ~3,300-request burst into a background trickle.
+     *
+     * The trickle waits while a player is up: at three calls a title (addon, TMDB, TVDB) it was
+     * still 60 requests every 30 s during playback (2026-11-23 log), for titles nobody is looking at.
      */
     private fun scheduleStaleLightweightRefresh(
         type: String,
@@ -707,6 +718,7 @@ object MetaDetailsRepository {
             try {
                 staleLightweightRefreshGate.withPermit {
                     delay(STALE_LIGHTWEIGHT_REFRESH_SPACING_MS)
+                    playbackActive.first { active -> !active }
                     runLightweightMetaFetch(type = type, id = id, preferTmdbImages = preferTmdbImages, requestKey = requestKey)
                     // A failed refresh leaves the stale copy in the session cache; it must not be
                     // saved again as if it were new.
@@ -724,6 +736,13 @@ object MetaDetailsRepository {
     }
 
     private val staleLightweightRefreshGate = Semaphore(1)
+    private val playbackActive = MutableStateFlow(false)
+
+    /** Set while the player owns the screen; stale-copy refreshes hold until it is gone. */
+    fun setPlaybackActive(active: Boolean) {
+        playbackActive.value = active
+    }
+
     private val staleLightweightRefreshes: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private const val STALE_LIGHTWEIGHT_REFRESH_SPACING_MS = 1_000L
 
@@ -973,7 +992,7 @@ object MetaDetailsRepository {
     }
 
     private suspend fun cacheLightweightMeta(requestKey: String, meta: MetaDetails) {
-        lightweightMetaMutex.withLock { lightweightMetaCache[requestKey] = meta }
+        lightweightMetaMutex.withLock { lightweightMetaCache[requestKey] = meta.withoutEpisodeList() }
     }
 
     /**

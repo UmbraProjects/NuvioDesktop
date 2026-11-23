@@ -37,6 +37,20 @@ class WatchedContentFilterTest {
     }
 
     @Test
+    fun `a title the poster marks watched through an id alias is hidden`() {
+        // The poster's tick answers under WatchedIdAliases (a `tmdb:` row for a `tt` import); the filter must too
+        // (user report, Nov 23: rows showed ticked titles with Hide watched content on).
+        com.nuvio.app.features.watched.WatchedIdAliases.replace(listOf(setOf("tt9900001", "tmdb:9900001")))
+        try {
+            val history = listOf(watched(id = "tt9900001", type = "series"))
+            val item = MetaPreview(id = "tmdb:9900001", type = "series", name = "aliased")
+            assertEquals(emptyList(), listOf(item).filterUnwatchedItems(WatchedContentFilter.forHistory(history)))
+        } finally {
+            com.nuvio.app.features.watched.WatchedIdAliases.clear()
+        }
+    }
+
+    @Test
     fun `a title shown before being watched is hidden once it is watched`() {
         val before = listOf(watched(id = "tt1", type = "movie"))
         val items = listOf(preview("tt2"), preview("tt3"))

@@ -50,6 +50,11 @@ data class MetaDetails(
     val language: String? = null,
     val website: String? = null,
     val hasScheduledVideos: Boolean = false,
+    /**
+     * How many episodes [videos] held before a lightweight result dropped them (see
+     * MetaDetailsRepository.fetchLightweightMeta); 0 everywhere else, where [videos] is the list itself.
+     */
+    val lightweightEpisodeCount: Int = 0,
     val moreLikeThis: List<MetaPreview> = emptyList(),
     val moreLikeThisSource: MoreLikeThisSource? = null,
     val collectionName: String? = null,
@@ -159,3 +164,10 @@ data class MetaDetailsUiState(
     val meta: MetaDetails? = null,
     val errorMessage: String? = null,
 )
+
+/**
+ * This record without its episode list, keeping how many there were. What a lightweight result is
+ * kept as (see MetaDetailsRepository.fetchLightweightMeta); the same instance when it has none.
+ */
+internal fun MetaDetails.withoutEpisodeList(): MetaDetails =
+    if (videos.isEmpty()) this else copy(videos = emptyList(), lightweightEpisodeCount = maxOf(lightweightEpisodeCount, videos.size))

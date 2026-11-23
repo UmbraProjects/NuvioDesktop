@@ -183,6 +183,9 @@ internal object TmdbHttp {
 
     // Answers from the last minute or so. A caller that leaves its screen abandons the wait but the trip still
     // finishes (see [getText]); without this its answer was dropped and the next visit asked TMDB again.
+    // Bounded by entry count and by total characters held, so a run of large detail/credit answers
+    // cannot keep hundreds of MB alive. Guarded by synchronized(recent).
+    private var recentChars = 0L
     private val recent = object : LinkedHashMap<String, Pair<Long, String>>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, String>>?): Boolean =
             size > RECENT_MAX_ENTRIES
@@ -192,15 +195,30 @@ internal object TmdbHttp {
         val entry = recent[url] ?: return null
         if (WatchProgressClock.nowEpochMs() - entry.first > RECENT_TTL_MS) {
             recent.remove(url)
+            recomputeRecentChars()
             null
         } else {
             entry.second
         }
     }
 
+    private fun recomputeRecentChars() {
+        recentChars = recent.values.sumOf { it.second.length.toLong() }
+    }
+
     private fun rememberBody(url: String, body: String) {
         if (body.length > RECENT_MAX_BODY_CHARS) return
-        synchronized(recent) { recent[url] = WatchProgressClock.nowEpochMs() to body }
+        synchronized(recent) {
+            recent[url] = WatchProgressClock.nowEpochMs() to body
+            recomputeRecentChars()
+            val iterator = recent.entries.iterator()
+            while (recentChars > RECENT_MAX_TOTAL_CHARS && iterator.hasNext()) {
+                val eldest = iterator.next()
+                if (eldest.key == url) continue
+                recentChars -= eldest.value.second.length
+                iterator.remove()
+            }
+        }
     }
 
     private fun gateFor(lane: TmdbRequestLane): Semaphore = when (lane) {
@@ -246,9 +264,11 @@ internal object TmdbHttp {
 
     private const val HTTP_TOO_MANY_REQUESTS = 429
 
-    private const val RECENT_TTL_MS = 60_000L
-    private const val RECENT_MAX_ENTRIES = 64
+    private const val RECENT_TTL_MS = 120_000L
+    private const val RECENT_MAX_ENTRIES = 512
     private const val RECENT_MAX_BODY_CHARS = 200_000
+    /** About 32 MB of UTF-16 across every remembered answer. */
+    private const val RECENT_MAX_TOTAL_CHARS = 16_000_000L
 
     private const val MAX_RETRIES = 3
 }

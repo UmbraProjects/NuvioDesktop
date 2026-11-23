@@ -1876,6 +1876,9 @@
   <string name="settings_playback_desktop_custom_mpv_options">Opzioni MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Un'opzione per riga nel formato chiave=valore. Applicate sopra le impostazioni predefinite di Nuvio; le opzioni non valide vengono ignorate.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">es.&#10;profile=gpu-hq&#10;deband=no</string>
+  <string name="settings_playback_desktop_custom_player_css">CSS personalizzato del player</string>
+  <string name="settings_playback_desktop_custom_player_css_desc">CSS aggiunto al foglio di stile dei controlli del player alla prossima riproduzione. Usa !important per sovrascrivere le variabili del tema.</string>
+  <string name="settings_playback_desktop_custom_player_css_hint">es.&#10;:root {&#10;  --theme-accent: #ff4d8d !important;&#10;}</string>
   <string name="settings_playback_hero_tv_trailer">Riproduzione trailer nell'hero</string>
   <string name="settings_playback_hero_tv_trailer_description">Premi T per riprodurre il trailer in questa posizione.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Attesa prima della riproduzione</string>
@@ -5095,4 +5098,5 @@
     <string name="usenet_compressed_unplayable">Questa release è un 7z compresso, saltata dalle impostazioni Usenet</string>
     <string name="tonight_twelve_hour">Orologio a 12 ore</string>
     <string name="tonight_twelve_hour_description">Mostra gli orari come 11:30 PM invece di 23:30.</string>
+    <string name="player_hud_ends_at">%1$s finisce alle %2$s</string>
 </resources>

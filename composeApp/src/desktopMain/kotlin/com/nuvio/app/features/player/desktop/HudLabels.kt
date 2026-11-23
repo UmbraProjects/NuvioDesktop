@@ -111,6 +111,7 @@ private val hudLabelResources: Map<String, StringResource> = mapOf(
     "player_hud_enable_p2p" to Res.string.player_hud_enable_p2p,
     "player_hud_end_time_mm_ss" to Res.string.player_hud_end_time_mm_ss,
     "player_hud_enter_a_hex_color_like_ffd700" to Res.string.player_hud_enter_a_hex_color_like_ffd700,
+    "player_hud_ends_at" to Res.string.player_hud_ends_at,
     "player_hud_episode" to Res.string.player_hud_episode,
     "player_hud_episodes" to Res.string.player_hud_episodes,
     "player_hud_exit_picture_in_picture" to Res.string.player_hud_exit_picture_in_picture,

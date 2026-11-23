@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /*
  * fork:youtube-mode
@@ -812,20 +813,26 @@ object YouTubeFeedRepository {
     suspend fun watchPage(videoId: String): YouTubeWatchPage {
         val page = youTubeNext(videoId, continuation = null, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok
             ?: return YouTubeWatchPage(emptyList(), emptyList())
-        val column = parseYouTubeRelated(page.body)
-        val related = column.videos.filter { it.videoId != videoId }
-        val chapters = parseYouTubeChapters(page.body)
+        val (watchPage, liked) = withContext(Dispatchers.Default) {
+            val column = parseYouTubeRelated(page.body)
+            val related = column.videos.filter { it.videoId != videoId }
+            val chapters = parseYouTubeChapters(page.body)
+            val likeStatus = parseYouTubeLikeStatus(page.body)
+            val details = parseYouTubeVideoDetails(page.body)
+            YouTubeWatchPage(related, chapters, details, column.continuation) to likeStatus
+        }
         // The same answer says whether the account likes it: no second request for the like button.
-        parseYouTubeLikeStatus(page.body)?.let { liked -> _likeStatus.update { it + (videoId to liked) } }
-        log.i { "Watch page: ${related.size} related (more=${column.continuation != null}), ${chapters.size} chapters" }
-        return YouTubeWatchPage(related, chapters, parseYouTubeVideoDetails(page.body), column.continuation)
+        liked?.let { status -> _likeStatus.update { it + (videoId to status) } }
+        log.i { "Watch page: ${watchPage.related.size} related (more=${watchPage.relatedContinuation != null}), ${watchPage.chapters.size} chapters" }
+        return watchPage
     }
 
     /** The next page of a watch page's related videos ([YouTubeWatchPage.relatedContinuation]); null when YouTube did not answer. */
     suspend fun moreRelated(token: String): YouTubeFeedPage? {
         val page = youTubeNext(videoId = null, continuation = token, pageId = _channel.value.pageId) as? YouTubeBrowseResult.Ok
             ?: return null
-        return parseYouTubeRelated(page.body).also { log.i { "Related: ${it.videos.size} more, more=${it.continuation != null}" } }
+        return withContext(Dispatchers.Default) { parseYouTubeRelated(page.body) }
+            .also { log.i { "Related: ${it.videos.size} more, more=${it.continuation != null}" } }
     }
 
     /** A page of a comment's replies ([YouTubeComment.repliesToken], then each page's own token); null when YouTube did not answer. */

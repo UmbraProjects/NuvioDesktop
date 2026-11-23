@@ -170,6 +170,7 @@ internal actual object PlayerSettingsStorage {
     private const val desktopRateLimitReconnectFirstDelayKey = "desktop_rate_limit_reconnect_first_delay_seconds"
     private const val desktopRateLimitReconnectSecondDelayKey = "desktop_rate_limit_reconnect_second_delay_seconds"
     private const val desktopCustomMpvOptionsKey = "desktop_custom_mpv_options"
+    private const val desktopCustomPlayerCssKey = "desktop_custom_player_css"
     private const val desktopMpvConfigModeKey = "desktop_mpv_config_mode"
     private const val desktopMpvPropertyOverridesKey = "desktop_mpv_property_overrides"
     private const val heroTvTrailerEnabledKey = "hero_tv_trailer_enabled"
@@ -632,6 +633,8 @@ internal actual object PlayerSettingsStorage {
         saveInt(desktopRateLimitReconnectSecondDelayKey, seconds)
     actual fun loadDesktopCustomMpvOptions(): String? = loadString(desktopCustomMpvOptionsKey)
     actual fun saveDesktopCustomMpvOptions(options: String) = saveString(desktopCustomMpvOptionsKey, options)
+    actual fun loadDesktopCustomPlayerCss(): String? = loadString(desktopCustomPlayerCssKey)
+    actual fun saveDesktopCustomPlayerCss(css: String) = saveString(desktopCustomPlayerCssKey, css)
     actual fun loadDesktopMpvConfigMode(): String? = loadString(desktopMpvConfigModeKey)
     actual fun saveDesktopMpvConfigMode(mode: String) = saveString(desktopMpvConfigModeKey, mode)
     actual fun loadDesktopMpvPropertyOverrides(): String? = loadString(desktopMpvPropertyOverridesKey)

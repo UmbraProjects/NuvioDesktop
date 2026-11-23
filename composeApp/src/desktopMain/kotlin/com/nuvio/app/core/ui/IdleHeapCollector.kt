@@ -114,7 +114,9 @@ internal object FullGcLog {
         }
         lastCount = count
         lastTimeMs = timeMs
-        if (trigger == "natural") HeapDumpOnHighLiveSet.check(used)
+        // Idle too: with the 768m heap floor (2026-11-23) natural full GCs are rare, and an idle
+        // collection is the one moment a ~3 s dump freeze goes unseen.
+        if (trigger == "natural" || trigger.startsWith("idle")) HeapDumpOnHighLiveSet.check(used)
     }
 }
 
@@ -129,7 +131,8 @@ internal object FullGcLog {
 internal object HeapDumpOnHighLiveSet {
     // 380 MB never fired in the 07:11 session (natural full GCs peaked at 374 MB live while the
     // post-GC heap crept 195 -> 374 MB), so one notch lower.
-    private const val ThresholdBytes = 320L * 1024 * 1024
+    // 380 MB from 2026-11-23: the live set now settles around 420 MB, so 320 fired before it had grown.
+    private const val ThresholdBytes = 380L * 1024 * 1024
     private val log = Logger.withTag("HeapDump")
     private val done = AtomicBoolean(false)
 
@@ -148,6 +151,7 @@ internal object HeapDumpOnHighLiveSet {
 
     // Off: two dumps (07:54 browsing, 08:26 just after launch) have been read, and each one freezes
     // the app for ~2.7 s. Flip to true for a run that needs another.
+    // Off again: the 2026-11-23 02:10 dump was read (lightweight meta episode lists, the image disk cache index).
     private const val Enabled = false
 
     fun check(usedBytes: Long) {

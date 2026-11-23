@@ -23,6 +23,10 @@ import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
  * every season's entry, which is why `AnimeIdMappingRepository.lookup` returns nothing rather than
  * guess which entry a bare `tt…` means.
  */
+/** The franchise ids a history row on a native anime id is also known by (title level, for Hide watched content). */
+internal fun animeFranchiseTitleIds(item: WatchedItem): List<String> =
+    item.id.animeEntryForNativeId()?.franchiseWatchedIds(item.type).orEmpty()
+
 internal fun animeAlternateWatchedKeys(items: Collection<WatchedItem>): Set<String> {
     if (items.isEmpty()) return emptySet()
     val keys = linkedSetOf<String>()

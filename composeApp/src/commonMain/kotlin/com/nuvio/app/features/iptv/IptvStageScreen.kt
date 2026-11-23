@@ -1336,7 +1336,7 @@ internal fun IptvStageScreen(
         DisposableEffect(Unit) { onDispose { IptvPreviewCover.set(false) } }
         val demandFor = onDemandFor
         if (demandFor != null) {
-            Box(Modifier.fillMaxSize().background(IptvDialogScrim), contentAlignment = Alignment.Center) {
+            Box(Modifier.iptvScrim { onDemandFor = null }, contentAlignment = Alignment.Center) {
                 IptvOnDemandChoice(
                     programme = demandFor,
                     line = IptvOnDemandRules.lateLine(demandFor.entry, now, IptvStageRules::clock),
@@ -1354,7 +1354,7 @@ internal fun IptvStageScreen(
         // fork:live-tv-polish - the programme menu over the stage.
         val progFor = progMenuFor
         if (progFor != null) {
-            Box(Modifier.fillMaxSize().background(IptvDialogScrim), contentAlignment = Alignment.Center) {
+            Box(Modifier.iptvScrim { progMenuFor = null }, contentAlignment = Alignment.Center) {
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(
                         modifier = Modifier.width(480.dp).iptvDialog(NuvioGlass.Shape).padding(24.dp),
@@ -1383,7 +1383,7 @@ internal fun IptvStageScreen(
         }
         // fork:live-tv-polish - the Views picker over the stage.
         if (viewsOpen) {
-            Box(Modifier.fillMaxSize().background(IptvDialogScrim), contentAlignment = Alignment.Center) {
+            Box(Modifier.iptvScrim { viewsOpen = false }, contentAlignment = Alignment.Center) {
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Column(
                         modifier = Modifier.width(420.dp).iptvDialog(NuvioGlass.Shape).padding(24.dp),
@@ -1401,7 +1401,7 @@ internal fun IptvStageScreen(
         }
         val menuFor = menuChannel
         if (menuFor != null) {
-            Box(Modifier.fillMaxSize().background(IptvDialogScrim), contentAlignment = Alignment.Center) {
+            Box(Modifier.iptvScrim { menuChannel = null }, contentAlignment = Alignment.Center) {
                 IptvLineupMenu(
                     channelName = menuFor.primary.name.ifBlank { "Channel ${menuFor.primary.num}" },
                     note = IptvLineupRules.position(storedLineup, menuFor).let { if (it >= 0) "Number ${it + 1} in Your 40" else "Not in Your 40" },

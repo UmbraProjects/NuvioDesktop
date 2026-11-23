@@ -717,9 +717,9 @@ object StreamsRepository {
                             episode = effectiveEpisode,
                         ) { group ->
                             publishAddonGroup(presentStreamGroup(group))
-                            if (!group.isLoading || group.streams.isNotEmpty()) {
-                                autoSelectOnResponse()
-                            }
+                            // Only once every indexer has answered: a fast indexer's partial list
+                            // must not be auto-played ahead of better or higher-priority releases.
+                            if (!group.isLoading) autoSelectOnResponse()
                         }
                     }
                 } else {

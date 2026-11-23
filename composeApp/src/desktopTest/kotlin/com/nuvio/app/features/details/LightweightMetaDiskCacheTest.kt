@@ -45,14 +45,38 @@ class LightweightMetaDiskCacheTest {
         ).toMetaDetails()
 
         assertEquals(
-            meta.copy(
-                cast = emptyList(),
-                videos = meta.videos.map { it.copy(thumbnail = null, overview = null) },
-            ),
+            meta.copy(cast = emptyList(), videos = emptyList(), lightweightEpisodeCount = 2),
             restored,
         )
-        // Random Play counts episodes; the player resolver matches ids and coordinates.
-        assertEquals(2, restored.videos.size)
+        // The episodes themselves are not kept (2026-11-23), only how many there were: Random Play's hint.
+        assertTrue(restored.videos.isEmpty())
+        assertEquals(2, restored.lightweightEpisodeCount)
         assertTrue(restored.cast.isEmpty())
+    }
+
+    @Test
+    fun anOlderEntryWithEpisodesIsCountedAndSlimmed() {
+        val old = """{"context":"ctx","savedAtMs":1,"id":"tt1","type":"series","name":"Show",
+            "videos":[{"id":"tt1:1:1","title":"One"},{"id":"tt1:1:2","title":"Two"},{"id":"tt1:1:3"}]}"""
+        val stored = json.decodeFromString<StoredLightweightMeta>(old)
+        val slim = stored.slimmed()
+        assertTrue(slim.videos.isEmpty())
+        assertEquals(3, slim.episodeCount)
+        assertEquals(3, slim.toMetaDetails().lightweightEpisodeCount)
+        // Nothing to slim: the same instance, so the loader can tell which entries changed.
+        assertTrue(slim.slimmed() === slim)
+        assertTrue(!json.encodeToString(slim).contains("videos"))
+    }
+
+    @Test
+    fun aLightweightResultDropsItsEpisodesButKeepsTheCount() {
+        val meta = MetaDetails(
+            id = "tt1", type = "series", name = "Show",
+            videos = listOf(MetaVideo(id = "tt1:1:1", title = "One"), MetaVideo(id = "tt1:1:2", title = "Two")),
+        )
+        val slim = meta.withoutEpisodeList()
+        assertTrue(slim.videos.isEmpty())
+        assertEquals(2, slim.lightweightEpisodeCount)
+        assertTrue(slim.withoutEpisodeList() === slim)
     }
 }

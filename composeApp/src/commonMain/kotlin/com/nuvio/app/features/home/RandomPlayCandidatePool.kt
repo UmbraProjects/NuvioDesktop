@@ -356,7 +356,7 @@ object RandomPlayCandidatePool {
                                 imdbRating = it.imdbRating,
                                 resolvedType = it.type,
                                 carriesAnimeCatalogueId = !it.malId.isNullOrBlank(),
-                                episodeCount = it.videos.size,
+                                episodeCount = maxOf(it.videos.size, it.lightweightEpisodeCount),
                             )
                         }
                     }

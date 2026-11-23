@@ -1768,6 +1768,30 @@ private fun PlaybackSettingsSection(
                             )
                         }
                         SettingsGroupDivider(isTablet = isTablet)
+                        var showCustomPlayerCssDialog by remember { mutableStateOf(false) }
+                        SettingsNavigationRow(
+                            title = stringResource(Res.string.settings_playback_desktop_custom_player_css),
+                            description = autoPlayPlayerSettings.desktopCustomPlayerCss
+                                .lineSequence()
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() && !it.startsWith("/*") && !it.startsWith("*") }
+                                .take(2)
+                                .joinToString("  ")
+                                .ifBlank { mpvOptionsNotSet },
+                            isTablet = isTablet,
+                            onClick = { showCustomPlayerCssDialog = true },
+                        )
+                        if (showCustomPlayerCssDialog) {
+                            CustomPlayerCssDialog(
+                                initialValue = autoPlayPlayerSettings.desktopCustomPlayerCss,
+                                onSave = {
+                                    PlayerSettingsRepository.setDesktopCustomPlayerCss(it)
+                                    showCustomPlayerCssDialog = false
+                                },
+                                onDismiss = { showCustomPlayerCssDialog = false },
+                            )
+                        }
+                        SettingsGroupDivider(isTablet = isTablet)
                         SettingsSwitchRow(
                             title = stringResource(Res.string.settings_playback_desktop_verbose_mpv_logging),
                             description = stringResource(Res.string.settings_playback_desktop_verbose_mpv_logging_desc),
@@ -4678,6 +4702,85 @@ private fun CustomMpvOptionsDialog(
                     horizontalArrangement = Arrangement.End,
                 ) {
                     TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
+                    TextButton(onClick = { onSave(value.trim()) }) { Text(stringResource(Res.string.action_save)) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun CustomPlayerCssDialog(
+    initialValue: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var value by remember { mutableStateOf(initialValue) }
+
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        NuvioDialogSurface(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = stringResource(Res.string.settings_playback_desktop_custom_player_css),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(Res.string.settings_playback_desktop_custom_player_css_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = MultilineOptionsEditorMaxHeight)
+                            .verticalScroll(rememberScrollState()),
+                    ) {
+                        BasicTextField(
+                            value = value,
+                            onValueChange = { value = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .trackTextInputFocus()
+                                .heightIn(min = 120.dp)
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            singleLine = false,
+                            decorationBox = { inner ->
+                                if (value.isEmpty()) {
+                                    Text(
+                                        text = stringResource(Res.string.settings_playback_desktop_custom_player_css_hint),
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    )
+                                }
+                                inner()
+                            },
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
+                    TextButton(onClick = { value = "" }) { Text(stringResource(Res.string.action_clear)) }
                     TextButton(onClick = { onSave(value.trim()) }) { Text(stringResource(Res.string.action_save)) }
                 }
             }

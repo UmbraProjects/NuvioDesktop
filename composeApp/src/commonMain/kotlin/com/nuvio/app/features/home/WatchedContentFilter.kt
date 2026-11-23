@@ -106,6 +106,8 @@ internal class WatchedContentFilter private constructor(private val keys: Set<St
         // milliseconds, but Home republishes on every settings tick and would pay it each time.
         @Volatile
         private var cached: Pair<List<WatchedItem>, Set<String>>? = null
+        @Volatile
+        private var cachedAliasVersion = -1L
 
         /** The active filter, or null when the setting is off so callers can short-circuit. */
         fun current(
@@ -156,14 +158,26 @@ internal class WatchedContentFilter private constructor(private val keys: Set<St
 
         fun forHistory(items: List<WatchedItem>): WatchedContentFilter {
             TmdbService.hydrateExternalIdCacheAsync()
+            val aliasVersion = com.nuvio.app.features.watched.WatchedIdAliases.version.toLong()
             cached?.let { (source, keys) ->
-                if (source === items) {
+                if (source === items && cachedAliasVersion == aliasVersion) {
                     ShownThisSession.noteHistory(keys)
                     return WatchedContentFilter(keys)
                 }
             }
-            val keys = buildWatchedParentKeys(items)
+            // The same aliases the poster's watched tick answers under (WatchedRepository's watchedKeys): the
+            // title under another id space (`tmdb:` page vs `tt` import) and a native anime entry's franchise ids.
+            // Without them a `tmdb:` row could show the tick and still not be hidden (user report, Nov 23).
+            val keys = buildWatchedParentKeys(items) + items.asSequence()
+                .filter { it.id.isNotBlank() }
+                .flatMap { item ->
+                    (com.nuvio.app.features.watched.WatchedIdAliases.aliasesOf(item.id) +
+                        com.nuvio.app.features.watched.animeFranchiseTitleIds(item))
+                        .asSequence()
+                        .map { alias -> watchedParentKey(item.type, alias) }
+                }
             cached = items to keys
+            cachedAliasVersion = aliasVersion
             ShownThisSession.noteHistory(keys)
             WatchedTmdbIndex.learn(keys)
             return WatchedContentFilter(keys)

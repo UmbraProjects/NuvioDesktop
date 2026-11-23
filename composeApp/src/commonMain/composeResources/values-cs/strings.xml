@@ -1876,6 +1876,9 @@
   <string name="settings_playback_desktop_custom_mpv_options">Možnosti MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Jedna možnost na řádek ve tvaru klíč=hodnota. Použijí se nad výchozími hodnotami Nuvia; neplatné možnosti se ignorují.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">např.&#10;profile=gpu-hq&#10;deband=no</string>
+  <string name="settings_playback_desktop_custom_player_css">Vlastní CSS přehrávače</string>
+  <string name="settings_playback_desktop_custom_player_css_desc">CSS připojené ke stylům ovládání přehrávače při příštím přehrávání. Pro přepsání proměnných motivu použijte !important.</string>
+  <string name="settings_playback_desktop_custom_player_css_hint">např.&#10;:root {&#10;  --theme-accent: #ff4d8d !important;&#10;}</string>
   <string name="settings_playback_hero_tv_trailer">Přehrávání traileru v hlavním banneru</string>
   <string name="settings_playback_hero_tv_trailer_description">Stisknutím T přehrajete trailer na tomto místě.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Počkat před přehráním</string>
@@ -5105,4 +5108,5 @@
     <string name="usenet_compressed_unplayable">Toto vydání je komprimované 7z, přeskočené podle nastavení Usenetu</string>
     <string name="tonight_twelve_hour">12hodinový formát času</string>
     <string name="tonight_twelve_hour_description">Zobrazovat časy jako 11:30 PM místo 23:30.</string>
+    <string name="player_hud_ends_at">%1$s končí v %2$s</string>
 </resources>

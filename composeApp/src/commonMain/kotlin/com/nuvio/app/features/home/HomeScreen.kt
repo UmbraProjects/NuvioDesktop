@@ -2892,6 +2892,16 @@ fun HomeScreen(
      * is the real answer, so the hero waits for it - up to the row's slide-in, after which the
      * carried card stands (the cursor was in a gap).
      */
+    /** Snap scroll's wheel step: the same wait as [awaitPointerAfterWheelRowChange], wherever the cursor is. */
+    fun holdHeroForWheelHover() {
+        heroAwaitingPointer = true
+        heroPointerWaitJob?.cancel()
+        heroPointerWaitJob = tvCoroutineScope.launch {
+            delay(HERO_WHEEL_ROW_POINTER_WAIT_MS)
+            heroAwaitingPointer = false
+        }
+    }
+
     fun awaitPointerAfterWheelRowChange() {
         if (!pointerOverImmersiveShelf) return
         heroAwaitingPointer = true
@@ -3917,6 +3927,14 @@ fun HomeScreen(
                                     change.consume()
                                     if (immersiveWheelLocked) return@onPointerEvent
                                     immersiveWheelLocked = true
+                                    // The row sliding in under the still cursor puts a card under it that need not be the
+                                    // carried one (a landscape row's 4th card sits over a portrait row's 6th-7th), and its
+                                    // hover then took focus: the hero showed the carried card and then the hovered one
+                                    // (user, Nov 23). The hovered card is the answer, as in TV mode: the hero waits for
+                                    // it, and the carried card stands only if the cursor lands in a gap.
+                                    // (Ignoring hover instead left focus on a card away from the cursor, and the card
+                                    // under it could only be picked by leaving it and coming back.)
+                                    if (mouseActivity.isMouseActive) holdHeroForWheelHover()
                                     syncTvFocusSectionToScroll()
                                     withCarriedTvItemIndex { tvFocus.moveSection(direction, tvSectionCount) }
                                     scrollToFocusedTvSection()
@@ -4557,6 +4575,7 @@ fun HomeScreen(
                                         if (mouseActivity.isMouseActive) {
                                             tvFocus.sectionIndex = sectionIndex
                                             tvFocus.itemIndex = itemIndex
+                                            heroAwaitingPointer = false
                                         }
                                     }
                                 } else {
@@ -4590,6 +4609,7 @@ fun HomeScreen(
                                         if (mouseActivity.isMouseActive) {
                                             tvFocus.sectionIndex = sectionIndex
                                             tvFocus.itemIndex = itemIndex
+                                            heroAwaitingPointer = false
                                         }
                                     }
                                 } else {
@@ -4623,6 +4643,7 @@ fun HomeScreen(
                                         if (mouseActivity.isMouseActive) {
                                             tvFocus.sectionIndex = sectionIndex
                                             tvFocus.itemIndex = itemIndex
+                                            heroAwaitingPointer = false
                                         }
                                     }
                                 } else {
@@ -4673,6 +4694,7 @@ fun HomeScreen(
                                                 if (mouseActivity.isMouseActive) {
                                                     tvFocus.sectionIndex = sectionIndex
                                                     tvFocus.itemIndex = itemIndex
+                                                    heroAwaitingPointer = false
                                                 }
                                             }
                                         } else {
@@ -4716,6 +4738,7 @@ fun HomeScreen(
                                                 if (mouseActivity.isMouseActive) {
                                                     tvFocus.sectionIndex = sectionIndex
                                                     tvFocus.itemIndex = itemIndex
+                                                    heroAwaitingPointer = false
                                                 }
                                             }
                                         } else {
@@ -4786,6 +4809,7 @@ fun HomeScreen(
                                             if (mouseActivity.isMouseActive) {
                                                 tvFocus.sectionIndex = sectionIndex
                                                 tvFocus.itemIndex = itemIndex
+                                                heroAwaitingPointer = false
                                             }
                                         }
                                     } else {

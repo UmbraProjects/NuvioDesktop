@@ -1876,6 +1876,9 @@
   <string name="settings_playback_desktop_custom_mpv_options">Opsi MPV</string>
   <string name="settings_playback_desktop_custom_mpv_options_desc">Satu opsi per baris dalam format key=value. Diterapkan di atas bawaan Nuvio; opsi yang tidak valid diabaikan.</string>
   <string name="settings_playback_desktop_custom_mpv_options_hint">mis.&#10;profile=gpu-hq&#10;deband=no</string>
+  <string name="settings_playback_desktop_custom_player_css">CSS pemutar kustom</string>
+  <string name="settings_playback_desktop_custom_player_css_desc">CSS yang ditambahkan ke stylesheet kontrol pemutar pada pemutaran berikutnya. Gunakan !important untuk menimpa variabel tema.</string>
+  <string name="settings_playback_desktop_custom_player_css_hint">mis.&#10;:root {&#10;  --theme-accent: #ff4d8d !important;&#10;}</string>
   <string name="settings_playback_hero_tv_trailer">Pemutaran Trailer Hero</string>
   <string name="settings_playback_hero_tv_trailer_description">Tekan T untuk memutar trailer di lokasi ini.</string>
   <string name="settings_playback_hero_tv_trailer_delay">Tunggu sebelum memutar</string>
@@ -5092,4 +5095,5 @@
     <string name="usenet_compressed_unplayable">Rilisan ini 7z terkompresi, dilewati oleh pengaturan Usenet Anda</string>
     <string name="tonight_twelve_hour">Jam 12 jam</string>
     <string name="tonight_twelve_hour_description">Tampilkan waktu sebagai 11:30 PM, bukan 23:30.</string>
+    <string name="player_hud_ends_at">%1$s berakhir pukul %2$s</string>
 </resources>

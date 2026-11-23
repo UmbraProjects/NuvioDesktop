@@ -25,6 +25,29 @@ class XmltvGuide(
         return programmes[id].orEmpty().withoutOverlaps()
     }
 
+    /**
+     * The same guide with one String per distinct title, description, kind and episode label, as
+     * [build] makes it. A guide read back from the disk cache gets a fresh String for every one:
+     * 183,000 titles for 52,000 distinct ones and 99,000 descriptions for 51,000 on one playlist
+     * (2026-11-23), about 20 MB of extra live heap held for as long as Live TV's guide is.
+     */
+    fun sharingStrings(): XmltvGuide {
+        val strings = HashMap<String, String>()
+        fun share(value: String?): String? = value?.let { strings.getOrPut(it) { it } }
+        val shared = HashMap<String, List<IptvEpgEntry>>(programmes.size * 2)
+        for ((id, list) in programmes) {
+            shared[id] = list.map { entry ->
+                entry.copy(
+                    title = share(entry.title)!!,
+                    kind = share(entry.kind),
+                    desc = share(entry.desc),
+                    episode = share(entry.episode),
+                )
+            }
+        }
+        return XmltvGuide(url, fetchedAt, shared, names)
+    }
+
     companion object {
         /** Past programmes kept, for the guide grid (and catch-up later). */
         const val WINDOW_BEFORE_MS = 24 * 3600_000L

@@ -3,6 +3,15 @@ package com.nuvio.app.features.debrid
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.addons.RawHttpResponse
 import com.nuvio.app.features.addons.httpRequestRaw
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
@@ -144,19 +153,39 @@ internal object TorboxApiClient {
     suspend fun listCloudWebDownloads(apiKey: String): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
         listCloudItems(apiKey, "webdl")
 
+    private val cloudListScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val cloudListMutex = Mutex()
+    private val cloudListInFlight = mutableMapOf<String, Deferred<DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>>>>()
+
     // mylist stops at 1,000 items per call, so larger libraries are read page by page.
+    // Single-flight per (apiKey, kind) so concurrent startup refreshes share one trip.
     private suspend fun listCloudItems(
         apiKey: String,
         kind: String,
-    ): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> =
-        fetchTorboxCloudPages(pageSize = 1000) { offset, limit ->
-            request(
-                method = "GET",
-                url = "$BASE_URL/v1/api/$kind/mylist?offset=$offset&limit=$limit",
-                apiKey = apiKey,
-                allowLargeResponse = true,
-            )
+    ): DebridApiResponse<TorboxEnvelopeDto<List<TorboxCloudItemDto>>> {
+        val key = "$kind:${apiKey.trim()}"
+        val deferred = cloudListMutex.withLock {
+            cloudListInFlight.getOrPut(key) {
+                cloudListScope.async {
+                    try {
+                        fetchTorboxCloudPages(pageSize = 1000) { offset, limit ->
+                            request(
+                                method = "GET",
+                                url = "$BASE_URL/v1/api/$kind/mylist?offset=$offset&limit=$limit",
+                                apiKey = apiKey,
+                                allowLargeResponse = true,
+                            )
+                        }
+                    } finally {
+                        withContext(NonCancellable) {
+                            cloudListMutex.withLock { cloudListInFlight.remove(key) }
+                        }
+                    }
+                }
+            }
         }
+        return deferred.await()
+    }
 
     suspend fun requestDownloadLink(
         apiKey: String,

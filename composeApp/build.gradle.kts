@@ -2635,7 +2635,13 @@ val nativeCompile = tasks.register<Exec>("nativeCompile") {
             // (UiStall) of 250 ms or more in the 2026-10-19 session, and back-to-back pairs ~400 ms
             // apart. 512m leaves ~320 MB of old generation, so most growth is collected by
             // IdleHeapCollector while the user is not interacting.
-            add("-R:MinHeapSize=512m")
+            // 768m since 2026-11-23: the live set has grown to ~420 MB (lightweight meta for ~4,600
+            // titles, the TMDB answer cache, Live TV's 58,000-channel list and 180,000-programme
+            // guide), above the ~320 MB of old generation 512m leaves. The old generation then sat
+            // just above the live set again and each promotion forced another full GC: four in 4 s
+            // on opening Live TV, four in 3 s at a YouTube playback start, 400-470 ms each. 768m
+            // leaves ~576 MB, so the same ~150 MB of headroom as the original 512m had.
+            add("-R:MinHeapSize=768m")
             // Objects are promoted after surviving 3 young collections instead of up to 15 (the
             // serial GC's default). Startup builds ~60 MB of long-lived data (caches, catalogs, meta)
             // that was copied between survivor spaces on every young collection until it aged out:

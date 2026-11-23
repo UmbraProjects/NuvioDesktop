@@ -1290,6 +1290,11 @@ private fun FramedHeroBackdropImageLayer(
     var profile by remember(model) { mutableStateOf(HeroBackdropFramer.peek(model)) }
     // Whether the picture is on screen yet. Until it is, a crop change is a snap nobody sees.
     var displayed by remember(model) { mutableStateOf(false) }
+    // Loaded and ready to show. Only the effect below turns this into [displayed], after snapping to the crop as it
+    // stands in that composition: onSuccess used to set [displayed] itself, in the same frame a crop read from disk
+    // had just landed but before the target bias was recomputed, so the next frame saw "a crop arrived after it showed"
+    // and eased the picture down from the fallback in view (user, Nov 23; every logged move started at the fallback).
+    var pendingShow by remember(model) { mutableStateOf(false) }
     LaunchedEffect(model) {
         if (profile == null) HeroBackdropFramer.profile(model, image = null)?.let { profile = it }
     }
@@ -1307,9 +1312,25 @@ private fun FramedHeroBackdropImageLayer(
         }
         val bias = remember(model) { Animatable(targetBias) }
         var framedProfile by remember(model) { mutableStateOf(currentProfile) }
-        LaunchedEffect(targetBias) {
+        LaunchedEffect(targetBias, pendingShow) {
             val analysisLanded = framedProfile !== currentProfile
             framedProfile = currentProfile
+            if (pendingShow) {
+                bias.snapTo(targetBias)
+                pendingShow = false
+                displayed = true
+                onResolved(true)
+                return@LaunchedEffect
+            }
+            // Diagnostic (user, Nov 23: heroes still move after they appear, though analyses take 250-400 ms): which
+            // path moves a backdrop that is already on screen. One line per move of more than a sliver.
+            if (displayed && kotlin.math.abs(bias.value - targetBias) > 0.02f) {
+                heroImageLog.i {
+                    "Hero framing moved in view (${if (analysisLanded) "crop arrived after it showed" else "hero resized or fallback changed"}): " +
+                        "bias ${"%.2f".format(bias.value)} -> ${"%.2f".format(targetBias)}, aspect ${"%.2f".format(heroAspect)}, " +
+                        model.safeImageUrlForLog()
+                }
+            }
             if (analysisLanded && displayed) {
                 // The analysis finished after the picture was up: ease into the new crop.
                 bias.animateTo(targetBias, tween(FramingSettleMillis))
@@ -1319,10 +1340,20 @@ private fun FramedHeroBackdropImageLayer(
                 bias.snapTo(targetBias)
             }
         }
+        // Not under the crossfade (the keyed pages Discover's hero swipes through): nothing else holds the picture back
+        // until its crop is in, so it was shown at the fallback crop and slid into place in view (user, Nov 23; the log
+        // said "crop arrived after it showed" every time). It now stays hidden until then and fades in.
+        // A crop already known (memory or disk) needs no hold: the picture is framed from its first frame.
+        val framedFromStart = remember(model) { currentProfile != null }
+        val shownAlpha by androidx.compose.animation.core.animateFloatAsState(
+            targetValue = if (heldUntilResolved || framedFromStart || displayed) 1f else 0f,
+            animationSpec = tween(UnheldFadeInMillis),
+            label = "framedBackdropShown",
+        )
         AsyncImage(
             model = model,
             contentDescription = contentDescription,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = shownAlpha },
             alignment = BiasAlignment(horizontalBias = 0f, verticalBias = bias.value),
             contentScale = contentScale,
             desktopImageScaling = NuvioDesktopImageScaling.Disabled,
@@ -1333,22 +1364,22 @@ private fun FramedHeroBackdropImageLayer(
             onSuccess = { state ->
                 val image = state.result.image
                 onImageLoaded?.invoke(image)
-                // Without the crossfade nothing waits on onResolved: the picture is up already.
-                if (!heldUntilResolved) displayed = true
                 if (profile != null) {
-                    displayed = true
-                    onResolved(true)
+                    pendingShow = true
                 } else {
                     scope.launch {
                         val analysis = async { HeroBackdropFramer.profile(model, image) }
-                        withTimeoutOrNull(FramingResolveWaitMillis) { analysis.await() }?.let { landed ->
-                            profile = landed
-                            // Frame it before it shows, rather than letting the effect below see
-                            // a displayed picture and ease toward a crop nobody saw it leave.
-                            bias.snapTo(heroBackdropFramingBias(landed, heroAspect, priorBias))
+                        val waitStarted = System.currentTimeMillis()
+                        val inTime = withTimeoutOrNull(FramingResolveWaitMillis) { analysis.await() }
+                        if (inTime == null) {
+                            heroImageLog.i {
+                                "Hero framing not ready after ${System.currentTimeMillis() - waitStarted}ms " +
+                                    "(image ${image::class.simpleName}): shown at the fallback crop, " + model.safeImageUrlForLog()
+                            }
                         }
-                        displayed = true
-                        onResolved(true)
+                        // Framed before it shows: the effect snaps to this crop, then shows it.
+                        inTime?.let { landed -> profile = landed }
+                        pendingShow = true
                         analysis.await()?.let { profile = it }
                     }
                 }
@@ -1361,10 +1392,13 @@ private fun FramedHeroBackdropImageLayer(
  * How long a new backdrop's fade-in may wait for its analysis (~100-200ms on the JVM build;
  * 238-516ms, mean 262, on the native build, 2026-10-17). Past this it fades in at the fallback
  * crop and eases over when the analysis finishes. Only the first sighting of a backdrop waits:
- * the result is cached in memory and on disk.
+ * the result is cached in memory and on disk. 1 s since Nov 23: one analysis can be running ahead of
+ * the hero's (on-screen analyses jump the prewarmer's queue but do not interrupt one in progress), and
+ * a backdrop that slides after it shows is what the user noticed, more than a fade that starts later.
  */
-private const val FramingResolveWaitMillis = 700L
+private const val FramingResolveWaitMillis = 1_000L
 private const val FramingSettleMillis = 350
+private const val UnheldFadeInMillis = 160
 
 @Composable
 private fun DesktopHomeHeroFrame(

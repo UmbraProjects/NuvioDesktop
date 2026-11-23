@@ -15,6 +15,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -62,7 +64,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import com.nuvio.app.core.ui.NuvioToastController
 import androidx.compose.runtime.rememberCoroutineScope
@@ -211,15 +216,8 @@ fun IptvScreen(
             .take(com.nuvio.app.core.ui.MAX_KEYBOARD_SUGGESTIONS)
     }
     com.nuvio.app.core.ui.PublishKeyboardSuggestions(channelWords) { picked -> filter = picked }
-    val categoryRegions = remember(content) { content?.let(IptvRegions::categoryRegions).orEmpty() }
-    val regions = remember(categoryRegions) { IptvRegions.regions(categoryRegions) }
-    if (region != null && region !in regions) region = null
-
     // fork:live-tv-triage - the categories the triage kept; null until the questions have been answered.
     val triage = settings.triage[playlist.id]
-    val keptCategories = remember(content, triage, categoryRegions) {
-        if (content == null || triage == null) null else IptvTriageRules.keptCategories(content, triage, categoryRegions)
-    }
     var triageOpen by rememberSaveable(playlist.id) { mutableStateOf(false) }
     // fork:live-tv-stage - with Stage on, Live TV opens on the stages; "All channels" there comes here, "Stages" goes back.
     var stageOpen by rememberSaveable(playlist.id) { mutableStateOf(true) }
@@ -235,21 +233,47 @@ fun IptvScreen(
     LaunchedEffect(stageOn, triage == null, content != null) {
         if (stageOn && triage == null && content != null && IptvFirstRun.shouldAsk(playlist.id)) triageOpen = true
     }
-    val merged = remember(content, onNow, lineupOn, stageOn, categoryRegions) {
-        if ((onNow || lineupOn || stageOn) && content != null) IptvChannelMerge.merge(content.channels) { categoryRegions[it.categoryId] } else null
+
+    // Computing region/language triage and channel merging runs regexes over thousands of IPTV
+    // channels; run it off the UI thread (and cache the latest result across tab switches) so
+    // opening Live TV never stalls composition or triggers a UI-thread GC storm.
+    val needMerge = onNow || lineupOn || stageOn
+    val cachedDerived = remember(content, triage, needMerge) {
+        if (content == null) IptvScreenDerived.EMPTY else IptvScreenDerivedCache.get(content, triage, needMerge)
     }
-    // Every copy's uid to the merged channel it belongs to.
-    val mergedByUid = remember(merged) {
-        buildMap<Int, IptvMergedChannel> { merged?.forEach { channel -> channel.sources.forEach { put(it.uid, channel) } } }
+    val derived by produceState(initialValue = cachedDerived, content, triage, needMerge) {
+        if (content == null) {
+            value = IptvScreenDerived.EMPTY
+            return@produceState
+        }
+        IptvScreenDerivedCache.get(content, triage, needMerge)?.let {
+            value = it
+            return@produceState
+        }
+        // Never show the previous content's lineup or kept categories while the new ones compute.
+        value = null
+        val computed = withContext(Dispatchers.Default) {
+            computeIptvScreenDerived(content, triage, needMerge)
+        }
+        IptvScreenDerivedCache.put(content, triage, needMerge, computed)
+        value = computed
     }
-    val alternates = remember(merged) { merged?.filter { it.sources.size > 1 }?.associate { it.primary.uid to it.alternates }.orEmpty() }
-    val mergedPrimaries = remember(merged) { merged?.map { it.primary }.orEmpty() }
+    val categoryRegions = derived?.categoryRegions.orEmpty()
+    val regions = derived?.regions.orEmpty()
+    // Only once the regions are known: while they compute the list is empty, and clearing the
+    // region then would forget the user's pick every time Live TV opens.
+    if (content != null && derived != null && derived !== IptvScreenDerived.EMPTY && region != null && region !in regions) region = null
+    val keptCategories = derived?.keptCategories
+    val merged = derived?.merged
+    val mergedByUid = derived?.mergedByUid.orEmpty()
+    val alternates = derived?.alternates.orEmpty()
+    val mergedPrimaries = derived?.mergedPrimaries.orEmpty()
     val wallSection = onNow && section in IptvWall.SECTIONS
     // fork:live-tv-lineup - what was thrown out with "Never again", and the lineup as merged channels.
     // fork:live-tv-weed - channels the night checks found dead leave the same way as ones thrown out.
     val never = settings.never[playlist.id].orEmpty() + IptvWeedRules.dead(settings.weeds[playlist.id].orEmpty())
     val storedLineup = settings.lineup[playlist.id]
-    val keyIndex = remember(merged) { merged?.let(IptvLineupRules::keyIndex).orEmpty() }
+    val keyIndex = derived?.keyIndex.orEmpty()
     val lineupChannels = remember(storedLineup, keyIndex, never, lineupOn, stageOn) {
         if (!(lineupOn || stageOn) || storedLineup == null) emptyList()
         else IptvLineupRules.resolve(storedLineup, keyIndex).filterNot { IptvLineupRules.isNever(it, never) }
@@ -759,6 +783,22 @@ fun IptvScreen(
             onTriage = { triageOpen = true },
             keptCategories = keptCategories,
         )
+        return
+    }
+    // With Stage on, the channel list and the merged channels arrive a moment after the tab opens (from disk, then worked
+    // out off the UI thread). The plain channel page used to show meanwhile and then swap to Stage with no warning (user,
+    // Nov 23): wait on Stage's own background instead. A list that failed to load still falls through to the plain page,
+    // which says why.
+    if (stageOn && stageOpen && (content == null || merged == null) && !(content == null && state.error != null && !state.loading)) {
+        val waitTokens = MaterialTheme.nuvio
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .settingsSkyBackground(waitTokens.colors.background, waitTokens.colors.accent),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Loading Live TV…", style = MaterialTheme.typography.titleMedium, color = waitTokens.colors.textMuted)
+        }
         return
     }
 
@@ -1616,6 +1656,18 @@ internal fun Modifier.iptvDialog(shape: Shape): Modifier = this
     .shadow(32.dp, shape, clip = false)
     .background(IptvDialogFill, shape)
     .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+    // A click on the menu's own background stays in the menu; [iptvScrim] would take it as "outside".
+    .pointerInput(Unit) { detectTapGestures { } }
+
+/**
+ * The dimmed layer behind a Live TV menu. It takes every pointer event, so nothing behind it can be
+ * clicked (a channel started while picking a view, user Nov 23), and a click on it, outside the
+ * menu, closes the menu as Back does.
+ */
+internal fun Modifier.iptvScrim(onDismiss: () -> Unit): Modifier = this
+    .fillMaxSize()
+    .background(IptvDialogScrim)
+    .pointerInput(onDismiss) { detectTapGestures { onDismiss() } }
 
 private val IptvDialogFill = Color(0xFF17171C)
 
@@ -1626,4 +1678,75 @@ internal val IptvDialogScrim = Color.Black.copy(alpha = 0.72f)
 object IptvTopBarSearch {
     var text by mutableStateOf("")
     internal var playlistId: String? = null
+}
+
+private data class IptvScreenDerived(
+    val categoryRegions: Map<String, String> = emptyMap(),
+    val regions: List<String> = emptyList(),
+    val keptCategories: IptvKept? = null,
+    val merged: List<IptvMergedChannel>? = null,
+    val mergedByUid: Map<Int, IptvMergedChannel> = emptyMap(),
+    val alternates: Map<Int, List<IptvChannel>> = emptyMap(),
+    val mergedPrimaries: List<IptvChannel> = emptyList(),
+    val keyIndex: Map<String, IptvMergedChannel> = emptyMap(),
+) {
+    companion object {
+        val EMPTY = IptvScreenDerived()
+    }
+}
+
+private fun computeIptvScreenDerived(
+    content: IptvPlaylistContent,
+    triage: IptvTriage?,
+    needMerge: Boolean,
+): IptvScreenDerived {
+    val categoryRegions = IptvRegions.categoryRegions(content)
+    val regions = IptvRegions.regions(categoryRegions)
+    val keptCategories = triage?.let { IptvTriageRules.keptCategories(content, it, categoryRegions) }
+    val merged = if (needMerge) IptvChannelMerge.merge(content.channels) { categoryRegions[it.categoryId] } else null
+    val mergedByUid = buildMap<Int, IptvMergedChannel> {
+        merged?.forEach { channel -> channel.sources.forEach { put(it.uid, channel) } }
+    }
+    val alternates = merged?.filter { it.sources.size > 1 }?.associate { it.primary.uid to it.alternates }.orEmpty()
+    val mergedPrimaries = merged?.map { it.primary }.orEmpty()
+    val keyIndex = merged?.let(IptvLineupRules::keyIndex).orEmpty()
+    return IptvScreenDerived(
+        categoryRegions = categoryRegions,
+        regions = regions,
+        keptCategories = keptCategories,
+        merged = merged,
+        mergedByUid = mergedByUid,
+        alternates = alternates,
+        mergedPrimaries = mergedPrimaries,
+        keyIndex = keyIndex,
+    )
+}
+
+/**
+ * Process-level single-entry cache for [computeIptvScreenDerived] so leaving the Live TV tab and
+ * returning does not re-run language/region regex triage and channel merging over the playlist.
+ */
+private object IptvScreenDerivedCache {
+    private class Entry(
+        val content: IptvPlaylistContent,
+        val triage: IptvTriage?,
+        val needMerge: Boolean,
+        val value: IptvScreenDerived,
+    )
+
+    @Volatile
+    private var entry: Entry? = null
+
+    fun get(content: IptvPlaylistContent, triage: IptvTriage?, needMerge: Boolean): IptvScreenDerived? {
+        val current = entry ?: return null
+        return if (current.content === content && current.triage == triage && current.needMerge == needMerge) {
+            current.value
+        } else {
+            null
+        }
+    }
+
+    fun put(content: IptvPlaylistContent, triage: IptvTriage?, needMerge: Boolean, value: IptvScreenDerived) {
+        entry = Entry(content, triage, needMerge, value)
+    }
 }

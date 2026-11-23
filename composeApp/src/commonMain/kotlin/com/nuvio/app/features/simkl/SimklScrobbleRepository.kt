@@ -381,14 +381,24 @@ internal object SimklScrobbleRepository {
     private suspend fun enrichAnimeIdsForSimkl(ids: SimklIds): SimklIds {
         if (ids.simkl != null && (ids.tvdb != null || ids.kitsu != null || ids.mal != null)) return ids
         animeIdEnrichmentMutex.withLock { animeIdEnrichmentCache[ids] }?.let { return it }
-        val resolvedSimklId = ids.simkl ?: resolveAnimeSimklId(ids) ?: return ids
+        val lookup = ids.simkl?.let { AnimeSimklLookup(it, answered = true) } ?: resolveAnimeSimklId(ids)
+        val resolvedSimklId = lookup.simklId
+        if (resolvedSimklId == null) {
+            // Remember ids Simkl answered "not anime" for, so start, pause and stop don't repeat
+            // /redirect. A failed request (offline, 5xx, 429) is not remembered: the next event retries.
+            if (lookup.answered) animeIdEnrichmentMutex.withLock { animeIdEnrichmentCache[ids] = ids }
+            return ids
+        }
         val detailsIds = fetchAnimeIds(resolvedSimklId)
         val enriched = ids.copy(simkl = resolvedSimklId).withFallbacks(detailsIds)
         animeIdEnrichmentMutex.withLock { animeIdEnrichmentCache[ids] = enriched }
         return enriched
     }
 
-    private suspend fun resolveAnimeSimklId(ids: SimklIds): Int? {
+    /** [answered] is false when the request itself failed, so a null [simklId] says nothing yet. */
+    private class AnimeSimklLookup(val simklId: Int?, val answered: Boolean)
+
+    private suspend fun resolveAnimeSimklId(ids: SimklIds): AnimeSimklLookup {
         val query = when {
             ids.tvdb != null -> "tvdb=${ids.tvdb}"
             ids.kitsu != null -> "kitsu=${ids.kitsu}"
@@ -397,10 +407,10 @@ internal object SimklScrobbleRepository {
             ids.anidb != null -> "anidb=${ids.anidb}"
             !ids.imdb.isNullOrBlank() -> "imdb=${ids.imdb}"
             ids.tmdb != null -> "tmdb=${ids.tmdb}"
-            else -> return null
+            else -> return AnimeSimklLookup(null, answered = true)
         }
         val url = SimklAuthRepository.appendParams("$BASE_URL/redirect?$query")
-        return runCatching {
+        val response = runCatching {
             simklRequest(
                 method = "GET",
                 url = url,
@@ -408,13 +418,15 @@ internal object SimklScrobbleRepository {
                 followRedirects = false,
             )
         }.getOrNull()
-            ?.headers
-            ?.entries
-            ?.firstOrNull { (key, _) -> key.equals("location", ignoreCase = true) }
+        if (response == null || response.status !in 200..399) return AnimeSimklLookup(null, answered = false)
+        val simklId = response.headers
+            .entries
+            .firstOrNull { (key, _) -> key.equals("location", ignoreCase = true) }
             ?.value
             ?.substringAfter("/anime/", missingDelimiterValue = "")
             ?.substringBefore('/')
             ?.toIntOrNull()
+        return AnimeSimklLookup(simklId, answered = true)
     }
 
     private suspend fun fetchAnimeIds(simklId: Int): SimklIds? {

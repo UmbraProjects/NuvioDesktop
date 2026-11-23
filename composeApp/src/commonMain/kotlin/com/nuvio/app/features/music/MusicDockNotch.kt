@@ -77,6 +77,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nuvio.app.core.ui.NuvioAsyncImage
+import com.nuvio.app.core.ui.KeyboardInputMode
 import com.nuvio.app.core.ui.NuvioGlass
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.music.library.musicGlass
@@ -124,25 +125,28 @@ internal fun MusicDockNotch(
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val focused by source.collectIsFocusedAsState()
-    // Focus anywhere in the dock (the notch itself or one of the open panel's buttons) keeps it open.
+    // Focus anywhere in the dock (the notch itself or one of the open panel's buttons) keeps it
+    // open only when driven by the keyboard/pad; on desktop a mouse click also focuses the button
+    // it hits, which must not pin the dock open after the pointer moves away.
     var focusWithin by remember { mutableStateOf(false) }
+    val keyboardFocusWithin = focusWithin && KeyboardInputMode.active
     // Reaching the dock with the keyboard goes straight on to the open panel's play button, so the arrows and Enter
     // work on its controls; the dock itself, a box around them, has nothing to press.
     val panelEntry = remember { FocusRequester() }
-    LaunchedEffect(focused) {
-        if (!focused) return@LaunchedEffect
+    LaunchedEffect(focused, KeyboardInputMode.active) {
+        if (!focused || !KeyboardInputMode.active) return@LaunchedEffect
         repeat(6) {
             delay(32)
             if (panelEntry.requestFocusLogged()) return@LaunchedEffect
         }
     }
-    // Opens at once on hover or focus; folds back a moment after both are gone.
+    // Opens at once on hover or keyboard focus; folds back a moment after both are gone.
     var open by remember { mutableStateOf(false) }
     // Whether the dock was last held open by focus (the keyboard or a pad) rather than the pointer.
     var heldByFocus by remember { mutableStateOf(false) }
-    LaunchedEffect(hovered, focusWithin) {
-        if (hovered || focusWithin) {
-            heldByFocus = focusWithin && !hovered
+    LaunchedEffect(hovered, keyboardFocusWithin) {
+        if (hovered || keyboardFocusWithin) {
+            heldByFocus = keyboardFocusWithin && !hovered
             open = true
         } else {
             // The grace is for a pointer slipping off the edge for a moment. Focus leaving (Back, Escape, a pad's B)

@@ -132,8 +132,8 @@ fun TonightHost(
             delay(20_000)
         }
     }
-    // The library usually finishes loading after the app opens: gather again once it has.
-    LaunchedEffect(library.isLoaded) { TonightPool.refresh(System.currentTimeMillis(), force = library.isLoaded) }
+    // The library usually finishes loading after the app opens: gather again once it has (see TonightPool.refresh).
+    LaunchedEffect(library.isLoaded) { TonightPool.refresh(System.currentTimeMillis(), libraryLoaded = library.isLoaded) }
 
     val minutesUntilBed = tonightMinutesUntilBed(clock.minuteOfDay, settings.bedMinuteOfDay)
     // With bedtime (nearly) here, the filter would leave nothing; it simply stops filtering.
@@ -302,9 +302,11 @@ fun TonightHost(
         else RemoteTonight.clear(remoteOwner)
     }
     DisposableEffect(Unit) { onDispose { RemoteTonight.clear(remoteOwner) } }
-    // Out of questions (three asked, or nothing left to split): deal from what is left.
+    // Out of questions (three asked, or nothing left to split): deal from what is left. Not held back by a pool
+    // refresh that is still running: what the answers narrowed is already here. Empty only before the first pool
+    // arrives, and the effect runs again when it does (loading changes).
     LaunchedEffect(view, question, poolState.loading) {
-        if (view == TonightView.Questions && question == null && !poolState.loading && pool.isNotEmpty()) deal(current, reshuffle = false)
+        if (view == TonightView.Questions && question == null && current.isNotEmpty()) deal(current, reshuffle = false)
     }
 
     Box(
@@ -404,7 +406,8 @@ fun TonightHost(
                 answers = answers.filter { it != "Either" },
                 clock = clock,
                 minutesUntilBed = minutesUntilBed,
-                loading = poolState.loading && poolState.titles.isEmpty(),
+                // With an empty hand, any refresh still running may yet fill it: say so rather than "nothing fits".
+                loading = poolState.loading && (poolState.titles.isEmpty() || hand.isEmpty()),
                 reshuffleLeft = reshuffleLeft,
                 onReshuffle = ::reshuffle,
                 onPlay = { card -> play(card.title.type, card.title.id) },
@@ -413,8 +416,10 @@ fun TonightHost(
             )
         }
     }
-    // A hand dealt before the pool arrived is dealt again once it has.
-    LaunchedEffect(poolState.loadedAtEpochMs) {
+    // An empty hand is dealt again whenever there is something to deal: a hand dealt before the pool arrived, or one
+    // that came out empty any other way. Keyed on the view and the pool too, not only on the pool landing: Three Cards
+    // showed "Nothing fits tonight yet" with a 246-title pool loaded (user, Nov 23).
+    LaunchedEffect(view, hand.isEmpty(), pool.size, poolState.loadedAtEpochMs) {
         if (view == TonightView.Cards && hand.isEmpty() && pool.isNotEmpty()) deal(pool, reshuffle = false)
     }
 }

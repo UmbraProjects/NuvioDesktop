@@ -247,7 +247,7 @@ object IptvEpgRepository {
             IptvCacheStorage.openRead(cacheName)?.use { input ->
                 json.decodeFromStream(CachedGuide.serializer(), GZIPInputStream(input.buffered()))
             }
-        }.getOrNull()?.takeIf { it.version == CACHE_VERSION && (url == null || it.guide.url == url) }?.guide
+        }.getOrNull()?.takeIf { it.version == CACHE_VERSION && (url == null || it.guide.url == url) }?.guide?.sharingStrings()
     }
 
     @OptIn(ExperimentalSerializationApi::class)

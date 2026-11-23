@@ -184,6 +184,8 @@ internal expect object PlayerSettingsStorage {
     fun saveDesktopRateLimitReconnectSecondDelaySeconds(seconds: Int)
     fun loadDesktopCustomMpvOptions(): String?
     fun saveDesktopCustomMpvOptions(options: String)
+    fun loadDesktopCustomPlayerCss(): String?
+    fun saveDesktopCustomPlayerCss(css: String)
     fun loadDesktopMpvConfigMode(): String?
     fun saveDesktopMpvConfigMode(mode: String)
     fun loadDesktopMpvPropertyOverrides(): String?

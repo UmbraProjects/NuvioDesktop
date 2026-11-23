@@ -78,6 +78,10 @@ internal object MusicKeyboard {
      */
     fun togglePlayerFocus(): Boolean {
         val player = roots.lastOrNull { it.isPlayer } ?: return false
+        // A key moving focus is keyboard use. Only the navigation keys switch the app into keyboard mode, so after the
+        // mouse the player's B (a hotkey) moved focus to the dock without opening it or showing a focus ring, and
+        // looked like it did nothing (user, Nov 23).
+        com.nuvio.app.core.ui.KeyboardInputMode.active = true
         if (player.hasFocus) {
             // Back onto exactly the control that was left, when it is still on screen.
             val control = returnControl

@@ -109,9 +109,15 @@ actual fun PlayerShortcutRebindDialog(action: PlayerShortcutAction, onDismiss: (
     var error by remember { mutableStateOf<String?>(null) }
     val currentLabel = playerShortcutKeyCodeLabel(PlayerShortcutsRepository.keyCode(action))
 
-    LaunchedEffect(action) { focusRequester.requestFocusLogged() }
+    LaunchedEffect(action) {
+        repeat(6) {
+            if (focusRequester.requestFocusLogged()) return@LaunchedEffect
+            kotlinx.coroutines.delay(32)
+        }
+    }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
+        com.nuvio.app.core.ui.KeyRouteLayer("player shortcut rebind", menu = false)
         NuvioDialogSurface {
             Column(
                 modifier = Modifier
@@ -207,9 +213,15 @@ actual fun AppShortcutRebindDialog(action: AppShortcutAction, onDismiss: () -> U
     val focusRequester = remember { FocusRequester() }
     var error by remember { mutableStateOf<String?>(null) }
     val currentLabel = playerShortcutKeyCodeLabel(AppShortcutsRepository.keyCode(action))
-    LaunchedEffect(action) { focusRequester.requestFocusLogged() }
+    LaunchedEffect(action) {
+        repeat(6) {
+            if (focusRequester.requestFocusLogged()) return@LaunchedEffect
+            kotlinx.coroutines.delay(32)
+        }
+    }
 
     BasicAlertDialog(onDismissRequest = onDismiss) {
+        com.nuvio.app.core.ui.KeyRouteLayer("player shortcut rebind", menu = false)
         NuvioDialogSurface {
             Column(
                 modifier = Modifier

@@ -488,7 +488,14 @@ internal fun NuvioShelfItemSlot(
             .onPointerEvent(PointerEventType.Exit) { pressed = false }
             .then(
                 if (onHover != null) {
-                    Modifier.onPointerEvent(PointerEventType.Enter) { onHover() }
+                    // Move as well as Enter: after the keyboard (or a wheel step) took focus elsewhere, the card already
+                    // under the cursor is picked as soon as the mouse moves, not only after leaving it and coming back
+                    // (user, Nov 23). Only while the mouse is in charge: KeyboardInputMode clears on a real mouse move, click
+                    // or wheel, never on the moves Compose makes up when content scrolls under a still cursor, which would
+                    // otherwise pull focus back to the card under it on every keyboard step.
+                    Modifier
+                        .onPointerEvent(PointerEventType.Enter) { onHover() }
+                        .onPointerEvent(PointerEventType.Move) { if (!KeyboardInputMode.active) onHover() }
                 } else {
                     Modifier
                 },

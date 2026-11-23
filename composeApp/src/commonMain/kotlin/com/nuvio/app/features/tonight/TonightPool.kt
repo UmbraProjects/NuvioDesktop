@@ -45,6 +45,8 @@ data class TonightPoolState(
     val titles: List<TonightTitle> = emptyList(),
     val loading: Boolean = false,
     val loadedAtEpochMs: Long = 0L,
+    /** Whether the library had loaded when this pool was gathered (its started and watched titles are in it). */
+    val withLibrary: Boolean = false,
 )
 
 object TonightPool {
@@ -62,18 +64,27 @@ object TonightPool {
     private const val RECOMMENDED_MAX = 80
     private const val ENRICH_PARALLEL = 4
 
-    /** Builds the pool, or rebuilds it once it is ten minutes old. Safe to call on every visit. */
-    fun refresh(nowEpochMs: Long, force: Boolean = false) {
+    /**
+     * Builds the pool, or rebuilds it once it is ten minutes old, or when it was gathered before the
+     * library had loaded and now it has. Safe to call on every visit.
+     *
+     * It used to rebuild on every visit once the library was loaded (a forced refresh keyed on the
+     * library being loaded, which it nearly always is when the picker opens). A rebuild can wait up
+     * to 20 s for Discover, and Three Questions held its deal back while one ran, so three quick
+     * answers could sit on "Dealing your cards" until it finished (user, Nov 23).
+     */
+    fun refresh(nowEpochMs: Long, libraryLoaded: Boolean, force: Boolean = false) {
         val current = _state.value
         if (job?.isActive == true) return
-        if (!force && current.titles.isNotEmpty() && nowEpochMs - current.loadedAtEpochMs < REFRESH_AFTER_MS) return
+        val fresh = current.titles.isNotEmpty() && nowEpochMs - current.loadedAtEpochMs < REFRESH_AFTER_MS
+        if (!force && fresh && (current.withLibrary || !libraryLoaded)) return
         _state.value = current.copy(loading = true)
         job = scope.launch {
             val titles = runCatching { build() }
                 .onFailure { log.w { "Tonight: could not gather titles: ${it.message}" } }
                 .getOrDefault(current.titles)
             log.i { "Tonight: pool of ${titles.size} (" + titles.groupingBy { it.kind }.eachCount() + ")" }
-            _state.value = TonightPoolState(titles = titles, loading = false, loadedAtEpochMs = nowEpochMs)
+            _state.value = TonightPoolState(titles = titles, loading = false, loadedAtEpochMs = nowEpochMs, withLibrary = libraryLoaded)
         }
     }
 
@@ -123,7 +134,15 @@ object TonightPool {
         recommended(TonightSettingsRepository.state.value.discoverSources).forEach { add(it) }
 
         val notInterested = runCatching { DiscoverNotInterestedStorage.load() }.getOrDefault(emptySet())
-        val kept = merged.values.filter { it.key !in notInterested && it.type in setOf("movie", "series") }
+        // Watched is judged for every title, not only the library's: a film from trending or Discover that is in the
+        // history was dealt as "New to you" (user, Nov 23). The same title-level matcher as Hide watched content, which
+        // also answers `tmdb:` ids (trending's) and ids the history knows under another name.
+        val watchedTitles = com.nuvio.app.features.home.WatchedContentFilter.forHistory(WatchedRepository.uiState.value.items)
+        val kept = merged.values
+            .filter { it.key !in notInterested && it.type in setOf("movie", "series") }
+            .map { title ->
+                if (!title.watched && watchedTitles.isWatched(title.type, title.id)) title.copy(watched = true) else title
+            }
         return enrich(kept)
     }
 

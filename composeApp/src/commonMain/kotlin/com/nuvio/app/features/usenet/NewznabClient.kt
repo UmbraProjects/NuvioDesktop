@@ -111,6 +111,8 @@ class NewznabClient(
         results: Int,
         releases: List<UsenetRelease>,
     ) {
+        // An empty answer is not kept: a release posted a minute later must show on the next look.
+        if (releases.isEmpty()) return
         synchronized(searchCache) { searchCache[searchCacheKey(indexer, request, results)] = now() to releases }
     }
 

@@ -330,8 +330,25 @@ internal object NativePlayerBridge {
      */
     external fun setDisplayRefreshRate(windowHwnd: Long, hz: Int): Boolean
 
-    val controlsPageUrl: String by lazy { controlsPageAssets.url }
-    private val controlsPageAssets: ControlsPageAssets by lazy { exportControlsPageAssets() }
+    val controlsPageUrl: String
+        get() = currentControlsPageAssets().url
+
+    private val controlsAssetsLock = Any()
+    private var cachedControlsAssets: ControlsPageAssets? = null
+    private var cachedCustomCss: String? = null
+
+    private fun currentControlsPageAssets(): ControlsPageAssets = synchronized(controlsAssetsLock) {
+        // The first player can be built before anything else has loaded the player settings
+        // (resume from the tray, the phone remote); without this the custom CSS read as empty.
+        com.nuvio.app.features.player.PlayerSettingsRepository.ensureLoaded()
+        val customCss = com.nuvio.app.features.player.PlayerSettingsRepository.uiState.value.desktopCustomPlayerCss
+        val existing = cachedControlsAssets
+        if (existing != null && cachedCustomCss == customCss) return existing
+        val exported = exportControlsPageAssets(customCss)
+        cachedControlsAssets = exported
+        cachedCustomCss = customCss
+        exported
+    }
 
     /**
      * Forces the object initializer (and therefore [loadNativeLibrary]) to run. Callers use this
@@ -555,12 +572,17 @@ internal object NativePlayerBridge {
             DesktopHostOs.UNKNOWN -> "player_bridge"
         }
 
-    private fun exportControlsPageAssets(): ControlsPageAssets {
+    private fun exportControlsPageAssets(customCss: String = ""): ControlsPageAssets {
         val root = File(System.getProperty("java.io.tmpdir"), "nuvio-player-ui").apply { mkdirs() }
         val fontsDir = root.resolve("fonts").apply { mkdirs() }
         val htmlFile = root.resolve("controls.html")
-        val cssText = readTextResource("/player-ui/controls.css")
+        val baseCss = readTextResource("/player-ui/controls.css")
             .replace("/* __NUVIO_PLAYER_FONT_FACES__ */", nativePlayerFontFaces())
+        val cssText = if (customCss.isNotBlank()) {
+            "$baseCss\n\n/* ── User custom CSS ── */\n$customCss\n"
+        } else {
+            baseCss
+        }
         val jsText = readTextResource("/player-ui/controls.js")
         // The page names its stylesheet and script with a hand-maintained `?v=` key. WebView2 keeps
         // a disk cache across launches and treats an unchanged URL as unchanged content, so when a

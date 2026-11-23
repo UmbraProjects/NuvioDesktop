@@ -134,8 +134,11 @@ internal class ImageFetchTimingListener(
 
     override fun onError(request: ImageRequest, result: ErrorResult) {
         ImageFetchHangProbe.fetchFinished(this)
-        val totalMs = (now() - startedAt) / 1_000_000
         val error = result.throwable
+        // Null image models (e.g. a title with no logo/backdrop) fail synchronously in Coil before
+        // onStart() runs, so startedAt is still 0 and there is nothing to time or log.
+        if (error is coil3.request.NullRequestDataException) return
+        val totalMs = if (startedAt > 0L) (now() - startedAt) / 1_000_000 else 0L
         if (fetchNanos >= 0) {
             PerfTelemetry.recordHttp(
                 "img", "GET", request.data.toString(),

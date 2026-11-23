@@ -186,8 +186,9 @@ internal object AnimeFranchiseEpisodeLocator {
         val imdb = identity.ids.imdb ?: return null
         val entryBase = identity.videoId.nativeAnimeBase()
         val entryMetaId = parentMetaId?.takeIf { it.equals(entryBase, ignoreCase = true) } ?: entryBase
+        // A lightweight record (peekAny can answer with one) has no episode list: fetch the real one then.
         val entryVideos = (
-            MetaDetailsRepository.peekAny(type, entryMetaId)
+            MetaDetailsRepository.peekAny(type, entryMetaId)?.takeIf { it.videos.isNotEmpty() }
                 ?: MetaDetailsRepository.fetchForSchedule(type, entryMetaId)
             )?.videos.orEmpty()
         // Only the exact episode: matching by number alone could pick another season's episode in a

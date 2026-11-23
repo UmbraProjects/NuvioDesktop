@@ -165,7 +165,6 @@ import coil3.ImageLoader
 import coil3.compose.setSingletonImageLoaderFactory
 import coil3.request.CachePolicy
 import coil3.request.crossfade
-import coil3.svg.SvgDecoder
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 import kotlin.time.Duration.Companion.milliseconds
@@ -198,9 +197,7 @@ import com.nuvio.app.core.ui.ContextMenuInvocation
 import com.nuvio.app.core.ui.unclaimedSecondaryClick
 import com.nuvio.app.core.ui.PlatformBackHandler
 import com.nuvio.app.core.ui.platformExitApp
-import com.nuvio.app.core.ui.addPlatformSvgDecoders
 import com.nuvio.app.core.ui.configurePlatformImageLoader
-import com.nuvio.app.core.ui.TransientImageErrorRetryInterceptor
 import com.nuvio.app.core.ui.NuvioToastHost
 import com.nuvio.app.core.ui.StartupOverlayCoordinator
 import com.nuvio.app.core.ui.LocalOpenMetaDetails
@@ -1086,11 +1083,9 @@ fun App() {
             .crossfade(true)
             .diskCachePolicy(CachePolicy.ENABLED)
             .memoryCachePolicy(CachePolicy.ENABLED)
-            .components {
-                addPlatformSvgDecoders()
-                add(SvgDecoder.Factory())
-                add(TransientImageErrorRetryInterceptor())
-            }
+            // Decoders and interceptors are registered in configurePlatformImageLoader's own
+            // components {} (addDesktopArtworkComponents): a second components {} call replaces the
+            // registry, so anything added here would be discarded.
             .configurePlatformImageLoader()
             .build()
     }

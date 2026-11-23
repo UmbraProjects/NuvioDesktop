@@ -304,6 +304,9 @@ private class MouseFiveShiftEventQueue : EventQueue() {
 /** Percent added or removed per Ctrl+plus / Ctrl+minus press; a multiple of the settings slider's step (5). */
 private const val UI_SCALE_KEY_STEP_PERCENT = 10
 
+/** How long a normal exit gets before the exit guard halts the JVM (Windows warns at about 5 s). */
+private const val EXIT_GUARD_MS = 4_000L
+
 private const val SwallowedClickReplayDelayMs = 32
 private const val SwallowedClickReplayGuardMs = 400L
 // Long enough for the closed menu's popup to leave the composition before the click is re-sent.
@@ -616,19 +619,62 @@ fun main(args: Array<String>) {
                 pictureInPicture = desktopPictureInPictureState.value,
             ).toWindowedGeometry()?.let(DesktopWindowModeStorage::saveWindowedGeometry)
         }
+        val osShuttingDown = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
         val exitDesktopApplication = {
             flushWindowGeometry()
-            P2pStreamingEngine.shutdown()
+            runCatching { P2pStreamingEngine.shutdown() }
+            runCatching { com.nuvio.app.features.usenet.UsenetEngine.shutdown() }
             exitApplication()
+            // Guard against a lingering AWT/tray/WebView2 non-daemon thread preventing JVM exit
+            // (which makes Windows show "Nuvio HTPC is preventing shutdown"). A normal exit ends
+            // the JVM well before this fires. halt() skips shutdown hooks that have not finished,
+            // so the guard first does their essential work itself: write every pending store and
+            // put the monitor back on its own refresh rate.
+            kotlin.concurrent.thread(isDaemon = true, name = "nuvio-exit-guard") {
+                runCatching { Thread.sleep(EXIT_GUARD_MS) }
+                runCatching { com.nuvio.app.core.storage.DesktopStorage.flushAll() }
+                runCatching { com.nuvio.app.features.player.desktop.DisplayRefreshSwitcher.restoreNow() }
+                Runtime.getRuntime().halt(0)
+            }
+            Unit
         }
         DesktopApplicationExit.install(exitDesktopApplication)
+
+        // Ensure OS power-off / logoff / quit requests bypass close-to-tray and terminate cleanly
+        // so Windows never reports Nuvio HTPC as preventing shutdown.
+        DisposableEffect(Unit) {
+            val shutdownHook = Thread(
+                {
+                    osShuttingDown.set(true)
+                    runCatching { P2pStreamingEngine.shutdown() }
+                    runCatching { com.nuvio.app.features.usenet.UsenetEngine.shutdown() }
+                },
+                "nuvio-os-shutdown",
+            )
+            runCatching { Runtime.getRuntime().addShutdownHook(shutdownHook) }
+            runCatching {
+                if (java.awt.Desktop.isDesktopSupported()) {
+                    val desktop = java.awt.Desktop.getDesktop()
+                    if (desktop.isSupported(java.awt.Desktop.Action.APP_QUIT_HANDLER)) {
+                        desktop.setQuitHandler { _, response ->
+                            osShuttingDown.set(true)
+                            exitDesktopApplication()
+                            response.performQuit()
+                        }
+                    }
+                }
+            }
+            onDispose {
+                runCatching { Runtime.getRuntime().removeShutdownHook(shutdownHook) }
+            }
+        }
 
         Window(
             onCloseRequest = {
                 // Close-to-tray only handles a deliberate window-close request. Keeping it here,
                 // rather than treating ordinary iconification as a close, avoids false hides when
                 // Windows minimizes the app during display/fullscreen transitions.
-                if (closeToTray && trayInstalled.value) {
+                if (closeToTray && trayInstalled.value && !osShuttingDown.get()) {
                     flushWindowGeometry()
                     desktopWindow.value?.isVisible = false
                     DesktopIdleHeapTrim.onWindowVisibilityChanged(visible = false)

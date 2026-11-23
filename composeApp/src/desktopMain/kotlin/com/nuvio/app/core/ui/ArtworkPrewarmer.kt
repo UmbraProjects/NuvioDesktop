@@ -365,7 +365,7 @@ internal object ArtworkPrewarmer {
             } catch (error: Exception) {
                 null
             } ?: return
-            if (HeroBackdropFramer.profile(url, image) != null) {
+            if (HeroBackdropFramer.profileInBackground(url, image) != null) {
                 framed.incrementAndGet()
                 framedReady.incrementAndGet()
             }
