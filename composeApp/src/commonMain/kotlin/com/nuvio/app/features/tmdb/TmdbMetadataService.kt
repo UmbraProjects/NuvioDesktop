@@ -376,7 +376,12 @@ object TmdbMetadataService {
     ): List<MetaPreview> {
         val seen = mutableSetOf<Int>()
         return cast
-            .filter { it.mediaType == "tv" && (it.posterPath != null || it.backdropPath != null) }
+            .filter {
+                it.mediaType == "tv" &&
+                    (it.posterPath != null || it.backdropPath != null) &&
+                    // From upstream (547972efd): a talk show the person only guested on is not part of their work.
+                    !isTalkShowGuestAppearance(it.genreIds, it.character)
+            }
             .sortedByDescending { it.voteAverage ?: 0.0 }
             .mapNotNull { credit ->
                 if (!seen.add(credit.id)) return@mapNotNull null
@@ -2968,6 +2973,15 @@ private data class TmdbPersonCombinedCreditsResponse(
     val cast: List<TmdbPersonCreditCast> = emptyList(),
     val crew: List<TmdbPersonCreditCrew> = emptyList(),
 )
+
+private const val TMDB_TALK_GENRE_ID = 10767
+private val TALK_SHOW_HOST_CHARACTER_REGEX = Regex("\\b(co-?)?host(s|ess)?\\b", RegexOption.IGNORE_CASE)
+
+/** A talk show (TMDB genre 10767) credit that is not as its host: a guest spot. From upstream (547972efd). */
+internal fun isTalkShowGuestAppearance(genreIds: List<Int>, character: String?): Boolean {
+    if (genreIds.none { it == TMDB_TALK_GENRE_ID }) return false
+    return character?.let { TALK_SHOW_HOST_CHARACTER_REGEX.containsMatchIn(it) } != true
+}
 
 @Serializable
 private data class TmdbPersonCreditCast(

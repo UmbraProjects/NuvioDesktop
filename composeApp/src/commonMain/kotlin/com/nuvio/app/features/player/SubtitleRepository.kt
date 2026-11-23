@@ -148,6 +148,12 @@ object SubtitleRepository {
                 val url = obj.stringValue("url") ?: continue
                 val rawLang = obj.subtitleLanguage() ?: "unknown"
                 val normalizedLang = normalizeLanguageCode(rawLang) ?: rawLang
+                val languageLabel = getLanguageLabelForCode(rawLang)
+                // From upstream (2954c9dc7, 1f4c245d8): Stremio's own `label` (e.g. "English [SDH]", a release name) names
+                // the subtitle in the list when the addon sends one; the language still shows beside it in the HUD.
+                val addonLabel = obj.stringValue("label")?.trim()?.takeIf { label ->
+                    label.isNotEmpty() && !label.equals(rawLang, ignoreCase = true) && !label.equals(languageLabel, ignoreCase = true)
+                }
                 subs.add(
                     AddonSubtitle(
                         id = id,
@@ -155,7 +161,7 @@ object SubtitleRepository {
                         language = normalizedLang,
                         display = getString(
                             Res.string.player_addon_subtitle_display_format,
-                            getLanguageLabelForCode(rawLang),
+                            addonLabel ?: languageLabel,
                             addon.displayTitle,
                         ),
                         addonName = addon.displayTitle,

@@ -9,8 +9,22 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class TmdbMetadataServiceTest {
+    // From upstream (547972efd).
+    @Test
+    fun `isTalkShowGuestAppearance skips talk show guests but keeps hosts and other series`() {
+        assertTrue(isTalkShowGuestAppearance(listOf(10767, 35), "Self - Guest"))
+        assertTrue(isTalkShowGuestAppearance(listOf(10767), "Self"))
+        assertTrue(isTalkShowGuestAppearance(listOf(10767), null))
+        assertFalse(isTalkShowGuestAppearance(listOf(10767), "Self - Host"))
+        assertFalse(isTalkShowGuestAppearance(listOf(10767), "Co-Host"))
+        assertFalse(isTalkShowGuestAppearance(listOf(18, 80), "Self"))
+        assertFalse(isTalkShowGuestAppearance(emptyList(), "Detective Ghost"))
+        assertTrue(isTalkShowGuestAppearance(listOf(10767), "Ghost"))
+    }
+
     @Test
     fun `confirmed id mismatch quarantines provider derived fields but keeps addon content`() {
         val base = MetaDetails(
