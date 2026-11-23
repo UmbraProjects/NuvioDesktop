@@ -125,20 +125,22 @@ object BuiltInUsenet {
                         group.forEach { indexer ->
                             launch {
                                 val found = searchOne(indexer, request, config)
-                                val update = lock.withLock {
+                                // Sent while holding the lock, so updates arrive in the order they were made: one sent
+                                // after it could land behind a later, longer list and briefly undo it.
+                                lock.withLock {
                                     remainingInGroup -= 1
                                     if (found == null) failures += 1 else releases += found
                                     if (found != null && found.isNotEmpty()) {
                                         val streams = formatStreams(releases.toList())
                                         val morePriorities = groupIndex < priorities.lastIndex &&
                                             !hasViableFallbackRelease(streams, config, series, isAnime)
-                                        val stillLoading = remainingInGroup > 0 || morePriorities
-                                        AddonStreamGroup(GROUP_NAME, GROUP_ID, streams, isLoading = stillLoading)
-                                    } else {
-                                        null
+                                        // Only while more is to come: the update after the loop is the one "done", sent
+                                        // once (it was sent twice, running the auto-play pick twice).
+                                        if (remainingInGroup > 0 || morePriorities) {
+                                            onUpdate(AddonStreamGroup(GROUP_NAME, GROUP_ID, streams, isLoading = true))
+                                        }
                                     }
                                 }
-                                if (update != null) onUpdate(update)
                             }
                         }
                     }
@@ -150,16 +152,14 @@ object BuiltInUsenet {
                     indexers.forEach { indexer ->
                         launch {
                             val found = searchOne(indexer, request, config)
-                            val update = lock.withLock {
+                            // Sent while holding the lock: see the fallback branch above.
+                            lock.withLock {
                                 remaining -= 1
                                 if (found == null) failures += 1 else releases += found
                                 if (remaining > 0 && found != null && found.isNotEmpty()) {
-                                    AddonStreamGroup(GROUP_NAME, GROUP_ID, formatStreams(releases.toList()), isLoading = true)
-                                } else {
-                                    null
+                                    onUpdate(AddonStreamGroup(GROUP_NAME, GROUP_ID, formatStreams(releases.toList()), isLoading = true))
                                 }
                             }
-                            if (update != null) onUpdate(update)
                         }
                     }
                 }

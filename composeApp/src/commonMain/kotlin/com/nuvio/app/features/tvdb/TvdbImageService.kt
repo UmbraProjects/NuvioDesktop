@@ -117,7 +117,11 @@ object TvdbImageService {
                         }
                         body
                     } finally {
-                        extendedMutex.withLock { extendedInFlight.remove(endpoint) }
+                        // Even when cancelled, as the debrid single-flight does: a Deferred left in the map would be
+                        // awaited by every later caller for this endpoint.
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                            extendedMutex.withLock { extendedInFlight.remove(endpoint) }
+                        }
                     }
                 }
             }

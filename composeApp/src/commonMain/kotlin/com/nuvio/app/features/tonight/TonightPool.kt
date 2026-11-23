@@ -75,18 +75,37 @@ object TonightPool {
      */
     fun refresh(nowEpochMs: Long, libraryLoaded: Boolean, force: Boolean = false) {
         val current = _state.value
-        if (job?.isActive == true) return
+        if (job?.isActive == true) {
+            // The library finished loading while a build without it runs: build again once that one is done, or the pool
+            // stays without the library until the picker is opened again (nothing else asks).
+            if (libraryLoaded && !runningWithLibrary) rebuildWithLibrary = true
+            return
+        }
         val fresh = current.titles.isNotEmpty() && nowEpochMs - current.loadedAtEpochMs < REFRESH_AFTER_MS
         if (!force && fresh && (current.withLibrary || !libraryLoaded)) return
         _state.value = current.copy(loading = true)
+        runningWithLibrary = libraryLoaded
         job = scope.launch {
             val titles = runCatching { build() }
                 .onFailure { log.w { "Tonight: could not gather titles: ${it.message}" } }
                 .getOrDefault(current.titles)
             log.i { "Tonight: pool of ${titles.size} (" + titles.groupingBy { it.kind }.eachCount() + ")" }
             _state.value = TonightPoolState(titles = titles, loading = false, loadedAtEpochMs = nowEpochMs, withLibrary = libraryLoaded)
+        }.also { started ->
+            started.invokeOnCompletion {
+                if (rebuildWithLibrary) {
+                    rebuildWithLibrary = false
+                    refresh(System.currentTimeMillis(), libraryLoaded = true)
+                }
+            }
         }
     }
+
+    @Volatile
+    private var runningWithLibrary = false
+
+    @Volatile
+    private var rebuildWithLibrary = false
 
     /** Runs [block] off the screen's lifetime (a cache to drop after the screen moved on). */
     internal fun background(block: suspend () -> Unit) {

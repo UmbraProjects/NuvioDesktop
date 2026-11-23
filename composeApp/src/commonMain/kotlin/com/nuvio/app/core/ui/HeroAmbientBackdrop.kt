@@ -249,9 +249,12 @@ internal fun HeroAmbientBackdrop(
                                 snapshotFlow { layer.resolved }.first { it }
                             }
                         }
-                        if (layer.backdrop == null) {
+                        // Only the newest layer speaks for the accent: one overtaken while it waited would set the colour of
+                        // a backdrop that is already on its way out.
+                        val isTop = layers.lastOrNull()?.id == layer.id
+                        if (isTop && layer.backdrop == null) {
                             currentOnAccentChanged(null)
-                        } else if (layer.resolved) {
+                        } else if (isTop && layer.resolved) {
                             currentOnAccentChanged(layer.extractedAccent?.takeIf { it != Color.Unspecified })
                         }
                         if (currentVariant == AmbientWashVariant.NoCrossfade) {
@@ -264,7 +267,11 @@ internal fun HeroAmbientBackdrop(
                         if (!layer.resolved) {
                             snapshotFlow { layer.resolved }.first { it }
                         }
-                        currentOnAccentChanged(layer.extractedAccent?.takeIf { it != Color.Unspecified })
+                        // The first layer waits without a timeout: a newer backdrop may have resolved and set its accent in
+                        // the meantime, which this older one must not overwrite as it fades out.
+                        if (layers.lastOrNull()?.id == layer.id) {
+                            currentOnAccentChanged(layer.extractedAccent?.takeIf { it != Color.Unspecified })
+                        }
                     }
                     // Fully opaque on top: drop every wash layer covered beneath this one.
                     while (layers.isNotEmpty() && layers.first().id != layer.id) {

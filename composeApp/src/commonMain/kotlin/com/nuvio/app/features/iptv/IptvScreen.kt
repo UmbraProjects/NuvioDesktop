@@ -61,6 +61,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.composed
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -1667,7 +1668,12 @@ internal fun Modifier.iptvDialog(shape: Shape): Modifier = this
 internal fun Modifier.iptvScrim(onDismiss: () -> Unit): Modifier = this
     .fillMaxSize()
     .background(IptvDialogScrim)
-    .pointerInput(onDismiss) { detectTapGestures { onDismiss() } }
+    .composed {
+        // Keyed on nothing, reading the latest callback: keyed on the lambda, a recomposition that made a new one would
+        // restart the tap detector and could drop a click in progress.
+        val dismiss by androidx.compose.runtime.rememberUpdatedState(onDismiss)
+        pointerInput(Unit) { detectTapGestures { dismiss() } }
+    }
 
 private val IptvDialogFill = Color(0xFF17171C)
 
