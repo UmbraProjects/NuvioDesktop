@@ -917,7 +917,7 @@
   <string name="settings_licenses_attributions_section_data">DATA A SLUŽBY</string>
   <string name="settings_licenses_attributions_section_playback">LICENCE PŘEHRÁVÁNÍ</string>
   <string name="settings_licenses_attributions_nuvio_team_title">Nuvio</string>
-  <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC je fork Nuvio Desktop, který vede Tapframe a tým Nuvio. Podpořte jejich práci na stránce pro příspěvky.</string>
+  <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC je fork Nuvio Desktop, který vede Tapframe a tým Nuvio. Podpořte jejich práci na jejich stránce podpory.</string>
   <string name="settings_licenses_attributions_nuvio_title">Nuvio Desktop</string>
   <string name="settings_licenses_attributions_nuvio_body">Tento projekt vychází z Nuvio Desktop. Zdrojový kód a licenční podmínky jsou dostupné v repozitáři projektu.</string>
   <string name="settings_licenses_attributions_nuvio_license">Licencováno pod licencí GNU General Public License v3.0.</string>
@@ -4524,6 +4524,8 @@
   <string name="cw_row_continue_watching">Pokračovat ve sledování</string>
   <string name="player_hud_this_stream_points_at_a_network">Tento stream odkazuje na síťové úložiště a byl zablokován.</string>
   <string name="player_hud_playback_speed">Rychlost přehrávání</string>
+  <string name="player_hud_subtitle_dropped">Titulky načteny</string>
+  <string name="player_hud_drop_subtitles_only">Během přehrávání lze přidat jen soubory s titulky</string>
   <string name="player_hud_hdr_mode">Režim HDR</string>
   <string name="player_hud_color_profile">Barevný profil</string>
   <string name="player_hud_anime">Anime</string>
@@ -5148,7 +5150,7 @@
     <string name="settings_what_plays_summary_play">Přehrát za tebe vybere stream.</string>
     <string name="settings_what_plays_summary_show">Přehrát otevře seznam zdrojů.</string>
     <string name="settings_what_plays_summary_priority">Automatický výběr zkouší %1$s, v tomto pořadí.</string>
-    <string name="settings_what_plays_summary_score">Automatický výběr vezme nejlépe hodnocený stream z %1$s.</string>
+    <string name="settings_what_plays_summary_score">Automatický výběr vezme nejlépe hodnocený stream ze všech zdrojů (%1$s). Pořadí zdrojů rozhoduje jen při shodném skóre.</string>
     <string name="settings_what_plays_summary_local_first">Místní kopie se přehraje přede všemi.</string>
     <string name="settings_what_plays_summary_local_last">Místní kopie se přehraje, když žádný nemá stream.</string>
     <string name="settings_what_plays_summary_next_same">Další díl drží stejné vydání, když je nabídnuto.</string>

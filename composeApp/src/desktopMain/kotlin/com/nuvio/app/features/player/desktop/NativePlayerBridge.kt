@@ -133,6 +133,10 @@ internal object NativePlayerBridge {
     external fun selectAudioTrack(handle: Long, trackId: Int): Boolean
     external fun selectSubtitleTrack(handle: Long, trackId: Int): Boolean
     external fun addSubtitleUrl(handle: Long, url: String)
+    /** The files dropped on the controls page since the last call, as a JSON array of paths. */
+    external fun takeDroppedFiles(handle: Long): String
+    /** A subtitle file the viewer dropped: loaded, selected and listed with the built-in tracks. */
+    external fun addLocalSubtitleFile(handle: Long, path: String)
     external fun clearExternalSubtitles(handle: Long)
     external fun clearExternalSubtitlesAndSelect(handle: Long, trackId: Int)
     external fun applyWindowChrome(

@@ -1488,6 +1488,27 @@ internal class NativePlayerController(
         NativePlayerBridge.runJavaScript(current, "window.nuvioShowVolumePill && window.nuvioShowVolumePill($percentage, $muted)")
     }
 
+    /**
+     * Files dropped on the player: each subtitle file loads and the last one is selected, with the user's subtitle
+     * style applied. Anything else is left alone (a video dropped on the rest of the app opens; during playback the
+     * app takes no new video), with a pill saying only subtitles can be added.
+     */
+    private fun loadDroppedFiles() {
+        val current = handle.takeIf { it != 0L } ?: return
+        val paths = runCatching { json.decodeFromString<List<String>>(NativePlayerBridge.takeDroppedFiles(current)) }
+            .getOrDefault(emptyList())
+        if (paths.isEmpty()) return
+        val subtitles = paths.filter { droppedSubtitleFile(it) }
+        if (subtitles.isEmpty()) {
+            showPresetPill(localizedString(Res.string.player_hud_drop_subtitles_only), File(paths.first()).name)
+            return
+        }
+        subtitles.forEach { NativePlayerBridge.addLocalSubtitleFile(current, it) }
+        applyPendingSubtitleConfiguration(current)
+        droppedFilesLog.i { "Loaded ${subtitles.size} dropped subtitle file(s)" }
+        showPresetPill(localizedString(Res.string.player_hud_subtitle_dropped), File(subtitles.last()).name)
+    }
+
     private fun handlePlayerEvent(type: String, value: Double) {
         if (disposed) return
         if (type == "playbackRestart") {
@@ -1628,6 +1649,10 @@ internal class NativePlayerController(
                     "thumbnail=${item?.thumbnail?.ifBlank { "<none>" } ?: "<unknown item>"} " +
                     "fallback=${controlsState.episodes.episodeFallbackThumbnail.ifBlank { "<none>" }}"
             }
+            return
+        }
+        if (type == "filesDropped") {
+            loadDroppedFiles()
             return
         }
         if (type == "keyboardPanelOpened") {
@@ -3145,6 +3170,16 @@ internal fun mpvOptionsAllowSourceReplacement(liveOptions: List<String>, nextOpt
 private const val PIP_CLOSE_SETTLE_MS = 400
 
 private val episodeArtworkLog = Logger.withTag("PlayerEpisodeArtwork")
+private val droppedFilesLog = Logger.withTag("PlayerDroppedFiles")
+
+/** Subtitle formats mpv reads that a viewer may drop on the player. */
+internal val DROPPED_SUBTITLE_EXTENSIONS = setOf("srt", "ass", "ssa", "vtt", "sub", "sup", "idx", "smi", "ttml", "lrc")
+
+/** Whether [path] is a subtitle file that can be loaded into the player (not a folder, not a video). */
+internal fun droppedSubtitleFile(path: String): Boolean {
+    val file = File(path)
+    return file.extension.lowercase() in DROPPED_SUBTITLE_EXTENSIONS && file.isFile
+}
 
 /**
  * Guards the hand-built controls payload, which is assembled by [toControlsJson] as a raw string

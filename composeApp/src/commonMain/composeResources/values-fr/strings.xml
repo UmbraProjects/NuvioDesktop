@@ -2238,7 +2238,7 @@
     <string name="settings_advanced_image_prewarm_collection_contents">Précharger l’intérieur des collections</string>
     <string name="settings_advanced_image_prewarm_collection_contents_description">Télécharge aussi les visuels des titres de chaque dossier de collection de l’accueil. Charge en arrière-plan les catalogues de chaque dossier, ce qui consomme plus de données que le reste.</string>
     <string name="settings_licenses_attributions_nuvio_team_title">Nuvio</string>
-    <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC est un fork de Nuvio Desktop, dirigé par Tapframe et l’équipe Nuvio. Soutenez leur travail via la page de contribution.</string>
+    <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC est un fork de Nuvio Desktop, dirigé par Tapframe et l’équipe Nuvio. Soutenez leur travail via leur page de soutien.</string>
     <string name="settings_licenses_attributions_skipdb_title">SkipDB</string>
     <string name="settings_licenses_attributions_skipdb_body">Nuvio utilise SkipDB pour les repères communautaires d’intro, de résumé, de générique et d’aperçu employés par les commandes de saut. Les données de SkipDB sont sous licence Open Database License 1.0 avec une clause supplémentaire de réciprocité pour les fournisseurs de services. Nuvio n’est ni affilié à SkipDB ni approuvé par lui.</string>
     <string name="settings_licenses_attributions_tvdb_title">TheTVDB</string>
@@ -4518,6 +4518,8 @@
     <string name="cw_row_continue_watching">Reprendre la lecture</string>
     <string name="player_hud_this_stream_points_at_a_network">Ce stream pointe vers un partage réseau et a été bloqué.</string>
     <string name="player_hud_playback_speed">Vitesse de lecture</string>
+    <string name="player_hud_subtitle_dropped">Sous-titres chargés</string>
+    <string name="player_hud_drop_subtitles_only">Pendant la lecture, seuls des fichiers de sous-titres peuvent être ajoutés</string>
     <string name="player_hud_hdr_mode">Mode HDR</string>
     <string name="player_hud_color_profile">Profil de couleur</string>
     <string name="player_hud_anime">Anime</string>
@@ -5218,7 +5220,7 @@
     <string name="settings_what_plays_summary_play">Lecture choisit un flux pour vous.</string>
     <string name="settings_what_plays_summary_show">Lecture ouvre la liste des sources.</string>
     <string name="settings_what_plays_summary_priority">Le choix automatique essaie %1$s, dans cet ordre.</string>
-    <string name="settings_what_plays_summary_score">Le choix automatique prend le flux le mieux noté parmi %1$s.</string>
+    <string name="settings_what_plays_summary_score">Le choix automatique prend le flux le mieux noté parmi toutes les sources (%1$s). L’ordre des sources ne sert qu’à départager les égalités.</string>
     <string name="settings_what_plays_summary_local_first">Une copie locale passe avant toutes.</string>
     <string name="settings_what_plays_summary_local_last">Une copie locale est lue quand aucune n’a de flux.</string>
     <string name="settings_what_plays_summary_next_same">L’épisode suivant garde la même release quand elle est proposée.</string>

@@ -1753,7 +1753,7 @@
     <string name="settings_licenses_attributions_section_data">DATOS Y SERVICIOS</string>
     <string name="settings_licenses_attributions_section_playback">LICENCIA DE REPRODUCCIÓN</string>
     <string name="settings_licenses_attributions_nuvio_team_title">Nuvio</string>
-    <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC es un fork de Nuvio Desktop, liderado por Tapframe y el equipo de Nuvio. Apoya su trabajo desde la página de contribuciones.</string>
+    <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC es un fork de Nuvio Desktop, liderado por Tapframe y el equipo de Nuvio. Apoya su trabajo desde su página de apoyo.</string>
     <string name="settings_licenses_attributions_nuvio_title">Nuvio Desktop</string>
     <string name="settings_licenses_attributions_nuvio_body">Este proyecto se basa en Nuvio Desktop. El código fuente y los términos de la licencia están disponibles en el repositorio del proyecto.</string>
     <string name="settings_licenses_attributions_nuvio_license">Con licencia GNU General Public License v3.0.</string>
@@ -4518,6 +4518,8 @@
     <string name="cw_row_continue_watching">Seguir viendo</string>
     <string name="player_hud_this_stream_points_at_a_network">Este stream apunta a un recurso compartido de red y fue bloqueada.</string>
     <string name="player_hud_playback_speed">Velocidad de reproducción</string>
+    <string name="player_hud_subtitle_dropped">Subtítulos cargados</string>
+    <string name="player_hud_drop_subtitles_only">Durante la reproducción solo se pueden añadir archivos de subtítulos</string>
     <string name="player_hud_hdr_mode">Modo HDR</string>
     <string name="player_hud_color_profile">Perfil de color</string>
     <string name="player_hud_anime">Anime</string>
@@ -5218,7 +5220,7 @@
     <string name="settings_what_plays_summary_play">Reproducir elige un stream por ti.</string>
     <string name="settings_what_plays_summary_show">Reproducir abre la lista de fuentes.</string>
     <string name="settings_what_plays_summary_priority">La elección automática prueba %1$s, en ese orden.</string>
-    <string name="settings_what_plays_summary_score">La elección automática toma el stream mejor puntuado de %1$s.</string>
+    <string name="settings_what_plays_summary_score">La elección automática toma el stream mejor puntuado de todas las fuentes (%1$s). El orden de las fuentes solo desempata.</string>
     <string name="settings_what_plays_summary_local_first">Una copia local se reproduce antes que todas.</string>
     <string name="settings_what_plays_summary_local_last">Una copia local se reproduce cuando ninguna tiene stream.</string>
     <string name="settings_what_plays_summary_next_same">El siguiente episodio mantiene la misma release cuando se ofrece.</string>

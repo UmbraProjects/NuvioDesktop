@@ -917,7 +917,7 @@
   <string name="settings_licenses_attributions_section_data">ΔΕΔΟΜΕΝΑ &amp; ΥΠΗΡΕΣΙΕΣ</string>
   <string name="settings_licenses_attributions_section_playback">ΑΔΕΙΑ ΑΝΑΠΑΡΑΓΩΓΗΣ</string>
   <string name="settings_licenses_attributions_nuvio_team_title">Nuvio</string>
-  <string name="settings_licenses_attributions_nuvio_team_body">Το Nuvio HTPC είναι fork του Nuvio Desktop, υπό την ηγεσία του Tapframe και της ομάδας του Nuvio. Υποστηρίξτε τη δουλειά τους μέσω της σελίδας συνεισφοράς.</string>
+  <string name="settings_licenses_attributions_nuvio_team_body">Το Nuvio HTPC είναι fork του Nuvio Desktop, υπό την ηγεσία του Tapframe και της ομάδας του Nuvio. Υποστηρίξτε τη δουλειά τους μέσω της σελίδας υποστήριξής τους.</string>
   <string name="settings_licenses_attributions_nuvio_title">Nuvio Desktop</string>
   <string name="settings_licenses_attributions_nuvio_body">Αυτό το έργο βασίζεται στο Nuvio Desktop. Ο πηγαίος κώδικας και οι όροι άδειας είναι διαθέσιμοι στο αποθετήριο του έργου.</string>
   <string name="settings_licenses_attributions_nuvio_license">Με άδεια GNU General Public License v3.0.</string>
@@ -4514,6 +4514,8 @@
   <string name="cw_row_continue_watching">Συνέχεια παρακολούθησης</string>
   <string name="player_hud_this_stream_points_at_a_network">Αυτή η ροή οδηγεί σε κοινόχρηστο φάκελο δικτύου και αποκλείστηκε.</string>
   <string name="player_hud_playback_speed">Ταχύτητα αναπαραγωγής</string>
+  <string name="player_hud_subtitle_dropped">Οι υπότιτλοι φορτώθηκαν</string>
+  <string name="player_hud_drop_subtitles_only">Κατά την αναπαραγωγή προστίθενται μόνο αρχεία υποτίτλων</string>
   <string name="player_hud_hdr_mode">Λειτουργία HDR</string>
   <string name="player_hud_color_profile">Προφίλ χρώματος</string>
   <string name="player_hud_anime">Anime</string>
@@ -5136,7 +5138,7 @@
     <string name="settings_what_plays_summary_play">Η Αναπαραγωγή διαλέγει ροή για σένα.</string>
     <string name="settings_what_plays_summary_show">Η Αναπαραγωγή ανοίγει τη λίστα πηγών.</string>
     <string name="settings_what_plays_summary_priority">Η αυτόματη επιλογή δοκιμάζει %1$s, με αυτή τη σειρά.</string>
-    <string name="settings_what_plays_summary_score">Η αυτόματη επιλογή παίρνει τη ροή με την καλύτερη βαθμολογία από %1$s.</string>
+    <string name="settings_what_plays_summary_score">Η αυτόματη επιλογή παίρνει τη ροή με την καλύτερη βαθμολογία από όλες τις πηγές (%1$s). Η σειρά των πηγών μετράει μόνο σε ισοβαθμία.</string>
     <string name="settings_what_plays_summary_local_first">Ένα τοπικό αντίγραφο παίζει πριν από όλες.</string>
     <string name="settings_what_plays_summary_local_last">Ένα τοπικό αντίγραφο παίζει όταν καμία δεν έχει ροή.</string>
     <string name="settings_what_plays_summary_next_same">Το επόμενο επεισόδιο κρατά την ίδια έκδοση όταν προσφέρεται.</string>

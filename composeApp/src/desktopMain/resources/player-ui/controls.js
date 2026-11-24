@@ -914,6 +914,33 @@ const send = (type, value = 0) => {
   if (webViewBridge) webViewBridge.postMessage({ type, value });
 };
 
+// --- Files dropped on the player ----------------------------------------------------------------
+// A subtitle (.srt, .ass...) dropped during playback loads into the player; a video opens as a
+// dropped file does over the rest of the app. The page cannot read a dropped file's path, so the
+// files go to the bridge as WebView2 additional objects, which carry it. Without preventDefault
+// the WebView would try to open the file itself (the bridge cancels that navigation as well).
+(() => {
+  const webViewBridge = window.chrome && window.chrome.webview;
+  if (!webViewBridge || typeof webViewBridge.postMessageWithAdditionalObjects !== "function") return;
+  const carriesFiles = (event) =>
+    !!event.dataTransfer && Array.from(event.dataTransfer.types || []).includes("Files");
+  const accept = (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  };
+  window.addEventListener("dragenter", accept);
+  window.addEventListener("dragover", accept);
+  window.addEventListener("drop", (event) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    const files = event.dataTransfer.files;
+    if (files && files.length > 0) {
+      webViewBridge.postMessageWithAdditionalObjects({ type: "filesDropped", value: files.length }, files);
+    }
+  });
+})();
+
 // --- Optimistic subtitle style ------------------------------------------------------------------
 // The Style tab answers a click at once: the change is predicted here and drawn before Kotlin has
 // saved it and pushed the new state back, which made every step feel like it was waiting on

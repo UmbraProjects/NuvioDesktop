@@ -917,7 +917,7 @@
   <string name="settings_licenses_attributions_section_data">VERİ &amp; SERVİSLER</string>
   <string name="settings_licenses_attributions_section_playback">OYNATMA LİSANSI</string>
   <string name="settings_licenses_attributions_nuvio_team_title">Nuvio</string>
-  <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC, Tapframe ve Nuvio ekibi tarafından yönetilen Nuvio Desktop'ın bir çatalıdır. Katkı sayfası üzerinden çalışmalarını destekle.</string>
+  <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC, Tapframe ve Nuvio ekibi tarafından yönetilen Nuvio Desktop'ın bir çatalıdır. Destek sayfaları üzerinden çalışmalarını destekle.</string>
   <string name="settings_licenses_attributions_nuvio_title">Nuvio Mobil</string>
   <string name="settings_licenses_attributions_nuvio_body">Kaynak kodları ve lisans koşulları proje deposunda bulunabilir.</string>
   <string name="settings_licenses_attributions_nuvio_license">GNU Genel Kamu Lisansı v3.0 kapsamında lisanslanmıştır.</string>
@@ -4513,6 +4513,8 @@
   <string name="cw_row_continue_watching">İzlemeye Devam Et</string>
   <string name="player_hud_this_stream_points_at_a_network">Bu yayın bir ağ paylaşımına işaret ediyor ve engellendi.</string>
   <string name="player_hud_playback_speed">Oynatma hızı</string>
+  <string name="player_hud_subtitle_dropped">Altyazı yüklendi</string>
+  <string name="player_hud_drop_subtitles_only">Oynatma sırasında yalnızca altyazı dosyaları eklenebilir</string>
   <string name="player_hud_hdr_mode">HDR Modu</string>
   <string name="player_hud_color_profile">Renk profili</string>
   <string name="player_hud_anime">Anime</string>
@@ -5135,7 +5137,7 @@
     <string name="settings_what_plays_summary_play">Oynat senin için bir akış seçer.</string>
     <string name="settings_what_plays_summary_show">Oynat kaynak listesini açar.</string>
     <string name="settings_what_plays_summary_priority">Otomatik seçim %1$s sırasıyla dener.</string>
-    <string name="settings_what_plays_summary_score">Otomatik seçim %1$s içinden en yüksek puanlı akışı alır.</string>
+    <string name="settings_what_plays_summary_score">Otomatik seçim tüm kaynaklar (%1$s) içinden en yüksek puanlı akışı alır. Kaynak sırası yalnızca eşitlikte belirleyicidir.</string>
     <string name="settings_what_plays_summary_local_first">Yerel kopya hepsinden önce oynatılır.</string>
     <string name="settings_what_plays_summary_local_last">Hiçbirinde akış yoksa yerel kopya oynatılır.</string>
     <string name="settings_what_plays_summary_next_same">Sonraki bölüm, sunulduğunda aynı sürümü korur.</string>

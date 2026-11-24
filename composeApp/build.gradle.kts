@@ -58,6 +58,10 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
         // With no local.properties (or blank values) fall back to the official Nuvio backend. The
         // key is the public "anon" key the server itself publishes at
         // https://api.nuvio.tv/.well-known/nuvio; it is meant to ship inside every client.
+        // Settings > Supporters' Donate button: Nuvio's own support page unless local.properties names
+        // another (the old donations page was discontinued).
+        val donateUrl = props.getProperty("DONATIONS_DONATE_URL").orEmpty().trim()
+            .ifBlank { "https://nuvio.tv/support" }
         val supabaseUrl = props.getProperty("SUPABASE_URL").orEmpty().trim()
             .ifBlank { "https://api.nuvio.tv" }
         val supabaseAnonKey = props.getProperty("SUPABASE_ANON_KEY").orEmpty().trim()
@@ -160,7 +164,7 @@ abstract class GenerateRuntimeConfigsTask : DefaultTask() {
                 |object CommunityConfig {
                 |    const val CONTRIBUTIONS_URL = "${props.getProperty("CONTRIBUTIONS_URL", "")}" 
                 |    const val DONATIONS_BASE_URL = "${props.getProperty("DONATIONS_BASE_URL", "")}" 
-                |    const val DONATIONS_DONATE_URL = "${props.getProperty("DONATIONS_DONATE_URL", "")}" 
+                |    const val DONATIONS_DONATE_URL = "$donateUrl"
                 |}
                 """.trimMargin()
             )

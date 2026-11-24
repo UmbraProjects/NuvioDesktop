@@ -965,7 +965,7 @@
     <string name="settings_licenses_attributions_trash_body">Stream scoring&apos;s trusted release groups and tiers come from the TRaSH Guides ranked release-group lists (via Vidhin&apos;s English Ranked Regexes export), and its source, audio and codec matching follows their custom formats. Nuvio HTPC is not affiliated with or endorsed by TRaSH Guides.</string>
     <string name="settings_licenses_attributions_section_playback">PLAYBACK LICENSE</string>
     <string name="settings_licenses_attributions_nuvio_team_title">Nuvio</string>
-    <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC is a fork of Nuvio Desktop, led by Tapframe and the Nuvio team. Support their work through the contribution page.</string>
+    <string name="settings_licenses_attributions_nuvio_team_body">Nuvio HTPC is a fork of Nuvio Desktop, led by Tapframe and the Nuvio team. Support their work through their support page.</string>
     <string name="settings_licenses_attributions_htpc_contributors_title">Nuvio HTPC contributors</string>
     <string name="settings_licenses_attributions_htpc_contributors_body">Deigue: pull requests and testing. Slokker: GoatTV (Live TV), translations, pull requests and the Linux port. Spyder: many pull requests, mostly the Music tab, and YouTube features. Thank you.</string>
     <string name="settings_licenses_attributions_nuvio_title">Nuvio Desktop</string>
@@ -4649,6 +4649,8 @@
     <string name="cw_row_continue_watching">Continue Watching</string>
     <string name="player_hud_this_stream_points_at_a_network">This stream points at a network share and was blocked.</string>
     <string name="player_hud_playback_speed">Playback speed</string>
+    <string name="player_hud_subtitle_dropped">Subtitle loaded</string>
+    <string name="player_hud_drop_subtitles_only">Only subtitle files can be added during playback</string>
     <string name="player_hud_hdr_mode">HDR Mode</string>
     <string name="player_hud_color_profile">Color Profile</string>
     <string name="player_hud_anime">Anime</string>
@@ -5293,7 +5295,7 @@
     <string name="settings_what_plays_summary_play">Play picks a stream for you.</string>
     <string name="settings_what_plays_summary_show">Play opens the source list.</string>
     <string name="settings_what_plays_summary_priority">Automatic picks try %1$s, in that order.</string>
-    <string name="settings_what_plays_summary_score">Automatic picks take the best-scoring stream from %1$s.</string>
+    <string name="settings_what_plays_summary_score">Automatic picks take the best-scoring stream from all sources (%1$s). Source priority only breaks ties.</string>
     <string name="settings_what_plays_summary_local_first">A local copy plays before all of them.</string>
     <string name="settings_what_plays_summary_local_last">A local copy plays when none of them has a stream.</string>
     <string name="settings_what_plays_summary_next_same">The next episode keeps the same release when it is offered.</string>

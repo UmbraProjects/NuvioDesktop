@@ -341,7 +341,9 @@ private fun SourcePriorityItem(
 /** The sentence under the choices: what a Play click and the next episode will do. */
 @Composable
 private fun WhatPlaysSummary(pick: PlaybackPickSettings, sources: AvailablePlaybackSources, isTablet: Boolean) {
-    val order = sources.keys.filter { pick.mayAutoPlay(it) }.map { sourceLabel(it) }.joinToString(" → ")
+    // Best score ranks every source together, so its list is not an order: commas, not arrows.
+    val order = sources.keys.filter { pick.mayAutoPlay(it) }.map { sourceLabel(it) }
+        .joinToString(if (pick.pickBy == PickBy.BEST_SCORE) ", " else " → ")
     val sentences = buildList {
         add(
             stringResource(

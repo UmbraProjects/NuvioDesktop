@@ -233,8 +233,41 @@ object PlaybackPick {
         }
     }
 
-    /** The streams of sources whose list is final; a source still answering (a Usenet search in progress) waits. */
-    fun answered(groups: List<AddonStreamGroup>): List<StreamItem> = groups.filterNot { it.isLoading }.flatMap { it.streams }
+    /**
+     * Whether the wait time (Settings > Playback, "Wait for sources") is over the moment a load starts, so any ready
+     * stream may play as it arrives: only Instant. Unlimited waits for every source (the callers keep a hard fallback),
+     * and a bounded wait lasts its seconds.
+     */
+    fun waitEndsAtOnce(timeoutSeconds: Int): Boolean = timeoutSeconds <= 0
+
+    /**
+     * The pick taken as a source answers. Once the wait is over, the full pick over [streams]. Before, only a pick no
+     * later answer can change: the remembered release, or under priority order a stream that every source above it has
+     * already answered for. Best score never picks early, since any source still answering may bring a higher score.
+     * [streams] are the answered sources' streams; [groups] are all sources in priority order.
+     */
+    fun pickOnResponse(
+        rules: PlaybackPickRules,
+        groups: List<AddonStreamGroup>,
+        streams: List<StreamItem>,
+        waitOver: Boolean,
+    ): StreamItem? {
+        if (streams.isEmpty()) return null
+        if (waitOver) return rules.select(streams)
+        return rules.takeIf { it.preferBingeGroup }?.select(streams, bingeGroupOnly = true)
+            // Not while a remembered release is sought: a lower source may still bring it.
+            ?: rules.takeIf { it.mode == StreamAutoPlayMode.FIRST_STREAM && !it.preferBingeGroup }
+                ?.select(streams)
+                ?.takeIf { outranksPending(groups, it) }
+    }
+
+    /**
+     * The streams a pick may choose from. Before the wait is over, only sources whose list is final: a source still
+     * answering (a Usenet search with an indexer to go) may yet bring a better stream. Once [waitOver], everything that
+     * has arrived, so one slow indexer no longer keeps the Usenet releases already in out of the pick.
+     */
+    fun answered(groups: List<AddonStreamGroup>, waitOver: Boolean = false): List<StreamItem> =
+        (if (waitOver) groups else groups.filterNot { it.isLoading }).flatMap { it.streams }
 
     /**
      * Whether [stream] may play before the timeout under priority order: every source ranked above it has answered,

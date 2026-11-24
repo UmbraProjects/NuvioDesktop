@@ -465,16 +465,8 @@ object StreamsRepository {
             fun autoSelectOnResponse() {
                 if (!isDirectAutoPlayFlow || autoSelectTriggered) return
                 val groups = _uiState.value.groups.filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID && !localAmongSources }
-                val allStreams = PlaybackPick.answered(groups).autoPlayEligible()
-                if (allStreams.isEmpty()) return
-                val selected = when {
-                    timeoutElapsed -> pickRules.select(allStreams)
-                    else -> pickRules.select(allStreams, bingeGroupOnly = true)
-                        // Not while a remembered release is sought: a lower source may still bring it.
-                        ?: pickRules.takeIf { it.mode == StreamAutoPlayMode.FIRST_STREAM && !it.preferBingeGroup }
-                            ?.select(allStreams)
-                            ?.takeIf { PlaybackPick.outranksPending(groups, it) }
-                } ?: return
+                val allStreams = PlaybackPick.answered(groups, waitOver = timeoutElapsed).autoPlayEligible()
+                val selected = PlaybackPick.pickOnResponse(pickRules, groups, allStreams, waitOver = timeoutElapsed) ?: return
                 autoSelectTriggered = true
                 PlaybackPick.logPick("$pickTrigger (on response)", pickRules, selected, allStreams.size)
                 PlaybackStartTrace.mark("autoSelect:${selected.addonName}")
@@ -596,10 +588,11 @@ object StreamsRepository {
                 // Timeout semantics:
                 // - 0 (instant): timeoutElapsed immediately, full select on each response
                 // - 1-30 (bounded): wait the configured delay, then full select
-                // - unlimited (Int.MAX_VALUE): timeoutElapsed immediately, full select on each response,
-                //   with 60s hard fallback to stream picker
+                // - unlimited (Int.MAX_VALUE): wait for every source (the final pick once all have answered), with a
+                //   60s hard fallback. It used to select on each response like instant, so the first source to answer
+                //   played whatever Best score or Source priority said.
                 if (timeoutSeconds <= 0 || isUnlimitedTimeout) {
-                    timeoutElapsed = true
+                    timeoutElapsed = PlaybackPick.waitEndsAtOnce(timeoutSeconds)
                     // For unlimited: launch a hard 60s fallback to dismiss overlay
                     if (isUnlimitedTimeout) {
                         launch {
@@ -636,7 +629,7 @@ object StreamsRepository {
                         timeoutElapsed = true
                         if (!autoSelectTriggered) {
                             val groups = _uiState.value.groups.filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID && !localAmongSources }
-                            val allStreams = PlaybackPick.answered(groups).autoPlayEligible()
+                            val allStreams = PlaybackPick.answered(groups, waitOver = true).autoPlayEligible()
                             // A source still answering may yet have the pick: keep listening (autoSelectOnResponse,
                             // now past the timeout) instead of giving up; the final pick below ends the wait.
                             val stillAnswering = groups.any { it.isLoading }

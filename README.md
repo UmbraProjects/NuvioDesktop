@@ -71,6 +71,8 @@ Choose one of these two:
 
 After choosing your version, scroll to the bottom and click nuvio.zip. Once downloaded, extract it wherever you'd like and run nuvio.exe to start HTPC.
 
+HTPC shares a [Discord](https://discord.gg/wEgTPNXUMU) with PostersPlus, my other project. Feel free to join to chat, report bugs or request features.
+
 # Contributors
 
 * Deigue, for several useful pull requests, feedback, advice and a huge amount of testing.
@@ -82,7 +84,6 @@ After choosing your version, scroll to the bottom and click nuvio.zip. Once down
 * Allesc the developer of Stremio Kai gave his blessing to use his color presets and anime shaders, Stremio Kai's row by row layout was also a major inspiration for the TV mode found in this project.
 
 * Everyone who works on upstream Nuvio of course, without them the project wouldn't exist.
-
 
 ## Custom Hero Discovery Config & Badges
 
@@ -180,83 +181,6 @@ Christopher Nolan.webp
 ```
 
 The custom image wins over the bundled default whenever its filename matches the badge label or category. Restart Nuvio after adding or replacing custom badge files.
-
-**This concludes the forks readme, anything beyond this point is from the official upstream Nuvio Desktop.**
-
-## Upstream - About
-
-Nuvio Desktop is a media client for browsing metadata, managing collections and watch progress, downloading media, and playing streams from user-installed extensions or user-provided sources.
-
-## Upstream - Installation
-
-Download the latest desktop build from [GitHub Releases](https://github.com/NuvioMedia/NuvioDesktop/releases/latest).
-
-Release packages are provided for supported desktop platforms:
-
-- Windows: MSI installer
-- macOS: DMG installer
-- Linux: DEB package, when available
-
-## Upstream - Development
-
-```bash
-git clone https://github.com/NuvioMedia/NuvioDesktop.git
-cd NuvioDesktop
-```
-
-Run from source:
-
-```bash
-./gradlew :composeApp:run
-```
-
-On Windows PowerShell:
-
-```powershell
-.\gradlew.bat :composeApp:run
-```
-
-Build a release package for the current host:
-
-```bash
-./gradlew :composeApp:packageReleaseDistributionForCurrentOS
-```
-
-Platform-specific packaging:
-
-```bash
-# Windows
-./gradlew :composeApp:packageReleaseMsi --rerun-tasks
-
-# macOS
-./scripts/build-macos-release-dmgs.sh --package-only
-
-# Linux
-./gradlew :composeApp:packageReleaseDeb
-```
-
-## Upstream - Project Structure
-
-- `composeApp/` contains the app code.
-- `composeApp/src/commonMain/` contains shared UI, features, repositories, and platform-agnostic logic.
-- `composeApp/src/desktopMain/` contains desktop-specific integrations.
-- `composeApp/Configuration/DesktopVersion.properties` contains the desktop release version and build code.
-
-## Upstream - Versioning
-
-Desktop versions are set in `composeApp/Configuration/DesktopVersion.properties`.
-
-```properties
-VERSION_NAME=0.1.1-alpha
-VERSION_CODE=1
-```
-
-Use the version helper when changing desktop release versions:
-
-```bash
-./scripts/set-version.sh --desktop 0.1.2-alpha --desktop-code 2
-./scripts/set-version.sh --show
-```
 
 ## Upstream - Legal & DMCA
 

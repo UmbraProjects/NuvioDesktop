@@ -307,8 +307,6 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
 
         fun trySelectStream(streams: List<StreamItem>): StreamItem? = picker.select(streams)
 
-        fun tryBingeGroupOnly(streams: List<StreamItem>): StreamItem? = picker.selectBingeGroupOnly(streams)
-
         val innerJob = launch {
             PlayerStreamsRepository.episodeStreamsState.collectLatest { state ->
                 if (PlayerStreamsRepository.episodeStreamsRequestKey() != ownRequestKey) return@collectLatest
@@ -316,32 +314,17 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
 
                 // Only sources whose list is final (a Usenet search still running waits).
                 val allStreams = eligibleAutoPlayStreams(
-                    streams = PlaybackPick.answered(state.groups),
+                    streams = PlaybackPick.answered(state.groups, waitOver = timeoutElapsed),
                     sourceAffinity = sourceAffinity,
                     avoid = placeholderSources,
                     keepMarkedIfOnly = !state.isAnyLoading,
                 )
 
-                if (autoSelectTriggered) {
-                    // Already resolved.
-                } else if (timeoutElapsed) {
-                    if (allStreams.isNotEmpty()) {
-                        val candidate = trySelectStream(allStreams)
-                        if (candidate != null) {
-                            selectStream(candidate)
-                        }
-                    }
-                } else if (allStreams.isNotEmpty()) {
-                    // Before the timeout: the same release, or under priority order the first ready stream of a
-                    // source every higher source has already answered above.
-                    val earlyMatch = tryBingeGroupOnly(allStreams)
-                        // Not while the same release is sought: a lower source may still bring it.
-                        ?: picker.rules.takeIf { it.mode == StreamAutoPlayMode.FIRST_STREAM && !it.preferBingeGroup }
-                            ?.let { trySelectStream(allStreams) }
-                            ?.takeIf { PlaybackPick.outranksPending(state.groups, it) }
-                    if (earlyMatch != null) {
-                        selectStream(earlyMatch)
-                    }
+                if (!autoSelectTriggered) {
+                    // After the wait, the full pick; before it, the same release, or under priority order the first
+                    // ready stream of a source every higher source has already answered above.
+                    PlaybackPick.pickOnResponse(picker.rules, state.groups, allStreams, waitOver = timeoutElapsed)
+                        ?.let(::selectStream)
                 }
 
                 if (!autoSelectTriggered && !state.isAnyLoading) {
@@ -375,7 +358,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 timeoutElapsed = true
                 if (!autoSelectTriggered) {
                     val allStreams = eligibleAutoPlayStreams(
-                        PlaybackPick.answered(ownState().groups),
+                        PlaybackPick.answered(ownState().groups, waitOver = true),
                         sourceAffinity,
                         avoid = placeholderSources,
                     )
@@ -409,7 +392,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                     )
                     if (!autoSelectTriggered) {
                         val allStreams = eligibleAutoPlayStreams(
-                            PlaybackPick.answered(ownState().groups),
+                            PlaybackPick.answered(ownState().groups, waitOver = true),
                             sourceAffinity,
                             avoid = placeholderSources,
                         )
@@ -422,10 +405,12 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
             }
             innerJob.cancel()
         } else {
-            timeoutElapsed = true
-            if (!autoSelectTriggered) {
+            // Instant picks as streams arrive; unlimited waits for every source (the collector's final pick once
+            // nothing is loading), up to the hard timeout.
+            timeoutElapsed = PlaybackPick.waitEndsAtOnce(timeoutSeconds)
+            if (timeoutElapsed && !autoSelectTriggered) {
                 val allStreams = eligibleAutoPlayStreams(
-                    PlaybackPick.answered(ownState().groups),
+                    PlaybackPick.answered(ownState().groups, waitOver = true),
                     sourceAffinity,
                     avoid = placeholderSources,
                 )
@@ -437,7 +422,7 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
             innerJob.cancel()
             if (completed == null && !autoSelectTriggered) {
                 val allStreams = eligibleAutoPlayStreams(
-                    PlaybackPick.answered(ownState().groups),
+                    PlaybackPick.answered(ownState().groups, waitOver = true),
                     sourceAffinity,
                     avoid = placeholderSources,
                 )
