@@ -2713,6 +2713,7 @@
   <string name="debrid_stream_stale">Platnost tohoto odkazu vypršela. Obnovují se výsledky.</string>
   <string name="debrid_resolve_failed">Tento odkaz se nepodařilo otevřít.</string>
   <string name="external_player_failed">Externí přehrávač se nepodařilo otevřít</string>
+  <string name="external_player_closed_quickly">%1$s se po pár sekundách zavřel. Pokud se nic nepřehrálo, zkuste jiný zdroj.</string>
   <string name="external_player_not_configured">Nejprve v nastavení vyberte externí přehrávač</string>
   <string name="external_player_unavailable">Není k dispozici žádný externí přehrávač</string>
   <string name="trailer_close">Zavřít trailer</string>

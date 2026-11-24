@@ -50,8 +50,9 @@ internal object ImageDiskCacheWarmup {
                 val startedAt = System.nanoTime()
                 val disk = cache
                 val builtAt = System.nanoTime()
-                // Any key: Coil hashes it. The read is what makes DiskLruCache replay its journal.
-                disk.openSnapshot(WarmupKey)?.close()
+                // Any key: Coil hashes it. The read is what makes DiskLruCache replay its journal;
+                // the partitioned cache opens all its journals (the stills shards side by side).
+                (disk as? PartitionedImageDiskCache)?.warm(WarmupKey) ?: disk.openSnapshot(WarmupKey)?.close()
                 val openedAt = System.nanoTime()
                 warmupLog.i {
                     "opened at launch in ${(openedAt - startedAt) / 1_000_000}ms " +

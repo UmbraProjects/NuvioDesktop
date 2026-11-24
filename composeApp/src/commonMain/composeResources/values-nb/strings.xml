@@ -2713,6 +2713,7 @@
   <string name="debrid_stream_stale">Denne lenken er utgått. Oppdaterer resultater.</string>
   <string name="debrid_resolve_failed">Kunne ikke åpne denne lenken.</string>
   <string name="external_player_failed">Kunne ikke åpne ekstern avspiller</string>
+  <string name="external_player_closed_quickly">%1$s lukket seg etter noen sekunder. Hvis ingenting ble spilt av, prøv en annen kilde.</string>
   <string name="external_player_not_configured">Velg en ekstern avspiller i innstillinger først</string>
   <string name="external_player_unavailable">Ingen ekstern avspiller er tilgjengelig</string>
   <string name="trailer_close">Lukk trailer</string>

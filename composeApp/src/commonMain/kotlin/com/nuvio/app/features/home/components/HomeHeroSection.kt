@@ -666,6 +666,13 @@ fun HomeHeroSection(
             HeroCastPortraitPreloader(
                 cast = (castCache.values.flatten() + displayItemsWithCast.flatMap(MetaPreview::cast))
                     .filter { person -> !person.photo.isNullOrBlank() },
+                // One size per mode: immersive shows the People panel's chips and no cast row
+                // (showExtendedMetadata = immersiveMode), every other mode the row.
+                portraitSize = if (immersiveMode) {
+                    IMMERSIVE_HERO_PEOPLE_CHIP_SIZE
+                } else {
+                    heroCastRowPortraitSize(layout.heroHeightScale)
+                },
             )
 
             HorizontalPager(
@@ -2384,6 +2391,15 @@ private const val HeroCastPortraitGrowth = 1.15f
 /** Past this the names (bodyLarge from 48dp) start truncating in the capped content column. */
 private val HeroCastPortraitMaxSize = 46.dp
 
+/**
+ * The hero cast row's portrait size; portraits grow with the hero, into the room the raised
+ * content leaves. Shared with [HeroCastPortraitPreloader], whose request has to be this exact size
+ * to land in the memory-cache entry the row then reads (desktop keys card artwork by size).
+ */
+private fun heroCastRowPortraitSize(heroHeightScale: Float): Dp =
+    (HeroCastPortraitSize * heroHeightScale.coerceIn(1f, 1.5f) * HeroCastPortraitGrowth)
+        .coerceIn(HeroCastPortraitSize, HeroCastPortraitMaxSize)
+
 @Composable
 private fun HeroPageIndicatorRow(
     itemCount: Int,
@@ -2803,9 +2819,7 @@ private fun DesktopHeroContentBlock(
                     HeroCastRow(
                         cast,
                         onCastClick = onCastClick,
-                        // Portraits grow with the hero too, into the room the raised content leaves.
-                        imageSize = (HeroCastPortraitSize * sizeScale * HeroCastPortraitGrowth)
-                            .coerceIn(HeroCastPortraitSize, HeroCastPortraitMaxSize),
+                        imageSize = heroCastRowPortraitSize(sizeScale),
                     )
                 }
                 Spacer(modifier = Modifier.height(2.dp))
@@ -3267,7 +3281,7 @@ private fun HeroProductionRow(
 private fun HeroProductionChip(
     credit: HeroProductionCredit,
     modifier: Modifier = Modifier,
-    imageSize: Dp = 52.dp,
+    imageSize: Dp = IMMERSIVE_HERO_PEOPLE_CHIP_SIZE,
     textFillsWidth: Boolean = true,
     onCastClick: ((HeroCastMember) -> Unit)? = null,
 ) {
@@ -3372,7 +3386,7 @@ private fun HeroCastGrid(
                     HeroCastChip(
                         person = person,
                         modifier = Modifier.weight(1f),
-                        imageSize = 52.dp,
+                        imageSize = IMMERSIVE_HERO_PEOPLE_CHIP_SIZE,
                         onCastClick = onCastClick,
                     )
                 }
@@ -3385,7 +3399,7 @@ private fun HeroCastGrid(
 }
 
 @Composable
-private fun HeroCastPortraitPreloader(cast: List<HeroCastMember>) {
+private fun HeroCastPortraitPreloader(cast: List<HeroCastMember>, portraitSize: Dp) {
     val photoUrls = cast
         .mapNotNull { person -> person.photo?.takeIf(String::isNotBlank) }
         .distinct()
@@ -3394,19 +3408,19 @@ private fun HeroCastPortraitPreloader(cast: List<HeroCastMember>) {
 
     val context = LocalPlatformContext.current
     val density = LocalDensity.current
-    // Both hero layouts use one of these portrait sizes. Match their requests, including DPI,
-    // without retaining hidden image components or decoding the original portrait resolution.
-    val portraitSizes = with(density) { listOf(34.dp.roundToPx(), 52.dp.roundToPx()).distinct() }
-    DisposableEffect(context, photoUrls, portraitSizes) {
+    // Only the size this hero mode draws, including DPI, so its portraits are found in memory.
+    // Preloading both sizes doubled the decodes landing on Home's first frames (48 at once,
+    // 2026-11-24 startup report), and the old 34dp one never matched the row, which has drawn
+    // larger portraits since they started growing with the hero.
+    val portraitPx = with(density) { portraitSize.roundToPx() }
+    DisposableEffect(context, photoUrls, portraitPx) {
         val loader = SingletonImageLoader.get(context)
-        val requests = photoUrls.flatMap { url ->
-            portraitSizes.map { size ->
-                loader.enqueue(ImageRequest.Builder(context)
-                    .data(url)
-                    .scale(Scale.FILL)
-                    .nuvioArtworkRequestSize(size, size)
-                    .build())
-            }
+        val requests = photoUrls.map { url ->
+            loader.enqueue(ImageRequest.Builder(context)
+                .data(url)
+                .scale(Scale.FILL)
+                .nuvioArtworkRequestSize(portraitPx, portraitPx)
+                .build())
         }
         onDispose { requests.forEach { it.dispose() } }
     }

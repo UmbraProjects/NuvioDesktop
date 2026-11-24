@@ -2913,6 +2913,7 @@
     <string name="debrid_stream_stale">Dieser Link ist abgelaufen. Ergebnisse werden aktualisiert.</string>
     <string name="debrid_resolve_failed">Dieser Link konnte nicht geöffnet werden.</string>
     <string name="external_player_failed">Externer Player konnte nicht geöffnet werden</string>
+    <string name="external_player_closed_quickly">%1$s wurde nach wenigen Sekunden geschlossen. Wenn nichts abgespielt wurde, versuche eine andere Quelle.</string>
     <string name="external_player_not_configured">Wähle zuerst in den Einstellungen einen externen Player</string>
     <string name="external_player_unavailable">Kein externer Player verfügbar</string>
     <string name="updates_download_empty_body">Leerer Download-Inhalt</string>

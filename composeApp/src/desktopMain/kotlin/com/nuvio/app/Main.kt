@@ -530,7 +530,14 @@ fun main(args: Array<String>) {
     // A launch without a usable class archive builds one in a short UI-less run and restarts,
     // instead of being the user's slow session; see AppClassArchiveTraining. Returns at once
     // otherwise.
-    com.nuvio.app.core.build.AppClassArchiveTraining.runIfNeeded()    // Before any window exists: Windows caches the process AppUserModelID early, and the media
+    com.nuvio.app.core.build.AppClassArchiveTraining.runIfNeeded()
+    // Opens the image disk cache now, off the UI thread, so the first poster does not pay for it.
+    // First of the startup steps: replaying its journal takes ~1.5 s in the native image and
+    // otherwise finishes just as Home asks for its first poster.
+    desktopStartupStep("image disk cache open") {
+        com.nuvio.app.core.ui.ImageDiskCacheWarmup.start { com.nuvio.app.core.ui.buildArtworkDiskCache() }
+    }
+    // Before any window exists: Windows caches the process AppUserModelID early, and the media
     // session created later is labelled "Unknown app" without it.
     desktopStartupStep("app identity") {
         runCatching { com.nuvio.app.features.player.desktop.registerDesktopAppIdentity() }
@@ -555,10 +562,6 @@ fun main(args: Array<String>) {
     desktopStartupStep("app font warm request") { com.nuvio.app.core.ui.warmSystemFontCache() }
     // Idle until Home has rows and the user opted in; see ArtworkPrewarmer.
     desktopStartupStep("artwork prewarm") { com.nuvio.app.core.ui.ArtworkPrewarmer.start() }
-    // Opens the image disk cache now, off the UI thread, so the first poster does not pay for it.
-    desktopStartupStep("image disk cache open") {
-        com.nuvio.app.core.ui.ImageDiskCacheWarmup.start { com.nuvio.app.core.ui.buildArtworkDiskCache() }
-    }
     System.out.println("Info: (DesktopStartup) entering Compose application")
 
     application {

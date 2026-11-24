@@ -2713,6 +2713,7 @@
   <string name="debrid_stream_stale">Αυτός ο σύνδεσμος έληξε. Γίνεται ανανέωση αποτελεσμάτων.</string>
   <string name="debrid_resolve_failed">Δεν ήταν δυνατό το άνοιγμα αυτού του συνδέσμου.</string>
   <string name="external_player_failed">Δεν ήταν δυνατό το άνοιγμα του εξωτερικού προγράμματος αναπαραγωγής</string>
+  <string name="external_player_closed_quickly">Το %1$s έκλεισε μετά από λίγα δευτερόλεπτα. Αν δεν αναπαράχθηκε τίποτα, δοκιμάστε άλλη πηγή.</string>
   <string name="external_player_not_configured">Επιλέξτε πρώτα έναν εξωτερικό αναπαραγωγέα στις ρυθμίσεις</string>
   <string name="external_player_unavailable">Δεν υπάρχει διαθέσιμο εξωτερικό πρόγραμμα αναπαραγωγής</string>
   <string name="trailer_close">Κλείσιμο τρέιλερ</string>

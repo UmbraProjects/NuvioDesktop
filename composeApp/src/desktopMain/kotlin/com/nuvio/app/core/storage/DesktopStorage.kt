@@ -86,10 +86,12 @@ internal object DesktopStorage {
                 log.w(error) { "store prewarm could not list the data directory" }
                 return@Thread
             }
-            val names = files.map { it.fileName.toString().removeSuffix(".properties") }
+            val (deferred, names) = files.map { it.fileName.toString().removeSuffix(".properties") }
                 // A same-named file in the other folder is not that store; storeFile decides.
                 .filter { name -> files.any { it == storeFile(name) } }
                 .distinct()
+                .partition { it in PREWARM_AFTER_HOME }
+            if (deferred.isNotEmpty()) prewarmAfterHome(deferred)
             val startedAt = System.nanoTime()
             val pool = Executors.newFixedThreadPool(PREWARM_THREADS) { runnable ->
                 Thread(runnable, "nuvio-storage-prewarm").apply {
@@ -105,6 +107,30 @@ internal object DesktopStorage {
     }
 
     private const val PREWARM_THREADS = 4
+
+    /**
+     * Big stores nothing on Home reads, prewarmed a few seconds after Home is up instead of during
+     * its first frames: the plugin code is MBs of scraper JS (298 ms to 3.9 s to read at launch,
+     * 2026-11-24 startup report) that App.kt already holds back until then for the young-GC cost,
+     * and the lyric cache is only for the music player. Still prewarmed, on this pool, so a slow
+     * scanner-held open never lands on the UI thread.
+     */
+    private val PREWARM_AFTER_HOME = setOf("nuvio_plugin_code", "nuvio_music_lyric_cache")
+    private const val PREWARM_AFTER_HOME_DELAY_MS = 3_000L
+
+    private fun prewarmAfterHome(names: List<String>) {
+        com.nuvio.app.core.build.StartupReadySignal.onHomeReady {
+            Thread({
+                runCatching { Thread.sleep(PREWARM_AFTER_HOME_DELAY_MS) }
+                val startedAt = System.nanoTime()
+                names.forEach { name -> runCatching { store(name).contains("") } }
+                log.i { "store prewarm after Home: ${names.joinToString()} in ${(System.nanoTime() - startedAt) / 1_000_000}ms" }
+            }, "nuvio-storage-prewarm-late").apply {
+                isDaemon = true
+                priority = Thread.MIN_PRIORITY
+            }.start()
+        }
+    }
 
     /** Where [name]'s file lives: the data directory for machine stores, else [accountDir]. */
     fun storeFile(name: String): Path =

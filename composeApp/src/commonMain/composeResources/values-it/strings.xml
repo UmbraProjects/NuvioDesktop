@@ -2713,6 +2713,7 @@
   <string name="debrid_stream_stale">Questo link è scaduto. Aggiornamento dei risultati in corso.</string>
   <string name="debrid_resolve_failed">Impossibile aprire questo link.</string>
   <string name="external_player_failed">Impossibile aprire il lettore esterno</string>
+  <string name="external_player_closed_quickly">%1$s si è chiuso dopo pochi secondi. Se non è stato riprodotto nulla, prova un’altra fonte.</string>
   <string name="external_player_not_configured">Scegli prima un lettore esterno nelle impostazioni</string>
   <string name="external_player_unavailable">Nessun lettore esterno disponibile</string>
   <string name="trailer_close">Chiudi trailer</string>

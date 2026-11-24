@@ -1205,6 +1205,7 @@
     <string name="debrid_stream_stale">Ce lien a expiré. Actualisation des résultats.</string>
     <string name="debrid_resolve_failed">Impossible d’ouvrir ce lien.</string>
     <string name="external_player_failed">Impossible d’ouvrir le lecteur externe</string>
+    <string name="external_player_closed_quickly">%1$s s’est fermé au bout de quelques secondes. Si rien n’a été lu, essayez une autre source.</string>
     <string name="external_player_not_configured">Choisis d’abord un lecteur externe dans les paramètres</string>
     <string name="external_player_unavailable">Aucun lecteur externe disponible</string>
     <string name="trailer_close">Fermer la bande-annonce</string>

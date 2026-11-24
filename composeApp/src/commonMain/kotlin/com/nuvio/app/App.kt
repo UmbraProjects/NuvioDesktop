@@ -1126,11 +1126,19 @@ fun App() {
         // SkipDB publishes its whole database as one file rebuilt daily, so it is kept locally and
         // refreshed at most once a day rather than queried per episode. Deliberately off the
         // startup path and not awaited: playback answers from the previous copy meanwhile, and a
-        // user who has turned skip detection off should not be downloading it at all.
+        // user who has turned skip detection off should not be downloading it at all. A few seconds
+        // after Home is up, not at the first composition: the daily refresh is a ~36 MB download
+        // and parse, and it landed in Home's first frames (1.8 s, 2026-11-24 startup report).
         LaunchedEffect(Unit) {
-            PlayerSettingsRepository.ensureLoaded()
-            if (PlayerSettingsRepository.uiState.value.skipIntroEnabled) {
-                SkipDbDumpRepository.syncInBackground()
+            com.nuvio.app.core.build.StartupReadySignal.onHomeReady {
+                deferredStartupScope.launch {
+                    delay(HEAVY_STARTUP_WARM_DELAY_MS)
+                    // ensureLoaded is not thread-safe; Home has long since loaded it on Main anyway.
+                    withContext(Dispatchers.Main) { PlayerSettingsRepository.ensureLoaded() }
+                    if (PlayerSettingsRepository.uiState.value.skipIntroEnabled) {
+                        SkipDbDumpRepository.syncInBackground()
+                    }
+                }
             }
         }
 
@@ -5694,7 +5702,13 @@ private fun MainAppContent(
                                 stream = opened,
                                 sourceFromLinkCache = true,
                             )
-                            // The engine's link lives with its session, so it always plays here.
+                            // The engine's link lives with its session; an external player reads it
+                            // as a local URL and the session is released when that player exits.
+                            if (playerSettings.externalPlayerEnabled) {
+                                openExternalPlayback(usenetLaunch)
+                                StreamsRepository.setOverlayVisible(false)
+                                return@LaunchedEffect
+                            }
                             StreamsRepository.clear()
                             StreamPickerController.close(clearStreams = false)
                             navController.navigateToPlayer(usenetLaunch)
@@ -6084,12 +6098,14 @@ private fun MainAppContent(
                                     sourceIdentityKey,
                                 )
                             }
+                            // The engine's link is a plain local URL, so an external player can
+                            // read it as well as ours; the session is released when either exits.
                             openSelectedStream(
                                 stream = opened,
                                 resolvedResumePositionMs = resolvedResumePositionMs,
                                 resolvedResumeProgressFraction = resolvedResumeProgressFraction,
-                                forceExternal = false,
-                                forceInternal = true,
+                                forceExternal = forceExternal,
+                                forceInternal = forceInternal,
                                 sourceIdentityKey = sourceIdentityKey,
                                 // The engine's link lives only as long as its session.
                                 saveForReuse = false,

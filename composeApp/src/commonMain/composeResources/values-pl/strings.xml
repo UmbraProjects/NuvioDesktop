@@ -2713,6 +2713,7 @@
   <string name="debrid_stream_stale">Ten wynik Debrid wygasł. Odświeżanie strumieni.</string>
   <string name="debrid_resolve_failed">Nie udało się rozwiązać tego strumienia Debrid.</string>
   <string name="external_player_failed">Nie udało się otworzyć zewnętrznego odtwarzacza</string>
+  <string name="external_player_closed_quickly">%1$s zamknął się po kilku sekundach. Jeśli nic nie zostało odtworzone, spróbuj innego źródła.</string>
   <string name="external_player_not_configured">Najpierw wybierz zewnętrzny odtwarzacz w ustawieniach</string>
   <string name="external_player_unavailable">Brak dostępnego zewnętrznego odtwarzacza</string>
   <string name="trailer_close">Zamknij zwiastun</string>

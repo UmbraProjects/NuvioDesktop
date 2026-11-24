@@ -2713,6 +2713,7 @@
   <string name="debrid_stream_stale">Bu bağlantının süresi dolmuş. Sonuçlar yenileniyor.</string>
   <string name="debrid_resolve_failed">Bu bağlantı açılamadı.</string>
   <string name="external_player_failed">Harici oynatıcı açılamadı</string>
+  <string name="external_player_closed_quickly">%1$s birkaç saniye sonra kapandı. Hiçbir şey oynatılmadıysa başka bir kaynak deneyin.</string>
   <string name="external_player_not_configured">Önce ayarlardan bir harici oynatıcı seç</string>
   <string name="external_player_unavailable">Kullanılabilir harici oynatıcı yok</string>
   <string name="trailer_close">Fragmanı kapat</string>

@@ -2713,6 +2713,7 @@
   <string name="debrid_stream_stale">Link ini telah kadaluwarsa. Memperbarui sumber.</string>
   <string name="debrid_resolve_failed">Tidak dapat menyediakan sumber dari Debrid.</string>
   <string name="external_player_failed">Tidak dapat membuka player eksternal</string>
+  <string name="external_player_closed_quickly">%1$s tertutup setelah beberapa detik. Jika tidak ada yang diputar, coba sumber lain.</string>
   <string name="external_player_not_configured">Pilih player eksternal terlebih dahulu di pengaturan</string>
   <string name="external_player_unavailable">Tidak ada player eksternal yang tersedia</string>
   <string name="trailer_close">Tutup trailer</string>

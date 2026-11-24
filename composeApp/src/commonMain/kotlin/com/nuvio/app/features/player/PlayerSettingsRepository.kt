@@ -121,7 +121,10 @@ data class PlayerSettingsUiState(
         DesktopPlayerNotificationPosition.TopCenter,
     val externalPlayerEnabled: Boolean = false,
     val externalPlayerForwardSubtitles: Boolean = false,
-    val externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId(),
+    // Null = whatever ExternalPlayerPlatform.defaultPlayerId() finds, worked out when a player is
+    // actually opened. Never probed here: the probe runs reg.exe, and this state is built while
+    // the window's first frame is composing.
+    val externalPlayerId: String? = null,
     val preferredAudioLanguage: String = AudioLanguageOption.DEVICE,
     val secondaryPreferredAudioLanguage: String? = null,
     val preferredSubtitleLanguage: String = SubtitleLanguageOption.DEVICE,
@@ -340,7 +343,7 @@ object PlayerSettingsRepository {
     private var desktopPlayerNotificationPosition = DesktopPlayerNotificationPosition.TopCenter
     private var externalPlayerEnabled = false
     private var externalPlayerForwardSubtitles = false
-    private var externalPlayerId: String? = ExternalPlayerPlatform.defaultPlayerId()
+    private var externalPlayerId: String? = null
     private var preferredAudioLanguage = AudioLanguageOption.DEVICE
     private var secondaryPreferredAudioLanguage: String? = null
     private var preferredSubtitleLanguage = SubtitleLanguageOption.DEVICE
@@ -503,7 +506,7 @@ object PlayerSettingsRepository {
         desktopPlayerNotificationPosition = DesktopPlayerNotificationPosition.TopCenter
         externalPlayerEnabled = false
         externalPlayerForwardSubtitles = false
-        externalPlayerId = ExternalPlayerPlatform.defaultPlayerId()
+        externalPlayerId = null
         preferredAudioLanguage = AudioLanguageOption.DEVICE
         secondaryPreferredAudioLanguage = null
         preferredSubtitleLanguage = SubtitleLanguageOption.DEVICE
@@ -696,8 +699,8 @@ object PlayerSettingsRepository {
         )
         externalPlayerEnabled = PlayerSettingsStorage.loadExternalPlayerEnabled() ?: false
         externalPlayerForwardSubtitles = PlayerSettingsStorage.loadExternalPlayerForwardSubtitles() ?: false
+        // No saved choice stays null (the default player, found when one is opened).
         externalPlayerId = PlayerSettingsStorage.loadExternalPlayerId()
-            ?: ExternalPlayerPlatform.defaultPlayerId()
         preferredAudioLanguage =
             normalizeLanguageCode(PlayerSettingsStorage.loadPreferredAudioLanguage())
                 ?: AudioLanguageOption.DEVICE

@@ -954,8 +954,11 @@ private fun PlaybackSettingsSection(
         P2pSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
     val availableExternalPlayers = ExternalPlayerPlatform.availablePlayers()
+    // No saved choice means the default player; show which one that is.
+    val effectiveExternalPlayerId = autoPlayPlayerSettings.externalPlayerId
+        ?: remember { ExternalPlayerPlatform.defaultPlayerId() }
     val selectedExternalPlayer = availableExternalPlayers.firstOrNull {
-        it.id == autoPlayPlayerSettings.externalPlayerId
+        it.id == effectiveExternalPlayerId
     }
     val addonUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
     val pluginUiState = if (pluginsEnabled) {
@@ -3147,7 +3150,7 @@ private fun PlaybackSettingsSection(
     if (showExternalPlayerAppDialog) {
         ExternalPlayerSelectionDialog(
             players = availableExternalPlayers,
-            selectedPlayerId = autoPlayPlayerSettings.externalPlayerId,
+            selectedPlayerId = effectiveExternalPlayerId,
             onPlayerSelected = { player ->
                 if (player.isAvailable || ExternalPlayerPlatform.configurePlayer(player.id)) {
                     PlayerSettingsRepository.setExternalPlayerId(player.id)

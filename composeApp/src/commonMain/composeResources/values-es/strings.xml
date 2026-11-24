@@ -2914,6 +2914,7 @@
     <string name="debrid_stream_stale">Este enlace caducó. Actualizando resultados.</string>
     <string name="debrid_resolve_failed">No se pudo abrir este enlace.</string>
     <string name="external_player_failed">No se pudo abrir el reproductor externo</string>
+    <string name="external_player_closed_quickly">%1$s se cerró a los pocos segundos. Si no se reprodujo nada, prueba otra fuente.</string>
     <string name="external_player_not_configured">Primero elige un reproductor externo en los ajustes</string>
     <string name="external_player_unavailable">No hay ningún reproductor externo disponible</string>
     <string name="updates_download_empty_body">Cuerpo de descarga vacío</string>

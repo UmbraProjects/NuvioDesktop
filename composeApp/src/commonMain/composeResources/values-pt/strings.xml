@@ -2713,6 +2713,7 @@
   <string name="debrid_stream_stale">Este link expirou. A atualizar os resultados.</string>
   <string name="debrid_resolve_failed">Não foi possível abrir este link.</string>
   <string name="external_player_failed">Não foi possível abrir o leitor externo</string>
+  <string name="external_player_closed_quickly">O %1$s fechou após alguns segundos. Se nada foi reproduzido, experimente outra fonte.</string>
   <string name="external_player_not_configured">Escolhe primeiro um leitor externo nas definições</string>
   <string name="external_player_unavailable">Nenhum leitor externo disponível</string>
   <string name="trailer_close">Fechar trailer</string>

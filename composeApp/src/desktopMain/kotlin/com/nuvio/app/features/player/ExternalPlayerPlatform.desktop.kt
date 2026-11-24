@@ -2,6 +2,7 @@ package com.nuvio.app.features.player
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.core.storage.DesktopStorage
+import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.lights.LightsController
 import com.nuvio.app.features.lights.LightsPlaybackSource
 import java.awt.Desktop
@@ -355,8 +356,25 @@ internal actual object ExternalPlayerPlatform {
                         diagnosticContext = "player=system association=${knownDefinition?.id ?: "unknown"} source=$sourceSummary",
                         tracking = request.tracking,
                         reader = channel?.reader,
+                        sourceUrl = request.sourceUrl,
+                        playerName = knownDefinition?.displayName ?: association.displayName,
                     )
                 ) return ExternalPlayerOpenResult.Opened
+            }
+            // No video association with a program to pass a link to (Windows' own Media Player app
+            // has none). The shell hands a web link to the browser, which downloads it instead of
+            // playing it (a debrid file landed in a download manager, a plugin's HLS stream as a
+            // tiny .m3u8, Nov 24), so a web stream goes to the first player found installed.
+            // Only a local file is left to the shell's file association.
+            if (!PlaybackSourcePolicy.isLocalDrivePath(request.sourceUrl) &&
+                !request.sourceUrl.startsWith("file:", ignoreCase = true)
+            ) {
+                val fallback = definitions.firstOrNull { resolvedPath(it) != null } ?: run {
+                    externalPlayerLog.w { "System default: no video player installed to hand a web stream to source=$sourceSummary" }
+                    return ExternalPlayerOpenResult.NoPlayerAvailable
+                }
+                externalPlayerLog.i { "System default: no usable video association; using ${fallback.id} source=$sourceSummary" }
+                return open(request, fallback.id)
             }
             return if (openUri(request.sourceUrl, sourceSummary)) ExternalPlayerOpenResult.Opened
             else ExternalPlayerOpenResult.Failed
@@ -385,9 +403,55 @@ internal actual object ExternalPlayerPlatform {
                 diagnosticContext = "player=$effectiveId source=$sourceSummary",
                 tracking = request.tracking,
                 reader = channel?.reader,
+                sourceUrl = request.sourceUrl,
+                playerName = def.displayName,
             )
         ) ExternalPlayerOpenResult.Opened else ExternalPlayerOpenResult.Failed
     }
+
+    /**
+     * What a player that has exited leaves behind: a toast when it quit within [QuickExitMs] on its
+     * own (PotPlayer closes itself, exit code 0, when a stream does not open: nothing else showed),
+     * and the built-in Usenet session it was reading, released as the in-app player releases it.
+     *
+     * Neither applies when another copy of the same program is still running: a single-instance
+     * player hands the link to its open window and exits at once, and that window is now the one
+     * playing (and reading the session).
+     */
+    private fun onPlayerExited(
+        executable: String,
+        pid: Long,
+        runMs: Long,
+        sourceUrl: String?,
+        playerName: String?,
+        diagnosticContext: String,
+    ) {
+        val handedOff = runCatching {
+            ProcessHandle.allProcesses().anyMatch { handle ->
+                handle.pid() != pid &&
+                    handle.info().command().map { it.equals(executable, ignoreCase = true) }.orElse(false)
+            }
+        }.getOrDefault(false)
+        if (handedOff) {
+            externalPlayerLog.i { "External player handed off to its open window $diagnosticContext" }
+            return
+        }
+        if (com.nuvio.app.features.usenet.UsenetEngine.isSessionUrl(sourceUrl)) {
+            com.nuvio.app.features.usenet.UsenetEngine.release(sourceUrl)
+        }
+        if (playerName != null && runMs < QuickExitMs) {
+            externalPlayerLog.w { "External player closed after ${runMs}ms $diagnosticContext" }
+            runCatching {
+                NuvioToastController.show(
+                    localizedString(Res.string.external_player_closed_quickly, playerName),
+                    durationMillis = 5_000L,
+                )
+            }
+        }
+    }
+
+    /** A stream the player cannot open has it gone within this; nobody watches that little. */
+    private const val QuickExitMs = 15_000L
 
     /**
      * Starts a child process without keeping its stdio pipes attached. This is essential: with the
@@ -402,8 +466,12 @@ internal actual object ExternalPlayerPlatform {
         diagnosticContext: String,
         tracking: ExternalPlaybackTracking? = null,
         reader: ExternalPlayerReader? = null,
+        // Set for a player launch (not the system handler): see onPlayerExited.
+        sourceUrl: String? = null,
+        playerName: String? = null,
     ): Boolean {
         val executable = command.firstOrNull() ?: "none"
+        val startedAtNs = System.nanoTime()
         externalPlayerLog.i {
             "Starting external process $diagnosticContext executable=$executable argumentCount=${(command.size - 1).coerceAtLeast(0)}"
         }
@@ -430,6 +498,16 @@ internal actual object ExternalPlayerPlatform {
                     "External process exited $diagnosticContext pid=${completed.pid()} exitCode=${completed.exitValue()}"
                 }
                 LightsController.ended(LightsPlaybackSource.External)
+                if (playerName != null || sourceUrl != null) {
+                    onPlayerExited(
+                        executable = executable,
+                        pid = completed.pid(),
+                        runMs = (System.nanoTime() - startedAtNs) / 1_000_000L,
+                        sourceUrl = sourceUrl,
+                        playerName = playerName,
+                        diagnosticContext = diagnosticContext,
+                    )
+                }
             }
             tracking?.let { ExternalPlaybackMonitor.watch(process, it, reader, diagnosticContext) }
         }.onFailure { error ->

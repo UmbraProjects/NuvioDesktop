@@ -79,6 +79,14 @@ internal class PartitionedImageDiskCache(
         animated.shutdown()
     }
 
+    /** Opens both partitions now (each replays its journal), the stills shards in parallel. */
+    fun warm(probeKey: String) {
+        val animatedOpen = Thread({ runCatching { animated.openSnapshot(probeKey)?.close() } }, "nuvio-image-cache-open-animated")
+            .apply { isDaemon = true; start() }
+        (stills as? ShardedImageDiskCache)?.warmAll() ?: stills.openSnapshot(probeKey)?.close()
+        animatedOpen.join()
+    }
+
     /** A stills entry, so that rewriting it (`NetworkFetcher` replacing a stale copy) still routes. */
     private inner class RoutingSnapshot(
         private val key: String,

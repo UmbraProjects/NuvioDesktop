@@ -2797,6 +2797,7 @@
     <string name="debrid_stream_stale">This link expired. Refreshing results.</string>
     <string name="debrid_resolve_failed">Could not open this link.</string>
     <string name="external_player_failed">Couldn&apos;t open external player</string>
+    <string name="external_player_closed_quickly">%1$s closed after a few seconds. If nothing played, try another source.</string>
     <string name="external_player_not_configured">Choose an external player in settings first</string>
     <string name="external_player_unavailable">No external player is available</string>
     <string name="trailer_close">Close trailer</string>

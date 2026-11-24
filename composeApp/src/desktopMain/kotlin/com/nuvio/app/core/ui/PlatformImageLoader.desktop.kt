@@ -24,15 +24,14 @@ internal fun buildArtworkDiskCache(): DiskCache {
     // Before the cache is opened, not after: the purge edits the journal directly, which is
     // only safe while Coil is not holding it.
     ImageDiskCachePurge.purgeCachedFailures(cacheDir)
+    // After the purge, which works on the old single journal; once moved, this finds nothing to do.
+    ImageCacheShardMigration.migrateIfNeeded(cacheDir)
     // Read once: Coil sizes a disk cache when it opens it, so a change applies on next launch.
     ImageCacheSettingsRepository.ensureLoaded()
     val totalBytes = ImageCacheSettingsRepository.settings.value.diskCacheGb * BytesPerGb
     val animatedBytes = (totalBytes * AnimatedImageCacheFraction).toLong()
     return PartitionedImageDiskCache(
-        stills = DiskCache.Builder()
-            .directory(cacheDir.toOkioPath())
-            .maxSizeBytes(totalBytes - animatedBytes)
-            .build(),
+        stills = ShardedImageDiskCache.build(cacheDir, totalBytes - animatedBytes),
         animated = DiskCache.Builder()
             .directory(DesktopStorage.rootDir.resolve(ANIMATED_IMAGE_CACHE_DIR_NAME).toOkioPath())
             .maxSizeBytes(animatedBytes)
