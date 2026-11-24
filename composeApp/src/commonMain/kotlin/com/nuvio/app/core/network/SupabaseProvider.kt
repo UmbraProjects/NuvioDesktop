@@ -5,6 +5,7 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.annotations.SupabaseInternal
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.MemorySessionManager
+import io.github.jan.supabase.auth.SessionManager
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.functions.Functions
 import io.github.jan.supabase.postgrest.Postgrest
@@ -44,6 +45,13 @@ object SupabaseProvider {
      */
     var memoryOnlySession: Boolean = false
 
+    /**
+     * Set at desktop startup when the data directory is overridden (a test profile): builds a
+     * session store inside that directory, keyed by backend URL, so the profile signs in and out
+     * on its own. Null keeps supabase-kt's default store.
+     */
+    var sessionManagerFactory: ((backendUrl: String) -> SessionManager)? = null
+
     val client: SupabaseClient
         get() {
             cachedClient.load()?.let { return it }
@@ -73,7 +81,11 @@ object SupabaseProvider {
                 }
             }
             install(Auth) {
-                if (memoryOnlySession) sessionManager = MemorySessionManager()
+                if (memoryOnlySession) {
+                    sessionManager = MemorySessionManager()
+                } else {
+                    sessionManagerFactory?.let { sessionManager = it(configuration.backendUrl) }
+                }
             }
             install(Postgrest)
             install(Functions)

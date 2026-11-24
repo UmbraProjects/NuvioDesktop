@@ -709,7 +709,7 @@
   <string name="compose_settings_page_playback">Oynatma</string>
   <string name="compose_settings_page_plugins">Pluginler</string>
   <string name="compose_settings_page_poster_customization">Poster özelleştirme</string>
-  <string name="compose_settings_page_keyboard_shortcuts">Klavye Kısayolları</string>
+  <string name="compose_settings_page_keyboard_shortcuts">Kontroller</string>
   <string name="compose_settings_page_root">Ayarlar</string>
   <string name="compose_settings_page_streams">Yayınlar</string>
   <string name="compose_settings_page_local_library">Yerel Kitaplık</string>
@@ -1759,6 +1759,8 @@
   <string name="settings_playback_hud_vignette">Kontrol vinyeti</string>
   <string name="settings_playback_hidden_hud_buttons">Gizli oynatıcı düğmeleri</string>
   <string name="settings_playback_hidden_hud_buttons_description">Hiç kullanmadığın kontrolleri oynatıcıdan kaldır. Klavye kısayolları çalışmaya devam eder.</string>
+  <string name="settings_playback_hud_buttons_tools_header">Araç düğmeleri: sırasını değiştirmek için sürükleyin veya okları kullanın</string>
+  <string name="settings_playback_hud_buttons_fixed_header">Sabit: oynat düğmesinin iki yanında ve üst çubukta</string>
   <string name="settings_playback_hidden_hud_buttons_none">Yok</string>
   <string name="settings_playback_hidden_hud_buttons_count">%1$d gizli</string>
   <string name="settings_playback_hud_button_previous_episode">Önceki bölüm</string>
@@ -3517,6 +3519,8 @@
   <string name="settings_appearance_custom_theme">Özel tema</string>
   <string name="settings_appearance_custom_theme_accent">Vurgu</string>
   <string name="settings_appearance_desktop_discover_tab">Keşfet sekmesi</string>
+  <string name="settings_appearance_nav_bar_glow">Gezinme çubuğu parıltısı</string>
+  <string name="settings_appearance_nav_bar_glow_description">Yüzen üst çubuğun çevresinde vurgu renginde yumuşak bir parıltı. %0 kapatır.</string>
   <string name="settings_appearance_desktop_discover_tab_description">Keşfet'i gezinme çubuğunda göster. Kapatmak Keşfet kısayolunu da devre dışı bırakır.</string>
   <string name="settings_appearance_custom_theme_accent_end">Vurgu geçişi</string>
   <string name="settings_appearance_custom_theme_accent_end_hint">Vurgu geçişinin ikinci rengi. Vurguları düz tutmak için vurgu rengiyle aynı yap.</string>
@@ -3838,7 +3842,7 @@
   <string name="compose_settings_page_player">Oynatıcı</string>
   <string name="settings_player_page_subtitle">Oynatıcı kontrolleri, altyazılar, diller, atlama ve sonraki bölüm</string>
   <string name="settings_playback_section_anime">Anime</string>
-  <string name="settings_shortcuts_search_description">Gezinme ve video oynatıcı için kısayollar ve tuş atamaları.</string>
+  <string name="settings_shortcuts_search_description">Gezinme ve video oynatıcı için klavye kısayolları, oyun kumandası, telefon kumandası ve tuş atamaları.</string>
   <string name="settings_simkl_connected_as_format">%1$s olarak bağlandı</string>
   <string name="settings_simkl_cw_window_subtitle_format">Yalnızca son %1$s içinde izlenen öğeleri göster</string>
   <string name="random_play_title">Rastgele oynat</string>
@@ -4041,6 +4045,7 @@
   <string name="iptv_tab_loading">Kanallar yükleniyor…</string>
   <string name="iptv_tab_retry">Tekrar dene</string>
   <string name="iptv_tab_open_settings">Canlı TV ayarları</string>
+  <string name="iptv_tab_empty_no_playlist">Henüz Canlı TV oynatma listesi yok. Canlı TV ayarlarından bir tane ekleyin: Xtream Codes girişi, Stalker portalı veya M3U bağlantısı.</string>
   <string name="iptv_tab_refresh">Kanalları ve rehberi yenile</string>
   <string name="iptv_tab_next">Sıradaki %1$s  %2$s</string>
   <string name="iptv_tab_favourite_add">Favorilere ekle</string>

@@ -326,7 +326,7 @@ enum class DesktopPlayerNotificationPosition(val webValue: String) {
 
     companion object {
         fun fromStorage(value: String?): DesktopPlayerNotificationPosition =
-            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: Center
+            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: TopCenter
     }
 }
 

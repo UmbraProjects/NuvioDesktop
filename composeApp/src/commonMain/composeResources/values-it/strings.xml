@@ -709,7 +709,7 @@
   <string name="compose_settings_page_playback">Riproduzione</string>
   <string name="compose_settings_page_plugins">Plugin</string>
   <string name="compose_settings_page_poster_customization">Personalizzazione Poster</string>
-  <string name="compose_settings_page_keyboard_shortcuts">Scorciatoie da tastiera</string>
+  <string name="compose_settings_page_keyboard_shortcuts">Controlli</string>
   <string name="compose_settings_page_root">Impostazioni</string>
   <string name="compose_settings_page_streams">Flussi</string>
   <string name="compose_settings_page_local_library">Libreria locale</string>
@@ -1759,6 +1759,8 @@
   <string name="settings_playback_hud_vignette">Vignettatura dei controlli</string>
   <string name="settings_playback_hidden_hud_buttons">Pulsanti del lettore nascosti</string>
   <string name="settings_playback_hidden_hud_buttons_description">Rimuovi dal lettore i controlli che non usi mai. Le loro scorciatoie da tastiera continuano a funzionare.</string>
+  <string name="settings_playback_hud_buttons_tools_header">Pulsanti strumenti: trascina o usa le frecce per cambiare l’ordine</string>
+  <string name="settings_playback_hud_buttons_fixed_header">Fissi: ai lati di riproduci e nella barra in alto</string>
   <string name="settings_playback_hidden_hud_buttons_none">Nessuno</string>
   <string name="settings_playback_hidden_hud_buttons_count">%1$d nascosti</string>
   <string name="settings_playback_hud_button_previous_episode">Episodio precedente</string>
@@ -3520,6 +3522,8 @@
   <string name="settings_appearance_custom_theme">Tema personalizzato</string>
   <string name="settings_appearance_custom_theme_accent">Colore d'accento</string>
   <string name="settings_appearance_desktop_discover_tab">Scheda Scopri</string>
+  <string name="settings_appearance_nav_bar_glow">Bagliore della barra di navigazione</string>
+  <string name="settings_appearance_nav_bar_glow_description">Un leggero bagliore nel colore di accento attorno alla barra superiore fluttuante. 0% lo disattiva.</string>
   <string name="settings_appearance_desktop_discover_tab_description">Mostra Scopri nella barra di navigazione. Disattivandola si disattiva anche la scorciatoia di Scopri.</string>
   <string name="settings_appearance_custom_theme_accent_end">Gradiente dell'accento</string>
   <string name="settings_appearance_custom_theme_accent_end_hint">Secondo punto del gradiente dell'accento. Impostalo sul colore d'accento per mantenere gli accenti uniformi.</string>
@@ -3841,7 +3845,7 @@
   <string name="compose_settings_page_player">Lettore</string>
   <string name="settings_player_page_subtitle">Controlli del lettore, sottotitoli, lingue, salto e episodio successivo</string>
   <string name="settings_playback_section_anime">Anime</string>
-  <string name="settings_shortcuts_search_description">Tasti di scelta rapida e associazioni dei tasti per la navigazione e il lettore video.</string>
+  <string name="settings_shortcuts_search_description">Scorciatoie da tastiera, controller, telecomando dal telefono e associazioni dei tasti per la navigazione e il lettore video.</string>
   <string name="settings_simkl_connected_as_format">Connesso come %1$s</string>
   <string name="settings_simkl_cw_window_subtitle_format">Mostra solo i contenuti guardati negli ultimi %1$s</string>
   <string name="random_play_title">Riproduzione casuale</string>
@@ -4044,6 +4048,7 @@
   <string name="iptv_tab_loading">Caricamento dei canali…</string>
   <string name="iptv_tab_retry">Riprova</string>
   <string name="iptv_tab_open_settings">Impostazioni TV in diretta</string>
+  <string name="iptv_tab_empty_no_playlist">Ancora nessuna playlist TV in diretta. Aggiungine una nelle impostazioni TV in diretta: un accesso Xtream Codes, un portale Stalker o un link M3U.</string>
   <string name="iptv_tab_refresh">Aggiorna canali e guida</string>
   <string name="iptv_tab_next">Prossimo %1$s  %2$s</string>
   <string name="iptv_tab_favourite_add">Aggiungi ai preferiti</string>

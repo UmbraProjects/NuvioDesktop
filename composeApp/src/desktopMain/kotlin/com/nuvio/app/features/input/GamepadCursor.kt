@@ -10,7 +10,7 @@ import kotlin.math.hypot
 import kotlin.math.pow
 
 /**
- * The controller as a mouse: holding the cursor button (R3 by default, GamepadSettingsRepository.cursorButton) unlocks
+ * The controller as a mouse: holding the cursor button (L3 by default, GamepadSettingsRepository.cursorButton) unlocks
  * it, and the left stick then moves the real Windows pointer, through the phone remote's mover so aim assist and its
  * strength apply the same way. A clicks (held, it drags), X right-clicks, the right stick scrolls (sideways too).
  * Holding or tapping the button again locks it, and so does the D-pad, which goes back to moving focus as usual.

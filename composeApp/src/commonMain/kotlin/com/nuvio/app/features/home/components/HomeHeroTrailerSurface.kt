@@ -60,4 +60,14 @@ expect fun HomeHeroTrailerSurface(
     libraryLabel: String = "",
     inLibrary: Boolean = false,
     onAddToLibrary: () -> Unit = {},
+    // Where the crop sits when the video overflows the box top and bottom: -1 keeps the top, 0 the middle, 1 the
+    // bottom (mpv video-align-y). The Home hero passes its artwork's top bias (2026-11-24).
+    cropVerticalAlign: Float = 0f,
+    // Full screen: the hero's backdrop (and its CSS object-position) for the controls page to dissolve into the trailer
+    // (PlayerHeroTrailerState.revealCoverUrl); empty for none.
+    revealCoverUrl: String = "",
+    revealCoverPosition: String = "50% 50%",
+    // Frames between reporting ready and showing the video, for the page's lights-out to land first. Full screen passes
+    // 0: the video covers the whole screen, so there is nothing to darken, and waiting only showed black.
+    revealDelayFrames: Int = 4,
 )

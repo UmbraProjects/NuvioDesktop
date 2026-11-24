@@ -32,6 +32,9 @@ data class CustomThemeSettings(
 
 const val DEFAULT_APP_FONT_SCALE_PERCENT = 100
 val APP_FONT_SCALE_PERCENT_RANGE = 70..130
+/** Off by default (2026-11-23): an opt-in look. 50 is the poster Glow highlight's own strength. */
+const val DEFAULT_NAV_BAR_GLOW_PERCENT = 0
+val NAV_BAR_GLOW_PERCENT_RANGE = 0..100
 
 object ThemeSettingsRepository {
     private val _selectedTheme = MutableStateFlow(AppTheme.OCEAN)
@@ -82,7 +85,7 @@ object ThemeSettingsRepository {
     private val _desktopAppUiScalePercent = MutableStateFlow(0)
     val desktopAppUiScalePercent: StateFlow<Int> = _desktopAppUiScalePercent.asStateFlow()
 
-    private val _desktopAppUiScaleAppliesToDetails = MutableStateFlow(true)
+    private val _desktopAppUiScaleAppliesToDetails = MutableStateFlow(false)
     val desktopAppUiScaleAppliesToDetails: StateFlow<Boolean> = _desktopAppUiScaleAppliesToDetails.asStateFlow()
 
     // "" means the bundled JetBrains Sans. Any other value is an installed system family name,
@@ -94,6 +97,10 @@ object ThemeSettingsRepository {
     // be brought back to roughly the same footprint. Ignored while the bundled font is in use.
     private val _appFontScalePercent = MutableStateFlow(DEFAULT_APP_FONT_SCALE_PERCENT)
     val appFontScalePercent: StateFlow<Int> = _appFontScalePercent.asStateFlow()
+
+    // The floating top bar's accent bloom (fork:navbar-glow), 0 (off: the plain bar) to 100.
+    private val _navBarGlowPercent = MutableStateFlow(DEFAULT_NAV_BAR_GLOW_PERCENT)
+    val navBarGlowPercent: StateFlow<Int> = _navBarGlowPercent.asStateFlow()
 
     private val _selectedAppLanguage = MutableStateFlow(AppLanguage.ENGLISH)
     val selectedAppLanguage: StateFlow<AppLanguage> = _selectedAppLanguage.asStateFlow()
@@ -127,11 +134,12 @@ object ThemeSettingsRepository {
         _desktopDiscoverTabVisible.value = true
         _desktopSidebarItemsTop.value = false
         _desktopAppUiScalePercent.value = 0
-        _desktopAppUiScaleAppliesToDetails.value = true
+        _desktopAppUiScaleAppliesToDetails.value = false
         NativeTabBridge.publishAccentColor(ThemeColors.Ocean.nativeAccentHex)
         NativeTabBridge.publishLiquidGlassEnabled(false)
         _appFontFamily.value = ""
         _appFontScalePercent.value = DEFAULT_APP_FONT_SCALE_PERCENT
+        _navBarGlowPercent.value = DEFAULT_NAV_BAR_GLOW_PERCENT
         _selectedAppLanguage.value = AppLanguage.ENGLISH
     }
 
@@ -193,10 +201,12 @@ object ThemeSettingsRepository {
         _desktopAppUiScalePercent.value =
             ThemeSettingsStorage.loadDesktopAppUiScalePercent()?.coerceIn(-50, 50) ?: 0
         _desktopAppUiScaleAppliesToDetails.value =
-            ThemeSettingsStorage.loadDesktopAppUiScaleAppliesToDetails() ?: true
+            ThemeSettingsStorage.loadDesktopAppUiScaleAppliesToDetails() ?: false
         _appFontFamily.value = ThemeSettingsStorage.loadAppFontFamily()?.trim().orEmpty()
         _appFontScalePercent.value = ThemeSettingsStorage.loadAppFontScalePercent()
             ?.coerceIn(APP_FONT_SCALE_PERCENT_RANGE) ?: DEFAULT_APP_FONT_SCALE_PERCENT
+        _navBarGlowPercent.value = ThemeSettingsStorage.loadNavBarGlowPercent()
+            ?.coerceIn(NAV_BAR_GLOW_PERCENT_RANGE) ?: DEFAULT_NAV_BAR_GLOW_PERCENT
         val appLanguage = AppLanguage.fromCode(ThemeSettingsStorage.loadSelectedAppLanguage())
         ThemeSettingsStorage.applySelectedAppLanguage(appLanguage.code)
         _selectedAppLanguage.value = appLanguage
@@ -385,6 +395,14 @@ object ThemeSettingsRepository {
         if (_appFontFamily.value == next) return
         _appFontFamily.value = next
         ThemeSettingsStorage.saveAppFontFamily(next)
+    }
+
+    fun setNavBarGlowPercent(percent: Int) {
+        ensureLoaded()
+        val next = percent.coerceIn(NAV_BAR_GLOW_PERCENT_RANGE)
+        if (_navBarGlowPercent.value == next) return
+        _navBarGlowPercent.value = next
+        ThemeSettingsStorage.saveNavBarGlowPercent(next)
     }
 
     fun setAppFontScalePercent(percent: Int) {

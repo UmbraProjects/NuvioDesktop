@@ -1567,7 +1567,7 @@
     <string name="compose_settings_page_licenses_attributions">Lizenzen &amp; Quellenangaben</string>
     <string name="compose_settings_page_qualicache">QualiCache-Qualität</string>
     <string name="compose_settings_page_poster_service">Eigene Poster</string>
-    <string name="compose_settings_page_keyboard_shortcuts">Tastenkürzel</string>
+    <string name="compose_settings_page_keyboard_shortcuts">Steuerung</string>
     <string name="compose_settings_page_streams">Streams</string>
     <string name="compose_settings_page_local_library">Lokale Bibliothek</string>
     <string name="compose_settings_page_auto_downloads">Auto-Downloads</string>
@@ -2346,6 +2346,8 @@
     <string name="settings_playback_hud_vignette">Vignette der Steuerung</string>
     <string name="settings_playback_hidden_hud_buttons">Ausgeblendete Player-Buttons</string>
     <string name="settings_playback_hidden_hud_buttons_description">Steuerelemente, die du nie nutzt, aus dem Player entfernen. Ihre Tastenkürzel funktionieren weiterhin.</string>
+    <string name="settings_playback_hud_buttons_tools_header">Werkzeugtasten: zum Umsortieren ziehen oder die Pfeile nutzen</string>
+    <string name="settings_playback_hud_buttons_fixed_header">Fester Platz: neben Wiedergabe und in der oberen Leiste</string>
     <string name="settings_playback_hidden_hud_buttons_none">Keine</string>
     <string name="settings_playback_hidden_hud_buttons_count">%1$d ausgeblendet</string>
     <string name="settings_playback_hud_button_previous_episode">Vorherige Folge</string>
@@ -3518,6 +3520,8 @@
     <string name="settings_appearance_custom_theme">Eigenes Design</string>
     <string name="settings_appearance_custom_theme_accent">Akzent</string>
     <string name="settings_appearance_desktop_discover_tab">Entdecken-Tab</string>
+    <string name="settings_appearance_nav_bar_glow">Leuchten der Navigationsleiste</string>
+    <string name="settings_appearance_nav_bar_glow_description">Ein sanftes Leuchten in der Akzentfarbe um die schwebende obere Leiste. 0 % schaltet es aus.</string>
     <string name="settings_appearance_desktop_discover_tab_description">Zeigt Entdecken in der Navigationsleiste an. Wenn du es ausschaltest, wird auch die Entdecken-Tastenkombination deaktiviert.</string>
     <string name="settings_appearance_custom_theme_accent_end">Akzentverlauf</string>
     <string name="settings_appearance_custom_theme_accent_end_hint">Zweiter Farbpunkt des Akzentverlaufs. Setze ihn auf die Akzentfarbe, damit Akzente einfarbig bleiben.</string>
@@ -3839,7 +3843,7 @@
     <string name="compose_settings_page_player">Player</string>
     <string name="settings_player_page_subtitle">Player-Steuerung, Untertitel, Sprachen, Überspringen und nächste Folge</string>
     <string name="settings_playback_section_anime">Anime</string>
-    <string name="settings_shortcuts_search_description">Hotkeys und Tastenbelegungen für Navigation und Videoplayer.</string>
+    <string name="settings_shortcuts_search_description">Tastenkürzel, Controller, Handy-Fernbedienung und Tastenbelegungen für Navigation und Videoplayer.</string>
     <string name="settings_simkl_connected_as_format">Verbunden als %1$s</string>
     <string name="settings_simkl_cw_window_subtitle_format">Nur Einträge anzeigen, die in den letzten %1$s gesehen wurden</string>
     <string name="random_play_title">Zufallswiedergabe</string>
@@ -4042,6 +4046,7 @@
     <string name="iptv_tab_loading">Sender werden geladen…</string>
     <string name="iptv_tab_retry">Erneut versuchen</string>
     <string name="iptv_tab_open_settings">Live-TV-Einstellungen</string>
+    <string name="iptv_tab_empty_no_playlist">Noch keine Live-TV-Playlist. Füge eine in den Live-TV-Einstellungen hinzu: ein Xtream-Codes-Login, ein Stalker-Portal oder ein M3U-Link.</string>
     <string name="iptv_tab_refresh">Sender und Programmführer aktualisieren</string>
     <string name="iptv_tab_next">Als Nächstes %1$s  %2$s</string>
     <string name="iptv_tab_favourite_add">Zu Favoriten hinzufügen</string>

@@ -49,6 +49,7 @@ internal val MACHINE_STORE_NAMES = setOf(
     "nuvio_library_title_facts",
     "nuvio_binge_group_cache",
     "nuvio_voice_control", // fork:voice-control - which speech model and microphone this PC uses
+    "nuvio_auth_session", // the test-profile sign-in (DataDirSessionManager); picks the account folder
 )
 
 /**

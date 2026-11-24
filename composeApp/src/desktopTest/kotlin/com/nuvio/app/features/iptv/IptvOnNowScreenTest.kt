@@ -90,6 +90,8 @@ class IptvOnNowScreenTest {
             IptvPlaylist(id = "", type = IptvPlaylistType.M3u, name = "Test TV", url = server.url("/list.m3u").toString()),
         )
         IptvRepository.setOnNow(true)
+        // On by default since Nov 23; this test is about the plain film page, which on demand would ask first.
+        IptvRepository.setOnDemand(false)
         try {
             runBlocking {
                 IptvRepository.refresh(playlist.id, force = true)

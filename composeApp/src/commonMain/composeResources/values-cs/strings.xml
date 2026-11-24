@@ -709,7 +709,7 @@
   <string name="compose_settings_page_playback">Přehrávání</string>
   <string name="compose_settings_page_plugins">Pluginy</string>
   <string name="compose_settings_page_poster_customization">Styl karty plakátu</string>
-  <string name="compose_settings_page_keyboard_shortcuts">Klávesové zkratky</string>
+  <string name="compose_settings_page_keyboard_shortcuts">Ovládání</string>
   <string name="compose_settings_page_root">Nastavení</string>
   <string name="compose_settings_page_streams">Streamy</string>
   <string name="compose_settings_page_local_library">Místní knihovna</string>
@@ -1759,6 +1759,8 @@
   <string name="settings_playback_hud_vignette">Vinětace ovládání</string>
   <string name="settings_playback_hidden_hud_buttons">Skrytá tlačítka přehrávače</string>
   <string name="settings_playback_hidden_hud_buttons_description">Odeberte z přehrávače ovládací prvky, které nepoužíváte. Jejich klávesové zkratky dál fungují.</string>
+  <string name="settings_playback_hud_buttons_tools_header">Tlačítka nástrojů: pořadí změníte přetažením nebo šipkami</string>
+  <string name="settings_playback_hud_buttons_fixed_header">Pevně na místě: po stranách tlačítka přehrát a v horní liště</string>
   <string name="settings_playback_hidden_hud_buttons_none">Žádná</string>
   <string name="settings_playback_hidden_hud_buttons_count">Skryto: %1$d</string>
   <string name="settings_playback_hud_button_previous_episode">Předchozí epizoda</string>
@@ -3528,6 +3530,8 @@
   <string name="settings_appearance_custom_theme">Vlastní motiv</string>
   <string name="settings_appearance_custom_theme_accent">Zvýrazňovací barva</string>
   <string name="settings_appearance_desktop_discover_tab">Karta Objevit</string>
+  <string name="settings_appearance_nav_bar_glow">Záře navigační lišty</string>
+  <string name="settings_appearance_nav_bar_glow_description">Jemná záře v barvě zvýraznění kolem plovoucí horní lišty. 0 % ji vypne.</string>
   <string name="settings_appearance_desktop_discover_tab_description">Zobrazit Objevovat v navigačním panelu. Vypnutím se zakáže i zkratka pro Objevovat.</string>
   <string name="settings_appearance_custom_theme_accent_end">Přechod zvýraznění</string>
   <string name="settings_appearance_custom_theme_accent_end_hint">Druhá barva přechodu zvýraznění. Nastavte ji na zvýrazňovací barvu, aby zvýraznění zůstalo jednobarevné.</string>
@@ -3849,7 +3853,7 @@
   <string name="compose_settings_page_player">Přehrávač</string>
   <string name="settings_player_page_subtitle">Ovládání přehrávače, titulky, jazyky, přeskakování a další epizoda</string>
   <string name="settings_playback_section_anime">Anime</string>
-  <string name="settings_shortcuts_search_description">Klávesové zkratky a přiřazení kláves pro navigaci a video přehrávač.</string>
+  <string name="settings_shortcuts_search_description">Klávesové zkratky, ovladač, telefon jako dálkové ovládání a přiřazení kláves pro navigaci a video přehrávač.</string>
   <string name="settings_simkl_connected_as_format">Připojeno jako %1$s</string>
   <string name="settings_simkl_cw_window_subtitle_format">Zobrazovat pouze položky zhlédnuté za posledních %1$s</string>
   <string name="random_play_title">Náhodné přehrání</string>
@@ -4052,6 +4056,7 @@
   <string name="iptv_tab_loading">Načítání kanálů…</string>
   <string name="iptv_tab_retry">Zkusit znovu</string>
   <string name="iptv_tab_open_settings">Nastavení živé televize</string>
+  <string name="iptv_tab_empty_no_playlist">Zatím žádný playlist živé televize. Přidejte ho v nastavení živé televize: přihlášení Xtream Codes, portál Stalker nebo odkaz M3U.</string>
   <string name="iptv_tab_refresh">Obnovit kanály a průvodce</string>
   <string name="iptv_tab_next">Další %1$s  %2$s</string>
   <string name="iptv_tab_favourite_add">Přidat do oblíbených</string>

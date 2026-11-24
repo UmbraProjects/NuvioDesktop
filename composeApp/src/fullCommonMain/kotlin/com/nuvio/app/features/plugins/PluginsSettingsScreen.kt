@@ -657,7 +657,6 @@ private fun DesktopPluginsManager(
     var enabledOnly by rememberSaveable { mutableStateOf(false) }
     var reposOnly by rememberSaveable { mutableStateOf(false) }
     var providersOnly by rememberSaveable { mutableStateOf(false) }
-    var showAddRepository by rememberSaveable { mutableStateOf(false) }
     val trimmedQuery = query.trim()
     val visibleRepositories = repositories.filter { repo ->
         val matchesQuery = trimmedQuery.isBlank() ||
@@ -710,10 +709,6 @@ private fun DesktopPluginsManager(
                     maxLines = 1,
                 )
             }
-            DesktopPluginAddButton(
-                selected = showAddRepository,
-                onClick = { showAddRepository = !showAddRepository },
-            )
         }
 
         Row(
@@ -742,15 +737,14 @@ private fun DesktopPluginsManager(
             )
         }
 
-        if (showAddRepository) {
-            DesktopPluginAddRepositoryPopover(
-                repositoryUrl = repositoryUrl,
-                message = message,
-                isAdding = isAdding,
-                onRepositoryUrlChange = onRepositoryUrlChange,
-                onInstallRepository = onInstallRepository,
-            )
-        }
+        // Always shown (2026-11-23), as on the Addons page: no button to open it first.
+        DesktopPluginAddRepositoryPopover(
+            repositoryUrl = repositoryUrl,
+            message = message,
+            isAdding = isAdding,
+            onRepositoryUrlChange = onRepositoryUrlChange,
+            onInstallRepository = onInstallRepository,
+        )
 
         if (!providersOnly) {
             DesktopPluginRepositoriesTable(
@@ -893,49 +887,6 @@ private fun DesktopPluginSearchField(
 }
 
 @Composable
-private fun DesktopPluginAddButton(
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    val tokens = MaterialTheme.nuvio
-    val shape = RoundedCornerShape(12.dp)
-    Surface(
-        modifier = Modifier
-            .height(44.dp)
-            // Painted as a brush rather than through Surface's colour so a gradient accent reaches
-            // this pill too; accentFill is a SolidColor on the flat themes and renders identically.
-            // The open state keeps its flat accentStrong, which is what distinguishes it.
-            .background(
-                brush = if (selected) SolidColor(tokens.colors.accentStrong) else tokens.colors.accentFill,
-                shape = shape,
-            )
-            .clickable(onClick = onClick),
-        shape = shape,
-        color = Color.Transparent,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Add,
-                contentDescription = null,
-                tint = tokens.colors.background,
-                modifier = Modifier.size(20.dp),
-            )
-            Text(
-                text = stringResource(Res.string.plugins_button_install_repo),
-                style = MaterialTheme.typography.bodyLarge,
-                color = tokens.colors.background,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
-@Composable
 private fun DesktopPluginAddRepositoryPopover(
     repositoryUrl: String,
     message: String?,
@@ -964,6 +915,7 @@ private fun DesktopPluginAddRepositoryPopover(
                     placeholder = stringResource(Res.string.plugins_input_manifest_placeholder),
                     modifier = Modifier.weight(1f),
                     onImeAction = { if (repositoryUrl.isNotBlank() && !isAdding) onInstallRepository() },
+                    compact = true,
                 )
                 SettingsGlassButton(
                     text = stringResource(Res.string.plugins_button_install_repo),

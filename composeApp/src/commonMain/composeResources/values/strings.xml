@@ -709,7 +709,7 @@
     <string name="compose_settings_page_playback">Playback</string>
     <string name="compose_settings_page_plugins">Plugins</string>
     <string name="compose_settings_page_poster_customization">Poster Card Style</string>
-    <string name="compose_settings_page_keyboard_shortcuts">Keyboard Shortcuts</string>
+    <string name="compose_settings_page_keyboard_shortcuts">Controls</string>
     <string name="compose_settings_page_root">Settings</string>
     <string name="compose_settings_page_streams">Streams</string>
     <string name="compose_settings_page_local_library">Local Library</string>
@@ -1854,6 +1854,8 @@
     <string name="settings_playback_hud_button_channels">Channels (Live TV)</string>
     <string name="settings_playback_hud_button_order">Player Button Order</string>
     <string name="settings_playback_hud_button_order_description">The order of the tool buttons beside the play controls. Buttons that do not fit fold into the More menu in this order too.</string>
+    <string name="settings_playback_hud_buttons_tools_header">Tool buttons: drag or use the arrows to change their order</string>
+    <string name="settings_playback_hud_buttons_fixed_header">Fixed in place: either side of play and in the top bar</string>
     <string name="settings_playback_hud_button_order_default">Default</string>
     <string name="settings_playback_hud_button_order_custom">Custom</string>
     <string name="settings_playback_hud_button_order_reset">Reset</string>
@@ -3643,6 +3645,8 @@
     <string name="settings_appearance_custom_theme">Custom theme</string>
     <string name="settings_appearance_custom_theme_accent">Accent</string>
     <string name="settings_appearance_desktop_discover_tab">Discover tab</string>
+    <string name="settings_appearance_nav_bar_glow">Navigation bar glow</string>
+    <string name="settings_appearance_nav_bar_glow_description">A soft accent bloom round the floating top bar. 0% turns it off.</string>
     <string name="settings_appearance_desktop_discover_tab_description">Show Discover in the navigation bar. Turning it off also disables the Discover shortcut.</string>
     <string name="settings_appearance_custom_theme_accent_end">Accent gradient</string>
     <string name="settings_appearance_custom_theme_accent_end_hint">Second stop of the accent gradient. Set it to the accent color to keep accents flat.</string>
@@ -3964,7 +3968,7 @@
     <string name="compose_settings_page_player">Player</string>
     <string name="settings_player_page_subtitle">Player controls, subtitles, languages, skipping and next episode</string>
     <string name="settings_playback_section_anime">Anime</string>
-    <string name="settings_shortcuts_search_description">Hotkeys and key bindings for navigation and the video player.</string>
+    <string name="settings_shortcuts_search_description">Keyboard shortcuts, controller, phone remote and key bindings for navigation and the video player.</string>
     <string name="settings_simkl_connected_as_format">Connected as %1$s</string>
     <string name="settings_simkl_cw_window_subtitle_format">Only show items watched within the last %1$s</string>
     <string name="random_play_title">Random Play</string>
@@ -4172,6 +4176,7 @@
     <string name="iptv_tab_loading">Loading channels…</string>
     <string name="iptv_tab_retry">Try again</string>
     <string name="iptv_tab_open_settings">Live TV settings</string>
+    <string name="iptv_tab_empty_no_playlist">No Live TV playlist yet. Add one in Live TV settings: an Xtream Codes login, a Stalker portal or an M3U link.</string>
     <string name="iptv_tab_refresh">Refresh channels and guide</string>
     <string name="iptv_tab_next">Next %1$s  %2$s</string>
     <string name="iptv_tab_favourite_add">Add to favourites</string>

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.ui.composed
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.ui.focus.FocusDirection
@@ -765,8 +767,156 @@ internal fun SettingsGroup(
         isTablet = isTablet,
         modifier = modifier,
     ) {
-        Column(content = content)
+        Column(modifier = Modifier.settingsRowContainer(), content = content)
     }
+}
+
+/**
+ * The columns whose children are settings rows, so the page's focus highlight can outline the whole row a focused
+ * control sits in (its On/Off switch, its dropdown, its button) rather than the control alone (2026-11-23).
+ */
+internal object SettingsFocusRows {
+    private val containers = mutableSetOf<LayoutCoordinates>()
+
+    /**
+     * The row to highlight, set by the settings screen. The row's own column draws it, inside the section card, so the
+     * card's clip and its row gaps shape it exactly; drawn over the page it overshot the card's corners (2026-11-24).
+     */
+    var highlight by mutableStateOf<SettingsRowHighlight?>(null)
+
+    fun register(coordinates: LayoutCoordinates) {
+        containers.add(coordinates)
+    }
+
+    /** The registered row column [row] (from [rowOf]) sits in, which draws its highlight. */
+    fun containerOf(row: LayoutCoordinates): LayoutCoordinates? {
+        var current = row.parentLayoutCoordinates
+        while (current != null) {
+            if (current in containers) return current
+            current = current.parentLayoutCoordinates
+        }
+        return null
+    }
+
+    /**
+     * The row [control] is in, at its outermost (padding included): the nearest ancestor that spans the section's width
+     * and is one of several things stacked in its parent. Pages such as Poster card style and Card depth put a whole
+     * block of rows in one Column inside the section, so the section's direct child is the block; ringing that lit the
+     * whole column (2026-11-24). Without such an ancestor (a section of one row), the section's direct child.
+     */
+    fun rowOf(control: LayoutCoordinates): LayoutCoordinates? {
+        containers.removeAll { !it.isAttached }
+        if (containers.isEmpty()) return null
+        val levels = mutableListOf<Pair<LayoutCoordinates, LayoutCoordinates>>()
+        var current = control
+        while (true) {
+            val parent = current.parentLayoutCoordinates ?: return null
+            var outer = current
+            while (true) {
+                val up = outer.parentCoordinates ?: break
+                if (up === parent) break
+                outer = up
+            }
+            levels.add(outer to parent)
+            if (parent in containers) {
+                val sectionWidth = parent.size.width
+                return levels.firstOrNull { (node, nodeParent) ->
+                    node.size.width >= sectionWidth * 0.9f && node.size.height <= nodeParent.size.height * 0.6f
+                }?.first ?: outer
+            }
+            current = parent
+        }
+    }
+}
+
+/** Where the focused row is, in its row column's own space. */
+internal class SettingsRowHighlight(val container: LayoutCoordinates, val rect: Rect)
+
+/** Marks a column of settings rows for [SettingsFocusRows], and draws the keyboard highlight when it holds the row. */
+internal fun Modifier.settingsRowContainer(): Modifier = composed {
+    val self = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val color = MaterialTheme.nuvio.colors.focusRing
+    onGloballyPositioned {
+        self[0] = it
+        SettingsFocusRows.register(it)
+    }.drawBehind {
+        val highlight = SettingsFocusRows.highlight ?: return@drawBehind
+        if (highlight.container !== self[0]) return@drawBehind
+        // Square: the card's clip rounds the first and last rows, and the middle ones are square cards.
+        drawSettingsFocusHighlight(highlight.rect, color, cornerRadius = 0f)
+    }
+}
+
+/**
+ * Settings' keyboard and controller highlight: a soft accent wash over the item. Replaced an outline (2026-11-24), which
+ * drew the item's layout box rather than anything you could see and so sat loose round sidebar entries and across card
+ * corners; a leading accent bar tried after it sat on top of the sidebar icons.
+ */
+internal fun DrawScope.drawSettingsFocusHighlight(rect: Rect, color: Color, cornerRadius: Float) {
+    drawRoundRect(
+        color = color.copy(alpha = color.alpha * 0.16f),
+        topLeft = rect.topLeft,
+        size = rect.size,
+        cornerRadius = CornerRadius(cornerRadius),
+    )
+}
+
+/**
+ * What a sidebar entry shows (its icon, its text as far as the text actually runs), so the highlight can fit round that
+ * with even padding instead of filling the entry's full-width click area (2026-11-24). An entry's pieces are found by
+ * lying inside the focused control.
+ */
+internal class SettingsFocusContentPiece {
+    var coordinates: LayoutCoordinates? = null
+
+    /** For text: how far its longest line runs, which is less than the box a weighted or full-width Text is given. */
+    var width: Float? = null
+}
+
+internal object SettingsFocusContent {
+    private val pieces = mutableSetOf<SettingsFocusContentPiece>()
+
+    fun add(piece: SettingsFocusContentPiece) {
+        pieces.add(piece)
+    }
+
+    fun remove(piece: SettingsFocusContentPiece) {
+        pieces.remove(piece)
+    }
+
+    /** The visible content inside [control] (in [root]'s space), or null when the control registered none. */
+    fun boundsWithin(root: LayoutCoordinates, control: Rect): Rect? {
+        var union: Rect? = null
+        for (piece in pieces) {
+            val coordinates = piece.coordinates?.takeIf { it.isAttached } ?: continue
+            var rect = runCatching { root.localBoundingBoxOf(coordinates, clipBounds = false) }.getOrNull() ?: continue
+            piece.width?.let { rect = Rect(rect.left, rect.top, (rect.left + it).coerceAtMost(rect.right), rect.bottom) }
+            if (!control.contains(rect.center)) continue
+            union = union?.let {
+                Rect(minOf(it.left, rect.left), minOf(it.top, rect.top), maxOf(it.right, rect.right), maxOf(it.bottom, rect.bottom))
+            } ?: rect
+        }
+        return union
+    }
+}
+
+/** A piece of a sidebar entry for [SettingsFocusContent], kept registered while it is on screen. */
+@Composable
+internal fun rememberSettingsFocusContentPiece(): SettingsFocusContentPiece {
+    val piece = remember { SettingsFocusContentPiece() }
+    androidx.compose.runtime.DisposableEffect(piece) {
+        SettingsFocusContent.add(piece)
+        onDispose { SettingsFocusContent.remove(piece) }
+    }
+    return piece
+}
+
+internal fun Modifier.settingsFocusContent(piece: SettingsFocusContentPiece): Modifier =
+    onGloballyPositioned { piece.coordinates = it }
+
+/** For a Text's onTextLayout: records how far its text runs. */
+internal fun SettingsFocusContentPiece.recordText(layout: androidx.compose.ui.text.TextLayoutResult) {
+    width = (0 until layout.lineCount).maxOfOrNull { layout.getLineRight(it) }
 }
 
 @Composable
@@ -1247,7 +1397,7 @@ private fun SettingsSectionCardSurface(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     if (!cards) {
-        Column(content = content)
+        Column(modifier = Modifier.settingsRowContainer(), content = content)
         return
     }
     val tokens = MaterialTheme.nuvio
@@ -1273,7 +1423,7 @@ private fun SettingsSectionCardSurface(
                 LocalSettingsCardGapClears provides true,
                 LocalSettingsTextMaxWidth provides textMaxWidth.coerceAtLeast(0.dp),
             ) {
-                Column(content = content)
+                Column(modifier = Modifier.settingsRowContainer(), content = content)
             }
         }
     }

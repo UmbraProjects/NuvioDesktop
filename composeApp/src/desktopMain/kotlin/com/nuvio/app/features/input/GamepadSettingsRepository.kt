@@ -57,10 +57,10 @@ object GamepadSettingsRepository {
     private const val KEY_PLAYER_LIGHT = "gamepad_player_light"
 
     /** Hold this to turn the left stick into the mouse pointer; a tap still does the button's own action. */
-    val DEFAULT_CURSOR_BUTTON: GamepadButton? = GamepadButton.RightThumb
+    val DEFAULT_CURSOR_BUTTON: GamepadButton? = GamepadButton.LeftThumb
 
     /** The stick clicks: the face buttons and D-pad are in use while pointing. */
-    val CURSOR_BUTTON_CHOICES: List<GamepadButton> = listOf(GamepadButton.RightThumb, GamepadButton.LeftThumb)
+    val CURSOR_BUTTON_CHOICES: List<GamepadButton> = listOf(GamepadButton.LeftThumb, GamepadButton.RightThumb)
 
     /** Hold this to open the panel ring; a tap still does the button's own action. */
     val DEFAULT_RING_BUTTON: GamepadButton? = GamepadButton.LeftShoulder

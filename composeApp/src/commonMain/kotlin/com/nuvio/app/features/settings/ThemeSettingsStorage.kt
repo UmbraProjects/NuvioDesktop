@@ -45,6 +45,8 @@ internal expect object ThemeSettingsStorage {
     fun saveAppFontFamily(fontFamily: String)
     fun loadAppFontScalePercent(): Int?
     fun saveAppFontScalePercent(percent: Int)
+    fun loadNavBarGlowPercent(): Int?
+    fun saveNavBarGlowPercent(percent: Int)
     fun loadSelectedAppLanguage(): String?
     fun saveSelectedAppLanguage(languageCode: String)
     fun applySelectedAppLanguage(languageCode: String)

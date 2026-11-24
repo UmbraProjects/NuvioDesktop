@@ -101,6 +101,8 @@ import nuvio.composeapp.generated.resources.settings_appearance_app_ui_scale_det
 import nuvio.composeapp.generated.resources.settings_appearance_liquid_glass
 import nuvio.composeapp.generated.resources.settings_appearance_liquid_glass_description
 import nuvio.composeapp.generated.resources.settings_appearance_desktop_discover_tab
+import nuvio.composeapp.generated.resources.settings_appearance_nav_bar_glow
+import nuvio.composeapp.generated.resources.settings_appearance_nav_bar_glow_description
 import nuvio.composeapp.generated.resources.settings_appearance_desktop_discover_tab_description
 import nuvio.composeapp.generated.resources.settings_appearance_desktop_navigation
 import nuvio.composeapp.generated.resources.settings_appearance_desktop_top_bar_always_visible
@@ -131,7 +133,7 @@ internal fun LazyListScope.appearanceSettingsContent(
     onDesktopNavigationLayoutSelected: (DesktopNavigationLayout) -> Unit = {},
     desktopAppUiScalePercent: Int = 0,
     onDesktopAppUiScalePercentChange: (Int) -> Unit = {},
-    desktopAppUiScaleAppliesToDetails: Boolean = true,
+    desktopAppUiScaleAppliesToDetails: Boolean = false,
     onDesktopAppUiScaleAppliesToDetailsChange: (Boolean) -> Unit = {},
     selectedAppLanguage: AppLanguage,
     onAppLanguageSelected: (AppLanguage) -> Unit,
@@ -372,6 +374,20 @@ internal fun LazyListScope.appearanceSettingsContent(
                         NavigationOrderRow(isTablet = isTablet, onClick = { navigationOrderOpen = true })
                     }
                     if (navigationOrderOpen) NavigationOrderDialog(onDismiss = { navigationOrderOpen = false })
+                    SettingsGroupDivider(isTablet = isTablet)
+                    val navBarGlowPercent by ThemeSettingsRepository.navBarGlowPercent.collectAsState()
+                    SettingsSliderRow(
+                        title = stringResource(Res.string.settings_appearance_nav_bar_glow),
+                        description = stringResource(Res.string.settings_appearance_nav_bar_glow_description),
+                        value = navBarGlowPercent,
+                        valueText = "$navBarGlowPercent%",
+                        valueTextForValue = { "$it%" },
+                        valueRange = NAV_BAR_GLOW_PERCENT_RANGE,
+                        step = 5,
+                        isTablet = isTablet,
+                        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("x-appearance-nav-bar-glow")),
+                        onValueChange = ThemeSettingsRepository::setNavBarGlowPercent,
+                    )
                     SettingsGroupDivider(isTablet = isTablet)
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_appearance_desktop_discover_tab),

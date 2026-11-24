@@ -72,6 +72,10 @@ actual fun HomeHeroTrailerSurface(
     libraryLabel: String,
     inLibrary: Boolean,
     onAddToLibrary: () -> Unit,
+    cropVerticalAlign: Float,
+    revealCoverUrl: String,
+    revealCoverPosition: String,
+    revealDelayFrames: Int,
 ) {
     // fork:pip-browse - no trailer over a film playing on in the corner box (a pre-show is for a new
     // film, which closes the box first). Nothing is drawn, so the hero keeps its artwork; the trailer
@@ -264,7 +268,10 @@ actual fun HomeHeroTrailerSurface(
     }
 
     // mpv "mute"/"volume" properties queue until the handle exists, so they survive the async attach.
-    LaunchedEffect(controller, sourceUrl, forbiddenRetries, effectiveMuted, effectiveVolume) { // fork:trailer-403
+    LaunchedEffect(
+        controller, sourceUrl, forbiddenRetries, effectiveMuted, effectiveVolume,
+        playbackRevealReady, revealCoverUrl, revealCoverPosition,
+    ) { // fork:trailer-403
         // fork:preshow - the pre-show level never changes after attach, and the init options set it.
         if (preshow) return@LaunchedEffect
         controller.updateControls(
@@ -281,6 +288,9 @@ actual fun HomeHeroTrailerSurface(
                     volume = effectiveVolume,
                     navDismissEdge = navDismissEdge,
                     navDismissBandFraction = navDismissBandFraction,
+                    revealCoverUrl = revealCoverUrl,
+                    revealCoverPosition = revealCoverPosition,
+                    revealed = playbackRevealReady,
                 ),
             ),
         )
@@ -297,14 +307,28 @@ actual fun HomeHeroTrailerSurface(
     // player's own bar detector, on upstream's quick cadence (a frame every 400 ms, settled after
     // four agreeing ones) rather than the film's five seconds of learning. The mode is re-applied
     // when the handle attaches.
-    LaunchedEffect(controller, sourceUrl, forbiddenRetries) { // fork:trailer-403
+    LaunchedEffect(controller, sourceUrl, forbiddenRetries, cropVerticalAlign) { // fork:trailer-403
         controller.setResizeMode(com.nuvio.app.features.player.PlayerResizeMode.AutoCrop, quickAutoCrop = true)
+        // The Home hero's box is far wider than 16:9, so a centred fill cut heads off at the top while the bottom of
+        // the frame sat under the shelf fade; the caller can keep more of the top instead, as its artwork does.
+        controller.setMpvProperty("video-align-y", cropVerticalAlign.coerceIn(-1f, 1f).toString())
         // fork:preshow - the loudness filter is an init option on attach (heroTrailerAudioInitOptions),
         // not set here: changing `af` on a live stream rebuilds the audio chain.
     }
 
     LaunchedEffect(controller, playWhenReady) {
         if (playWhenReady) controller.play() else controller.pause()
+    }
+
+    // Black while parked at 1px, so the first frame after the reveal's resize is black rather than one pixel of the
+    // video stretched across the window; the picture comes back once the window is drawing at full size.
+    LaunchedEffect(controller, playbackRevealReady) {
+        if (!playbackRevealReady) {
+            controller.setParkedBlackout(true)
+        } else {
+            repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+            controller.setParkedBlackout(false)
+        }
     }
 
     LaunchedEffect(controller, sourceUrl, forbiddenRetries, playWhenReady) { // fork:trailer-403
@@ -330,9 +354,14 @@ actual fun HomeHeroTrailerSurface(
                 snapshot.positionMs >= 150L
             ) {
                 readyReported = true
-                playbackRevealReady = true
                 trailerSurfaceLog.i { "playback moving; reveal at ${snapshot.positionMs}ms" }
+                // The lights-out first, then the video (as on Details). The video is a heavyweight panel that shows the
+                // moment it is revealed, while the black around it only follows once the hero's ready state has reached
+                // the ambient wash (a recomposition, an effect and a collected flow later), so the page went black a
+                // few frames after the trailer was up (2026-11-24). Four frames covers that chain.
                 latestOnReady.value()
+                repeat(revealDelayFrames.coerceAtLeast(0)) { androidx.compose.runtime.withFrameNanos { } }
+                playbackRevealReady = true
             }
             if (preshow) fadeOut.maybeStart(this, readyReported, snapshot.positionMs, snapshot.durationMs) // fork:preshow
             if (snapshot.isEnded && !endedReported) {
@@ -354,7 +383,10 @@ actual fun HomeHeroTrailerSurface(
                 } else {
                     Modifier.align(Alignment.BottomEnd).requiredSize(1.dp)
                 },
-                background = Color.Transparent,
+                // Black, as on Details: transparent let the interop container's light default colour show for a frame
+                // as the native child was resized from its parked 1px to full size, a white flash at the trailer's
+                // start (2026-11-24).
+                background = Color.Black,
             )
         }
     }

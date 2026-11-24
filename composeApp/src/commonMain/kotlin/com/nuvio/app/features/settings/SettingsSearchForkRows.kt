@@ -28,6 +28,7 @@ internal data class ForkSearchRow(
 internal val forkSearchIcon: ImageVector get() = Icons.Rounded.Settings
 
 internal val forkSearchRows: List<ForkSearchRow> = listOf(
+    ForkSearchRow(SettingsPage.Appearance, "x-appearance-nav-bar-glow", Res.string.settings_appearance_nav_bar_glow, Res.string.settings_appearance_nav_bar_glow_description, Res.string.compose_settings_page_appearance, Res.string.settings_appearance_section_display, desktopOnly = true),
     ForkSearchRow(SettingsPage.Appearance, "x-appearance-close-to-tray", Res.string.settings_appearance_close_to_tray, Res.string.settings_appearance_close_to_tray_description, Res.string.compose_settings_page_appearance, Res.string.settings_appearance_section_display, desktopOnly = true),
     ForkSearchRow(SettingsPage.ContinueWatching, "x-cw-seed-nuvio-title", Res.string.settings_cw_seed_nuvio_title, Res.string.settings_cw_seed_nuvio_description, Res.string.compose_settings_page_continue_watching, Res.string.compose_settings_page_continue_watching),
     ForkSearchRow(SettingsPage.PosterService, "x-poster-service-placeholders-title", Res.string.settings_poster_service_placeholders_title, Res.string.settings_poster_service_placeholders_subtitle, Res.string.compose_settings_page_poster_service, Res.string.settings_poster_service_templates_section),

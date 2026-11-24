@@ -643,6 +643,7 @@ internal class NativePlayerController(
             }
         }
         lastResizeMode?.let { setResizeMode(it, lastQuickAutoCrop) }
+        if (parkedBlackout) applyParkedBlackout(current)
         applyPendingSubtitleConfiguration(current)
         if (pendingVideoRedraw) {
             pendingVideoRedraw = false
@@ -856,6 +857,33 @@ internal class NativePlayerController(
     fun setCornerRadius(radiusPx: Int) {
         val current = handle.takeIf { it != 0L } ?: return
         runCatching { NativePlayerBridge.setCornerRadius(current, radiusPx) }
+    }
+
+    /**
+     * Hero trailers: covers the picture with a black OSD overlay while the surface is parked at 1px before its reveal.
+     * Grown to full size at the reveal, the window showed its last 1px frame stretched across it (Windows scales the
+     * old buffer until mpv draws at the new size), a frame of one flat colour from a single pixel of the video
+     * (2026-11-24). An OSD overlay, not a colour adjustment, so Auto Crop's grabs (screenshot-raw "video", no OSD) still
+     * see the real picture. Applied again on each attach.
+     */
+    @Volatile
+    private var parkedBlackout = false
+
+    fun setParkedBlackout(on: Boolean) {
+        parkedBlackout = on
+        handle.takeIf { it != 0L }?.let(::applyParkedBlackout)
+    }
+
+    private fun applyParkedBlackout(current: Long) {
+        val args = if (parkedBlackout) {
+            arrayOf("osd-overlay", PARKED_BLACKOUT_OVERLAY_ID, "ass-events", PARKED_BLACKOUT_ASS, "100", "100", "0", "no", "no")
+        } else {
+            arrayOf("osd-overlay", PARKED_BLACKOUT_OVERLAY_ID, "none", "", "0", "0", "0", "no", "no")
+        }
+        try {
+            NativePlayerBridge.mpvCommand(current, args)
+        } catch (_: UnsatisfiedLinkError) {
+        }
     }
 
     fun setMpvProperty(key: String, value: String) {
@@ -3726,6 +3754,12 @@ internal fun PlayerControlsState.toControlsJson(
         appendJsonField("streamFailoverEnabled", hud.streamFailoverEnabled)
         append(',')
         appendJsonField("postShowInput", heroTrailer.postShowInput)
+        append(',')
+        appendJsonField("heroTrailerRevealCoverUrl", heroTrailer.revealCoverUrl)
+        append(',')
+        appendJsonField("heroTrailerRevealCoverPosition", heroTrailer.revealCoverPosition)
+        append(',')
+        appendJsonField("heroTrailerRevealed", heroTrailer.revealed)
         append('}')
     }
 
@@ -4238,3 +4272,9 @@ private fun String.toJsonString(): String =
         }
         append('"')
     }
+
+/** The OSD overlay slot [NativePlayerController.setParkedBlackout] uses, clear of any other overlay ids. */
+private const val PARKED_BLACKOUT_OVERLAY_ID = "58"
+
+/** A black box over the whole 100x100 OSD. */
+private const val PARKED_BLACKOUT_ASS = "{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H000000&\\p1}m 0 0 l 100 0 100 100 0 100"

@@ -709,7 +709,7 @@
   <string name="compose_settings_page_playback">Pemutaran</string>
   <string name="compose_settings_page_plugins">Plugin</string>
   <string name="compose_settings_page_poster_customization">Gaya Kartu Poster</string>
-  <string name="compose_settings_page_keyboard_shortcuts">Pintasan Keyboard</string>
+  <string name="compose_settings_page_keyboard_shortcuts">Kontrol</string>
   <string name="compose_settings_page_root">Pengaturan</string>
   <string name="compose_settings_page_streams">Streaming</string>
   <string name="compose_settings_page_local_library">Pustaka Lokal</string>
@@ -1759,6 +1759,8 @@
   <string name="settings_playback_hud_vignette">Vinyet Kontrol</string>
   <string name="settings_playback_hidden_hud_buttons">Tombol Pemutar Tersembunyi</string>
   <string name="settings_playback_hidden_hud_buttons_description">Hapus kontrol yang tidak pernah Anda gunakan dari pemutar. Pintasan keyboardnya tetap berfungsi.</string>
+  <string name="settings_playback_hud_buttons_tools_header">Tombol alat: seret atau gunakan panah untuk mengubah urutan</string>
+  <string name="settings_playback_hud_buttons_fixed_header">Tetap di tempat: di kedua sisi tombol putar dan di bilah atas</string>
   <string name="settings_playback_hidden_hud_buttons_none">Tidak ada</string>
   <string name="settings_playback_hidden_hud_buttons_count">%1$d disembunyikan</string>
   <string name="settings_playback_hud_button_previous_episode">Episode sebelumnya</string>
@@ -3515,6 +3517,8 @@
   <string name="settings_appearance_custom_theme">Tema kustom</string>
   <string name="settings_appearance_custom_theme_accent">Aksen</string>
   <string name="settings_appearance_desktop_discover_tab">Tab Jelajahi</string>
+  <string name="settings_appearance_nav_bar_glow">Cahaya bilah navigasi</string>
+  <string name="settings_appearance_nav_bar_glow_description">Cahaya lembut warna aksen di sekitar bilah atas mengambang. 0% mematikannya.</string>
   <string name="settings_appearance_desktop_discover_tab_description">Tampilkan Temukan di bilah navigasi. Menonaktifkannya juga menonaktifkan pintasan Temukan.</string>
   <string name="settings_appearance_custom_theme_accent_end">Gradien aksen</string>
   <string name="settings_appearance_custom_theme_accent_end_hint">Titik kedua gradien aksen. Setel sama dengan warna aksen agar aksen tetap datar.</string>
@@ -3836,7 +3840,7 @@
   <string name="compose_settings_page_player">Pemutar</string>
   <string name="settings_player_page_subtitle">Kontrol pemutar, teks terjemahan, bahasa, lewati, dan episode berikutnya</string>
   <string name="settings_playback_section_anime">Anime</string>
-  <string name="settings_shortcuts_search_description">Tombol pintas dan pengikatan tombol untuk navigasi dan pemutar video.</string>
+  <string name="settings_shortcuts_search_description">Pintasan keyboard, controller, remote ponsel dan pengikatan tombol untuk navigasi dan pemutar video.</string>
   <string name="settings_simkl_connected_as_format">Terhubung sebagai %1$s</string>
   <string name="settings_simkl_cw_window_subtitle_format">Hanya tampilkan item yang ditonton dalam %1$s terakhir</string>
   <string name="random_play_title">Putar Acak</string>
@@ -4039,6 +4043,7 @@
   <string name="iptv_tab_loading">Memuat saluran…</string>
   <string name="iptv_tab_retry">Coba lagi</string>
   <string name="iptv_tab_open_settings">Pengaturan TV Langsung</string>
+  <string name="iptv_tab_empty_no_playlist">Belum ada playlist TV Langsung. Tambahkan di Pengaturan TV Langsung: login Xtream Codes, portal Stalker, atau tautan M3U.</string>
   <string name="iptv_tab_refresh">Segarkan saluran dan panduan</string>
   <string name="iptv_tab_next">Berikutnya %1$s  %2$s</string>
   <string name="iptv_tab_favourite_add">Tambahkan ke favorit</string>

@@ -898,7 +898,7 @@ fun main(args: Array<String>) {
                     when (event.id) {
                         KeyEvent.KEY_PRESSED -> {
                             val keyCode = (event as KeyEvent).keyCode
-                            if (keyCode in KEYBOARD_NAVIGATION_KEYS) com.nuvio.app.core.ui.KeyboardInputMode.active = true
+                            if (isKeyboardNavigationPress(event as KeyEvent)) com.nuvio.app.core.ui.KeyboardInputMode.active = true
                             // Any other key (a hotkey) that reached nobody because nothing held focus: put focus back
                             // on the screen on top and send it again (KeyLayers). Navigation keys are handled below.
                             if (
@@ -1478,3 +1478,17 @@ private val KEYBOARD_NAVIGATION_KEYS = setOf(
     KeyEvent.VK_UP, KeyEvent.VK_DOWN, KeyEvent.VK_LEFT, KeyEvent.VK_RIGHT,
     KeyEvent.VK_TAB, KeyEvent.VK_ENTER, KeyEvent.VK_PAGE_UP, KeyEvent.VK_PAGE_DOWN, KeyEvent.VK_HOME, KeyEvent.VK_END,
 )
+
+private val WASD_KEYS = setOf(KeyEvent.VK_W, KeyEvent.VK_A, KeyEvent.VK_S, KeyEvent.VK_D)
+
+/**
+ * A key that moves keyboard focus, so focus rings should show. With WASD navigation on, W/A/S/D outside a text field
+ * count as the arrows; before 2026-11-23 they moved focus but left the rings hidden (Settings showed no focus at all).
+ */
+private fun isKeyboardNavigationPress(event: KeyEvent): Boolean {
+    if (event.keyCode in KEYBOARD_NAVIGATION_KEYS) return true
+    return event.keyCode in WASD_KEYS &&
+        com.nuvio.app.core.ui.WasdNavigation.enabled &&
+        !event.isControlDown && !event.isAltDown && !event.isMetaDown &&
+        !TextInputFocusTracker.active.value
+}

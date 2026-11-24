@@ -47,7 +47,7 @@ data class IptvSettings(
      * fork:live-tv-on-now - Settings > Live TV > On Now. The tab opens on what is on (sport with scores, films,
      * the usual channels), copies of one channel become one row, and a programme can be started over.
      */
-    val onNow: Boolean = false,
+    val onNow: Boolean = true,
     /** fork:live-tv-on-now - when each channel was put on, newest last, for "Your channels" ([IptvUsuals]). */
     val plays: List<IptvPlay> = emptyList(),
     /** fork:live-tv-triage - by playlist id: the countries and kinds its triage kept. No entry = everything shows. */
@@ -59,11 +59,11 @@ data class IptvSettings(
     /** fork:live-tv-lineup - by playlist id: the keys of every copy of the channels thrown out with "Never again". */
     val never: Map<String, Set<String>> = emptyMap(),
     /** fork:live-tv-departure - Settings > Live TV > Starting soon. The On Now wall gets a departure board; programmes can have a reminder. */
-    val departure: Boolean = false,
+    val departure: Boolean = true,
     /** fork:live-tv-departure - the reminders waiting, earliest first ([IptvReminderRules]). */
     val reminders: List<IptvReminder> = emptyList(),
     /** fork:live-tv-decide - Settings > Live TV > Decide for me: Three things, I have N minutes, Earlier today, Following. */
-    val decide: Boolean = false,
+    val decide: Boolean = true,
     /** fork:live-tv-decide - the minutes dialled on "I have N minutes". */
     val minutes: Int = IptvDecide.DEFAULT_MINUTES,
     /** fork:live-tv-decide - tonight's reshuffle of Three things. */
@@ -72,8 +72,8 @@ data class IptvSettings(
     val follows: List<String> = emptyList(),
     /** fork:live-tv-stage - Live TV as full-screen stages; off by default. */
     val stage: Boolean = false,
-    /** fork:live-tv-on-demand - offer a programme under way from the start through the add-ons; off by default. */
-    val onDemand: Boolean = false,
+    /** fork:live-tv-on-demand - offer a programme under way from the start through the add-ons (it asks first). */
+    val onDemand: Boolean = true,
     /** fork:live-tv-stage - what was asked on Just ask, newest first. */
     val asks: List<IptvAsked> = emptyList(),
     /** fork:live-tv-weed - overnight checks of the lineup's channels; off by default. */

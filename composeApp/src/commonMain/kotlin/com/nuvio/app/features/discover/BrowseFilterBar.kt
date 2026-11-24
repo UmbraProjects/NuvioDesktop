@@ -440,19 +440,27 @@ private fun BrowseFilterMenuSurface(maxHeight: Dp, content: @Composable ColumnSc
                     // does not do by itself.
                     .arrowKeyFocusNavigation()
                     // As wide as its widest row, so a menu of short choices is not a wide box of empty space; rows
-                    // that fill the width (the highlight) stretch to that row, not to the 560dp cap (2026-11-15).
+                    // that fill the width (the highlight) stretch to that row, not to the 560dp cap (2026-11-15). At least
+                    // the menu's own minimum, though: a menu of short choices (Movies, Series) is that wide, and its
+                    // highlight stopped part way across it (2026-11-24).
+                    .widthIn(min = MenuMinWidth)
                     .width(androidx.compose.foundation.layout.IntrinsicSize.Max)
                     .heightIn(max = maxHeight)
                     .verticalScroll(scroll)
-                    .padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = if (scroll.maxValue > 0) 14.dp else 6.dp),
+                    // Int.MAX_VALUE until the first measure: not "scrollable" (see NuvioGlassVerticalScrollbar).
+                    .padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = if (scroll.maxValue in 1 until Int.MAX_VALUE) 14.dp else 6.dp),
             ) {
                 content()
             }
-            com.nuvio.app.core.ui.NuvioGlassVerticalScrollbar(
-                state = scroll,
-                modifier = Modifier.align(Alignment.CenterEnd).padding(top = 10.dp, bottom = 10.dp, end = 4.dp)
-                    .then(Modifier.fillMaxHeight()),
-            )
+            // In a box matched to the menu's size, so the scrollbar follows the menu's height instead of setting it:
+            // filling the height on its own, it stretched the menu to its maximum (2026-11-24).
+            Box(modifier = Modifier.matchParentSize()) {
+                com.nuvio.app.core.ui.NuvioGlassVerticalScrollbar(
+                    state = scroll,
+                    modifier = Modifier.align(Alignment.CenterEnd).padding(top = 10.dp, bottom = 10.dp, end = 4.dp)
+                        .then(Modifier.fillMaxHeight()),
+                )
+            }
         }
     }
 }

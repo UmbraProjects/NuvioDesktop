@@ -22,7 +22,7 @@ class PosterHighlightShineRenderTest {
      * transfer curve can be read off directly instead of assumed.
      */
     @Test
-    fun `shine is a multiplicative gain, not a white wash`() {
+    fun `shine lifts along its tone curve without a white wash or clipping`() {
         val plain = renderRamp(shine = false)
         val shone = renderRamp(shine = true)
 
@@ -30,7 +30,7 @@ class PosterHighlightShineRenderTest {
         var worstAt = 0
         for (x in intArrayOf(0, 8, 32, 64, 96, 128, 160, 192, 224, 255)) {
             val input = plain[x]
-            val expected = (input * 1.25f).roundToInt().coerceAtMost(255)
+            val expected = (shineToneCurve(input / 255f, PosterHighlightShineGain) * 255f).roundToInt()
             val deviation = kotlin.math.abs(shone[x] - expected)
             if (deviation > worst) {
                 worst = deviation
@@ -38,9 +38,15 @@ class PosterHighlightShineRenderTest {
             }
         }
 
-        assertTrue(worst <= 3, "shine is not a 1.25x gain: off by $worst at input $worstAt")
+        assertTrue(worst <= 3, "shine is off its tone curve by $worst at input $worstAt")
         // Black staying black is the whole difference from painting a white scrim over the card.
         assertTrue(shone[0] <= 1, "shine lifted black to ${shone[0]}")
+        // ...and near-white stays distinct from white: the old flat gain clipped everything above 80%.
+        assertTrue(shone[224] < shone[255], "shine clipped near-white (${shone[224]}) into white")
+        assertTrue(shone[128] > plain[128] + 18, "shine barely lifted the midtones: ${plain[128]} to ${shone[128]}")
+        // Light artwork keeps its contrast: the top stays nearly as steep as it was (no milky flattening).
+        assertTrue(shone[255] - shone[224] >= (plain[255] - plain[224]) * 0.85, "shine flattened the highlights")
+        assertTrue(shone[224] - plain[224] <= 4, "shine lifted near-white by ${shone[224] - plain[224]}")
     }
 
     private fun renderRamp(shine: Boolean): IntArray {
@@ -50,7 +56,7 @@ class PosterHighlightShineRenderTest {
                     .fillMaxSize()
                     .then(
                         if (shine) {
-                            Modifier.drawWithContent { drawNuvioPosterShine(strength = 0.25f) }
+                            Modifier.drawWithContent { drawNuvioPosterShine(strength = PosterHighlightShineGain) }
                         } else {
                             Modifier
                         },

@@ -200,9 +200,18 @@ object AppShortcutsRepository {
         bindings = stored.mapValues { (action, keyCode) -> keyCode ?: defaults.getValue(action) }
         publish()
     }
+    /**
+     * With WASD navigation on, defaults that sit on a movement key move off it: S (Search) to Q and
+     * D (Discover) to E, for Explore. D for Discover made moving right open Discover instead.
+     * A binding the user chose themselves is left where they put it.
+     */
+    private val wasdDefaults = mapOf(
+        AppShortcutAction.OpenSearch to KeyEvent.VK_Q,
+        AppShortcutAction.OpenDiscover to KeyEvent.VK_E,
+    )
     fun keyCode(action: AppShortcutAction): Int {
-        if (action == AppShortcutAction.OpenSearch && action !in overriddenActions && WasdNavigation.enabled) {
-            return KeyEvent.VK_Q
+        if (action !in overriddenActions && WasdNavigation.enabled) {
+            wasdDefaults[action]?.let { return it }
         }
         return bindings[action] ?: defaults.getValue(action)
     }

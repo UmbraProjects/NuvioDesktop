@@ -204,16 +204,7 @@ internal fun WizardOptionRow(
                 )
             }
         }
-        Box(modifier = Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-            if (selected) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = null,
-                    tint = tokens.colors.accent,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        }
+        // No tick: the accent fill and bolder label already mark the choice.
     }
 }
 
@@ -424,14 +415,7 @@ internal fun WizardSwatch(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        if (selected) {
-            Icon(
-                imageVector = Icons.Filled.Check,
-                contentDescription = contentDescription,
-                tint = if (color.luminance() > 0.5f) Color.Black else Color.White,
-                modifier = Modifier.size(16.dp),
-            )
-        }
+        // No tick: the ring marks the current theme.
     }
 }
 

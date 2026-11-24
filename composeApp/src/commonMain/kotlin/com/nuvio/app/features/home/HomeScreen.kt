@@ -1,5 +1,6 @@
 package com.nuvio.app.features.home
 
+import androidx.compose.foundation.layout.widthIn
 import com.nuvio.app.core.ui.keyLayer
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.PosterLandscapeAspectRatio
@@ -4489,7 +4490,8 @@ fun HomeScreen(
                     !hasRenderableCollectionRows -> {
                     // In Search mode the input field is the only UI needed when there are
                     // no results — no query means "type to search", query means "no matches".
-                    // In Library mode an empty library just shows nothing.
+                    // An empty Library says so in an overlay over the whole screen (see emptyLibraryVisible): in the list
+                    // its card sat under TV mode's full-height hero space, off the bottom of the screen.
                     // Only Normal mode gets the home-specific empty state cards.
                     if (displayMode is HomeContentMode.Discover) {
                         if (discoverUiState.isLoading) {
@@ -5194,6 +5196,23 @@ fun HomeScreen(
                 .zIndex(100f)
                 .padding(end = 3.dp),
         )
+        // An empty Library says so, centred over the page in every layout. It showed nothing before, which read as a
+        // failed load (2026-11-24).
+        val emptyLibraryVisible = contentMode is HomeContentMode.Library &&
+            libraryUiState.isLoaded && !libraryUiState.isLoading &&
+            libraryUiState.sections.isEmpty() && effectiveSections.isEmpty()
+        if (emptyLibraryVisible) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                HomeEmptyStateCard(
+                    modifier = Modifier.widthIn(max = 560.dp),
+                    title = stringResource(Res.string.library_empty_title),
+                    message = stringResource(Res.string.library_empty_message),
+                )
+            }
+        }
         // Outside the rows list on purpose: Basic's hero is a recycled list item, so a trailer
         // parented to it dies the moment the user scrolls to the rows they wanted to play from.
         // Derived, not read straight: firstVisibleItemIndex changes every frame of a scroll, and

@@ -709,7 +709,7 @@
   <string name="compose_settings_page_playback">Αναπαραγωγή</string>
   <string name="compose_settings_page_plugins">Πρόσθετα εφαρμογών</string>
   <string name="compose_settings_page_poster_customization">Προσαρμογή αφίσας</string>
-  <string name="compose_settings_page_keyboard_shortcuts">Συντομεύσεις πληκτρολογίου</string>
+  <string name="compose_settings_page_keyboard_shortcuts">Χειρισμός</string>
   <string name="compose_settings_page_root">Ρυθμίσεις</string>
   <string name="compose_settings_page_streams">Ροές</string>
   <string name="compose_settings_page_local_library">Τοπική βιβλιοθήκη</string>
@@ -1759,6 +1759,8 @@
   <string name="settings_playback_hud_vignette">Σκίαση ελέγχων</string>
   <string name="settings_playback_hidden_hud_buttons">Κρυφά κουμπιά προγράμματος αναπαραγωγής</string>
   <string name="settings_playback_hidden_hud_buttons_description">Αφαιρέστε από το πρόγραμμα αναπαραγωγής τους ελέγχους που δεν χρησιμοποιείτε ποτέ. Οι συντομεύσεις πληκτρολογίου τους συνεχίζουν να λειτουργούν.</string>
+  <string name="settings_playback_hud_buttons_tools_header">Κουμπιά εργαλείων: σύρετε ή χρησιμοποιήστε τα βέλη για να αλλάξετε τη σειρά</string>
+  <string name="settings_playback_hud_buttons_fixed_header">Σταθερή θέση: δίπλα στην αναπαραγωγή και στην πάνω γραμμή</string>
   <string name="settings_playback_hidden_hud_buttons_none">Κανένα</string>
   <string name="settings_playback_hidden_hud_buttons_count">%1$d κρυφά</string>
   <string name="settings_playback_hud_button_previous_episode">Προηγούμενο επεισόδιο</string>
@@ -3518,6 +3520,8 @@
   <string name="settings_appearance_custom_theme">Προσαρμοσμένο θέμα</string>
   <string name="settings_appearance_custom_theme_accent">Χρώμα έμφασης</string>
   <string name="settings_appearance_desktop_discover_tab">Καρτέλα Ανακάλυψη</string>
+  <string name="settings_appearance_nav_bar_glow">Λάμψη γραμμής πλοήγησης</string>
+  <string name="settings_appearance_nav_bar_glow_description">Μια απαλή λάμψη στο χρώμα έμφασης γύρω από την αιωρούμενη πάνω γραμμή. Το 0% την απενεργοποιεί.</string>
   <string name="settings_appearance_desktop_discover_tab_description">Εμφάνιση της Ανακάλυψης στη γραμμή πλοήγησης. Η απενεργοποίηση απενεργοποιεί και τη συντόμευση της Ανακάλυψης.</string>
   <string name="settings_appearance_custom_theme_accent_end">Διαβάθμιση έμφασης</string>
   <string name="settings_appearance_custom_theme_accent_end_hint">Το δεύτερο σημείο της διαβάθμισης έμφασης. Ορίστε το ίδιο με το χρώμα έμφασης για να παραμείνουν τα χρώματα έμφασης ενιαία.</string>
@@ -3839,7 +3843,7 @@
   <string name="compose_settings_page_player">Πρόγραμμα αναπαραγωγής</string>
   <string name="settings_player_page_subtitle">Έλεγχοι player, υπότιτλοι, γλώσσες, παράλειψη και επόμενο επεισόδιο</string>
   <string name="settings_playback_section_anime">Anime</string>
-  <string name="settings_shortcuts_search_description">Συντομεύσεις πληκτρολογίου και αντιστοιχίσεις πλήκτρων για την πλοήγηση και το πρόγραμμα αναπαραγωγής βίντεο.</string>
+  <string name="settings_shortcuts_search_description">Συντομεύσεις πληκτρολογίου, χειριστήριο, τηλεχειρισμός από το τηλέφωνο και αντιστοιχίσεις πλήκτρων για την πλοήγηση και το πρόγραμμα αναπαραγωγής βίντεο.</string>
   <string name="settings_simkl_connected_as_format">Συνδεδεμένος ως %1$s</string>
   <string name="settings_simkl_cw_window_subtitle_format">Εμφάνιση μόνο στοιχείων που παρακολουθήσατε εντός των τελευταίων %1$s</string>
   <string name="random_play_title">Τυχαία αναπαραγωγή</string>
@@ -4042,6 +4046,7 @@
   <string name="iptv_tab_loading">Φόρτωση καναλιών…</string>
   <string name="iptv_tab_retry">Δοκιμάστε ξανά</string>
   <string name="iptv_tab_open_settings">Ρυθμίσεις Live TV</string>
+  <string name="iptv_tab_empty_no_playlist">Δεν υπάρχει ακόμη λίστα Live TV. Προσθέστε μία στις ρυθμίσεις Live TV: σύνδεση Xtream Codes, πύλη Stalker ή σύνδεσμο M3U.</string>
   <string name="iptv_tab_refresh">Ανανέωση καναλιών και οδηγού</string>
   <string name="iptv_tab_next">Επόμενο %1$s  %2$s</string>
   <string name="iptv_tab_favourite_add">Προσθήκη στα αγαπημένα</string>

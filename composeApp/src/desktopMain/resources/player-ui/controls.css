@@ -3857,6 +3857,24 @@ svg {
 
 /* Hero-trailer mode: hide all player chrome and show only the fade scrim plus the hero
    metadata, so the full-bleed TV-mode trailer reads like the hero itself. */
+#heroTrailerRevealCover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 1;
+  transition: none;
+}
+
+/* Dissolves into the trailer once it is moving; snaps back (no transition) for the next one. */
+#heroTrailerRevealCover.revealed {
+  opacity: 0;
+  transition: opacity 650ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 #heroTrailerFade {
   position: absolute;
   inset: 0;
@@ -3984,7 +4002,7 @@ svg {
   pointer-events: none !important;
 }
 
-.player.hero-trailer-active > *:not(#heroTrailerFade):not(#heroTrailerContent):not(#heroTrailerChrome) {
+.player.hero-trailer-active > *:not(#heroTrailerFade):not(#heroTrailerContent):not(#heroTrailerChrome):not(#heroTrailerRevealCover) {
   display: none !important;
 }
 

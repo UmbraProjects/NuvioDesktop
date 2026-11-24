@@ -624,6 +624,14 @@ data class PlayerHeroTrailerState(
      * which is at the JVM's method-signature limit.
      */
     val postShowInput: Boolean = false,
+    /**
+     * Full-screen home hero trailers: the hero's backdrop, drawn by the controls page over the video until [revealed],
+     * then dissolved away, so the artwork melts into the trailer instead of cutting to black first (2026-11-24).
+     * Empty for none. [revealCoverPosition] is its CSS object-position, matching the hero's crop.
+     */
+    val revealCoverUrl: String = "",
+    val revealCoverPosition: String = "50% 50%",
+    val revealed: Boolean = false,
 )
 
 /**

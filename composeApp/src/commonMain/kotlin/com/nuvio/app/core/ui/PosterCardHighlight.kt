@@ -37,6 +37,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Brush
+import kotlin.math.roundToInt
+import kotlin.math.pow
+import androidx.compose.ui.graphics.asComposeColorFilter
 
 /**
  * True for the row item currently being highlighted — the same state that drives
@@ -74,16 +77,14 @@ private val PosterHighlightFeatherWidth = 1.dp
 private const val PosterHighlightFeatherAlpha = 0.5f
 
 /**
- * How much brightness [PosterHighlightMode.Shine] adds to the highlighted card: the artwork is
- * composited over itself at this strength through an additive layer, so every pixel ends up at
- * 1.25x its own value.
+ * How strongly [PosterHighlightMode.Shine] lifts the highlighted card, through [shineToneCurve].
  *
- * A gain, not a white wash. Painting a 25% white scrim over the card would lift black to mid-grey
- * and pull every colour toward white — the poster goes milky rather than lit. Multiplying leaves
- * black at black, scales the midtones proportionally, and drives what was already bright up into
- * clipping, which is what reads as a shine.
+ * Shine used to be a flat 1.25x gain, which clipped everything above 80%: white titles, skies and
+ * light posters went flat white. Its first replacement, `1 - (1 - x)^1.45`, stopped the clipping
+ * but flattened the top instead (its slope at white is 0), so a light poster such as Interstellar's
+ * still turned milky. The curve now lifts shadows and midtones and leaves the top third alone.
  */
-private const val PosterHighlightShineGain = 0.25f
+internal const val PosterHighlightShineGain = 1.6f
 
 /**
  * The peak gain [PosterHighlightMode.Sweep] reaches under its band, and how long one pass takes.
@@ -227,21 +228,20 @@ internal fun Modifier.nuvioSweepHighlight(highlighted: Boolean, cornerRadius: Dp
 internal fun ContentDrawScope.drawNuvioPosterShine(
     strength: Float,
     /**
-     * A recording of the card, so the additive copy is a texture composite rather than a second
-     * full rasterisation of the card's draw commands every frame.
+     * A recording of the card, so the lift is a texture composite rather than a second full
+     * rasterisation of the card's draw commands every frame.
      *
      * Shine does not animate - the brightened copy it produces is identical on every frame - so
      * re-rendering the whole card 60 times a second to arrive at the same pixels is pure waste, and
-     * it is enough waste to overrun the frame budget. Null keeps the original behaviour.
+     * it is enough waste to overrun the frame budget. Null draws through a filtered layer instead.
      */
     cache: GraphicsLayer? = null,
 ) {
-    if (strength <= 0f || cache == null) drawContent()
-    if (strength <= 0f) return
-    val paint = Paint().apply {
-        alpha = strength
-        blendMode = BlendMode.Plus
+    if (strength <= 0f) {
+        drawContent()
+        return
     }
+    val filter = shineToneFilter(strength)
     if (cache != null) {
         // Re-record only when the card's size changes; its content is static for the life of a
         // highlight, which is the whole reason this can be cached at all.
@@ -250,30 +250,44 @@ internal fun ContentDrawScope.drawNuvioPosterShine(
                 this@drawNuvioPosterShine.drawContent()
             }
         }
-        // ONE card-sized draw, not two. The additive form paints the card and then composites a
-        // second full-card copy over it, so the highlighted card costs twice the fill of an
-        // unhighlighted one - and painted area per frame is what tracks the flicker, independent of
-        // frame timing. A colour matrix on the recording produces the same result in a single pass:
-        // every channel scaled by 1+strength, so black stays black and bright pixels clip, which is
-        // exactly what the additive copy was for.
-        val gain = 1f + strength
-        cache.colorFilter = ColorFilter.colorMatrix(
-            ColorMatrix(
-                floatArrayOf(
-                    gain, 0f, 0f, 0f, 0f,
-                    0f, gain, 0f, 0f, 0f,
-                    0f, 0f, gain, 0f, 0f,
-                    0f, 0f, 0f, 1f, 0f,
-                ),
-            ),
-        )
+        // One card-sized draw: the curve is a colour filter on the recording.
+        cache.colorFilter = filter
         drawLayer(cache)
         return
     }
+    val paint = Paint().apply { colorFilter = filter }
     drawIntoCanvas { canvas ->
         canvas.saveLayer(size.toRect(), paint)
         drawContent()
         canvas.restore()
+    }
+}
+
+/**
+ * Shine's transfer curve for one channel, 0..1 in and out: `x + strength * x^1.5 * (1 - x)^2.5`.
+ *
+ * Black and white stay put and nothing clips. The lift peaks in the lower midtones and is gone by
+ * the highlights, where the slope returns to 1, so light artwork keeps its contrast instead of
+ * going milky. At 1.6: 5% to 7%, 20% to 28%, 50% to 60%, 70% to 75%, 85% to 86%, 95% unchanged.
+ * The x^1.5 keeps near-black (letterbox bars, compression noise) from lifting to grey.
+ */
+internal fun shineToneCurve(x: Float, strength: Float): Float {
+    val v = x.coerceIn(0f, 1f).toDouble()
+    return (v + strength * v.pow(1.5) * (1.0 - v).pow(2.5)).toFloat().coerceIn(0f, 1f)
+}
+
+/**
+ * The curve as a Skia table filter, cached per strength step: the highlight's fade animates the
+ * strength, and building a 256-entry table on every frame of it would be waste.
+ */
+private val shineToneFilters = HashMap<Int, ColorFilter>()
+
+private fun shineToneFilter(strength: Float): ColorFilter {
+    val step = (strength * 100f).roundToInt().coerceIn(1, 200)
+    return shineToneFilters.getOrPut(step) {
+        val s = step / 100f
+        val table = ByteArray(256) { i -> (shineToneCurve(i / 255f, s) * 255f).roundToInt().coerceIn(0, 255).toByte() }
+        org.jetbrains.skia.ColorFilter.makeTableARGB(null, table, table, table).asComposeColorFilter()
     }
 }
 

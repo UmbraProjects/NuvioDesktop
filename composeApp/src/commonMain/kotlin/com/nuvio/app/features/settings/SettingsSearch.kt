@@ -65,6 +65,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
@@ -843,7 +844,7 @@ private fun settingsSearchEntries(
             title = resolve(Res.string.gamepad_lights_section),
             description = resolve(Res.string.gamepad_light_bar_description),
             pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
-            section = resolve(Res.string.gamepad_lights_section),
+            section = resolve(Res.string.settings_shortcuts_controller),
             icon = Icons.Rounded.Keyboard,
         )
         addRow(
@@ -3277,6 +3278,17 @@ internal fun SettingsSearchField(
             // field lets go of focus. Both halves of the key are eaten so the screen's own Escape
             // (back) doesn't fire on the same press.
             .onPreviewKeyEvent { event ->
+                // Enter (a controller's A, the on-screen keyboard's Done) and Down leave the field for
+                // the results below. The field kept both, so a controller confirming a search had no way
+                // out of it but cursor mode (2026-11-23).
+                val leavesForResults = event.key == Key.Enter || event.key == Key.NumPadEnter ||
+                    event.key == Key.DirectionDown
+                if (leavesForResults && query.isNotBlank()) {
+                    if (event.type == KeyEventType.KeyDown) {
+                        focusManager.moveFocus(FocusDirection.Down) || focusManager.moveFocus(FocusDirection.Next)
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (event.key != Key.Escape) return@onPreviewKeyEvent false
                 if (event.type == KeyEventType.KeyUp) {
                     onQueryChange("")

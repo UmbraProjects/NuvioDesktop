@@ -2055,7 +2055,7 @@
     <string name="compose_settings_page_games">Jeux</string>
     <string name="compose_settings_page_qualicache">Qualité QualiCache</string>
     <string name="compose_settings_page_poster_service">Affiches personnalisées</string>
-    <string name="compose_settings_page_keyboard_shortcuts">Raccourcis clavier</string>
+    <string name="compose_settings_page_keyboard_shortcuts">Commandes</string>
     <string name="compose_settings_page_streams">Streams</string>
     <string name="compose_settings_page_local_library">Bibliothèque locale</string>
     <string name="compose_settings_page_auto_downloads">Téléchargements auto</string>
@@ -2728,6 +2728,8 @@
     <string name="settings_playback_hud_vignette">Vignettage des commandes</string>
     <string name="settings_playback_hidden_hud_buttons">Boutons du lecteur masqués</string>
     <string name="settings_playback_hidden_hud_buttons_description">Retire du lecteur les commandes que tu n’utilises jamais. Leurs raccourcis clavier continuent de fonctionner.</string>
+    <string name="settings_playback_hud_buttons_tools_header">Boutons d’outils : faites glisser ou utilisez les flèches pour changer l’ordre</string>
+    <string name="settings_playback_hud_buttons_fixed_header">Fixes : de part et d’autre de lecture et dans la barre du haut</string>
     <string name="settings_playback_hidden_hud_buttons_none">Aucun</string>
     <string name="settings_playback_hidden_hud_buttons_count">%1$d masqué(s)</string>
     <string name="settings_playback_hud_button_previous_episode">Épisode précédent</string>
@@ -3522,6 +3524,8 @@
     <string name="settings_appearance_custom_theme">Thème personnalisé</string>
     <string name="settings_appearance_custom_theme_accent">Accent</string>
     <string name="settings_appearance_desktop_discover_tab">Onglet Découvrir</string>
+    <string name="settings_appearance_nav_bar_glow">Halo de la barre de navigation</string>
+    <string name="settings_appearance_nav_bar_glow_description">Un léger halo de la couleur d’accent autour de la barre supérieure flottante. 0 % le désactive.</string>
     <string name="settings_appearance_desktop_discover_tab_description">Affiche Découvrir dans la barre de navigation. Le désactiver désactive aussi le raccourci Découvrir.</string>
     <string name="settings_appearance_custom_theme_accent_end">Dégradé d’accent</string>
     <string name="settings_appearance_custom_theme_accent_end_hint">Deuxième couleur du dégradé d’accent. Mets la couleur d’accent pour garder des accents unis.</string>
@@ -3843,7 +3847,7 @@
     <string name="compose_settings_page_player">Lecteur</string>
     <string name="settings_player_page_subtitle">Contrôles du lecteur, sous-titres, langues, saut et épisode suivant</string>
     <string name="settings_playback_section_anime">Anime</string>
-    <string name="settings_shortcuts_search_description">Raccourcis clavier et touches pour la navigation et le lecteur vidéo.</string>
+    <string name="settings_shortcuts_search_description">Raccourcis clavier, manette, télécommande sur téléphone et touches pour la navigation et le lecteur vidéo.</string>
     <string name="settings_simkl_connected_as_format">Connecté en tant que %1$s</string>
     <string name="settings_simkl_cw_window_subtitle_format">Afficher uniquement les éléments regardés au cours des %1$s</string>
     <string name="random_play_title">Lecture aléatoire</string>
@@ -4046,6 +4050,7 @@
     <string name="iptv_tab_loading">Chargement des chaînes…</string>
     <string name="iptv_tab_retry">Réessayer</string>
     <string name="iptv_tab_open_settings">Réglages de la TV en direct</string>
+    <string name="iptv_tab_empty_no_playlist">Aucune playlist de TV en direct pour l’instant. Ajoutez-en une dans les réglages de la TV en direct : un identifiant Xtream Codes, un portail Stalker ou un lien M3U.</string>
     <string name="iptv_tab_refresh">Actualiser les chaînes et le guide</string>
     <string name="iptv_tab_next">Ensuite %1$s  %2$s</string>
     <string name="iptv_tab_favourite_add">Ajouter aux favoris</string>

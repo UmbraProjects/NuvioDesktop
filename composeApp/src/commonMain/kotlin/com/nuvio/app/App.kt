@@ -1,5 +1,7 @@
 package com.nuvio.app
 
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.draw.drawBehind
 import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.ui.draw.clip
 import com.nuvio.app.core.ui.NuvioGlass
@@ -7750,16 +7752,58 @@ private fun TabletFloatingTopBar(
         val pickerMaxHeight = (
             maxHeight - statusBarPadding - NavBarTopOffset - 44.dp - tokens.spacing.controlGap - 8.dp - SearchPanelGap
         ).coerceIn(120.dp, 360.dp)
+        // fork:navbar-glow - the poster Glow highlight's bloom (PosterCardHighlight.kt) round the whole pill: the accent
+        // lifted 20% toward white, in 1dp rings fading out over 6.5dp, even all the way round, with the bar's edge drawn in
+        // the same colour so the bloom reads as its luminous rim. Settings > Appearance > Navigation bar glow sets how
+        // strong; 0 is the plain bar. Clipped to the outside, so the icons sit on the plain glass; gone while searching.
+        val navGlowPercent by com.nuvio.app.features.settings.ThemeSettingsRepository.navBarGlowPercent.collectAsState()
+        val glowStrength by animateFloatAsState(
+            targetValue = if (navGlowPercent > 0 && !isSearchActive && !attachedPanelVisible) navGlowPercent / 100f else 0f,
+            animationSpec = tween(durationMillis = 220),
+            label = "nav_glow_strength",
+        )
+        val glowColor = androidx.compose.ui.graphics.lerp(tokens.colors.accent, Color.White, 0.2f)
+        val navGlowModifier = Modifier.drawBehind {
+            if (glowStrength <= 0f) return@drawBehind
+            val radius = size.height / 2
+            val pill = androidx.compose.ui.graphics.Path().apply {
+                addRoundRect(
+                    androidx.compose.ui.geometry.RoundRect(
+                        0f, 0f, size.width, size.height,
+                        androidx.compose.ui.geometry.CornerRadius(radius),
+                    ),
+                )
+            }
+            val step = 1.dp.toPx()
+            val rings = (NavGlowSpread.toPx() / step).toInt().coerceAtLeast(1)
+            // 50% is the poster glow's own 0.8; 100% builds to 0.96. Each ring adds its share, so the inside is dense
+            // and the outer rings fade (the exponential falloff).
+            val total = 1.0 - Math.pow(0.2, glowStrength * 2.0)
+            val layer = 1f - Math.pow(1.0 - total, 1.0 / rings).toFloat()
+            clipPath(pill, androidx.compose.ui.graphics.ClipOp.Difference) {
+                for (i in rings downTo 1) {
+                    val grow = i * step
+                    drawRoundRect(
+                        color = glowColor.copy(alpha = glowColor.alpha * layer),
+                        topLeft = androidx.compose.ui.geometry.Offset(-grow, -grow),
+                        size = androidx.compose.ui.geometry.Size(size.width + grow * 2, size.height + grow * 2),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius + grow),
+                    )
+                }
+            }
+        }
+        val navEdgeColor = androidx.compose.ui.graphics.lerp(dividerColor, glowColor, (glowStrength * 2f).coerceAtMost(1f))
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Surface(
             color = floatingSearchSurfaceColor,
             shape = if (attachedPanelVisible) androidx.compose.foundation.shape.RoundedCornerShape(topStartPercent = 50, topEndPercent = 50) else tokens.shapes.chip,
             tonalElevation = 0.dp,
             shadowElevation = if (attachedPanelVisible) 0.dp else tokens.elevation.overlay,
-            border = BorderStroke(1.dp, dividerColor),
+            border = BorderStroke(1.dp, navEdgeColor),
             modifier = Modifier
                 .height(NavBarHeight)
                 .width(topBarWidth)
+                .then(navGlowModifier)
                 .onPointerEvent(PointerEventType.Enter) {
                     activationZoneHovered = true
                 }
@@ -8279,6 +8323,9 @@ private fun RowScope.NavQuadrant(
 /** How much of the night-blue glass base shows; the rest is the page behind it. */
 private const val NavBarGlassOpacity = 0.84f
 private val NavBarHeight = 48.dp
+
+/** How far the top bar's bloom reaches past the pill: the poster Glow's 7dp, a touch tighter on the larger shape. */
+private val NavGlowSpread = 6.5.dp
 private val SearchPanelGap = 8.dp
 // Bar centred 41dp from the top with 22dp icons: the same line and size as the nav icons in the
 // settings top bar (82dp tall, see DesktopSettingsRootNavigation), so switching to Settings leaves

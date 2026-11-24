@@ -225,7 +225,7 @@ data class HomeCatalogSettingsUiState(
     val discoverCustomRows: List<CustomDiscoverRow> = emptyList(),
     val discoverImportedRows: List<ImportedDiscoverRow> = emptyList(),
     val discoverAiRows: List<AiDiscoverRow> = emptyList(),
-    val hideCatalogUnderline: Boolean = false,
+    val hideCatalogUnderline: Boolean = true,
     val catalogRowShuffleEnabled: Boolean = false,
     val adaptiveHeroEnabled: Boolean = false,
     val adaptiveHeroVerticalBias: Float = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT,
@@ -554,7 +554,7 @@ private data class StoredHomeCatalogSettingsPayload(
     val discoverCustomRows: List<CustomDiscoverRow> = emptyList(),
     val discoverImportedRows: List<ImportedDiscoverRow> = emptyList(),
     val discoverAiRows: List<AiDiscoverRow> = emptyList(),
-    val hideCatalogUnderline: Boolean = false,
+    val hideCatalogUnderline: Boolean = true,
     val catalogRowShuffleEnabled: Boolean = false,
     @SerialName("tvModeEnabled")
     val adaptiveHeroEnabled: Boolean = false,
@@ -639,7 +639,8 @@ object HomeCatalogSettingsRepository {
      * one. Losing it across a restart costs the user one slider drag.
      */
     private val discoverRowCountBeforeOff = mutableMapOf<DiscoverRowFamily, Int>()
-    private var hideCatalogUnderline = false
+    // On by default since 2026-11-24: the rows read cleaner without the accent underline.
+    private var hideCatalogUnderline = true
     private var catalogRowShuffleEnabled = false
     private var adaptiveHeroEnabled = false
     private var adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
@@ -698,7 +699,7 @@ object HomeCatalogSettingsRepository {
         discoverImportedRows = emptyList()
         discoverAiRows = emptyList()
         discoverRowCountBeforeOff.clear()
-        hideCatalogUnderline = false
+        hideCatalogUnderline = true
         catalogRowShuffleEnabled = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
@@ -762,7 +763,7 @@ object HomeCatalogSettingsRepository {
         discoverImportedRows = emptyList()
         discoverAiRows = emptyList()
         discoverRowCountBeforeOff.clear()
-        hideCatalogUnderline = false
+        hideCatalogUnderline = true
         catalogRowShuffleEnabled = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT
@@ -1606,7 +1607,7 @@ object HomeCatalogSettingsRepository {
         discoverImportedRows = emptyList()
         discoverAiRows = emptyList()
         discoverRowCountBeforeOff.clear()
-        hideCatalogUnderline = false
+        hideCatalogUnderline = true
         catalogRowShuffleEnabled = false
         adaptiveHeroEnabled = false
         adaptiveHeroVerticalBias = ADAPTIVE_HERO_VERTICAL_BIAS_DEFAULT

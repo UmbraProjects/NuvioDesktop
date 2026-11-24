@@ -709,7 +709,7 @@
   <string name="compose_settings_page_playback">Reprodução</string>
   <string name="compose_settings_page_plugins">Plugins</string>
   <string name="compose_settings_page_poster_customization">Estilo dos Cartões de Póster</string>
-  <string name="compose_settings_page_keyboard_shortcuts">Atalhos de Teclado</string>
+  <string name="compose_settings_page_keyboard_shortcuts">Controlos</string>
   <string name="compose_settings_page_root">Definições</string>
   <string name="compose_settings_page_streams">Streams</string>
   <string name="compose_settings_page_local_library">Biblioteca Local</string>
@@ -1759,6 +1759,8 @@
   <string name="settings_playback_hud_vignette">Vinheta dos controlos</string>
   <string name="settings_playback_hidden_hud_buttons">Botões do leitor ocultos</string>
   <string name="settings_playback_hidden_hud_buttons_description">Remove do leitor os controlos que nunca usas. Os respetivos atalhos de teclado continuam a funcionar.</string>
+  <string name="settings_playback_hud_buttons_tools_header">Botões de ferramentas: arraste ou use as setas para mudar a ordem</string>
+  <string name="settings_playback_hud_buttons_fixed_header">Fixos: de cada lado de reproduzir e na barra superior</string>
   <string name="settings_playback_hidden_hud_buttons_none">Nenhum</string>
   <string name="settings_playback_hidden_hud_buttons_count">%1$d ocultos</string>
   <string name="settings_playback_hud_button_previous_episode">Episódio anterior</string>
@@ -3518,6 +3520,8 @@
   <string name="settings_appearance_custom_theme">Tema personalizado</string>
   <string name="settings_appearance_custom_theme_accent">Destaque</string>
   <string name="settings_appearance_desktop_discover_tab">Separador Descobrir</string>
+  <string name="settings_appearance_nav_bar_glow">Brilho da barra de navegação</string>
+  <string name="settings_appearance_nav_bar_glow_description">Um brilho suave na cor de destaque à volta da barra superior flutuante. 0% desativa-o.</string>
   <string name="settings_appearance_desktop_discover_tab_description">Mostra Descobrir na barra de navegação. Desativá-lo também desativa o atalho de Descobrir.</string>
   <string name="settings_appearance_custom_theme_accent_end">Gradiente de destaque</string>
   <string name="settings_appearance_custom_theme_accent_end_hint">Segundo ponto do gradiente de destaque. Define-o com a cor de destaque para manter os destaques uniformes.</string>
@@ -3839,7 +3843,7 @@
   <string name="compose_settings_page_player">Leitor</string>
   <string name="settings_player_page_subtitle">Controlos do leitor, legendas, idiomas, saltar e próximo episódio</string>
   <string name="settings_playback_section_anime">Anime</string>
-  <string name="settings_shortcuts_search_description">Teclas de atalho e associações de teclas para a navegação e o leitor de vídeo.</string>
+  <string name="settings_shortcuts_search_description">Teclas de atalho, comando, comando remoto no telemóvel e associações de teclas para a navegação e o leitor de vídeo.</string>
   <string name="settings_simkl_connected_as_format">Ligado como %1$s</string>
   <string name="settings_simkl_cw_window_subtitle_format">Mostra apenas itens vistos nos últimos %1$s</string>
   <string name="random_play_title">Reprodução aleatória</string>
@@ -4042,6 +4046,7 @@
   <string name="iptv_tab_loading">A carregar canais…</string>
   <string name="iptv_tab_retry">Tentar novamente</string>
   <string name="iptv_tab_open_settings">Definições de TV em direto</string>
+  <string name="iptv_tab_empty_no_playlist">Ainda não há nenhuma lista de TV em direto. Adicione uma nas definições de TV em direto: um início de sessão Xtream Codes, um portal Stalker ou uma ligação M3U.</string>
   <string name="iptv_tab_refresh">Atualizar canais e guia</string>
   <string name="iptv_tab_next">A seguir %1$s  %2$s</string>
   <string name="iptv_tab_favourite_add">Adicionar aos favoritos</string>

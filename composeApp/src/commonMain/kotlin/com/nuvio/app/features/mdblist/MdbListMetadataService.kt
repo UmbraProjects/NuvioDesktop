@@ -145,6 +145,30 @@ object MdbListMetadataService {
     }
 
     /**
+     * The ratings already in the in-memory cache for [meta], without waiting or fetching: null when the cache is not
+     * loaded yet, is busy, or has nothing for it. Lets the home hero draw its ratings row on the first frame instead of
+     * one frame later, which moved the synopsis down under the reader (2026-11-24). Expiry is ignored: a stale figure
+     * is fine for that frame, and the normal lookup refreshes it.
+     */
+    fun cachedRatingsOrNull(
+        meta: MetaDetails,
+        fallbackItemId: String,
+        settings: MdbListSettings,
+    ): List<MetaExternalRating>? {
+        if (!shouldFetchForMeta(meta, fallbackItemId, settings)) return null
+        val lookup = resolveLookup(meta, fallbackItemId) ?: return null
+        val loaded = cache ?: return null
+        if (!cacheMutex.tryLock()) return null
+        try {
+            val entry = loaded["v$CACHE_VERSION:${lookup.provider}:${toMdbListMediaType(meta.type)}:${lookup.id}"] ?: return null
+            val enabledProviders = settings.enabledProvidersInPriorityOrder().toSet()
+            return entry.ratings.withRottenTomatoesCertification(entry.keywords).filter { it.source in enabledProviders }
+        } finally {
+            cacheMutex.unlock()
+        }
+    }
+
+    /**
      * Clears immediately rather than through [persister], because a user asking for this wants it
      * done, not scheduled.
      *

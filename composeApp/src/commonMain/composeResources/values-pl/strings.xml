@@ -709,7 +709,7 @@
   <string name="compose_settings_page_playback">Odtwarzanie</string>
   <string name="compose_settings_page_plugins">Wtyczki</string>
   <string name="compose_settings_page_poster_customization">Personalizacja plakatów</string>
-  <string name="compose_settings_page_keyboard_shortcuts">Skróty klawiszowe</string>
+  <string name="compose_settings_page_keyboard_shortcuts">Sterowanie</string>
   <string name="compose_settings_page_root">Ustawienia</string>
   <string name="compose_settings_page_streams">Strumienie</string>
   <string name="compose_settings_page_local_library">Biblioteka lokalna</string>
@@ -1759,6 +1759,8 @@
   <string name="settings_playback_hud_vignette">Winieta elementów sterowania</string>
   <string name="settings_playback_hidden_hud_buttons">Ukryte przyciski odtwarzacza</string>
   <string name="settings_playback_hidden_hud_buttons_description">Usuń z odtwarzacza elementy sterowania, których nigdy nie używasz. Ich skróty klawiszowe nadal działają.</string>
+  <string name="settings_playback_hud_buttons_tools_header">Przyciski narzędzi: przeciągnij lub użyj strzałek, aby zmienić kolejność</string>
+  <string name="settings_playback_hud_buttons_fixed_header">Stałe miejsce: po obu stronach odtwarzania i na górnym pasku</string>
   <string name="settings_playback_hidden_hud_buttons_none">Brak</string>
   <string name="settings_playback_hidden_hud_buttons_count">Ukryte: %1$d</string>
   <string name="settings_playback_hud_button_previous_episode">Poprzedni odcinek</string>
@@ -3528,6 +3530,8 @@
   <string name="settings_appearance_custom_theme">Własny motyw</string>
   <string name="settings_appearance_custom_theme_accent">Kolor akcentu</string>
   <string name="settings_appearance_desktop_discover_tab">Karta Odkrywaj</string>
+  <string name="settings_appearance_nav_bar_glow">Poświata paska nawigacji</string>
+  <string name="settings_appearance_nav_bar_glow_description">Delikatna poświata w kolorze akcentu wokół pływającego górnego paska. 0% ją wyłącza.</string>
   <string name="settings_appearance_desktop_discover_tab_description">Pokaż Odkrywaj na pasku nawigacji. Wyłączenie ukrywa też skrót do Odkrywaj.</string>
   <string name="settings_appearance_custom_theme_accent_end">Gradient akcentu</string>
   <string name="settings_appearance_custom_theme_accent_end_hint">Drugi punkt gradientu akcentu. Ustaw ten sam kolor co akcent, aby akcenty były jednolite.</string>
@@ -3849,7 +3853,7 @@
   <string name="compose_settings_page_player">Odtwarzacz</string>
   <string name="settings_player_page_subtitle">Sterowanie odtwarzaczem, napisy, języki, pomijanie i następny odcinek</string>
   <string name="settings_playback_section_anime">Anime</string>
-  <string name="settings_shortcuts_search_description">Skróty klawiszowe i przypisania klawiszy do nawigacji i odtwarzacza wideo.</string>
+  <string name="settings_shortcuts_search_description">Skróty klawiszowe, kontroler, pilot w telefonie i przypisania klawiszy do nawigacji i odtwarzacza wideo.</string>
   <string name="settings_simkl_connected_as_format">Połączono jako %1$s</string>
   <string name="settings_simkl_cw_window_subtitle_format">Pokazuj tylko pozycje obejrzane w ciągu ostatnich %1$s</string>
   <string name="random_play_title">Losowe odtwarzanie</string>
@@ -4052,6 +4056,7 @@
   <string name="iptv_tab_loading">Ładowanie kanałów…</string>
   <string name="iptv_tab_retry">Spróbuj ponownie</string>
   <string name="iptv_tab_open_settings">Ustawienia telewizji na żywo</string>
+  <string name="iptv_tab_empty_no_playlist">Brak jeszcze playlisty telewizji na żywo. Dodaj ją w ustawieniach telewizji na żywo: logowanie Xtream Codes, portal Stalker lub link M3U.</string>
   <string name="iptv_tab_refresh">Odśwież kanały i przewodnik</string>
   <string name="iptv_tab_next">Następnie %1$s  %2$s</string>
   <string name="iptv_tab_favourite_add">Dodaj do ulubionych</string>

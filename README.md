@@ -14,77 +14,75 @@
 
 [![Nuvio TV Mode Demo](https://img.youtube.com/vi/txiM8_y2aD8/maxresdefault.jpg)](https://youtu.be/txiM8_y2aD8)
 
-This fork is unaffiliated with the Nuvio team. Don't worry about the commit disparity, Nuvio's team makes many small commits while I bundle everything into a single release commit for simplicity as this is mostly a solo focused project. 
+This fork is unaffiliated with the Nuvio team. If you're a Linux user check out [Slokker's Linux Fork.](https://github.com/iamSlokker/NuvioDesktop-Linux) It supports appimage, flatpack or debian. It's based on the nightly releases of this project.
 
-If you're a Linux user check out [Slokker's Linux Fork.](https://github.com/iamSlokker/NuvioDesktop-Linux) It supports appimage, flatpack or debian. It's based on the nightly releases of this project.
+# Key Features
 
-# Home Theatre features
+* Adaptive and TV display modes. They feature a focused content hero displaying cast, award info, trailers within the hero/detail page, ambient background, quick jump dot navigation and a quality display. 
 
-* Mouse, keyboard or controller friendly TV Mode with full-screen navigation, adaptive hero, row-jump navigation, cast and award information. This applies across all panels, not just home.
-* Game Mode for browsing and launching your game library alongside your media.
-* IPTV from your own provider (Xtream Codes, Stalker portal or M3U) with a programme guide, favourites and an in-player channel switcher, based on Slokker's GoatTV (used with Permission).
-* Automatic control of smart lights based on playback state for a theater like experience.
-* Automatic dim and shutdown for OLED displays.
-* Audio pass-through features for a receiver.
-* Casting to another device, if the TV is busy you can cast to your phone or laptop.
-* Nuvio Remote, an Android app that drives Nuvio from your phone over Wi-Fi: touchpad or D-pad, now playing with lock-screen controls, Continue watching, the library and seasons, search by voice, picking the source, the music queue and loud lyrics, a dark mode for the cinema, and Wake-on-LAN. Pair by scanning a QR code in Settings. See [remote-android/README.md](remote-android/README.md).
+* New custom discovery panel to filter all of TMDB, suggestions from your watch history, AI suggestions and a content suggestion system with eight modes you can choose from. There's also a customizable random play content or random episode feature.
 
-# Discovery & Browsing
+* Full YouTube support, IPTV via either of the three main methods with many discovery options, detailed music player and there's even a built in game launcher.
 
-* Adaptive hero screens with trailers, configurable artwork, metadata badges, and multiple background modes.
-* Discover built around your watch history, favorites, unfinished titles, hidden gems, trending content, and fully custom rows.
-* Custom discovery queries can filter by genre, rating, votes, release status, language, certification, runtime, year, studio, cast, and crew.
-* Optional AI-powered discovery using OpenAI, Anthropic, OpenRouter, etc.
-* Built in calendar for Nuvio, Trakt, Mdblist and SIMKL.
-* Random play content or episode based on your criteria.
+* Extensive playback features including SVP, anime shaders, color profiles, HDR mode toggle, automatic failover, stream scoring based on quality, binge mode, seek thumbnails, automatic subtitle sync, external player handoff with tracking, css override and the option to completely replace the MPV config with your own setup.  
 
-# Library & Downloads
+* Multiple custom player UIs, detailed right click menu and lots of subtitle choices.
 
-* Local Library for movies and TV from PC folders, with automatic TMDB matching and manual fix-matching.
-* Auto-Downloads for monitored movies and series with configurable delays, schedules, limits, concurrency, and bandwidth controls.
-* Debrid library integration with TorBox and Premiumize, including season-pack inspection, episode selection, cached-source inspection, and cloud libraries.
+* Built in Usenet support refined from a test build of Nuvio TV, it works great and avoids having to host your own server. I highly suggest you enable failover, as well as ideally stream scoring.
 
-# Desktop Playback
+* Use mouse, keyboard, gamepad or turn your phone into a controller with the android companion app. There's also a ring interface to access all 10 panels with one key, no need to remember binds. Click [here](remote-android/README.md) for info on the android application.
 
-* MPV-based desktop player with extensive customization options built in, as well as the option to fully overwrite the MPV config.
-* Multiple playback UIs to choose from, with a extensive right click menu, cast display and clock.
-* Automatic stream failover, source affinity, binge mode, next-episode autoplay, and configurable buffering.
-* Three color profiles thanks to Stremio Kai (used with Permission), custom color profile for tinkering and three HDR modes.
-* Anime shaders (4K Anime, Stremio Kai, custom), SVP frame interpolation and NVIDIA RTX Video True HDR.
-* Seek-bar thumbnails, chapters, SkipDB support, intro/outro skipping, dual subtitles, extensive subtitle styling, playback speed controls, and volume boost.
-* Desktop Picture-in-Picture, direct URL playback, local-file playback, and external-player integration.
-* Stream Scoring can rank or reject sources based on quality, resolution, HDR, audio, codec, language, release metadata, cache status, and file size.
+* Completely redesigned PC native settings menu with full hotkey remapping for keyboard and gamepad with more options than you need, and hand-picked defaults.
 
-# Tracking & Metadata
+* Automated/batch downloading via integrated local library, HTPC can become a highly configurable front-end for your own local files populating artwork and metadata automatically.
 
-* SIMKL, MDBList, and self-hosted Floppy/Yamtrack integrations with watch history, ratings, Calendar, Continue Watching, and multi scrobbling.
-* Extensive anime metadata support across IMDb, MyAnimeList, Kitsu, AniDB, AniList, SIMKL, TMDB, and TVDB.
-* Automatic anime numbering/matching through a bundled Fribb mapping database.
-* Filename-only resolution for debrid and cloud libraries, turning raw files into properly identified titles and artwork.
-* State based external player tracking support for MPV, MPC, VLC and process based tracking for PotPlayer/Energy.
+* Home theatre ready with automatic control of smart lights, pre-show feature, screensaver, casting, audio passthrough, voice control and sleep mode.
 
-# Customisation
+# Other Features
 
-* Custom hero discovery rules and metadata badges without modifying the application.
-* Custom themes, accent gradients, system fonts, poster layouts, detail-page backgrounds, keyboard shortcuts, settings navigation, and player HUD scaling.
-* Configurable provider preferences, source scoring, subtitle/audio filtering, playback behaviour, and discovery rows.
+* New user startup wizard that walks you through the basic options to get you setup quickly.
 
-# Other
+* A large amount of time has been spent on optimization, it has alot of features yet starts quickly and keeps RAM usage in check. It's also very easy to hide features you don't use, to avoid them taking up visual space.
 
-* The settings menu has been fully redesigned to function like a desktop client rather than mobile.
-* Full hotkey remapping.
-* Display expected quality in the hero via QualiCache.
-* Application and player UI scaling sliders.
-* Change the font of the application to any installed font.
-* Music tab that can play lossless albums from an Eclipse Music addon such as Nebula (Eclipse's addon protocol, used with Permission).
+* Calendar support for Nuvio Sync, SIMKL, Trakt and Mdblist.
 
-The design of Nuvio HTPC is partly inspired by Nuvio TV and Stremio Kai.
+* Support for self-hosted Floppy.
+
+* Built in anime ID mapper through Fribb's mapping database.
+
+* Filename only resolution for debrid/cloud libaries, turning file names into identified titles with artwork.
+
+* Custom hero discovery rules and metadata badges without modifying source. 
+
+* Use your own font for the application and player.
+
+* HUD scaling to configure the UI for your setup.
+
+* VRR toggle, refresh rate change on startup of media option, player zone feature for power users to have various functions based on their mouse pointer, diagnostic box on playback, nuvio engine ported from mobile, stream preloading, artwork/metadata preloading and others that didn't make the list.
+
+# Installation
+
+HTPC is distributed as a zip file, there's no installer however it has seemless automatic updating without an installer. 
+
+Choose one of these two:
+
+1. [Main](https://github.com/UmbraProjects/NuvioDesktop/releases/latest) - new releases 1-2x per month, all of the changes on nightly within that period in a polished state. 
+2. [Nightly](https://github.com/UmbraProjects/NuvioDesktop/releases/tag/Nightly) - releases every 1-3 days, UI might be lacking polish, new features might not be completely finished. If you want to watch the development in "real time", submit bug reports and get new features ASAP this is for you.
+
+After choosing your version, scroll to the bottom and click nuvio.zip. Once downloaded, extract it wherever you'd like and run nuvio.exe to start HTPC.
 
 # Contributors
 
-* Deigue, for pull requests and testing.
-* Slokker, for GoatTV (Live TV), translations, pull requests and the [Linux port](https://github.com/iamSlokker/NuvioDesktop-Linux).
-* Spyder, for many pull requests, mostly the Music tab, and YouTube features. 
+* Deigue, for several useful pull requests, feedback, advice and a huge amount of testing.
+
+* Slokker, who's GoatTV project is the basis for the IPTV implementation, translations, pull requests and the [Linux port](https://github.com/iamSlokker/NuvioDesktop-Linux).
+
+* Spyder, who contributed the music feature, expanded IPTV, added the "what to watch" and pre-show features among many other PRs. 
+
+* Allesc the developer of Stremio Kai gave his blessing to use his color presets and anime shaders, Stremio Kai's row by row layout was also a major inspiration for the TV mode found in this project.
+
+* Everyone who works on upstream Nuvio of course, without them the project wouldn't exist.
+
 
 ## Custom Hero Discovery Config & Badges
 
@@ -183,7 +181,7 @@ Christopher Nolan.webp
 
 The custom image wins over the bundled default whenever its filename matches the badge label or category. Restart Nuvio after adding or replacing custom badge files.
 
-This concludes the forks readme, anything beyond this point is from the official upstream Nuvio Desktop.
+**This concludes the forks readme, anything beyond this point is from the official upstream Nuvio Desktop.**
 
 ## Upstream - About
 

@@ -1332,11 +1332,6 @@ private fun PlaybackSettingsSection(
                             onCheckedChange = PlayerSettingsRepository::setDesktopHudVignetteEnabled,
                         )
                         SettingsGroupDivider(isTablet = isTablet)
-                        HiddenHudButtonsRow(
-                            hidden = autoPlayPlayerSettings.desktopHiddenHudButtons,
-                            isTablet = isTablet,
-                        )
-                        SettingsGroupDivider(isTablet = isTablet)
                         HudButtonOrderRow(
                             order = autoPlayPlayerSettings.desktopHudButtonOrder,
                             hidden = autoPlayPlayerSettings.desktopHiddenHudButtons,
@@ -5279,31 +5274,4 @@ private fun formatP2pCacheBytes(bytes: Long): String {
     } else {
         "${kotlin.math.round(bytes / mebibyte * 10.0) / 10.0} MB"
     }
-}
-
-/** Desktop HUD buttons the user can switch off; values are controls.html `data-command`s. */
-@Composable
-private fun HiddenHudButtonsRow(hidden: Set<String>, isTablet: Boolean) {
-    // The transport first, then the action row (shared with the order editor, so a button added to the
-    // HUD only has to be listed once), then the header buttons.
-    val options = listOf(
-        SettingsChoiceOption("previousEpisode", stringResource(Res.string.settings_playback_hud_button_previous_episode)),
-        SettingsChoiceOption("seekBack", stringResource(Res.string.settings_playback_hud_button_seek_back)),
-        SettingsChoiceOption("seekForward", stringResource(Res.string.settings_playback_hud_button_seek_forward)),
-        SettingsChoiceOption("nextEpisode", stringResource(Res.string.settings_playback_hud_button_next_episode)),
-    ) + HudActionRowButtons.map { (command, label) -> SettingsChoiceOption(command, stringResource(label)) } + listOf(
-        SettingsChoiceOption("toggleFullscreen", stringResource(Res.string.settings_playback_hud_button_toggle_fullscreen)),
-        SettingsChoiceOption("lock", stringResource(Res.string.settings_playback_hud_button_lock)),
-        SettingsChoiceOption("videoSettings", stringResource(Res.string.settings_playback_hud_button_video_settings)),
-    )
-    SettingsMultiSelectRow(
-        title = stringResource(Res.string.settings_playback_hidden_hud_buttons),
-        description = stringResource(Res.string.settings_playback_hidden_hud_buttons_description),
-        options = options,
-        selectedValues = hidden,
-        emptyLabel = stringResource(Res.string.settings_playback_hidden_hud_buttons_none),
-        summaryForCount = { stringResource(Res.string.settings_playback_hidden_hud_buttons_count, it) },
-        isTablet = isTablet,
-        onToggle = { command -> PlayerSettingsRepository.setDesktopHudButtonHidden(command, command !in hidden) },
-    )
 }

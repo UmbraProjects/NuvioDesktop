@@ -122,6 +122,7 @@ import nuvio.composeapp.generated.resources.iptv_channel_picker_filter
 import nuvio.composeapp.generated.resources.iptv_regions_all
 import nuvio.composeapp.generated.resources.iptv_regions_toggle
 import nuvio.composeapp.generated.resources.iptv_tab_empty_category
+import nuvio.composeapp.generated.resources.iptv_tab_empty_no_playlist
 import nuvio.composeapp.generated.resources.iptv_tab_empty_favourites
 import nuvio.composeapp.generated.resources.iptv_tab_empty_filter
 import nuvio.composeapp.generated.resources.iptv_tab_favourite_add
@@ -176,7 +177,18 @@ fun IptvScreen(
     remember { IptvRepository.ensureLoaded() }
     val settings by IptvRepository.settings.collectAsStateWithLifecycle()
     val playlists = settings.playlists
-    if (playlists.isEmpty()) return
+    if (playlists.isEmpty()) {
+        // The tab shown with nothing to play (switched on in Navigation order): say where playlists
+        // come from, as the YouTube tab does when signed out, rather than an empty page.
+        Box(modifier.fillMaxSize().padding(top = topChromePadding ?: 0.dp)) {
+            IptvMessage(
+                text = stringResource(Res.string.iptv_tab_empty_no_playlist),
+                actionLabel = stringResource(Res.string.iptv_tab_open_settings),
+                onAction = onOpenSettings,
+            )
+        }
+        return
+    }
 
     var selectedPlaylistId by rememberSaveable { mutableStateOf(playlists.first().id) }
     val playlist = playlists.firstOrNull { it.id == selectedPlaylistId } ?: playlists.first()

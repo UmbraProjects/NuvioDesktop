@@ -1,5 +1,6 @@
 package com.nuvio.app.core.ui
 
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -340,13 +341,13 @@ internal fun HeroAmbientBackdrop(
             com.nuvio.app.features.details.MetaHeroTrailerBackgroundMode.Theme -> background
             com.nuvio.app.features.details.MetaHeroTrailerBackgroundMode.Backdrop -> null
         }
-        // In with the trailer: the hero swaps its backdrop for the video in one frame the moment
-        // playback moves (HomeHeroTrailerSurface's reveal), so a slow fade here trailed visibly
-        // behind it. Out slower, as the artwork comes back when the trailer ends.
+        // In at once, ahead of the trailer: HomeHeroTrailerSurface reports ready, waits for this black to be on
+        // screen, then reveals the video, so a fade in here only showed as the page darkening after it (2026-11-24).
+        // Out slower, as the artwork comes back when the trailer ends.
         val lightsOutTarget = trailerOnScreen && lightsOutColor != null
         val lightsOut by animateFloatAsState(
             targetValue = if (lightsOutTarget) 1f else 0f,
-            animationSpec = tween(durationMillis = if (lightsOutTarget) AmbientLightsOutInMs else AmbientLightsOutOutMs),
+            animationSpec = if (lightsOutTarget) snap() else tween(durationMillis = AmbientLightsOutOutMs),
             label = "${label}_lights_out",
         )
         if (lightsOut > 0f && lightsOutColor != null) {
@@ -360,7 +361,6 @@ internal fun HeroAmbientBackdrop(
     }
 }
 
-private const val AmbientLightsOutInMs = 120
 private const val AmbientLightsOutOutMs = 400
 
 /**

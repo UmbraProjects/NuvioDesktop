@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
@@ -304,7 +305,10 @@ private fun CastItem(
                     1 -> "1 episode"
                     else -> "$episodeCount episodes"
                 },
-                modifier = Modifier.fillMaxWidth(),
+                // One line that may run a little into the gap: wrapped, a count a hair too wide for the column showed
+                // only its first word ("5003", with "episodes" on a second line maxLines dropped) (2026-11-24).
+                modifier = Modifier.fillMaxWidth().wrapContentWidth(unbounded = true),
+                softWrap = false,
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontSize = sizing.subLabelSize,
                 ),

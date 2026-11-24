@@ -121,8 +121,13 @@ internal fun PanelRingOverlay(window: ComposeWindow) {
     val padButton by GamepadSettingsRepository.ringButtonState.collectAsState()
     val shown = state != null
     val progress by animateFloatAsState(if (shown) 1f else 0f, tween(if (shown) 110 else 80), label = "ring")
+    // The fade-out draws the ring as it last stood: a fresh default state has no mouse anchor,
+    // which made a ring opened with the middle button jump to the window's centre as it closed.
+    // A plain holder, not state: it is only read on the recompositions the fade already drives.
+    val lastShown = remember { arrayOfNulls<PanelRingState>(1) }
+    state?.let { lastShown[0] = it }
     if (!shown && progress == 0f) return
-    val current = state ?: PanelRingState(PanelRingSource.Keyboard)
+    val current = state ?: lastShown[0] ?: PanelRingState(PanelRingSource.Keyboard)
     val density = LocalDensity.current
     val accent = rememberRingAccent()
 

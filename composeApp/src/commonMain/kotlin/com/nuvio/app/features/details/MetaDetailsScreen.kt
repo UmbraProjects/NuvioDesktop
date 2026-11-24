@@ -213,6 +213,23 @@ import com.nuvio.app.core.i18n.localizedString
 private fun dominantBackdropBlendColor(dominantColor: Color, backgroundColor: Color): Color =
     backgroundColor.blendTowards(dominantColor, fraction = 0.42f)
 
+/**
+ * The colour extracted from each backdrop this session, so reopening a title (or going back to it)
+ * paints its colour on the first frame instead of working it out again. Small and in memory only.
+ */
+private object DominantBackdropColorCache {
+    private const val MAX = 200
+    private val colors = object : LinkedHashMap<String, Color>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Color>?): Boolean = size > MAX
+    }
+
+    fun get(url: String): Color? = synchronized(colors) { colors[url] }
+
+    fun put(url: String, color: Color) {
+        synchronized(colors) { colors[url] = color }
+    }
+}
+
 private fun Color.blendTowards(target: Color, fraction: Float): Color {
     val clamped = fraction.coerceIn(0f, 1f)
     return Color(
@@ -2209,9 +2226,12 @@ fun MetaDetailsScreen(
                     }
                     val backdropUrl = meta.background ?: meta.poster
                     val backgroundMode = metaScreenSettingsUiState.backgroundMode
+                    // Not held for deferredMetaWorkAllowed: the colour is the page's background, so
+                    // waiting for the deferred work made it arrive visibly after the page (2026-11-23).
                     val dominantColorEnabled = backgroundMode == MetaScreenBackgroundMode.DominantColor &&
-                        deferredMetaWorkAllowed &&
                         !backdropUrl.isNullOrBlank()
+                    // A title opened before this session has its colour at once.
+                    val cachedDominantColor = remember(backdropUrl) { backdropUrl?.let(DominantBackdropColorCache::get) }
                     val colorScheme = MaterialTheme.colorScheme
                     var dominantBackdropPainter by remember(meta.id, backdropUrl) { mutableStateOf<Painter?>(null) }
                     var dominantBackdropImageBitmap by remember(meta.id, backdropUrl) { mutableStateOf<ImageBitmap?>(null) }
@@ -2230,9 +2250,15 @@ fun MetaDetailsScreen(
                         if (dominantColorEnabled) {
                             when {
                                 imageBitmap != null -> runCatching { dominantImageBitmapColorState.updateFrom(imageBitmap) }
-                                    .onSuccess { dominantBackdropReady = true }
+                                    .onSuccess {
+                                        dominantBackdropReady = true
+                                        backdropUrl?.let { DominantBackdropColorCache.put(it, dominantImageBitmapColorState.color) }
+                                    }
                                 painter != null -> runCatching { dominantPainterColorState.updateFrom(painter) }
-                                    .onSuccess { dominantBackdropReady = true }
+                                    .onSuccess {
+                                        dominantBackdropReady = true
+                                        backdropUrl?.let { DominantBackdropColorCache.put(it, dominantPainterColorState.color) }
+                                    }
                             }
                         }
                     }
@@ -2241,11 +2267,19 @@ fun MetaDetailsScreen(
                     } else {
                         dominantPainterColorState.color
                     }
-                    val dominantBackdropColor = if (dominantColorEnabled && dominantBackdropReady) {
-                        dominantBackdropBlendColor(extractedDominantColor, colorScheme.background)
-                    } else {
-                        colorScheme.background
+                    val dominantBackdropTarget = when {
+                        !dominantColorEnabled -> colorScheme.background
+                        dominantBackdropReady -> dominantBackdropBlendColor(extractedDominantColor, colorScheme.background)
+                        cachedDominantColor != null -> dominantBackdropBlendColor(cachedDominantColor, colorScheme.background)
+                        else -> colorScheme.background
                     }
+                    // A first visit still works the colour out from the backdrop; it fades in rather than
+                    // snapping, and a cached one is already the target on the first frame.
+                    val dominantBackdropColor by animateColorAsState(
+                        targetValue = dominantBackdropTarget,
+                        animationSpec = tween(durationMillis = 320),
+                        label = "detail_dominant_backdrop",
+                    )
                     Box(modifier = Modifier.fillMaxSize()) {
                         when (backgroundMode) {
                             MetaScreenBackgroundMode.Normal -> Unit
@@ -2258,7 +2292,7 @@ fun MetaDetailsScreen(
                                 )
                                 Box(Modifier.fillMaxSize().background(colorScheme.background.copy(alpha = 0.92f)))
                             }
-                            MetaScreenBackgroundMode.DominantColor -> if (deferredMetaWorkAllowed) {
+                            MetaScreenBackgroundMode.DominantColor -> {
                                 Box(Modifier.fillMaxSize().background(dominantBackdropColor))
                             }
                         }

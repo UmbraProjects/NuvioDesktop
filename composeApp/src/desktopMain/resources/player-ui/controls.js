@@ -7144,6 +7144,14 @@ const updatePlayerClock = () => {
 };
 window.setInterval(updatePlayerClock, 1000);
 
+// Full-screen hero trailers: the hero's own backdrop over the video until it is moving, then dissolved away, so the
+// artwork melts into the trailer instead of cutting to black (2026-11-24). Under the scrim and the hero text.
+const heroTrailerRevealCover = document.createElement("img");
+heroTrailerRevealCover.id = "heroTrailerRevealCover";
+heroTrailerRevealCover.alt = "";
+heroTrailerRevealCover.style.display = "none";
+root.appendChild(heroTrailerRevealCover);
+
 const heroTrailerFade = document.createElement("div");
 heroTrailerFade.id = "heroTrailerFade";
 heroTrailerFade.style.display = "none";
@@ -7343,9 +7351,29 @@ function applyHeroTrailerContent() {
   }
 }
 
+const applyHeroTrailerRevealCover = (active) => {
+  const url = active ? String(state.heroTrailerRevealCoverUrl || "").trim() : "";
+  if (!url) {
+    heroTrailerRevealCover.style.display = "none";
+    heroTrailerRevealCover.classList.remove("revealed");
+    heroTrailerRevealCover.dataset.src = "";
+    return;
+  }
+  if (heroTrailerRevealCover.dataset.src !== url) {
+    // A new trailer: back to fully covering, without a transition, before the new picture shows.
+    heroTrailerRevealCover.classList.remove("revealed");
+    heroTrailerRevealCover.dataset.src = url;
+    heroTrailerRevealCover.src = url;
+  }
+  heroTrailerRevealCover.style.objectPosition = String(state.heroTrailerRevealCoverPosition || "50% 50%");
+  heroTrailerRevealCover.style.display = "block";
+  heroTrailerRevealCover.classList.toggle("revealed", Boolean(state.heroTrailerRevealed));
+};
+
 const applyHeroTrailer = () => {
   const active = Boolean(state.heroTrailerMode);
   root.classList.toggle("hero-trailer-active", active);
+  applyHeroTrailerRevealCover(active && !isChromelessSurface);
   if (!active) {
     heroTrailerFade.style.display = "none";
     heroTrailerContent.style.display = "none";

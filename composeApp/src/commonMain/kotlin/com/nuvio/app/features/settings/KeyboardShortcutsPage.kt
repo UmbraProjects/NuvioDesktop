@@ -216,8 +216,9 @@ internal fun LazyListScope.keyboardShortcutsContent(isTablet: Boolean) {
     // Near the top: one binding for every panel is what spares learning the per-panel keys below.
     item(key = "keyboard-shortcuts-panel-ring") { PanelRingSection(isTablet = isTablet) }
     if (gamepadSupported()) {
+        // Gamepad control leads: it turns the pad on, and the cursor below does nothing without it.
+        item(key = "keyboard-shortcuts-controller") { ControllerSection(isTablet = isTablet) }
         item(key = "keyboard-shortcuts-controller-cursor") { ControllerCursorSection(isTablet = isTablet) }
-        item(key = "keyboard-shortcuts-controller-lights") { ControllerLightsSection(isTablet = isTablet) }
     }
 
     item(key = "keyboard-shortcuts-navigation") {
@@ -400,10 +401,6 @@ private fun ShortcutsResetLabel(onClick: () -> Unit) {
 @Composable
 private fun GamepadSection(isTablet: Boolean) {
     LaunchedEffect(Unit) { ensureGamepadSettingsLoaded() }
-    val enabled by gamepadEnabledState().collectAsState()
-    val connected by gamepadConnectedState().collectAsState()
-    val deadZone by gamepadDeadZoneState().collectAsState()
-    val repeatInterval by gamepadRepeatIntervalState().collectAsState()
     val mouseKeyboard by mouseKeyboardState().collectAsState()
     val bindingsVersion by gamepadBindingsVersion().collectAsState()
     val rows = remember(bindingsVersion) { gamepadMappingRows() }
@@ -420,48 +417,6 @@ private fun GamepadSection(isTablet: Boolean) {
                     checked = mouseKeyboard,
                     isTablet = isTablet,
                     onCheckedChange = { setMouseKeyboard(it) },
-                )
-            }
-        }
-
-        SettingsSection(
-            title = stringResource(Res.string.settings_shortcuts_controller),
-            isTablet = isTablet,
-            actions = { ShortcutsResetLabel(onClick = { resetGamepadSettings() }) },
-        ) {
-            SettingsGroup(isTablet = isTablet) {
-                SettingsSwitchRow(
-                    title = stringResource(Res.string.settings_shortcuts_gamepad_control),
-                    description = when {
-                        !enabled -> stringResource(Res.string.settings_shortcuts_gamepad_control_off_description)
-                        connected -> stringResource(Res.string.settings_shortcuts_gamepad_connected)
-                        else -> stringResource(Res.string.settings_shortcuts_gamepad_not_detected)
-                    },
-                    checked = enabled,
-                    isTablet = isTablet,
-                    onCheckedChange = { setGamepadEnabled(it) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                GamepadSliderRow(
-                    title = stringResource(Res.string.settings_shortcuts_gamepad_dead_zone),
-                    description = stringResource(Res.string.settings_shortcuts_gamepad_dead_zone_description),
-                    value = deadZone,
-                    valueRange = gamepadDeadZoneRange(),
-                    valueLabel = "${(deadZone * 100).roundToInt()}%",
-                    enabled = enabled,
-                    isTablet = isTablet,
-                    onValueChange = { setGamepadDeadZone(it) },
-                )
-                SettingsGroupDivider(isTablet = isTablet)
-                GamepadSliderRow(
-                    title = stringResource(Res.string.settings_shortcuts_gamepad_repeat_speed),
-                    description = stringResource(Res.string.settings_shortcuts_gamepad_repeat_speed_description),
-                    value = repeatInterval.toFloat(),
-                    valueRange = gamepadRepeatIntervalRange().let { it.first.toFloat()..it.last.toFloat() },
-                    valueLabel = "$repeatInterval ms",
-                    enabled = enabled,
-                    isTablet = isTablet,
-                    onValueChange = { setGamepadRepeatIntervalMs(it.roundToInt()) },
                 )
             }
         }
@@ -612,21 +567,64 @@ private fun ControllerCursorSection(isTablet: Boolean) {
     }
 }
 
-/** A DualSense's light bar and player light, written to the pad itself. */
+/**
+ * Gamepad control and how the pad behaves: on/off, dead zone, repeat speed and a DualSense's
+ * lights. First of the controller sections, above the cursor, since nothing else works without it.
+ */
 @Composable
-private fun ControllerLightsSection(isTablet: Boolean) {
+private fun ControllerSection(isTablet: Boolean) {
     LaunchedEffect(Unit) { ensureGamepadSettingsLoaded() }
+    val enabled by gamepadEnabledState().collectAsState()
+    val connected by gamepadConnectedState().collectAsState()
+    val deadZone by gamepadDeadZoneState().collectAsState()
+    val repeatInterval by gamepadRepeatIntervalState().collectAsState()
     val lightBar by controllerLightBarState().collectAsState()
     val playerLight by controllerPlayerLightState().collectAsState()
     SettingsSection(
-        title = stringResource(Res.string.gamepad_lights_section),
+        title = stringResource(Res.string.settings_shortcuts_controller),
         isTablet = isTablet,
-        subtitle = stringResource(Res.string.gamepad_lights_note),
+        actions = { ShortcutsResetLabel(onClick = { resetGamepadSettings() }) },
     ) {
         SettingsGroup(isTablet = isTablet) {
+            SettingsSwitchRow(
+                title = stringResource(Res.string.settings_shortcuts_gamepad_control),
+                description = when {
+                    !enabled -> stringResource(Res.string.settings_shortcuts_gamepad_control_off_description)
+                    connected -> stringResource(Res.string.settings_shortcuts_gamepad_connected)
+                    else -> stringResource(Res.string.settings_shortcuts_gamepad_not_detected)
+                },
+                checked = enabled,
+                isTablet = isTablet,
+                onCheckedChange = { setGamepadEnabled(it) },
+            )
+            SettingsGroupDivider(isTablet = isTablet)
+            GamepadSliderRow(
+                title = stringResource(Res.string.settings_shortcuts_gamepad_dead_zone),
+                description = stringResource(Res.string.settings_shortcuts_gamepad_dead_zone_description),
+                value = deadZone,
+                valueRange = gamepadDeadZoneRange(),
+                valueLabel = "${(deadZone * 100).roundToInt()}%",
+                enabled = enabled,
+                isTablet = isTablet,
+                onValueChange = { setGamepadDeadZone(it) },
+            )
+            SettingsGroupDivider(isTablet = isTablet)
+            GamepadSliderRow(
+                title = stringResource(Res.string.settings_shortcuts_gamepad_repeat_speed),
+                description = stringResource(Res.string.settings_shortcuts_gamepad_repeat_speed_description),
+                value = repeatInterval.toFloat(),
+                valueRange = gamepadRepeatIntervalRange().let { it.first.toFloat()..it.last.toFloat() },
+                valueLabel = "$repeatInterval ms",
+                enabled = enabled,
+                isTablet = isTablet,
+                onValueChange = { setGamepadRepeatIntervalMs(it.roundToInt()) },
+            )
+            // The DualSense lights, here rather than a section of their own (2026-11-23).
+            SettingsGroupDivider(isTablet = isTablet)
             SettingsChoiceRow(
                 title = stringResource(Res.string.gamepad_light_bar),
-                description = stringResource(Res.string.gamepad_light_bar_description),
+                description = stringResource(Res.string.gamepad_light_bar_description) + " " +
+                    stringResource(Res.string.gamepad_lights_note),
                 options = listOf(
                     SettingsChoiceOption(ControllerLightBar.LeaveAlone, stringResource(Res.string.gamepad_light_bar_leave)),
                     SettingsChoiceOption(ControllerLightBar.Off, stringResource(Res.string.gamepad_light_bar_off)),

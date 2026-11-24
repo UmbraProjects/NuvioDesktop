@@ -709,7 +709,7 @@
   <string name="compose_settings_page_playback">Avspilling</string>
   <string name="compose_settings_page_plugins">Plugins</string>
   <string name="compose_settings_page_poster_customization">Plakatstil</string>
-  <string name="compose_settings_page_keyboard_shortcuts">Tastatursnarveier</string>
+  <string name="compose_settings_page_keyboard_shortcuts">Kontroller</string>
   <string name="compose_settings_page_root">Innstillinger</string>
   <string name="compose_settings_page_streams">Strømmer</string>
   <string name="compose_settings_page_local_library">Lokalt bibliotek</string>
@@ -1759,6 +1759,8 @@
   <string name="settings_playback_hud_vignette">Vignett for kontroller</string>
   <string name="settings_playback_hidden_hud_buttons">Skjulte avspillerknapper</string>
   <string name="settings_playback_hidden_hud_buttons_description">Fjern kontroller du aldri bruker fra avspilleren. Tastatursnarveiene deres fungerer fortsatt.</string>
+  <string name="settings_playback_hud_buttons_tools_header">Verktøyknapper: dra eller bruk pilene for å endre rekkefølgen</string>
+  <string name="settings_playback_hud_buttons_fixed_header">Fast plassert: på hver side av spill av og i topplinjen</string>
   <string name="settings_playback_hidden_hud_buttons_none">Ingen</string>
   <string name="settings_playback_hidden_hud_buttons_count">%1$d skjult</string>
   <string name="settings_playback_hud_button_previous_episode">Forrige episode</string>
@@ -3518,6 +3520,8 @@
   <string name="settings_appearance_custom_theme">Tilpasset tema</string>
   <string name="settings_appearance_custom_theme_accent">Aksent</string>
   <string name="settings_appearance_desktop_discover_tab">Oppdag-fane</string>
+  <string name="settings_appearance_nav_bar_glow">Glød rundt navigasjonslinjen</string>
+  <string name="settings_appearance_nav_bar_glow_description">En myk glød i aksentfargen rundt den flytende topplinjen. 0 % slår den av.</string>
   <string name="settings_appearance_desktop_discover_tab_description">Vis Discover i navigasjonslinjen. Hvis du slår den av, deaktiveres også Discover-snarveien.</string>
   <string name="settings_appearance_custom_theme_accent_end">Aksentgradient</string>
   <string name="settings_appearance_custom_theme_accent_end_hint">Andre stopp i aksentgradienten. Sett den til aksentfargen for å holde aksentene flate.</string>
@@ -3839,7 +3843,7 @@
   <string name="compose_settings_page_player">Avspiller</string>
   <string name="settings_player_page_subtitle">Avspillerkontroller, undertekster, språk, hopp over og neste episode</string>
   <string name="settings_playback_section_anime">Anime</string>
-  <string name="settings_shortcuts_search_description">Hurtigtaster og tastebindinger for navigasjon og videoavspilleren.</string>
+  <string name="settings_shortcuts_search_description">Hurtigtaster, spillkontroller, telefonfjernkontroll og tastebindinger for navigasjon og videoavspilleren.</string>
   <string name="settings_simkl_connected_as_format">Tilkoblet som %1$s</string>
   <string name="settings_simkl_cw_window_subtitle_format">Vis bare elementer sett de siste %1$s</string>
   <string name="random_play_title">Tilfeldig avspilling</string>
@@ -4042,6 +4046,7 @@
   <string name="iptv_tab_loading">Laster inn kanaler…</string>
   <string name="iptv_tab_retry">Prøv igjen</string>
   <string name="iptv_tab_open_settings">Innstillinger for Direkte-TV</string>
+  <string name="iptv_tab_empty_no_playlist">Ingen spilleliste for Direkte-TV ennå. Legg til en i innstillingene for Direkte-TV: en Xtream Codes-pålogging, en Stalker-portal eller en M3U-lenke.</string>
   <string name="iptv_tab_refresh">Oppdater kanaler og guide</string>
   <string name="iptv_tab_next">Neste %1$s  %2$s</string>
   <string name="iptv_tab_favourite_add">Legg til i favoritter</string>

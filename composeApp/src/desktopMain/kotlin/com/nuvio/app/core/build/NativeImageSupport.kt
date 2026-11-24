@@ -148,6 +148,13 @@ internal object NativeImageSupport {
         }
         // ...and signed out: the auth session is stored machine-wide, outside the data directory.
         if (selfTestRequested) com.nuvio.app.core.network.SupabaseProvider.memoryOnlySession = true
+        // A test profile (-Dnuvio.desktop.dataDir) keeps its sign-in in its own folder; otherwise
+        // it would pick up, and on sign-out erase, the real profile's registry session.
+        if (!System.getProperty("nuvio.desktop.dataDir").isNullOrBlank()) {
+            com.nuvio.app.core.network.SupabaseProvider.sessionManagerFactory = { backendUrl ->
+                com.nuvio.app.core.auth.DataDirSessionManager(backendUrl)
+            }
+        }
         if (!inImage) return
         val exeDir = runCatching {
             ProcessHandle.current().info().command().orElse(null)?.let { File(it).parentFile }

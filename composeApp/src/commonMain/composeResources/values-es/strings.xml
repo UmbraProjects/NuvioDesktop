@@ -1564,7 +1564,7 @@
     <string name="compose_settings_page_licenses_attributions">Licencias y atribución</string>
     <string name="compose_settings_page_qualicache">Calidad de QualiCache</string>
     <string name="compose_settings_page_poster_service">Pósters personalizados</string>
-    <string name="compose_settings_page_keyboard_shortcuts">Atajos de teclado</string>
+    <string name="compose_settings_page_keyboard_shortcuts">Controles</string>
     <string name="compose_settings_page_streams">Streams</string>
     <string name="compose_settings_page_local_library">Biblioteca local</string>
     <string name="compose_settings_page_auto_downloads">Descargas automáticas</string>
@@ -2347,6 +2347,8 @@
     <string name="settings_playback_hud_vignette">Viñeta de los controles</string>
     <string name="settings_playback_hidden_hud_buttons">Botones del reproductor ocultos</string>
     <string name="settings_playback_hidden_hud_buttons_description">Quita del reproductor los controles que nunca usas. Sus atajos de teclado siguen funcionando.</string>
+    <string name="settings_playback_hud_buttons_tools_header">Botones de herramientas: arrastra o usa las flechas para cambiar el orden</string>
+    <string name="settings_playback_hud_buttons_fixed_header">Fijos: a ambos lados de reproducir y en la barra superior</string>
     <string name="settings_playback_hidden_hud_buttons_none">Ninguno</string>
     <string name="settings_playback_hidden_hud_buttons_count">%1$d ocultos</string>
     <string name="settings_playback_hud_button_previous_episode">Episodio anterior</string>
@@ -3522,6 +3524,8 @@
     <string name="settings_appearance_custom_theme">Tema personalizado</string>
     <string name="settings_appearance_custom_theme_accent">Acento</string>
     <string name="settings_appearance_desktop_discover_tab">Pestaña Descubrir</string>
+    <string name="settings_appearance_nav_bar_glow">Brillo de la barra de navegación</string>
+    <string name="settings_appearance_nav_bar_glow_description">Un suave resplandor del color de acento alrededor de la barra superior flotante. 0 % lo desactiva.</string>
     <string name="settings_appearance_desktop_discover_tab_description">Muestra Descubrir en la barra de navegación. Al desactivarla también se desactiva el atajo de Descubrir.</string>
     <string name="settings_appearance_custom_theme_accent_end">Degradado de acento</string>
     <string name="settings_appearance_custom_theme_accent_end_hint">Segundo punto del degradado de acento. Configúralo con el color de acento para mantener los acentos planos.</string>
@@ -3843,7 +3847,7 @@
     <string name="compose_settings_page_player">Reproductor</string>
     <string name="settings_player_page_subtitle">Controles del reproductor, subtítulos, idiomas, omisión y siguiente episodio</string>
     <string name="settings_playback_section_anime">Anime</string>
-    <string name="settings_shortcuts_search_description">Teclas de acceso rápido y asignaciones de teclas para la navegación y el reproductor de vídeo.</string>
+    <string name="settings_shortcuts_search_description">Atajos de teclado, mando, control remoto desde el móvil y asignaciones de teclas para la navegación y el reproductor de vídeo.</string>
     <string name="settings_simkl_connected_as_format">Conectado como %1$s</string>
     <string name="settings_simkl_cw_window_subtitle_format">Mostrar solo elementos vistos en los últimos %1$s</string>
     <string name="random_play_title">Reproducción aleatoria</string>
@@ -4046,6 +4050,7 @@
     <string name="iptv_tab_loading">Cargando canales…</string>
     <string name="iptv_tab_retry">Reintentar</string>
     <string name="iptv_tab_open_settings">Ajustes de TV en vivo</string>
+    <string name="iptv_tab_empty_no_playlist">Aún no hay ninguna lista de TV en vivo. Añade una en los ajustes de TV en vivo: un inicio de sesión de Xtream Codes, un portal Stalker o un enlace M3U.</string>
     <string name="iptv_tab_refresh">Actualizar canales y guía</string>
     <string name="iptv_tab_next">Siguiente %1$s  %2$s</string>
     <string name="iptv_tab_favourite_add">Agregar a favoritos</string>

@@ -42,7 +42,7 @@ data class UsenetConfiguration(
      * before it. Larger than this many GB, one is skipped at open like an unplayable release.
      * [COMPRESSED_PLAY_ALL] plays every one, [COMPRESSED_SKIP_ALL] skips every one.
      */
-    val compressedSkipGb: Int = 5,
+    val compressedSkipGb: Int = COMPRESSED_SKIP_ALL,
 ) {
     /** The engine's limit in bytes: 0 is none, 1 refuses every compressed 7z. */
     val maxCompressedBytes: Long
@@ -77,7 +77,7 @@ data class UsenetConfiguration(
             maxConsecutiveMissing = maxConsecutiveMissing.coerceIn(1, minOf(10, missing)),
             userAgentMode = userAgentMode.takeIf { it in AGENT_MODES } ?: AGENT_GENERIC,
             customUserAgent = customUserAgent.takeIf(::isValidUserAgent).orEmpty(),
-            compressedSkipGb = compressedSkipGb.takeIf { it in COMPRESSED_CHOICES } ?: 5,
+            compressedSkipGb = compressedSkipGb.takeIf { it in COMPRESSED_CHOICES } ?: COMPRESSED_SKIP_ALL,
         )
     }
 

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.addons
 
+import com.nuvio.app.features.settings.SettingsGlassButton
+import com.nuvio.app.core.ui.NuvioTextField
 import com.nuvio.app.core.ui.requestFocusLogged
 import com.nuvio.app.core.ui.ditheredBackground
 import com.nuvio.app.features.settings.SettingsSectionGlassEdge
@@ -448,7 +450,6 @@ private fun DesktopAddonsManager(
     var activeOnly by rememberSaveable { mutableStateOf(false) }
     var catalogsOnly by rememberSaveable { mutableStateOf(false) }
     var configurableOnly by rememberSaveable { mutableStateOf(false) }
-    var showAddAddon by rememberSaveable { mutableStateOf(false) }
     var sort by rememberSaveable { mutableStateOf(DesktopAddonSort.Order) }
     // Computed inline (not remembered) so it re-filters on every keystroke — reading `query`
     // here subscribes this composable directly to the search text.
@@ -485,7 +486,7 @@ private fun DesktopAddonsManager(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Title row: "Installed Addons  N installed"  ····  [+ Add Addon]
+        // Title row: "Installed Addons  N installed"
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -510,10 +511,6 @@ private fun DesktopAddonsManager(
                     maxLines = 1,
                 )
             }
-            DesktopAddAddonButton(
-                selected = showAddAddon,
-                onClick = { showAddAddon = !showAddAddon },
-            )
         }
         // Controls row: search · segmented filters · order
         Row(
@@ -541,14 +538,14 @@ private fun DesktopAddonsManager(
                 modifier = Modifier.width(116.dp),
             )
         }
-        if (showAddAddon) {
-            DesktopAddAddonPopover(
-                addonUrl = addonUrl,
-                formMessage = formMessage,
-                onAddonUrlChange = onAddonUrlChange,
-                onAddClick = onAddClick,
-            )
-        }
+        // Always shown (2026-11-23): an "Add Addon" button that only opened this box was one more
+        // step for a new user, who arrives here to paste a link.
+        DesktopAddAddonPopover(
+            addonUrl = addonUrl,
+            formMessage = formMessage,
+            onAddonUrlChange = onAddonUrlChange,
+            onAddClick = onAddClick,
+        )
         DesktopAddonsTable(
             rows = visibleRows,
             totalAddonCount = addons.size,
@@ -708,73 +705,6 @@ private fun DesktopAddonSearchField(
 }
 
 @Composable
-private fun DesktopAddAddonButton(
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    DesktopAccentButton(
-        text = stringResource(Res.string.addons_section_add_addon),
-        icon = Icons.Rounded.Add,
-        pressedLook = selected,
-        onClick = onClick,
-    )
-}
-
-/**
- * The page's accent action: Add Addon in the header and Install Addon in the add panel share it so
- * the two read as one family - same height, padding and type.
- */
-@Composable
-private fun DesktopAccentButton(
-    text: String,
-    onClick: () -> Unit,
-    icon: ImageVector? = null,
-    enabled: Boolean = true,
-    pressedLook: Boolean = false,
-    height: Dp = 44.dp,
-) {
-    val tokens = MaterialTheme.nuvio
-    val shape = RoundedCornerShape(12.dp)
-    Surface(
-        modifier = Modifier
-            .height(height)
-            .alpha(if (enabled) 1f else 0.45f)
-            // Painted as a brush rather than through Surface's colour so a gradient accent reaches
-            // this pill too; accentFill is a SolidColor on the flat themes and renders identically.
-            // The open state keeps its flat accentStrong, which is what distinguishes it.
-            .background(
-                brush = if (pressedLook) SolidColor(tokens.colors.accentStrong) else tokens.colors.accentFill,
-                shape = shape,
-            )
-            .clickable(enabled = enabled, onClick = onClick),
-        shape = shape,
-        color = Color.Transparent,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = tokens.colors.background,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyLarge,
-                color = tokens.colors.background,
-                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
-@Composable
 private fun DesktopAddonSortMenu(
     sort: DesktopAddonSort,
     onSortChange: (DesktopAddonSort) -> Unit,
@@ -867,19 +797,20 @@ private fun DesktopAddAddonPopover(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DesktopAddonSearchField(
+                // The same field and button as the Plugins page's repository box, so the two read as one.
+                NuvioTextField(
                     value = addonUrl,
                     onValueChange = onAddonUrlChange,
                     placeholder = stringResource(Res.string.addons_input_placeholder),
-                    leadingIcon = Icons.Rounded.Link,
-                    onSubmit = { if (addonUrl.isNotBlank()) onAddClick() },
                     modifier = Modifier.weight(1f),
+                    onImeAction = { if (addonUrl.isNotBlank()) onAddClick() },
+                    compact = true,
                 )
-                DesktopAccentButton(
+                SettingsGlassButton(
                     text = stringResource(Res.string.addons_install_button),
                     enabled = addonUrl.isNotBlank(),
+                    accent = true,
                     onClick = onAddClick,
-                    height = 40.dp,
                 )
             }
             formMessage?.let { message ->

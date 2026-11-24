@@ -85,8 +85,9 @@ private fun rememberScrollbarVisibilityAlpha(
 }
 
 @Composable internal actual fun NuvioGlassVerticalScrollbar(state: ScrollState, modifier: Modifier) {
-    // Nothing to scroll, nothing drawn: a short menu keeps its clean edge.
-    if (state.maxValue <= 0) return
+    // Nothing to scroll, nothing drawn: a short menu keeps its clean edge. Int.MAX_VALUE is "not measured yet"
+    // (the first frame); drawn then, a menu opened at its full height and jumped as it shrank (2026-11-24).
+    if (state.maxValue <= 0 || state.maxValue == Int.MAX_VALUE) return
     val interaction = remember { MutableInteractionSource() }
     val alpha = rememberScrollbarVisibilityAlpha(state.isScrollInProgress, interaction)
     VerticalScrollbar(

@@ -129,8 +129,8 @@ class UsenetFailoverAndResumeTest {
 
     @Test
     fun `the compressed 7z size limit`() {
-        val five = UsenetConfiguration()
-        assertEquals(5, five.compressedSkipGb, "default: skip over 5 GB")
+        assertEquals(UsenetConfiguration.COMPRESSED_SKIP_ALL, UsenetConfiguration().compressedSkipGb, "default: always skip (Nov 23)")
+        val five = UsenetConfiguration(compressedSkipGb = 5)
         assertEquals(5_000_000_000L, five.maxCompressedBytes)
         assertFalse(five.skipsCompressed(4_000_000_000L))
         assertTrue(five.skipsCompressed(8_000_000_000L))
@@ -141,7 +141,11 @@ class UsenetFailoverAndResumeTest {
         val skipAll = UsenetConfiguration(compressedSkipGb = UsenetConfiguration.COMPRESSED_SKIP_ALL)
         assertEquals(1L, skipAll.maxCompressedBytes)
         assertTrue(skipAll.skipsCompressed(1L))
-        assertEquals(5, UsenetConfiguration(compressedSkipGb = 7).normalized().compressedSkipGb, "unknown choice falls back")
+        assertEquals(
+            UsenetConfiguration.COMPRESSED_SKIP_ALL,
+            UsenetConfiguration(compressedSkipGb = 7).normalized().compressedSkipGb,
+            "unknown choice falls back to the default",
+        )
     }
 
     @Test

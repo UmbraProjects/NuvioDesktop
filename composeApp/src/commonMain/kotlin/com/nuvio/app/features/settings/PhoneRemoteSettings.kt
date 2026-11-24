@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -27,13 +28,30 @@ import com.nuvio.app.features.remote.setPhoneRemoteAimStrength
  * fork:phone-remote — the switch, the pairing code and who is connected. Literal strings, like the
  * fork's other recent settings: newly added resource keys do not always resolve (see build notes).
  */
+/** Where android-remote.yml publishes NuvioRemote.apk: a fixed pre-release tag, replaced each build. */
+private const val PHONE_REMOTE_DOWNLOAD_PAGE = "https://github.com/UmbraProjects/NuvioDesktop/releases/tag/NuvioRemote"
+
 @Composable
 internal fun PhoneRemoteSection(isTablet: Boolean) {
     LaunchedEffect(Unit) { ensurePhoneRemoteLoaded() }
     val state by phoneRemoteState().collectAsState()
+    val uriHandler = LocalUriHandler.current
 
     SettingsSection(title = "Phone remote", isTablet = isTablet) {
         SettingsGroup(isTablet = isTablet) {
+            // First, so a new user sees where the app comes from before the switch that needs it.
+            SettingsActionRow(
+                title = "Get the Nuvio Remote app",
+                description = "Android only. Open $PHONE_REMOTE_DOWNLOAD_PAGE on the phone and download " +
+                    "NuvioRemote.apk, then open it to install. It updates itself after that.",
+                isTablet = isTablet,
+            ) {
+                SettingsGlassButton(
+                    text = "Download page",
+                    onClick = { runCatching { uriHandler.openUri(PHONE_REMOTE_DOWNLOAD_PAGE) } },
+                )
+            }
+            SettingsGroupDivider(isTablet = isTablet)
             SettingsSwitchRow(
                 title = "Allow the Nuvio Remote app",
                 description = when {

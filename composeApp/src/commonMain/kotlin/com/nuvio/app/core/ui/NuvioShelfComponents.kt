@@ -918,28 +918,29 @@ private fun NuvioShelfSectionHeader(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
-                if (titleContent != null) {
-                    // A caller-drawn header (Discover's filter bar) may be told how far it can reach
-                    // before the trailing content instead — see LocalNuvioShelfTitleContentMaxWidth.
-                    val titleCap = LocalNuvioShelfTitleContentMaxWidth.current?.invoke(maxWidth)
-                        ?.coerceAtLeast(maxWidth * HeaderTitleMaxWidthFraction)
-                        ?: (maxWidth * HeaderTitleMaxWidthFraction)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .widthIn(max = titleCap),
-                    ) {
-                        titleContent()
+                // The underline rides with the title here, not under the whole box: the box is as tall as
+                // its tallest piece (the row dots, the view-all pill), so an underline below it sat well
+                // below a shorter title, most visibly on the Games screen (2026-11-24).
+                val headerMaxWidth = maxWidth
+                Column(modifier = Modifier.align(Alignment.CenterStart)) {
+                    if (titleContent != null) {
+                        // A caller-drawn header (Discover's filter bar) may be told how far it can reach
+                        // before the trailing content instead — see LocalNuvioShelfTitleContentMaxWidth.
+                        val titleCap = LocalNuvioShelfTitleContentMaxWidth.current?.invoke(headerMaxWidth)
+                            ?.coerceAtLeast(headerMaxWidth * HeaderTitleMaxWidthFraction)
+                            ?: (headerMaxWidth * HeaderTitleMaxWidthFraction)
+                        Box(modifier = Modifier.widthIn(max = titleCap)) {
+                            titleContent()
+                        }
+                    } else {
+                        NuvioShelfTitleWithTag(
+                            title = title,
+                            tag = titleTag,
+                            modifier = Modifier.widthIn(max = headerMaxWidth * HeaderTitleMaxWidthFraction),
+                            titleModifier = titleShuffleModifier,
+                        )
                     }
-                } else {
-                    NuvioShelfTitleWithTag(
-                        title = title,
-                        tag = titleTag,
-                        modifier = Modifier
-                            .align(Alignment.CenterStart)
-                            .widthIn(max = maxWidth * HeaderTitleMaxWidthFraction),
-                        titleModifier = titleShuffleModifier,
-                    )
+                    if (showAccent) NuvioShelfHeaderAccent()
                 }
                 trailingContent()
                 NuvioViewAllPill(
@@ -949,19 +950,24 @@ private fun NuvioShelfSectionHeader(
                 )
             }
         }
-        if (showAccent) {
-            Box(
-                modifier = Modifier
-                    .padding(top = NuvioTokens.Space.s6)
-                    .width(NuvioTokens.Space.s64 - NuvioTokens.Space.s4)
-                    .height(NuvioTokens.Space.s4)
-                    .background(
-                        brush = tokens.colors.accentFill,
-                        shape = tokens.shapes.chip,
-                    ),
-            )
-        }
+        if (showAccent && trailingContent == null) NuvioShelfHeaderAccent()
     }
+}
+
+/** The short accent underline under a shelf's title. */
+@Composable
+private fun NuvioShelfHeaderAccent() {
+    val tokens = MaterialTheme.nuvio
+    Box(
+        modifier = Modifier
+            .padding(top = NuvioTokens.Space.s6)
+            .width(NuvioTokens.Space.s64 - NuvioTokens.Space.s4)
+            .height(NuvioTokens.Space.s4)
+            .background(
+                brush = tokens.colors.accentFill,
+                shape = tokens.shapes.chip,
+            ),
+    )
 }
 
 /**

@@ -74,7 +74,7 @@ internal fun LazyListScope.voiceControlSettingsContent(isTablet: Boolean) {
                 SettingsGroupDivider(isTablet = isTablet)
                 SettingsActionRow(
                     title = "Push to talk",
-                    description = "Press $voiceKey (change it under Keyboard shortcuts), the mic in the sidebar, the " +
+                    description = "Press $voiceKey (change it under Controls), the mic in the sidebar, the " +
                         "mic button on a DualSense, or hold View on an Xbox controller, then speak. It stops when " +
                         "you pause; press again to finish sooner, or Escape to cancel. The mic in the search and " +
                         "YouTube boxes searches there: just say what to look for.",

@@ -1,5 +1,7 @@
 package com.nuvio.app.features.settings
 
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.runtime.withFrameMillis
 import com.nuvio.app.core.ui.keyLayer
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.SmartDisplay
@@ -118,6 +120,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.requireLayoutCoordinates
 import com.nuvio.app.core.ui.KeyboardInputMode
 import com.nuvio.app.core.ui.focusedControl
+import com.nuvio.app.core.ui.requestFocusLogged
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -275,6 +278,80 @@ internal var perfSettingsPage: String = SettingsPage.Addons.name
 
 private const val SETTINGS_FOCUS_TRIES = 12
 private const val SETTINGS_FOCUS_RING_POLL_MS = 50L
+
+/** Where a newly opened settings page's fade starts, and how long it takes to settle. */
+private const val SETTINGS_PAGE_REVEAL_FROM = 0.55f
+private const val SETTINGS_PAGE_REVEAL_MS = 180
+
+/**
+ * Left from a control on the page: to the control beside it in the same row (a shortcut's key and its edit button), or
+ * else to the sidebar. Plain spatial search went on to whatever lay leftwards in another row (from a slider, a control a
+ * row or two up), so Left jumped about the page instead of going back to the categories (2026-11-24). Null when focus is
+ * not on the page, for the usual handling.
+ */
+private fun settingsMoveLeft(focusManager: androidx.compose.ui.focus.FocusManager): Boolean? {
+    val before = focusManager.focusedControl()?.takeIf { it.node.isAttached } ?: return null
+    val beforeCoordinates = runCatching { before.requireLayoutCoordinates() }.getOrNull() ?: return null
+    if (!settingsPageContains(beforeCoordinates)) return null
+    // Only from a settings row: a page's own layout (the Addons table's buttons) keeps plain spatial search.
+    val rowBefore = SettingsFocusRows.rowOf(beforeCoordinates) ?: return null
+    val moved = focusManager.moveFocus(FocusDirection.Left)
+    val after = focusManager.focusedControl()?.takeIf { it.node.isAttached }
+    val afterCoordinates = after?.let { runCatching { it.requireLayoutCoordinates() }.getOrNull() }
+    val stayedInRow = moved && afterCoordinates != null &&
+        settingsPageContains(afterCoordinates) && SettingsFocusRows.rowOf(afterCoordinates) === rowBefore
+    val leftThePage = moved && afterCoordinates != null && !settingsPageContains(afterCoordinates)
+    if (stayedInRow || leftThePage) return true
+    SettingsKeyboard.entry.requestFocusLogged()
+    return true
+}
+
+/** Whether [coordinates] are in the page list (not the sidebars). */
+private fun settingsPageContains(coordinates: LayoutCoordinates): Boolean {
+    val viewport = SettingsKeyboardScroll.viewport?.takeIf { it.isAttached } ?: return false
+    if (!coordinates.isAttached) return false
+    val rect = runCatching { viewport.localBoundingBoxOf(coordinates, clipBounds = false) }.getOrNull() ?: return false
+    return rect.center.x in 0f..viewport.size.width.toFloat()
+}
+
+/** The page list the keyboard highlight keeps the focused item visible in; set by the page's LazyColumn. */
+private object SettingsKeyboardScroll {
+    var viewport: LayoutCoordinates? = null
+    var listState: LazyListState? = null
+}
+
+/**
+ * The scroll that brings [item] clear of the page list's top and bottom edges, by a fifth of the list's height (at least
+ * [minMarginPx]), or null when it is already clear or is not in the page list (a sidebar entry).
+ */
+private fun keepSettingsItemInView(item: LayoutCoordinates, minMarginPx: Float): (suspend () -> Unit)? {
+    val viewport = SettingsKeyboardScroll.viewport?.takeIf { it.isAttached } ?: return null
+    val state = SettingsKeyboardScroll.listState ?: return null
+    if (!item.isAttached) return null
+    val rect = runCatching { viewport.localBoundingBoxOf(item, clipBounds = false) }.getOrNull() ?: return null
+    val width = viewport.size.width.toFloat()
+    val height = viewport.size.height.toFloat()
+    if (rect.center.x !in 0f..width || height <= 0f) return null
+    val margin = (height * 0.2f).coerceAtLeast(minMarginPx).coerceAtMost(height / 3f)
+    val delta = when {
+        // Below the lower margin: bring its bottom up to it, but never push its top above the upper one.
+        rect.bottom > height - margin -> minOf(rect.bottom - (height - margin), rect.top - margin)
+        rect.top < margin -> rect.top - margin
+        else -> 0f
+    }
+    if (kotlin.math.abs(delta) < 1f) return null
+    return { state.animateScrollBy(delta) }
+}
+
+/** One frame's step of the highlight towards [target]: most of the way, landing exactly once it is close. */
+private fun easeFocusRect(shown: Rect, target: Rect): Rect {
+    val eased = androidx.compose.ui.geometry.lerp(shown, target, 0.4f)
+    val close = kotlin.math.abs(eased.top - target.top) < 0.5f &&
+        kotlin.math.abs(eased.left - target.left) < 0.5f &&
+        kotlin.math.abs(eased.bottom - target.bottom) < 0.5f &&
+        kotlin.math.abs(eased.right - target.right) < 0.5f
+    return if (close) target else eased
+}
 private val SettingsSearchRevealThreshold = 28.dp
 private const val SettingsSearchRevealAnimationMillis = 240L
 private const val SettingsSearchRevealHapticDelayMillis = 90L
@@ -360,6 +437,9 @@ fun SettingsScreen(
     val arrowKeyModifier = if (isDesktop) {
         Modifier.onKeyEvent { event ->
             val direction = arrowFocusDirection(event) ?: return@onKeyEvent false
+            if (direction == FocusDirection.Left) {
+                settingsMoveLeft(settingsFocusManager)?.let { return@onKeyEvent it }
+            }
             val forward = direction == FocusDirection.Down || direction == FocusDirection.Right
             settingsFocusManager.moveFocus(direction) ||
                 settingsFocusManager.moveFocus(if (forward) FocusDirection.Next else FocusDirection.Previous)
@@ -386,49 +466,87 @@ fun SettingsScreen(
     }
 
     // fork:settings-arrows - Settings' rows have no focus look of their own, so focus moved with the arrows but nothing
-    // showed where. The page draws one ring over whatever control holds keyboard focus, wherever it is (a sidebar
-    // category, a row, a switch, a button), while the keyboard, a controller or the remote is in use. Polled rather than
-    // tied to each control, so every row type gets it and a list scrolling under the ring moves it along.
+    // showed where. One highlight shows while the keyboard, a controller or the remote is in use (an accent wash and a
+    // short bar, drawSettingsFocusHighlight): inside a settings row it covers the whole row, whichever of its controls
+    // holds focus, and is drawn by the row's own column inside the card (SettingsFocusRows); anywhere else (a sidebar
+    // category, a page's own button) the page draws it over the control. Read every frame and eased between positions,
+    // so it stays on the row while the list scrolls and glides from row to row.
     val focusRingColor = MaterialTheme.nuvio.colors.focusRing
+    val focusPadding = with(androidx.compose.ui.platform.LocalDensity.current) { 10.dp.toPx() }
+    val minEdgeMarginPx = with(androidx.compose.ui.platform.LocalDensity.current) { 72.dp.toPx() }
     val settingsRootCoordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
-    var focusRingRect by remember { mutableStateOf<Rect?>(null) }
+    var focusHighlight by remember { mutableStateOf<Rect?>(null) }
     if (isDesktop) {
         LaunchedEffect(Unit) {
+            var lastFocusedControl: Any? = null
             while (true) {
-                val rect = if (KeyboardInputMode.active && settingsKeyboardRoot.hasFocus) {
-                    val root = settingsRootCoordinates[0]
-                    val control = settingsFocusManager.focusedControl()
-                    if (root != null && root.isAttached && control != null && control.node.isAttached) {
-                        runCatching { root.localBoundingBoxOf(control.requireLayoutCoordinates(), clipBounds = true) }
-                            .getOrNull()
-                            ?.takeIf { it.width > 0f && it.height > 0f }
-                    } else {
-                        null
-                    }
-                } else {
-                    null
+                if (!KeyboardInputMode.active || !settingsKeyboardRoot.hasFocus) {
+                    lastFocusedControl = null
+                    if (focusHighlight != null) focusHighlight = null
+                    if (SettingsFocusRows.highlight != null) SettingsFocusRows.highlight = null
+                    delay(SETTINGS_FOCUS_RING_POLL_MS)
+                    continue
                 }
-                if (rect != focusRingRect) focusRingRect = rect
-                delay(SETTINGS_FOCUS_RING_POLL_MS)
+                withFrameMillis { }
+                val root = settingsRootCoordinates[0]
+                val control = settingsFocusManager.focusedControl()
+                var rowTarget: SettingsRowHighlight? = null
+                var controlTarget: Rect? = null
+                var focusedItem: LayoutCoordinates? = null
+                if (root != null && root.isAttached && control != null && control.node.isAttached) {
+                    runCatching {
+                        val controlCoordinates = control.requireLayoutCoordinates()
+                        val row = SettingsFocusRows.rowOf(controlCoordinates)
+                        focusedItem = row ?: controlCoordinates
+                        val container = row?.let(SettingsFocusRows::containerOf)
+                        if (row != null && container != null) {
+                            rowTarget = SettingsRowHighlight(container, container.localBoundingBoxOf(row, clipBounds = false))
+                        } else {
+                            val bounds = root.localBoundingBoxOf(controlCoordinates, clipBounds = true)
+                                .takeIf { it.width > 0f && it.height > 0f }
+                            // A sidebar entry fills its column's width with its icon flush left: fit round what it
+                            // shows instead, padded evenly either side, full height.
+                            val content = bounds?.let { SettingsFocusContent.boundsWithin(root, it) }
+                            controlTarget = if (bounds != null && content != null) {
+                                Rect(content.left - focusPadding, bounds.top, content.right + focusPadding, bounds.bottom)
+                            } else {
+                                bounds
+                            }
+                        }
+                    }
+                }
+                // Each eases from where it was shown; a new one, or a move to another section, appears in place.
+                val shownRow = SettingsFocusRows.highlight
+                val nextRow = rowTarget?.let { target ->
+                    if (shownRow == null || shownRow.container !== target.container) target
+                    else SettingsRowHighlight(target.container, easeFocusRect(shownRow.rect, target.rect))
+                }
+                if (nextRow?.rect != shownRow?.rect || nextRow?.container !== shownRow?.container) {
+                    SettingsFocusRows.highlight = nextRow
+                }
+                // Focus moved to another item: scroll the page so it sits clear of the window's top and bottom
+                // edges (a fifth of the page's height), rather than only just inside them as the list's own
+                // bring-into-view leaves it, half under the edge at times (2026-11-24).
+                if (control !== lastFocusedControl) {
+                    lastFocusedControl = control
+                    focusedItem?.let { item -> keepSettingsItemInView(item, minEdgeMarginPx)?.let { launch { it() } } }
+                }
+                val shownControl = focusHighlight
+                val nextControl = controlTarget?.let { target ->
+                    if (shownControl == null) target else easeFocusRect(shownControl, target)
+                }
+                if (nextControl != shownControl) focusHighlight = nextControl
             }
         }
+        DisposableEffect(Unit) { onDispose { SettingsFocusRows.highlight = null } }
     }
     val focusRingModifier = if (isDesktop) {
         Modifier
             .onGloballyPositioned { settingsRootCoordinates[0] = it }
             .drawWithContent {
                 drawContent()
-                val rect = focusRingRect ?: return@drawWithContent
-                val stroke = 2.dp.toPx()
-                val outset = 2.dp.toPx()
-                val radius = 10.dp.toPx()
-                drawRoundRect(
-                    color = focusRingColor,
-                    topLeft = Offset(rect.left - outset, rect.top - outset),
-                    size = Size(rect.width + outset * 2, rect.height + outset * 2),
-                    cornerRadius = CornerRadius(radius, radius),
-                    style = Stroke(width = stroke),
-                )
+                val rect = focusHighlight ?: return@drawWithContent
+                drawSettingsFocusHighlight(rect, focusRingColor, cornerRadius = 10.dp.toPx())
             }
     } else {
         Modifier
@@ -1864,10 +1982,12 @@ private fun TabletSettingsScreen(
                             LocalSettingsSectionCards provides true,
                             LocalSettingsAnchorViewport provides anchorViewport,
                         ) {
-                        val pageReveal = remember(page) { Animatable(0f) }
+                        // A gentle settle rather than a fade up from nothing: starting at 0, the content area blinked
+                        // to the page background between pages, which read as a flash (2026-11-24).
+                        val pageReveal = remember(page) { Animatable(SETTINGS_PAGE_REVEAL_FROM) }
                         LaunchedEffect(page) {
-                            UiMotion.markBusy(140L)
-                            pageReveal.animateTo(1f, tween(durationMillis = 140, easing = FastOutSlowInEasing))
+                            UiMotion.markBusy(SETTINGS_PAGE_REVEAL_MS.toLong())
+                            pageReveal.animateTo(1f, tween(durationMillis = SETTINGS_PAGE_REVEAL_MS, easing = LinearOutSlowInEasing))
                         }
                         LazyColumn(
                             state = listState,
@@ -1879,12 +1999,13 @@ private fun TabletSettingsScreen(
                                 .graphicsLayer {
                                     val p = pageReveal.value
                                     alpha = if (SettingsScrollAnchor.seeking) 0f else p
-                                    if (p < 1f) {
-                                        translationY = (1f - p) * 6.dp.toPx()
-                                    }
                                 }
                                 .onSizeChanged { listViewportSize.value = it }
-                                .onPlaced { anchorViewport.coordinates = it }
+                                .onPlaced {
+                                    anchorViewport.coordinates = it
+                                    SettingsKeyboardScroll.viewport = it
+                                    SettingsKeyboardScroll.listState = listState
+                                }
                                 .nestedScroll(rootSearchRevealConnection),
                             contentPadding = PaddingValues(
                                 start = 32.dp,
@@ -2638,6 +2759,8 @@ private fun DesktopSettingsSidebarRow(
     // sweep running from its icon through its label instead of two small independent ramps. Only
     // while selected: an unselected row is muted grey and has no accent to gradient.
     val accentMask = if (selected) Modifier.accentGradientMask() else Modifier
+    val iconPiece = rememberSettingsFocusContentPiece()
+    val textPiece = rememberSettingsFocusContentPiece()
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -2651,11 +2774,12 @@ private fun DesktopSettingsSidebarRow(
             imageVector = icon,
             contentDescription = null,
             tint = contentColor,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(22.dp).settingsFocusContent(iconPiece),
         )
         Text(
             text = label,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).settingsFocusContent(textPiece),
+            onTextLayout = textPiece::recordText,
             style = MaterialTheme.typography.bodyMedium,
             color = contentColor,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
@@ -2700,8 +2824,10 @@ private fun DesktopSettingsSidebarSubList(
             val current = item.anchor == null && item.page == currentPage
             val color = if (current) tokens.colors.accent else tokens.colors.textMuted
             val accentMask = if (current) Modifier.accentGradientMask() else Modifier
+            val textPiece = rememberSettingsFocusContentPiece()
             Text(
                 text = item.label,
+                onTextLayout = textPiece::recordText,
                 style = MaterialTheme.typography.bodySmall,
                 color = color,
                 fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
@@ -2712,7 +2838,8 @@ private fun DesktopSettingsSidebarSubList(
                     .clip(RoundedCornerShape(NuvioTokens.Radius.sm))
                     .clickable { onClick(item) }
                     .padding(horizontal = 8.dp, vertical = 5.dp)
-                    .then(accentMask),
+                    .then(accentMask)
+                    .settingsFocusContent(textPiece),
             )
         }
     }
@@ -3375,6 +3502,9 @@ private fun DesktopActionRow(
     onClick: () -> Unit,
 ) {
     val tokens = MaterialTheme.nuvio
+    val iconPiece = rememberSettingsFocusContentPiece()
+    val titlePiece = rememberSettingsFocusContentPiece()
+    val subtitlePiece = rememberSettingsFocusContentPiece()
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -3388,12 +3518,13 @@ private fun DesktopActionRow(
             imageVector = icon,
             contentDescription = null,
             tint = tokens.colors.textMuted,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(22.dp).settingsFocusContent(iconPiece),
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                modifier = settingsRowTitleAccentMask(title),
+                modifier = settingsRowTitleAccentMask(title).settingsFocusContent(titlePiece),
+                onTextLayout = titlePiece::recordText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = settingsRowTitleColor(title),
                 maxLines = 1,
@@ -3405,6 +3536,8 @@ private fun DesktopActionRow(
                 color = tokens.colors.textMuted,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.settingsFocusContent(subtitlePiece),
+                onTextLayout = subtitlePiece::recordText,
             )
         }
         trailingContent?.invoke()
