@@ -1141,8 +1141,8 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
     val nextVideo = nextVideoId?.let { id -> playerMetaVideos.firstOrNull { video -> video.id == id } }
     BingeAdvanceLog.i {
         "playNextEpisode nextVideoId=$nextVideoId resolved=${nextVideo != null} " +
-            "hasAired=${nextEpisodeInfo?.hasAired} mode=${playerSettingsUiState.streamAutoPlayMode} " +
-            "manualNextEpisode=${playerSettingsUiState.streamAutoPlayManualNextEpisode} " +
+            "hasAired=${nextEpisodeInfo?.hasAired} " +
+            "nextEpisode=${com.nuvio.app.features.streams.PlaybackPickSettingsRepository.current.nextEpisode} " +
             "affinity=$sourceAffinity"
     }
     if (nextVideo == null || nextEpisodeInfo?.hasAired != true) {
@@ -1155,8 +1155,6 @@ internal fun PlayerScreenRuntime.playNextEpisode() {
     // the user dismisses the picker (it clears only once the target episode is genuinely playing),
     // silently disabling auto-advance for the rest of the session.
     val opensManualSelection = shouldOpenManualNextEpisodeSelection(
-        mode = playerSettingsUiState.streamAutoPlayMode,
-        manualNextEpisodeEnabled = playerSettingsUiState.streamAutoPlayManualNextEpisode,
         sourceAffinity = sourceAffinity,
     )
     if (!opensManualSelection) {

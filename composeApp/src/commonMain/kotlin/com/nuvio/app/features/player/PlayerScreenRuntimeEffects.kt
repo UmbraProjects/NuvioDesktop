@@ -1883,8 +1883,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                     trigger = "threshold",
                     handOffWhenReady = playerSettingsUiState.streamAutoPlayNextEpisodeEnabled &&
                         !shouldOpenManualNextEpisodeSelection(
-                            mode = playerSettingsUiState.streamAutoPlayMode,
-                            manualNextEpisodeEnabled = playerSettingsUiState.streamAutoPlayManualNextEpisode,
                             sourceAffinity = sourceAffinity,
                         ),
                 )
@@ -1964,8 +1962,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         val metaId = parentMetaId
         val type = contentType ?: parentMetaType
         val warmPredictedPick = !shouldOpenManualNextEpisodeSelection(
-            mode = settings.streamAutoPlayMode,
-            manualNextEpisodeEnabled = settings.streamAutoPlayManualNextEpisode,
             sourceAffinity = affinity,
         )
         StreamPrefetchService.request(
@@ -2058,8 +2054,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
                     nextEpisodeAutoPlayCountdown != null ||
                     nextEpisodeAdvanceInProgress ||
                     shouldOpenManualNextEpisodeSelection(
-                        mode = playerSettingsUiState.streamAutoPlayMode,
-                        manualNextEpisodeEnabled = playerSettingsUiState.streamAutoPlayManualNextEpisode,
                         sourceAffinity = sourceAffinity,
                     )
                 )
@@ -2090,8 +2084,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             // of the episode. Let the end-of-file path open it instead.
             val willTrigger = playerSettingsUiState.streamAutoPlayNextEpisodeEnabled &&
                 !shouldOpenManualNextEpisodeSelection(
-                    mode = playerSettingsUiState.streamAutoPlayMode,
-                    manualNextEpisodeEnabled = playerSettingsUiState.streamAutoPlayManualNextEpisode,
                     sourceAffinity = sourceAffinity,
                 ) &&
                 nextEpisodeInfo?.hasAired == true &&
@@ -2141,8 +2133,7 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
         showNextEpisodeCard,
         nextEpisodeInfo,
         showSourcesPanel,
-        playerSettingsUiState.streamAutoPlayMode,
-        playerSettingsUiState.streamAutoPlayManualNextEpisode,
+        com.nuvio.app.features.streams.PlaybackPickSettingsRepository.current.nextEpisode,
         sourceAffinity,
     ) {
         val target = nextEpisodeInfo
@@ -2153,8 +2144,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             // The panel is showing the playing item's sources; loading over it would swap the list.
             showSourcesPanel ||
             !shouldOpenManualNextEpisodeSelection(
-                mode = playerSettingsUiState.streamAutoPlayMode,
-                manualNextEpisodeEnabled = playerSettingsUiState.streamAutoPlayManualNextEpisode,
                 sourceAffinity = sourceAffinity,
             )
         ) {
@@ -2218,8 +2207,6 @@ private fun PlayerScreenRuntime.BindPlayerMetadataAndSkipEffects() {
             val willTrigger = isStableRealEnd &&
                 hasPlayableNextEpisode &&
                 !shouldOpenManualNextEpisodeSelection(
-                    mode = playerSettingsUiState.streamAutoPlayMode,
-                    manualNextEpisodeEnabled = playerSettingsUiState.streamAutoPlayManualNextEpisode,
                     sourceAffinity = sourceAffinity,
                 ) &&
                 nextEpisodeAutoPlayJob?.isActive != true &&

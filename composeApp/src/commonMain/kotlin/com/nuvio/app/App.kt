@@ -5076,7 +5076,7 @@ private fun MainAppContent(
             val continueWatchingRouting = remember(selectedContinueWatching, localLibraryUiState) {
                 selectedContinueWatching?.let { item ->
                     LocalLibraryRepository.routingFor(item.parentMetaId, item.videoId)
-                } ?: localLibraryUiState.playbackPreference.forTitle(null)
+                } ?: LocalLibraryRepository.routingFor(null, null)
             }
             val continueWatchingAlternateOpensPicker = continueWatchingRouting
                 .alternateOpensSourcePicker(selectedContinueWatchingHasLocalPlayback)
@@ -5104,8 +5104,9 @@ private fun MainAppContent(
             val titlePlaybackDefaultLabel = stringResource(Res.string.local_title_playback_default)
             val continueWatchingTitlePlaybackActions = continueWatchingLocalTitle?.let { title ->
                 val current = localLibraryUiState.titlePlayback[title.key]
-                val defaultPlaysLocal =
-                    localLibraryUiState.playbackPreference == LocalLibraryPlaybackPreference.LOCAL_LIBRARY
+                val defaultPlaysLocal = LocalLibraryRepository.routingFor(null, null).let { routing ->
+                    routing.preference == LocalLibraryPlaybackPreference.LOCAL_LIBRARY && !routing.ignoresLocalFile
+                }
                 fun entry(icon: ImageVector, label: String, playback: LocalTitlePlayback?) =
                     PosterZoomOverlayAction(
                         icon = icon,

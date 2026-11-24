@@ -2,47 +2,67 @@ package com.nuvio.app.features.streams
 
 import co.touchlab.kermit.Logger
 import com.nuvio.app.features.debrid.DebridSettings
-import com.nuvio.app.features.player.PlayerSettingsUiState
+import com.nuvio.app.features.locallibrary.LocalLibraryRepository
+import com.nuvio.app.features.locallibrary.LocalTitlePlayback
 
 /**
- * Everything one automatic stream pick needs, gathered once per load so every pick made for that load (the early
- * binge-group pick, the timeout pick, the per-response pick, the final pick) asks exactly the same question.
+ * Everything one automatic stream pick needs, gathered once per load so every pick made for that load (the early pick,
+ * the timeout pick, the per-response pick, the final pick) asks exactly the same question. Built from Settings >
+ * Playback > What plays ([PlaybackPickSettings]); see `Docs/plans/playback-priority.md`.
  *
- * Step 1 of `Docs/plans/playback-priority.md`: this wraps today's settings and [StreamAutoPlaySelector] without
- * changing what plays. The later steps swap the settings behind it for the source priority list.
+ * A pick runs four steps: the remembered release first (when [bingeGroup] is set), then the filters (each source's
+ * auto-play switch, the regex filter, the score minimum), then the order ([mode]: the source priority order as the
+ * stream list arrives, or best score), then the first stream that is ready.
  */
 data class PlaybackPickRules(
+    /** [StreamAutoPlayMode.FIRST_STREAM] (priority order), [StreamAutoPlayMode.SCORED] or MANUAL (no pick). */
     val mode: StreamAutoPlayMode,
-    val regex: String = "",
-    val source: StreamAutoPlaySource = StreamAutoPlaySource.ALL_SOURCES,
+    /** Only streams matching this are picked; blank = all. */
+    val regexFilter: String = "",
     val installedAddonNames: Set<String> = emptySet(),
-    val selectedAddons: Set<String> = emptySet(),
-    val selectedPlugins: Set<String> = emptySet(),
-    /** The binge group to try first, or null when binge affinity does not apply to this pick. */
+    /** Each source's auto-play switch; null lets every source auto-play (a local-file binge). */
+    val sources: PlaybackPickSettings? = null,
+    /** The binge group to try first, or null when "same release first" does not apply to this pick. */
     val bingeGroup: String? = null,
     /** Within [bingeGroup], the release watched last. */
     val release: BingeReleaseHint? = null,
-    val preferBingeGroup: Boolean = bingeGroup != null,
     val debridEnabled: Boolean = true,
     val activeResolverProviderId: String? = null,
     val scoreProfile: StreamScoreProfile = StreamScoreProfile(),
     val scoreContext: StreamScoreContext = StreamScoreContext.MOVIE,
 ) {
+    val preferBingeGroup: Boolean get() = !bingeGroup.isNullOrBlank()
+
+    private val regexMatcher: ((StreamItem) -> Boolean)? by lazy {
+        regexFilter.takeIf { StreamAutoPlayPolicy.isRegexSelectionConfigured(it) }?.let(StreamAutoPlaySelector::regexMatcher)
+    }
+
+    /** The streams this pick may choose from: auto-play switch on, regex matched, not under the score minimum. */
+    fun allowed(streams: List<StreamItem>): List<StreamItem> {
+        val minimum = scoreProfile.enabled && scoreProfile.minimumScore != null
+        return streams.filter { stream ->
+            (sources?.mayAutoPlay(PlaybackSources.keyFor(stream, installedAddonNames)) ?: true) &&
+                (regexMatcher?.invoke(stream) ?: true) &&
+                (!minimum || !StreamScorer.score(stream, scoreProfile, scoreContext).rejected)
+        }
+    }
+
     fun evaluate(streams: List<StreamItem>, bingeGroupOnly: Boolean = false): StreamAutoPlayEvaluation =
         StreamAutoPlaySelector.evaluateAutoPlayStream(
-            streams = streams,
+            streams = allowed(streams),
             mode = mode,
-            regexPattern = regex,
-            source = source,
+            regexPattern = "",
+            source = StreamAutoPlaySource.ALL_SOURCES,
             installedAddonNames = installedAddonNames,
-            selectedAddons = selectedAddons,
-            selectedPlugins = selectedPlugins,
+            selectedAddons = emptySet(),
+            selectedPlugins = emptySet(),
             preferredBingeGroup = bingeGroup,
             preferBingeGroupInSelection = preferBingeGroup,
             bingeGroupOnly = bingeGroupOnly,
             debridEnabled = debridEnabled,
             activeResolverProviderId = activeResolverProviderId,
-            scoreProfile = scoreProfile,
+            // Best score ranks with the profile whatever scoring's own switches say; priority order never ranks.
+            scoreProfile = if (mode == StreamAutoPlayMode.SCORED) scoreProfile.copy(useForFirstStream = true) else StreamScoreProfile(),
             scoreContext = scoreContext,
             preferredRelease = release,
         )
@@ -50,29 +70,17 @@ data class PlaybackPickRules(
     fun select(streams: List<StreamItem>, bingeGroupOnly: Boolean = false): StreamItem? =
         evaluate(streams, bingeGroupOnly).stream
 
-    /**
-     * The next episode's second try when the configured pick finds nothing: the first stream the source scope
-     * allows, with the regex and the score profile dropped (binge affinity kept).
-     */
-    fun firstStreamFallback(): PlaybackPickRules = copy(
-        mode = StreamAutoPlayMode.FIRST_STREAM,
-        regex = "",
-        scoreProfile = StreamScoreProfile(),
-        scoreContext = StreamScoreContext.MOVIE,
-    )
-
     /** Which rule chose [stream], for the pick log. */
     fun reasonFor(stream: StreamItem): String {
         val group = bingeGroup?.trim().orEmpty()
-        if (preferBingeGroup && group.isNotEmpty() && stream.behaviorHints.bingeGroup == group) {
+        if (group.isNotEmpty() && stream.behaviorHints.bingeGroup == group) {
             return if (release != null && release.rank(stream) < 2) "same release" else "same binge group"
         }
-        if (stream.serverTarget != null) return "media server"
+        if (stream.streamType.equals("local", ignoreCase = true)) return "local file"
         return when (mode) {
+            StreamAutoPlayMode.SCORED -> if (scoreProfile.enabled) "best score" else "priority order"
             StreamAutoPlayMode.MANUAL -> "manual"
-            StreamAutoPlayMode.FIRST_STREAM -> "first stream"
-            StreamAutoPlayMode.REGEX_MATCH -> "regex"
-            StreamAutoPlayMode.SCORED -> if (scoreProfile.appliesToFirstStream()) "best score" else "first stream"
+            else -> "priority order"
         }
     }
 }
@@ -83,7 +91,7 @@ data class FirstPlayPick(
     val isAutoPlayEnabled: Boolean,
     val bingeGroup: String?,
     val release: BingeReleaseHint?,
-    private val settings: PlayerSettingsUiState,
+    private val settings: PlaybackPickSettings,
     private val debridEnabled: Boolean,
     private val activeResolverProviderId: String?,
     private val scoreProfile: StreamScoreProfile,
@@ -91,14 +99,11 @@ data class FirstPlayPick(
 ) {
     fun rules(installedAddonNames: Set<String>): PlaybackPickRules = PlaybackPickRules(
         mode = mode,
-        regex = settings.streamAutoPlayRegex,
-        source = settings.streamAutoPlaySource,
+        regexFilter = settings.regexFilter,
         installedAddonNames = installedAddonNames,
-        selectedAddons = settings.streamAutoPlaySelectedAddons,
-        selectedPlugins = settings.streamAutoPlaySelectedPlugins,
+        sources = settings,
         bingeGroup = bingeGroup,
         release = release,
-        preferBingeGroup = bingeGroup != null,
         debridEnabled = debridEnabled,
         activeResolverProviderId = activeResolverProviderId,
         scoreProfile = scoreProfile,
@@ -109,16 +114,17 @@ data class FirstPlayPick(
 object PlaybackPick {
     private val log = Logger.withTag("PlaybackPick")
 
+    /** The automatic mode the [PickBy] choice stands for. */
+    fun autoMode(settings: PlaybackPickSettings): StreamAutoPlayMode =
+        if (settings.pickBy == PickBy.BEST_SCORE) StreamAutoPlayMode.SCORED else StreamAutoPlayMode.FIRST_STREAM
+
     /**
-     * The rules a first click (Details, Home, Continue Watching, Search) picks by.
-     *
-     * - Scoring turns any automatic mode into a best-score pick ([StreamAutoPlayPolicy.effectiveMode]).
-     * - A play armed by Live TV picks even when the mode says Manual ([StreamAutoPlayOverride]).
-     * - The binge group remembered for the show applies only with both Prefer and Reuse binge group on, and not when
-     *   the score profile overrides binge affinity.
+     * The rules a first click (Details, Home, Continue Watching, Search) picks by. "Show me the sources" picks nothing,
+     * except for a play Live TV armed to pick by itself ([StreamAutoPlayOverride]). With "same release first" the
+     * release last played of this show goes first, and may play before the other sources answer.
      */
     fun firstPlay(
-        settings: PlayerSettingsUiState,
+        settings: PlaybackPickSettings,
         debridSettings: DebridSettings,
         scoreProfile: StreamScoreProfile,
         scoreContext: StreamScoreContext,
@@ -130,17 +136,9 @@ object PlaybackPick {
         rememberedBingeGroup: (String) -> String? = BingeGroupCacheRepository::get,
         rememberedRelease: (String, Int?, Int?) -> BingeReleaseHint? = BingeGroupCacheRepository::releaseHint,
     ): FirstPlayPick {
-        val regexConfigured = StreamAutoPlayPolicy.isRegexSelectionConfigured(settings.streamAutoPlayRegex)
-        val mode = StreamAutoPlayPolicy.effectiveMode(settings.streamAutoPlayMode, scoreProfile).let { mode ->
-            if (forcedAuto) StreamAutoPlayOverride.modeFor(mode, regexConfigured) else mode
-        }
-        val isAutoPlayEnabled = !manualSelection && mode != StreamAutoPlayMode.MANUAL &&
-            !(mode == StreamAutoPlayMode.REGEX_MATCH && !regexConfigured)
-        val bingeGroup = if (
-            settings.streamAutoPlayPreferBingeGroup &&
-            settings.streamAutoPlayReuseBingeGroup &&
-            !StreamAutoPlayPolicy.scoreOverridesBingeGroup(mode, scoreProfile)
-        ) {
+        val mode = if (settings.onPlay == PlayClick.PLAY_FOR_ME || forcedAuto) autoMode(settings) else StreamAutoPlayMode.MANUAL
+        val isAutoPlayEnabled = !manualSelection && mode != StreamAutoPlayMode.MANUAL
+        val bingeGroup = if (isAutoPlayEnabled && settings.nextEpisode == NextEpisodePick.SAME_RELEASE_FIRST) {
             parentMetaId?.let(rememberedBingeGroup)
         } else {
             null
@@ -162,24 +160,94 @@ object PlaybackPick {
     }
 
     /**
-     * The rules the instant-playback debrid preparer uses to choose which debrid rows to resolve first. It reads the
-     * configured mode as is (no scoring promotion) and no binge group, as it always has.
+     * The rules the next episode picks by. Playing a local file (local affinity), the next local file is taken as it
+     * comes, from every source. Otherwise What plays applies, with the playing stream's binge group first when "same
+     * release first" is set.
      */
+    fun nextEpisode(
+        settings: PlaybackPickSettings,
+        localAffinity: Boolean,
+        currentStreamBingeGroup: String?,
+        release: BingeReleaseHint?,
+        installedAddonNames: Set<String>,
+        debridSettings: DebridSettings,
+        scoreProfile: StreamScoreProfile,
+        scoreContext: StreamScoreContext,
+    ): PlaybackPickRules {
+        val binge = currentStreamBingeGroup?.takeIf { !localAffinity && settings.nextEpisode == NextEpisodePick.SAME_RELEASE_FIRST }
+        return PlaybackPickRules(
+            mode = if (localAffinity) StreamAutoPlayMode.FIRST_STREAM else autoMode(settings),
+            regexFilter = if (localAffinity) "" else settings.regexFilter,
+            installedAddonNames = installedAddonNames,
+            sources = settings.takeUnless { localAffinity },
+            bingeGroup = binge,
+            release = release.takeIf { binge != null },
+            debridEnabled = debridSettings.canResolvePlayableLinks,
+            activeResolverProviderId = debridSettings.activeResolverProviderId,
+            scoreProfile = if (localAffinity) StreamScoreProfile() else scoreProfile,
+            scoreContext = scoreContext,
+        )
+    }
+
+    /** The rules the instant-playback debrid preparer uses to choose which debrid rows to resolve first. */
     fun debridPreparation(
-        settings: PlayerSettingsUiState,
+        settings: PlaybackPickSettings,
         installedAddonNames: Set<String>,
         scoreProfile: StreamScoreProfile,
         scoreContext: StreamScoreContext,
     ): PlaybackPickRules = PlaybackPickRules(
-        mode = settings.streamAutoPlayMode,
-        regex = settings.streamAutoPlayRegex,
-        source = settings.streamAutoPlaySource,
+        mode = autoMode(settings),
+        regexFilter = settings.regexFilter,
         installedAddonNames = installedAddonNames,
-        selectedAddons = settings.streamAutoPlaySelectedAddons,
-        selectedPlugins = settings.streamAutoPlaySelectedPlugins,
+        sources = settings,
         scoreProfile = scoreProfile,
         scoreContext = scoreContext,
     )
+
+    /** Whether a title's local copy is the fallback when nothing online can be picked ("local files last"). */
+    fun localFilesLast(contentId: String?, videoId: String?): Boolean {
+        val title = LocalLibraryRepository.titleFor(contentId, videoId)
+        val override = title?.let { LocalLibraryRepository.titlePlaybackFor(it.key) }
+        return override == null && PlaybackPickSettingsRepository.current.localFiles == LocalFilesPick.LAST
+    }
+
+    /**
+     * Whether the next episode's local copy (a completed download, a library file) plays ahead of every online
+     * source: local files first, or the title set to its local file. Null when it is never used ("never", or the
+     * title set to online); false when it is the fallback ("last").
+     */
+    fun nextEpisodeLocalFirst(contentId: String?, videoId: String?): Boolean? {
+        val title = LocalLibraryRepository.titleFor(contentId, videoId)
+        when (title?.let { LocalLibraryRepository.titlePlaybackFor(it.key) }) {
+            LocalTitlePlayback.LOCAL_FILE -> return true
+            LocalTitlePlayback.ONLINE_SOURCE -> return null
+            null -> Unit
+        }
+        return when (PlaybackPickSettingsRepository.current.localFiles) {
+            LocalFilesPick.FIRST -> true
+            LocalFilesPick.LAST -> false
+            LocalFilesPick.NEVER -> null
+        }
+    }
+
+    /** The streams of sources whose list is final; a source still answering (a Usenet search in progress) waits. */
+    fun answered(groups: List<AddonStreamGroup>): List<StreamItem> = groups.filterNot { it.isLoading }.flatMap { it.streams }
+
+    /**
+     * Whether [stream] may play before the timeout under priority order: every source ranked above it has answered,
+     * and none of them still has a debrid link being checked that could turn out ready. [groups] are in priority order.
+     */
+    fun outranksPending(groups: List<AddonStreamGroup>, stream: StreamItem): Boolean {
+        val index = groups.indexOfFirst { group -> group.streams.any { it == stream } }
+        if (index < 0) return false
+        return groups.take(index).none { group ->
+            group.isLoading || group.streams.any { it.isCheckingDebrid() }
+        }
+    }
+
+    private fun StreamItem.isCheckingDebrid(): Boolean =
+        isAddonDebridCandidate && needsLocalDebridResolve &&
+            (debridCacheStatus?.state == null || debridCacheStatus.state == StreamDebridCacheState.CHECKING)
 
     /** One line per automatic pick: what was picked, from where, and which rule chose it. */
     fun logPick(trigger: String, rules: PlaybackPickRules, stream: StreamItem?, candidates: Int) {

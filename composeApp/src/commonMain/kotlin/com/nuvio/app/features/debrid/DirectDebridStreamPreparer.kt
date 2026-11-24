@@ -5,6 +5,7 @@ import com.nuvio.app.features.player.PlayerSettingsUiState
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamAutoPlayMode
 import com.nuvio.app.features.streams.PlaybackPick
+import com.nuvio.app.features.streams.PlaybackPickSettingsRepository
 import com.nuvio.app.features.streams.StreamScoreRepository
 import com.nuvio.app.features.streams.StreamScoreProfile
 import com.nuvio.app.features.streams.StreamScoreContext
@@ -111,6 +112,7 @@ object DirectDebridStreamPreparer {
         installedAddonNames: Set<String>,
         scoreProfile: StreamScoreProfile = StreamScoreProfile(),
         scoreContext: StreamScoreContext = StreamScoreContext.MOVIE,
+        pickSettings: com.nuvio.app.features.streams.PlaybackPickSettings = PlaybackPickSettingsRepository.current,
     ): List<StreamItem> {
         if (limit <= 0) return emptyList()
         val candidates = streams
@@ -124,7 +126,7 @@ object DirectDebridStreamPreparer {
 
         val prioritized = mutableListOf<StreamItem>()
         val autoPlaySelection = PlaybackPick.debridPreparation(
-            settings = playerSettings,
+            settings = pickSettings,
             installedAddonNames = installedAddonNames,
             scoreProfile = scoreProfile,
             scoreContext = scoreContext,
@@ -134,9 +136,9 @@ object DirectDebridStreamPreparer {
                 ?.let(prioritized::add)
         }
 
-        if (playerSettings.streamAutoPlayMode == StreamAutoPlayMode.REGEX_MATCH) {
+        if (pickSettings.regexFilter.isNotBlank()) {
             val regex = runCatching {
-                Regex(playerSettings.streamAutoPlayRegex.trim(), RegexOption.IGNORE_CASE)
+                Regex(pickSettings.regexFilter.trim(), RegexOption.IGNORE_CASE)
             }.getOrNull()
             if (regex != null) {
                 candidates

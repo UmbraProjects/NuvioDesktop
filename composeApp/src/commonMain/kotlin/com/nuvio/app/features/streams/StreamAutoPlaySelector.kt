@@ -153,42 +153,8 @@ object StreamAutoPlaySelector {
                     scoreContext,
                 )
             StreamAutoPlayMode.REGEX_MATCH -> {
-                val pattern = regexPattern.trim()
-
-                val userRegex = runCatching { Regex(pattern, RegexOption.IGNORE_CASE) }.getOrNull()
-                    ?: return StreamAutoPlayEvaluation()
-
-                val exclusionMatches = Regex("\\(\\?![^)]*?\\(([^)]+)\\)").findAll(pattern)
-
-                val exclusionWords = exclusionMatches
-                    .flatMap { match -> match.groupValues[1].split("|") }
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .toList()
-
-                val excludeRegex = if (exclusionWords.isNotEmpty()) {
-                    Regex("\\b(${exclusionWords.joinToString("|")})\\b", RegexOption.IGNORE_CASE)
-                } else null
-
-                candidateStreams.filter { stream ->
-                    val url = stream.playableDirectUrl.orEmpty()
-
-                    val searchableText = buildString {
-                        append(stream.addonName).append(' ')
-                        append(stream.name.orEmpty()).append(' ')
-                        append(stream.streamLabel).append(' ')
-                        append(stream.description.orEmpty()).append(' ')
-                        append(url)
-                    }
-
-                    if (!userRegex.containsMatchIn(searchableText)) return@filter false
-
-                    if (excludeRegex != null && excludeRegex.containsMatchIn(searchableText)) {
-                        return@filter false
-                    }
-
-                    true
-                }
+                val matches = regexMatcher(regexPattern) ?: return StreamAutoPlayEvaluation()
+                candidateStreams.filter(matches)
             }
         }
         if (matchingStreams.isEmpty() && preferredStream == null) return StreamAutoPlayEvaluation()
@@ -214,6 +180,36 @@ object StreamAutoPlaySelector {
                 it.isPendingDebridAutoPlay(debridEnabled, activeResolverProviderId)
             },
         )
+    }
+
+    /**
+     * The auto-play regex as a stream filter, or null when it does not compile. A `(?!...(a|b))` lookahead's words are
+     * also excluded on their own, as whole words, anywhere in the stream's text.
+     */
+    fun regexMatcher(regexPattern: String): ((StreamItem) -> Boolean)? {
+        val pattern = regexPattern.trim()
+        val userRegex = runCatching { Regex(pattern, RegexOption.IGNORE_CASE) }.getOrNull() ?: return null
+        val exclusionWords = Regex("\\(\\?![^)]*?\\(([^)]+)\\)").findAll(pattern)
+            .flatMap { match -> match.groupValues[1].split("|") }
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toList()
+        val excludeRegex = if (exclusionWords.isNotEmpty()) {
+            Regex("\\b(${exclusionWords.joinToString("|")})\\b", RegexOption.IGNORE_CASE)
+        } else {
+            null
+        }
+        return { stream ->
+            val searchableText = buildString {
+                append(stream.addonName).append(' ')
+                append(stream.name.orEmpty()).append(' ')
+                append(stream.streamLabel).append(' ')
+                append(stream.description.orEmpty()).append(' ')
+                append(stream.playableDirectUrl.orEmpty())
+            }
+            userRegex.containsMatchIn(searchableText) &&
+                (excludeRegex == null || !excludeRegex.containsMatchIn(searchableText))
+        }
     }
 
     private fun StreamItem.isAutoPlayable(

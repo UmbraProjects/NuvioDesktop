@@ -1562,7 +1562,7 @@ private fun settingsSearchEntries(
     val playbackRtx = resolve(Res.string.settings_playback_nvidia_rtx_video_section)
     val playbackSubtitleAudio = resolve(Res.string.settings_playback_section_subtitle_audio)
     val playbackStreamSelection = resolve(Res.string.settings_playback_section_stream_selection)
-    val playbackStreamAutoPlay = resolve(Res.string.settings_playback_section_stream_auto_play)
+    val playbackStreamAutoPlay = resolve(Res.string.settings_what_plays_section)
     val playbackSubtitleRendering = resolve(Res.string.settings_playback_section_subtitle_rendering)
     val playbackSkipSegments = resolve(Res.string.settings_playback_section_skip_segments)
     val playbackNextEpisode = resolve(Res.string.settings_playback_section_next_episode)
@@ -1623,8 +1623,7 @@ private fun settingsSearchEntries(
 
     listOf(
         PlaybackSearchRow("stream-scoring-enabled", resolve(Res.string.settings_stream_scoring_enabled_title), resolve(Res.string.settings_stream_scoring_enabled_desc)),
-        PlaybackSearchRow("stream-scoring-first-stream", resolve(Res.string.settings_stream_scoring_apply_first_stream), sectionOverride = resolve(Res.string.settings_stream_scoring_section_apply)),
-        PlaybackSearchRow("stream-scoring-binge", resolve(Res.string.settings_stream_scoring_override_binge_group_title), resolve(Res.string.settings_stream_scoring_override_binge_group_desc), resolve(Res.string.settings_stream_scoring_section_apply)),
+        PlaybackSearchRow("stream-scoring-what-plays", resolve(Res.string.settings_stream_scoring_apply_what_plays), resolve(Res.string.settings_stream_scoring_apply_what_plays_desc), resolve(Res.string.settings_stream_scoring_section_apply)),
         PlaybackSearchRow("stream-scoring-auto-download", resolve(Res.string.settings_stream_scoring_apply_auto_download), sectionOverride = resolve(Res.string.settings_stream_scoring_section_apply)),
         PlaybackSearchRow("stream-scoring-failover", resolve(Res.string.settings_stream_scoring_apply_failover), sectionOverride = resolve(Res.string.settings_stream_scoring_section_apply)),
         PlaybackSearchRow("stream-scoring-sort", resolve(Res.string.settings_stream_scoring_sort_list_title), resolve(Res.string.settings_stream_scoring_sort_list_desc), resolve(Res.string.settings_stream_scoring_section_apply)),
@@ -1655,7 +1654,7 @@ private fun settingsSearchEntries(
 
     listOf(
         PlaybackSearchRow("local-library-browse", resolve(Res.string.settings_local_library_browse_open), sectionOverride = resolve(Res.string.settings_local_library_browse_section)),
-        PlaybackSearchRow("local-library-playback", resolve(Res.string.settings_local_library_preferred_play_action), resolve(Res.string.settings_local_library_preferred_play_action_description), resolve(Res.string.settings_local_library_playback_title)),
+        PlaybackSearchRow("local-library-playback", resolve(Res.string.settings_what_plays_local_files), resolve(Res.string.settings_what_plays_local_files_desc), resolve(Res.string.settings_local_library_playback_title)),
         PlaybackSearchRow("local-library-anime-id", resolve(Res.string.settings_anime_id_preference), resolve(Res.string.settings_anime_id_preference_description), resolve(Res.string.settings_local_library_playback_title)),
         PlaybackSearchRow("local-library-folders", resolve(Res.string.settings_local_library_folders_title)),
         PlaybackSearchRow("local-library-layout", resolve(Res.string.settings_local_library_mode_title), resolve(Res.string.settings_local_library_mode_description), resolve(Res.string.settings_local_library_catalogs_title)),
@@ -2082,13 +2081,13 @@ private fun settingsSearchEntries(
         page = SettingsPage.Streams,
         icon = Icons.Rounded.PlayArrow,
         rows = buildList {
-            add(PlaybackSearchRow("stream-mode", resolve(Res.string.settings_playback_stream_selection_mode)))
-            add(PlaybackSearchRow("manual-next-episode", resolve(Res.string.settings_playback_manual_next_episode), resolve(Res.string.settings_playback_manual_next_episode_description)))
-            add(PlaybackSearchRow("regex-pattern", resolve(Res.string.settings_playback_regex_pattern)))
+            add(PlaybackSearchRow("what-plays-on-play", resolve(Res.string.settings_what_plays_on_play), resolve(Res.string.settings_what_plays_on_play_desc)))
+            add(PlaybackSearchRow("what-plays-pick-by", resolve(Res.string.settings_what_plays_pick_by), resolve(Res.string.settings_what_plays_pick_by_desc)))
+            add(PlaybackSearchRow("what-plays-next-episode", resolve(Res.string.settings_what_plays_next_episode), resolve(Res.string.settings_what_plays_next_episode_desc)))
+            add(PlaybackSearchRow("what-plays-local-files", resolve(Res.string.settings_what_plays_local_files), resolve(Res.string.settings_what_plays_local_files_desc)))
+            add(PlaybackSearchRow("what-plays-source-priority", resolve(Res.string.settings_what_plays_source_priority), resolve(Res.string.settings_what_plays_source_priority_desc)))
+            add(PlaybackSearchRow("what-plays-regex", resolve(Res.string.settings_what_plays_regex), resolve(Res.string.settings_what_plays_regex_desc)))
             add(PlaybackSearchRow("stream-timeout", resolve(Res.string.settings_playback_stream_timeout), resolve(Res.string.settings_playback_stream_timeout_description)))
-            add(PlaybackSearchRow("source-scope", resolve(Res.string.settings_playback_source_scope)))
-            add(PlaybackSearchRow("allowed-addons", resolve(Res.string.settings_playback_allowed_addons)))
-            if (pluginsEnabled) add(PlaybackSearchRow("allowed-plugins", resolve(Res.string.settings_playback_allowed_plugins)))
         },
     )
     if (P2pSettingsRepository.isVisible) {
@@ -2200,7 +2199,6 @@ private fun settingsSearchEntries(
                 resolve(Res.string.settings_playback_preload_next_episode_description),
                 fallbackAnchor = SettingsScrollAnchor.BingeMode,
             ),
-            PlaybackSearchRow("prefer-binge", resolve(Res.string.settings_playback_prefer_binge_group), resolve(Res.string.settings_playback_prefer_binge_group_description)),
             PlaybackSearchRow("skip-anime-filler", resolve(Res.string.settings_playback_skip_anime_filler), resolve(Res.string.settings_playback_skip_anime_filler_description)),
             PlaybackSearchRow("show-anime-filler", resolve(Res.string.settings_meta_anime_filler_badges), resolve(Res.string.settings_meta_anime_filler_badges_description)),
             PlaybackSearchRow("threshold-mode", resolve(Res.string.settings_playback_threshold_mode)),

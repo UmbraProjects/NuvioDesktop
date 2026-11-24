@@ -56,6 +56,10 @@ import com.nuvio.app.features.streams.StreamScorer
 import com.nuvio.app.features.streams.ThreeDEquipment
 import com.nuvio.app.features.streams.UnknownGroupTrust
 import nuvio.composeapp.generated.resources.Res
+import nuvio.composeapp.generated.resources.settings_stream_scoring_apply_what_plays
+import nuvio.composeapp.generated.resources.settings_stream_scoring_apply_what_plays_desc
+import nuvio.composeapp.generated.resources.settings_what_plays_priority_order
+import nuvio.composeapp.generated.resources.settings_what_plays_best_score
 import nuvio.composeapp.generated.resources.settings_stream_scoring_apply_auto_download
 import nuvio.composeapp.generated.resources.settings_stream_scoring_apply_failover
 import nuvio.composeapp.generated.resources.settings_stream_scoring_apply_first_stream
@@ -171,21 +175,25 @@ private fun StreamScoringHeaderGroup(isTablet: Boolean) {
 
     SettingsSection(title = stringResource(Res.string.settings_stream_scoring_section_apply), isTablet = isTablet) {
         SettingsGroup(isTablet = isTablet) {
-            SettingsSwitchRow(
-                title = stringResource(Res.string.settings_stream_scoring_apply_first_stream),
-                checked = profile.useForFirstStream,
+            // The same choice as Playback > What plays > Pick: scoring picks what plays only through it.
+            val pick by com.nuvio.app.features.streams.PlaybackPickSettingsRepository.uiState.collectAsStateWithLifecycle()
+            SettingsDropdownChoiceRow(
+                title = stringResource(Res.string.settings_stream_scoring_apply_what_plays),
+                description = stringResource(Res.string.settings_stream_scoring_apply_what_plays_desc),
+                options = listOf(
+                    SettingsChoiceOption(
+                        com.nuvio.app.features.streams.PickBy.PRIORITY_ORDER,
+                        stringResource(Res.string.settings_what_plays_priority_order),
+                    ),
+                    SettingsChoiceOption(
+                        com.nuvio.app.features.streams.PickBy.BEST_SCORE,
+                        stringResource(Res.string.settings_what_plays_best_score),
+                    ),
+                ),
+                selectedValue = pick.pickBy,
                 enabled = profile.enabled,
                 isTablet = isTablet,
-                onCheckedChange = { on -> StreamScoreRepository.update { it.copy(useForFirstStream = on) } },
-            )
-            SettingsGroupDivider(isTablet = isTablet)
-            SettingsSwitchRow(
-                title = stringResource(Res.string.settings_stream_scoring_override_binge_group_title),
-                description = stringResource(Res.string.settings_stream_scoring_override_binge_group_desc),
-                checked = profile.overrideBingeGroup,
-                enabled = profile.enabled,
-                isTablet = isTablet,
-                onCheckedChange = { on -> StreamScoreRepository.update { it.copy(overrideBingeGroup = on) } },
+                onSelected = com.nuvio.app.features.streams.PlaybackPickSettingsRepository::setPickBy,
             )
             SettingsGroupDivider(isTablet = isTablet)
             SettingsSwitchRow(

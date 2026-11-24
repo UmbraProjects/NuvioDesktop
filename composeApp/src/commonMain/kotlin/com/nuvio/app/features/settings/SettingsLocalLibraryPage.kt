@@ -47,6 +47,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nuvio.app.features.streams.PlaybackPickSettingsRepository
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -216,7 +218,7 @@ internal fun LazyListScope.localLibraryContent(
         )
     }
     item { LocalLibraryBrowseSection(isTablet, state, titlesState) }
-    item { LocalLibraryPlaybackSection(isTablet, state.playbackPreference) }
+    item { LocalLibraryPlaybackSection(isTablet) }
     item { LocalLibraryFoldersSection(isTablet) }
     item { LocalLibraryCatalogsSection(isTablet, titlesState) }
 }
@@ -264,32 +266,15 @@ private fun LocalLibraryBrowseSection(
 @Composable
 private fun LocalLibraryPlaybackSection(
     isTablet: Boolean,
-    preference: LocalLibraryPlaybackPreference,
 ) {
+    val pick by PlaybackPickSettingsRepository.uiState.collectAsStateWithLifecycle()
     SettingsSection(
         title = stringResource(Res.string.settings_local_library_playback_title),
         isTablet = isTablet,
     ) {
         SettingsGroup(isTablet = isTablet) {
-            SettingsDropdownChoiceRow(
-                title = stringResource(Res.string.settings_local_library_preferred_play_action),
-                description = stringResource(
-                    Res.string.settings_local_library_preferred_play_action_description,
-                ),
-                options = listOf(
-                    SettingsChoiceOption(
-                        LocalLibraryPlaybackPreference.SOURCE_PICKER,
-                        stringResource(Res.string.settings_local_library_play_source_picker),
-                    ),
-                    SettingsChoiceOption(
-                        LocalLibraryPlaybackPreference.LOCAL_LIBRARY,
-                        stringResource(Res.string.settings_local_library_play_local_file),
-                    ),
-                ),
-                selectedValue = preference,
-                isTablet = isTablet,
-                onSelected = LocalLibraryRepository::setPlaybackPreference,
-            )
+            // The same setting as the local row of Playback > What plays, reachable from either page.
+            LocalFilesChoiceRow(selected = pick.localFiles, isTablet = isTablet)
             // Governs how matched local anime is addressed. Shares its value with the copy beside
             // the Continue Watching source — one setting, reachable from either surface it affects.
             AnimeIdPreferenceRow(isTablet = isTablet)
@@ -1173,7 +1158,10 @@ private fun LocalMatchDialog(item: LocalMediaItem, onDismiss: () -> Unit) {
                             null -> stringResource(
                                 Res.string.local_title_playback_default_hint,
                                 stringResource(
-                                    if (libraryState.playbackPreference == LocalLibraryPlaybackPreference.LOCAL_LIBRARY) {
+                                    if (LocalLibraryRepository.routingFor(null, null).let {
+                                            it.preference == LocalLibraryPlaybackPreference.LOCAL_LIBRARY && !it.ignoresLocalFile
+                                        }
+                                    ) {
                                         Res.string.local_title_playback_option_local
                                     } else {
                                         Res.string.play_choose_source

@@ -2684,45 +2684,11 @@ private fun PlaybackSettingsSection(
         }
         if (part == 7) {
             SettingsSection(
-                title = stringResource(Res.string.settings_playback_section_stream_auto_play),
+                title = stringResource(Res.string.settings_what_plays_section),
                 isTablet = isTablet,
             ) {
                 SettingsGroup(isTablet = isTablet) {
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_stream_selection_mode),
-                        description = stringResource(autoPlayPlayerSettings.streamAutoPlayMode.labelRes),
-                        options = StreamAutoPlayMode.entries.map { mode ->
-                            SettingsChoiceOption(mode, stringResource(mode.labelRes))
-                        },
-                        selectedValue = autoPlayPlayerSettings.streamAutoPlayMode,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setStreamAutoPlayMode,
-                    )
-                    if (autoPlayPlayerSettings.streamAutoPlayMode == StreamAutoPlayMode.MANUAL) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_manual_next_episode),
-                            description = stringResource(
-                                Res.string.settings_playback_manual_next_episode_description,
-                            ),
-                            checked = autoPlayPlayerSettings.streamAutoPlayManualNextEpisode,
-                            isTablet = isTablet,
-                            modifier = Modifier.settingsScrollAnchor(
-                                SettingsScrollAnchor.searchKey("manual-next-episode"),
-                            ),
-                            onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayManualNextEpisode,
-                        )
-                    }
-                    if (autoPlayPlayerSettings.streamAutoPlayMode == StreamAutoPlayMode.REGEX_MATCH) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        val notSetLabel = stringResource(Res.string.settings_playback_not_set)
-                        SettingsNavigationRow(
-                            title = stringResource(Res.string.settings_playback_regex_pattern),
-                            description = autoPlayPlayerSettings.streamAutoPlayRegex.ifBlank { notSetLabel },
-                            isTablet = isTablet,
-                            onClick = { showAutoPlayRegexDialog = true },
-                        )
-                    }
+                    WhatPlaysSettingsRows(isTablet = isTablet, onEditRegex = { showAutoPlayRegexDialog = true })
                     SettingsGroupDivider(isTablet = isTablet)
                     val timeoutSec = autoPlayPlayerSettings.streamAutoPlayTimeoutSeconds
                     Row(
@@ -2782,61 +2748,6 @@ private fun PlaybackSettingsSection(
                                 valueLabel = displayedTimeoutLabel,
                             )
                         }
-                    }
-                    SettingsGroupDivider(isTablet = isTablet)
-                    SettingsChoiceRow(
-                        title = stringResource(Res.string.settings_playback_source_scope),
-                        description = stringResource(autoPlayPlayerSettings.streamAutoPlaySource.labelRes(pluginsEnabled)),
-                        options = StreamAutoPlaySource.entries
-                            .filter { pluginsEnabled || it != StreamAutoPlaySource.ENABLED_PLUGINS_ONLY }
-                            .map { source ->
-                                SettingsChoiceOption(source, stringResource(source.labelRes(pluginsEnabled)))
-                            },
-                        selectedValue = autoPlayPlayerSettings.streamAutoPlaySource,
-                        isTablet = isTablet,
-                        onSelected = PlayerSettingsRepository::setStreamAutoPlaySource,
-                    )
-                    if (autoPlayPlayerSettings.streamAutoPlaySource != StreamAutoPlaySource.ENABLED_PLUGINS_ONLY) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        val selectedAddons = autoPlayPlayerSettings.streamAutoPlaySelectedAddons
-                            .intersect(autoPlayAddonNames.toSet())
-                        SettingsMultiSelectRow(
-                            title = stringResource(Res.string.settings_playback_allowed_addons),
-                            description = stringResource(Res.string.settings_playback_all_addons),
-                            options = autoPlayAddonNames.map { name -> SettingsChoiceOption(name, name) },
-                            selectedValues = selectedAddons,
-                            emptyLabel = stringResource(Res.string.settings_playback_all_addons),
-                            isTablet = isTablet,
-                            summaryForCount = { count ->
-                                stringResource(Res.string.settings_playback_selected_count, count)
-                            },
-                            onToggle = { name ->
-                                PlayerSettingsRepository.setStreamAutoPlaySelectedAddons(
-                                    if (name in selectedAddons) selectedAddons - name else selectedAddons + name,
-                                )
-                            },
-                        )
-                    }
-                    if (pluginsEnabled && autoPlayPlayerSettings.streamAutoPlaySource != StreamAutoPlaySource.INSTALLED_ADDONS_ONLY) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        val selectedPlugins = autoPlayPlayerSettings.streamAutoPlaySelectedPlugins
-                            .intersect(autoPlayPluginNames.toSet())
-                        SettingsMultiSelectRow(
-                            title = stringResource(Res.string.settings_playback_allowed_plugins),
-                            description = stringResource(Res.string.settings_playback_all_plugins),
-                            options = autoPlayPluginNames.map { name -> SettingsChoiceOption(name, name) },
-                            selectedValues = selectedPlugins,
-                            emptyLabel = stringResource(Res.string.settings_playback_all_plugins),
-                            isTablet = isTablet,
-                            summaryForCount = { count ->
-                                stringResource(Res.string.settings_playback_selected_count, count)
-                            },
-                            onToggle = { name ->
-                                PlayerSettingsRepository.setStreamAutoPlaySelectedPlugins(
-                                    if (name in selectedPlugins) selectedPlugins - name else selectedPlugins + name,
-                                )
-                            },
-                        )
                     }
                 }
             }
@@ -3092,24 +3003,6 @@ private fun PlaybackSettingsSection(
                         onCheckedChange = PlayerSettingsRepository::setPreloadNextEpisodeSources,
                     )
                     SettingsGroupDivider(isTablet = isTablet)
-                    SettingsSwitchRow(
-                        title = stringResource(Res.string.settings_playback_prefer_binge_group),
-                        description = stringResource(Res.string.settings_playback_prefer_binge_group_description),
-                        checked = autoPlayPlayerSettings.streamAutoPlayPreferBingeGroup,
-                        isTablet = isTablet,
-                        onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayPreferBingeGroup,
-                    )
-                    if (autoPlayPlayerSettings.streamAutoPlayPreferBingeGroup) {
-                        SettingsGroupDivider(isTablet = isTablet)
-                        SettingsSwitchRow(
-                            title = stringResource(Res.string.settings_playback_reuse_binge_group),
-                            description = stringResource(Res.string.settings_playback_reuse_binge_group_description),
-                            checked = autoPlayPlayerSettings.streamAutoPlayReuseBingeGroup,
-                            isTablet = isTablet,
-                            onCheckedChange = PlayerSettingsRepository::setStreamAutoPlayReuseBingeGroup,
-                        )
-                    }
-                    SettingsGroupDivider(isTablet = isTablet)
                     val animeFillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsStateWithLifecycle()
                     SettingsSwitchRow(
                         title = stringResource(Res.string.settings_playback_skip_anime_filler),
@@ -3283,9 +3176,9 @@ private fun PlaybackSettingsSection(
 
     if (showAutoPlayRegexDialog) {
         StreamAutoPlayRegexDialog(
-            initialRegex = autoPlayPlayerSettings.streamAutoPlayRegex,
+            initialRegex = com.nuvio.app.features.streams.PlaybackPickSettingsRepository.current.regexFilter,
             onSave = {
-                PlayerSettingsRepository.setStreamAutoPlayRegex(it)
+                com.nuvio.app.features.streams.PlaybackPickSettingsRepository.setRegexFilter(it)
                 showAutoPlayRegexDialog = false
             },
             onDismiss = { showAutoPlayRegexDialog = false },

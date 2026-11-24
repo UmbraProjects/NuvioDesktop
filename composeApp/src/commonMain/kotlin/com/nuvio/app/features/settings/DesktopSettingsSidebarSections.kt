@@ -136,7 +136,7 @@ internal fun desktopSettingsSidebarSubItems(
             subPage(SettingsPage.StreamScoring),
             if (P2pSettingsRepository.isVisible) section(SettingsPage.Streams, Res.string.settings_p2p_title) else null,
             section(SettingsPage.Streams, Res.string.settings_playback_section_stream_selection),
-            section(SettingsPage.Streams, Res.string.settings_playback_section_stream_auto_play),
+            section(SettingsPage.Streams, Res.string.settings_what_plays_section),
         )
         SettingsPage.Discover -> listOf(
             section(SettingsPage.Discover, Res.string.settings_discover_section_row_order),

@@ -1,7 +1,7 @@
 package com.nuvio.app.features.debrid
 
 import com.nuvio.app.features.player.PlayerSettingsUiState
-import com.nuvio.app.features.streams.StreamAutoPlayMode
+import com.nuvio.app.features.streams.PlaybackPickSettings
 import com.nuvio.app.features.streams.StreamClientResolve
 import com.nuvio.app.features.streams.StreamItem
 import kotlin.test.Test
@@ -18,11 +18,9 @@ class DirectDebridStreamPreparerTest {
         val selected = DirectDebridStreamPreparer.prioritizeCandidates(
             streams = listOf(first, autoPlayMatch, remaining),
             limit = 2,
-            playerSettings = PlayerSettingsUiState(
-                streamAutoPlayMode = StreamAutoPlayMode.REGEX_MATCH,
-                streamAutoPlayRegex = "2160p",
-            ),
+            playerSettings = PlayerSettingsUiState(),
             installedAddonNames = emptySet(),
+            pickSettings = PlaybackPickSettings(regexFilter = "2160p"),
         )
 
         assertEquals(listOf(autoPlayMatch, first), selected)

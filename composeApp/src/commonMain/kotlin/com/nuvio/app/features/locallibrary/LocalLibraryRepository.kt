@@ -8,6 +8,7 @@ import com.nuvio.app.features.metadata.AnimeIdPreference
 import com.nuvio.app.features.metadata.AnimeIdPreferenceRepository
 import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
 import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.streams.PlaybackPickSettingsRepository
 import com.nuvio.app.features.streams.StreamItem
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.posterservice.CustomPosterScreen
@@ -197,7 +198,10 @@ object LocalLibraryRepository {
         publish(isScanning = _uiState.value.isScanning)
     }
 
-    /** Read at click time so retained navigation callbacks cannot use an older Compose snapshot. */
+    /**
+     * The old "preferred play action" as stored, read only to migrate it into What plays (which now decides it;
+     * see [routingFor]).
+     */
     fun currentPlaybackPreference(): LocalLibraryPlaybackPreference {
         ensureLoaded()
         return playbackPreference
@@ -218,12 +222,15 @@ object LocalLibraryRepository {
         return candidates.firstOrNull { streamsFor(it, videoId).isNotEmpty() }
     }
 
-    /** The configured preference with [contentId]/[videoId]'s own override folded in. */
+    /**
+     * What a plain click does with [contentId]/[videoId]'s local copy: Settings > Playback > What plays (Play click and
+     * where local files sit), with the title's own override folded in. Null ids give the default for any title.
+     */
     fun routingFor(contentId: String?, videoId: String?): LocalTitleRouting {
         ensureLoaded()
         val override = titlePlaybackByKey.takeIf { it.isNotEmpty() }
             ?.let { overrides -> titleFor(contentId, videoId)?.let { overrides[it.key] } }
-        return playbackPreference.forTitle(override)
+        return localTitleRouting(override, PlaybackPickSettingsRepository.current)
     }
 
     fun titlePlaybackFor(itemKey: String): LocalTitlePlayback? = titlePlaybackByKey[itemKey]

@@ -1,6 +1,9 @@
 package com.nuvio.app.features.streams
 
 import com.nuvio.app.features.debrid.DebridSettings
+import com.nuvio.app.features.locallibrary.LocalLibraryPlaybackPreference
+import com.nuvio.app.features.locallibrary.LocalTitlePlayback
+import com.nuvio.app.features.locallibrary.localTitleRouting
 import com.nuvio.app.features.player.PlayerSettingsUiState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -8,14 +11,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Step 1 of the playback-priority plan: PlaybackPick must decide exactly what the old inline code decided. */
+/** Settings > Playback > What plays: the rules a pick follows, the source order, and the migration. */
 class PlaybackPickTest {
 
-    private val scoringOn = StreamScoreProfile(enabled = true, useForFirstStream = true)
+    private val scoringOn = StreamScoreProfile(enabled = true)
 
     private fun firstPlay(
-        settings: PlayerSettingsUiState = PlayerSettingsUiState(),
-        scoreProfile: StreamScoreProfile = StreamScoreProfile(),
+        settings: PlaybackPickSettings = PlaybackPickSettings(onPlay = PlayClick.PLAY_FOR_ME),
         manualSelection: Boolean = false,
         forcedAuto: Boolean = false,
         remembered: String? = "group-a",
@@ -23,7 +25,7 @@ class PlaybackPickTest {
     ) = PlaybackPick.firstPlay(
         settings = settings,
         debridSettings = DebridSettings(),
-        scoreProfile = scoreProfile,
+        scoreProfile = StreamScoreProfile(),
         scoreContext = StreamScoreContext.MOVIE,
         manualSelection = manualSelection,
         forcedAuto = forcedAuto,
@@ -34,139 +36,236 @@ class PlaybackPickTest {
         rememberedRelease = { _, _, _ -> release },
     )
 
+    // --- First click -------------------------------------------------------------------------------------------------
+
     @Test
-    fun `manual mode does not auto-play`() {
-        val pick = firstPlay(settings = PlayerSettingsUiState(streamAutoPlayMode = StreamAutoPlayMode.MANUAL))
+    fun `show me the sources never auto-plays a click`() {
+        val pick = firstPlay(settings = PlaybackPickSettings(onPlay = PlayClick.SHOW_SOURCES))
         assertFalse(pick.isAutoPlayEnabled)
-    }
-
-    @Test
-    fun `scoring for the first stream turns first stream into best score`() {
-        val pick = firstPlay(
-            settings = PlayerSettingsUiState(streamAutoPlayMode = StreamAutoPlayMode.FIRST_STREAM),
-            scoreProfile = scoringOn,
-        )
-        assertEquals(StreamAutoPlayMode.SCORED, pick.mode)
-        assertTrue(pick.isAutoPlayEnabled)
-    }
-
-    @Test
-    fun `a forced Live TV pick plays first stream even in manual`() {
-        val pick = firstPlay(
-            settings = PlayerSettingsUiState(streamAutoPlayMode = StreamAutoPlayMode.MANUAL),
-            forcedAuto = true,
-        )
-        assertEquals(StreamAutoPlayMode.FIRST_STREAM, pick.mode)
-        assertTrue(pick.isAutoPlayEnabled)
-    }
-
-    @Test
-    fun `an unconfigured regex does not auto-play`() {
-        val pick = firstPlay(settings = PlayerSettingsUiState(streamAutoPlayMode = StreamAutoPlayMode.REGEX_MATCH))
-        assertFalse(pick.isAutoPlayEnabled)
-    }
-
-    @Test
-    fun `the remembered binge group needs both prefer and reuse`() {
-        val both = PlayerSettingsUiState(
-            streamAutoPlayMode = StreamAutoPlayMode.FIRST_STREAM,
-            streamAutoPlayPreferBingeGroup = true,
-            streamAutoPlayReuseBingeGroup = true,
-        )
-        assertEquals("group-a", firstPlay(settings = both).bingeGroup)
-        assertNull(firstPlay(settings = both.copy(streamAutoPlayReuseBingeGroup = false)).bingeGroup)
-        assertNull(firstPlay(settings = both.copy(streamAutoPlayPreferBingeGroup = false)).bingeGroup)
-    }
-
-    @Test
-    fun `a score that overrides binge groups drops the remembered group`() {
-        val pick = firstPlay(
-            settings = PlayerSettingsUiState(
-                streamAutoPlayMode = StreamAutoPlayMode.FIRST_STREAM,
-                streamAutoPlayPreferBingeGroup = true,
-                streamAutoPlayReuseBingeGroup = true,
-            ),
-            scoreProfile = scoringOn.copy(overrideBingeGroup = true),
-        )
         assertNull(pick.bingeGroup)
     }
 
     @Test
-    fun `rules pick the remembered group first and say why`() {
-        val pick = firstPlay(
-            settings = PlayerSettingsUiState(
-                streamAutoPlayMode = StreamAutoPlayMode.FIRST_STREAM,
-                streamAutoPlayPreferBingeGroup = true,
-                streamAutoPlayReuseBingeGroup = true,
-            ),
+    fun `play for me picks by priority order or best score`() {
+        assertEquals(StreamAutoPlayMode.FIRST_STREAM, firstPlay().mode)
+        assertEquals(
+            StreamAutoPlayMode.SCORED,
+            firstPlay(settings = PlaybackPickSettings(onPlay = PlayClick.PLAY_FOR_ME, pickBy = PickBy.BEST_SCORE)).mode,
         )
-        val rules = pick.rules(setOf("A", "B"))
+        assertFalse(firstPlay(manualSelection = true).isAutoPlayEnabled)
+    }
+
+    @Test
+    fun `a forced Live TV pick plays even with show me the sources`() {
+        val pick = firstPlay(settings = PlaybackPickSettings(onPlay = PlayClick.SHOW_SOURCES), forcedAuto = true)
+        assertTrue(pick.isAutoPlayEnabled)
+        assertEquals(StreamAutoPlayMode.FIRST_STREAM, pick.mode)
+    }
+
+    @Test
+    fun `the remembered release applies only with same release first`() {
+        assertEquals("group-a", firstPlay().bingeGroup)
+        val sameRules = PlaybackPickSettings(onPlay = PlayClick.PLAY_FOR_ME, nextEpisode = NextEpisodePick.SAME_RULES_AS_PLAY)
+        assertNull(firstPlay(settings = sameRules).bingeGroup)
+    }
+
+    @Test
+    fun `rules pick the remembered group first and say why`() {
+        val rules = firstPlay().rules(setOf("A", "B"))
         val first = stream("A", "group-b")
         val grouped = stream("B", "group-a")
 
         assertEquals(grouped, rules.select(listOf(first, grouped), bingeGroupOnly = true))
         assertEquals(grouped, rules.select(listOf(first, grouped)))
         assertEquals("same binge group", rules.reasonFor(grouped))
-        assertEquals("first stream", rules.reasonFor(first))
-        // Before the timeout only the group may fire.
+        assertEquals("priority order", rules.reasonFor(first))
         assertNull(rules.select(listOf(first), bingeGroupOnly = true))
     }
 
+    // --- Filters -----------------------------------------------------------------------------------------------------
+
     @Test
-    fun `rules match the selector they wrap`() {
-        val settings = PlayerSettingsUiState(
-            streamAutoPlayMode = StreamAutoPlayMode.REGEX_MATCH,
-            streamAutoPlayRegex = "2160p",
-            streamAutoPlaySelectedAddons = setOf("B"),
-        )
-        val streams = listOf(stream("A", null, "2160p"), stream("B", null, "1080p"), stream("B", null, "2160p"))
+    fun `a source switched off is never picked`() {
+        val settings = PlaybackPickSettings(onPlay = PlayClick.PLAY_FOR_ME, autoPlay = mapOf(PlaybackSources.addon("A") to false))
         val rules = firstPlay(settings = settings, remembered = null).rules(setOf("A", "B"))
-        val direct = StreamAutoPlaySelector.selectAutoPlayStream(
-            streams = streams,
-            mode = StreamAutoPlayMode.REGEX_MATCH,
-            regexPattern = "2160p",
-            source = StreamAutoPlaySource.ALL_SOURCES,
-            installedAddonNames = setOf("A", "B"),
-            selectedAddons = setOf("B"),
-            selectedPlugins = emptySet(),
-            debridEnabled = DebridSettings().canResolvePlayableLinks,
-            activeResolverProviderId = DebridSettings().activeResolverProviderId,
-        )
-        assertEquals(streams[2], direct)
-        assertEquals(direct, rules.select(streams))
-        assertEquals("regex", rules.reasonFor(streams[2]))
+        val a = stream("A", null)
+        val b = stream("B", null)
+        assertEquals(b, rules.select(listOf(a, b)))
     }
 
     @Test
-    fun `the first-stream fallback drops regex and scoring but keeps the scope`() {
-        val rules = PlaybackPickRules(
-            mode = StreamAutoPlayMode.REGEX_MATCH,
-            regex = "nomatch",
-            installedAddonNames = setOf("A", "B"),
-            selectedAddons = setOf("B"),
-            scoreProfile = scoringOn,
-        )
-        val streams = listOf(stream("A", null), stream("B", null))
-        assertNull(rules.select(streams))
-        val fallback = rules.firstStreamFallback()
-        assertEquals(streams[1], fallback.select(streams))
-        assertEquals("first stream", fallback.reasonFor(streams[1]))
-        assertFalse(fallback.scoreProfile.enabled)
+    fun `usenet and plugins have their own switches`() {
+        val usenet = stream("Built-in Usenet", null).copy(addonId = "usenet:built-in")
+        val plugin = stream("Some scraper", null).copy(addonId = "plugin:x")
+        val settings = PlaybackPickSettings(autoPlay = mapOf(PlaybackSources.USENET to false))
+        val rules = PlaybackPickRules(mode = StreamAutoPlayMode.FIRST_STREAM, installedAddonNames = setOf("A"), sources = settings)
+        assertEquals(plugin, rules.select(listOf(usenet, plugin)))
+        assertEquals(PlaybackSources.USENET, PlaybackSources.keyFor(usenet, setOf("A")))
+        assertEquals(PlaybackSources.PLUGINS, PlaybackSources.keyFor(plugin, setOf("A")))
     }
 
     @Test
-    fun `the release watched last is named`() {
-        val release = BingeReleaseHint(expectedFilename = "Show.S01E02.2160p.mkv", infoHash = null)
-        val rules = PlaybackPickRules(mode = StreamAutoPlayMode.FIRST_STREAM, bingeGroup = "g", release = release)
-        val same = stream("A", "g", filename = "Show.S01E02.2160p.mkv")
-        val other = stream("A", "g", filename = "Other.S01E02.720p.mkv")
-        assertEquals("same release", rules.reasonFor(same))
-        assertEquals("same binge group", rules.reasonFor(other))
+    fun `the regex filter keeps non-matching streams out of the pick`() {
+        val settings = PlaybackPickSettings(onPlay = PlayClick.PLAY_FOR_ME, regexFilter = "2160p")
+        val rules = firstPlay(settings = settings, remembered = null).rules(setOf("A"))
+        val hd = stream("A", null, "1080p")
+        val uhd = stream("A", null, "2160p")
+        assertEquals(uhd, rules.select(listOf(hd, uhd)))
+        assertNull(rules.select(listOf(hd)))
+    }
+
+    @Test
+    fun `best score ranks across sources and priority breaks ties`() {
+        val rules = PlaybackPickRules(mode = StreamAutoPlayMode.SCORED, installedAddonNames = setOf("A", "B"), scoreProfile = scoringOn)
+        val hd = stream("A", null, "Show.S01E02.1080p.WEB-DL", filename = "Show.S01E02.1080p.WEB-DL.mkv")
+        val uhd = stream("B", null, "Show.S01E02.2160p.WEB-DL", filename = "Show.S01E02.2160p.WEB-DL.mkv")
+        assertEquals(uhd, rules.select(listOf(hd, uhd)))
+        // Priority order ignores the score.
+        assertEquals(hd, rules.copy(mode = StreamAutoPlayMode.FIRST_STREAM).select(listOf(hd, uhd)))
+    }
+
+    // --- Source order ------------------------------------------------------------------------------------------------
+
+    @Test
+    fun `the default order is debrid, addons, servers, usenet, plugins`() {
+        assertEquals(
+            listOf("debrid", "addon:A", "addon:B", "servers", "usenet", "plugins"),
+            PlaybackSources.effectiveOrder(emptyList(), listOf("A", "B")),
+        )
+    }
+
+    @Test
+    fun `a stored order keeps its places and new sources take theirs`() {
+        val stored = listOf("usenet", "addon:B", "gone", "debrid")
+        assertEquals(
+            listOf("usenet", "addon:B", "addon:A", "debrid", "servers", "plugins"),
+            PlaybackSources.effectiveOrder(stored, listOf("A", "B")),
+        )
+    }
+
+    @Test
+    fun `groups are ordered by the priority list with local files first or last`() {
+        val groups = listOf(
+            AddonStreamGroup(addonName = "Plugin", addonId = "plugin:p", streams = emptyList()),
+            AddonStreamGroup(addonName = "Built-in Usenet", addonId = "usenet:built-in", streams = emptyList()),
+            AddonStreamGroup(addonName = "Local library", addonId = "local-library", streams = emptyList()),
+            AddonStreamGroup(addonName = "B", addonId = "addon:b", streams = emptyList()),
+            AddonStreamGroup(addonName = "A", addonId = "addon:a", streams = emptyList()),
+        )
+        val usenetFirst = PlaybackPickSettings(order = listOf("usenet"), localFiles = LocalFilesPick.LAST)
+        assertEquals(
+            listOf("usenet:built-in", "addon:a", "addon:b", "plugin:p", "local-library"),
+            PlaybackSources.orderGroups(groups, listOf("A", "B"), usenetFirst).map { it.addonId },
+        )
+        val localFirst = usenetFirst.copy(localFiles = LocalFilesPick.FIRST)
+        assertEquals("local-library", PlaybackSources.orderGroups(groups, listOf("A", "B"), localFirst).first().addonId)
+    }
+
+    @Test
+    fun `a source still answering above holds back an early pick`() {
+        val a = stream("A", null)
+        val b = stream("B", null)
+        val loadingA = AddonStreamGroup(addonName = "A", addonId = "addon:a", streams = emptyList(), isLoading = true)
+        val doneB = AddonStreamGroup(addonName = "B", addonId = "addon:b", streams = listOf(b))
+        assertFalse(PlaybackPick.outranksPending(listOf(loadingA, doneB), b))
+        val doneA = loadingA.copy(streams = listOf(a), isLoading = false)
+        assertTrue(PlaybackPick.outranksPending(listOf(doneA, doneB), b))
+        // A source still answering has no streams in the pick yet.
+        val partial = loadingA.copy(streams = listOf(a))
+        assertEquals(listOf(b), PlaybackPick.answered(listOf(partial, doneB)))
+    }
+
+    // --- Local routing -----------------------------------------------------------------------------------------------
+
+    @Test
+    fun `local routing follows what plays and the title override`() {
+        val play = PlaybackPickSettings(onPlay = PlayClick.PLAY_FOR_ME)
+        assertEquals(
+            LocalLibraryPlaybackPreference.LOCAL_LIBRARY,
+            localTitleRouting(null, play.copy(localFiles = LocalFilesPick.FIRST)).preference,
+        )
+        assertTrue(localTitleRouting(null, play.copy(localFiles = LocalFilesPick.LAST)).ignoresLocalFile)
+        val show = localTitleRouting(null, play.copy(onPlay = PlayClick.SHOW_SOURCES, localFiles = LocalFilesPick.FIRST))
+        assertEquals(LocalLibraryPlaybackPreference.SOURCE_PICKER, show.preference)
+        assertFalse(show.ignoresLocalFile)
+        assertEquals(
+            LocalLibraryPlaybackPreference.LOCAL_LIBRARY,
+            localTitleRouting(LocalTitlePlayback.LOCAL_FILE, play.copy(localFiles = LocalFilesPick.NEVER)).preference,
+        )
+        assertTrue(localTitleRouting(LocalTitlePlayback.ONLINE_SOURCE, play.copy(localFiles = LocalFilesPick.FIRST)).ignoresLocalFile)
+    }
+
+    // --- Migration ---------------------------------------------------------------------------------------------------
+
+    private fun migrate(
+        player: PlayerSettingsUiState = PlayerSettingsUiState(),
+        local: LocalLibraryPlaybackPreference = LocalLibraryPlaybackPreference.SOURCE_PICKER,
+        score: StreamScoreProfile = StreamScoreProfile(),
+        serversFirst: Boolean = false,
+    ) = PlaybackSources.migrate(player, local, score, serversFirst)
+
+    @Test
+    fun `a default install migrates to show me the sources and same release first`() {
+        val migrated = migrate()
+        assertEquals(PlayClick.SHOW_SOURCES, migrated.onPlay)
+        assertEquals(PickBy.PRIORITY_ORDER, migrated.pickBy)
+        assertEquals(NextEpisodePick.SAME_RELEASE_FIRST, migrated.nextEpisode)
+        assertEquals(LocalFilesPick.LAST, migrated.localFiles)
+        assertTrue(migrated.autoPlay.isEmpty())
+    }
+
+    @Test
+    fun `automatic modes migrate to play for me with their pick`() {
+        val first = PlayerSettingsUiState(streamAutoPlayMode = StreamAutoPlayMode.FIRST_STREAM)
+        assertEquals(PlayClick.PLAY_FOR_ME, migrate(first).onPlay)
+        assertEquals(PickBy.PRIORITY_ORDER, migrate(first).pickBy)
+        assertEquals(PickBy.BEST_SCORE, migrate(first, score = scoringOn).pickBy)
+        val regex = PlayerSettingsUiState(streamAutoPlayMode = StreamAutoPlayMode.REGEX_MATCH, streamAutoPlayRegex = " 2160p ")
+        assertEquals("2160p", migrate(regex).regexFilter)
+        assertEquals(PickBy.BEST_SCORE, migrate(PlayerSettingsUiState(streamAutoPlayMode = StreamAutoPlayMode.SCORED)).pickBy)
+    }
+
+    @Test
+    fun `next episode choices migrate from the binge switches`() {
+        val askMe = PlayerSettingsUiState(streamAutoPlayManualNextEpisode = true)
+        assertEquals(NextEpisodePick.ASK_ME, migrate(askMe).nextEpisode)
+        val noBinge = PlayerSettingsUiState(streamAutoPlayPreferBingeGroup = false)
+        assertEquals(NextEpisodePick.SAME_RULES_AS_PLAY, migrate(noBinge).nextEpisode)
+        val scoreWins = PlayerSettingsUiState(streamAutoPlayMode = StreamAutoPlayMode.FIRST_STREAM)
+        assertEquals(NextEpisodePick.SAME_RULES_AS_PLAY, migrate(scoreWins, score = scoringOn.copy(overrideBingeGroup = true)).nextEpisode)
+    }
+
+    @Test
+    fun `source scope and allowed lists migrate to switches`() {
+        val addonsOnly = migrate(PlayerSettingsUiState(streamAutoPlaySource = StreamAutoPlaySource.INSTALLED_ADDONS_ONLY))
+        assertFalse(addonsOnly.mayAutoPlay(PlaybackSources.PLUGINS))
+        assertFalse(addonsOnly.mayAutoPlay(PlaybackSources.USENET))
+        assertTrue(addonsOnly.mayAutoPlay(PlaybackSources.addon("A")))
+
+        val allowed = migrate(PlayerSettingsUiState(streamAutoPlaySelectedAddons = setOf("A")))
+        assertTrue(allowed.mayAutoPlay(PlaybackSources.addon("A")))
+        assertFalse(allowed.mayAutoPlay(PlaybackSources.addon("B")))
+
+        val pluginList = migrate(PlayerSettingsUiState(streamAutoPlaySelectedPlugins = setOf("X")))
+        assertFalse(pluginList.mayAutoPlay(PlaybackSources.USENET))
+
+        // The old list held manifest names; streams carry the display title.
+        val renamed = PlaybackSources.migrate(
+            PlayerSettingsUiState(streamAutoPlaySelectedAddons = setOf("Torrentio")),
+            LocalLibraryPlaybackPreference.SOURCE_PICKER,
+            StreamScoreProfile(),
+            serversListedFirst = false,
+            addonTitlesByManifestName = mapOf("Torrentio" to "Torrentio RD"),
+        )
+        assertTrue(renamed.mayAutoPlay(PlaybackSources.addon("Torrentio RD")))
+
+        assertEquals(LocalFilesPick.FIRST, migrate(local = LocalLibraryPlaybackPreference.LOCAL_LIBRARY).localFiles)
+        assertEquals(listOf("servers", "debrid"), migrate(serversFirst = true).order)
     }
 
     private fun stream(addon: String, bingeGroup: String?, name: String = "x", filename: String? = null) = StreamItem(
         name = name,
-        url = "https://example.com/$addon/$name/${filename.orEmpty()}",
+        url = "https://example.com/$addon/${name.replace(' ', '_')}/${filename.orEmpty()}",
         addonName = addon,
         addonId = "addon:$addon",
         behaviorHints = StreamBehaviorHints(bingeGroup = bingeGroup, filename = filename),
