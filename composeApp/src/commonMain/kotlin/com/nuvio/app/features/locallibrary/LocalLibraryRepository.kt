@@ -230,7 +230,11 @@ object LocalLibraryRepository {
         ensureLoaded()
         val override = titlePlaybackByKey.takeIf { it.isNotEmpty() }
             ?.let { overrides -> titleFor(contentId, videoId)?.let { overrides[it.key] } }
-        return localTitleRouting(override, PlaybackPickSettingsRepository.current)
+        return localTitleRouting(
+            override = override,
+            onPlay = PlaybackPickSettingsRepository.current.onPlay,
+            placement = com.nuvio.app.features.streams.PlaybackSources.currentLocalPlacement(),
+        )
     }
 
     fun titlePlaybackFor(itemKey: String): LocalTitlePlayback? = titlePlaybackByKey[itemKey]

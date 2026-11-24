@@ -18,6 +18,7 @@ import com.nuvio.app.features.player.PlaybackStartTrace
 import com.nuvio.app.features.player.PlayerSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.plugins.PluginsUiState
+import com.nuvio.app.features.downloads.DownloadsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -36,6 +37,7 @@ import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.getString
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 object StreamsRepository {
     private const val LOCAL_LIBRARY_GROUP_ID = "local-library"
@@ -187,7 +189,11 @@ object StreamsRepository {
         val streamBadgeRules = StreamBadgeSettingsRepository.snapshot()
         currentCoroutineContext().ensureActive()
         PlaybackStartTrace.markPendingOrActive("streamsPrepare:settings")
-        val localStreams = MetaDetailsRepository.findLocalStreams(effectiveVideoId)
+        // A completed download is a local copy too: listed (and picked at the local files row's place) when the
+        // library has no file for this title. A click that plays local files first opened it before this point.
+        val localStreams = MetaDetailsRepository.findLocalStreams(effectiveVideoId).ifEmpty {
+            if (preferLocalStreams) emptyList() else downloadedStreams(parentMetaId, season, episode, effectiveVideoId)
+        }
         // Media servers (upstream's servers feature): one group per connection that can serve this
         // title, loaded alongside the addons; a server set to "list first" goes on top.
         val serverSources = com.nuvio.app.features.servers.ServerStreams.sources(
@@ -266,12 +272,9 @@ object StreamsRepository {
         val localCopyIsBackup = includeLocalInPicker && !manualSelection &&
             LocalLibraryRepository.routingFor(parentMetaId, effectiveVideoId).ignoresLocalFile
         val isDirectAutoPlayFlow = (!includeLocalInPicker || localCopyIsBackup || forcedAuto) && isAutoPlayEnabled
-        // Local files last: the local copy plays when nothing online can be picked.
-        val localFallbackStream = if (localCopyIsBackup && PlaybackPick.localFilesLast(parentMetaId, effectiveVideoId)) {
-            localStreams.firstOrNull()
-        } else {
-            null
-        }
+        // The local files row below an online source: the local copy is picked at its place in Source priority, so it
+        // plays when no source above it has a stream.
+        val localAmongSources = localCopyIsBackup && PlaybackPick.localFilesAmongSources(parentMetaId, effectiveVideoId)
 
         currentCoroutineContext().ensureActive()
         if (isDirectAutoPlayFlow) {
@@ -329,7 +332,7 @@ object StreamsRepository {
 
         if (installedAddons.isEmpty() && pluginProviderGroups.isEmpty()) {
             if (includeLocalInPicker) {
-                _uiState.value = localOnlyStreamsState(requestToken, localStreams, streamBadgeRules)
+                _uiState.value = localOnlyStreamsState(requestToken, localStreams, streamBadgeRules, playLocal = localAmongSources && isAutoPlayEnabled)
                 return
             }
             _uiState.value = StreamsUiState(
@@ -362,7 +365,7 @@ object StreamsRepository {
 
         if (streamAddons.isEmpty() && pluginProviderGroups.isEmpty() && serverSources.isEmpty() && !searchUsenet) {
             if (includeLocalInPicker) {
-                _uiState.value = localOnlyStreamsState(requestToken, localStreams, streamBadgeRules)
+                _uiState.value = localOnlyStreamsState(requestToken, localStreams, streamBadgeRules, playLocal = localAmongSources && isAutoPlayEnabled)
                 return
             }
             _uiState.value = StreamsUiState(
@@ -461,7 +464,7 @@ object StreamsRepository {
             // every higher source has already answered above.
             fun autoSelectOnResponse() {
                 if (!isDirectAutoPlayFlow || autoSelectTriggered) return
-                val groups = _uiState.value.groups.filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID }
+                val groups = _uiState.value.groups.filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID && !localAmongSources }
                 val allStreams = PlaybackPick.answered(groups).autoPlayEligible()
                 if (allStreams.isEmpty()) return
                 val selected = when {
@@ -604,11 +607,11 @@ object StreamsRepository {
                             if (!autoSelectTriggered) {
                                 autoSelectTriggered = true
                                 val allStreams = _uiState.value.groups
-                                    .filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID }
+                                    .filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID && !localAmongSources }
                                     .flatMap { it.streams }
                                     .autoPlayEligible()
                                 if (allStreams.isNotEmpty()) {
-                                    val selected = pickRules.select(allStreams) ?: localFallbackStream
+                                    val selected = pickRules.select(allStreams)
                                     PlaybackPick.logPick("$pickTrigger (60 s fallback)", pickRules, selected, allStreams.size)
                                     selected?.let { PlaybackStartTrace.mark("autoSelect:fallback60s:${it.addonName}") }
                                     _uiState.update { it.copy(autoPlayStream = selected) }
@@ -632,7 +635,7 @@ object StreamsRepository {
                         delay(timeoutSeconds * 1_000L)
                         timeoutElapsed = true
                         if (!autoSelectTriggered) {
-                            val groups = _uiState.value.groups.filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID }
+                            val groups = _uiState.value.groups.filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID && !localAmongSources }
                             val allStreams = PlaybackPick.answered(groups).autoPlayEligible()
                             // A source still answering may yet have the pick: keep listening (autoSelectOnResponse,
                             // now past the timeout) instead of giving up; the final pick below ends the wait.
@@ -651,9 +654,7 @@ object StreamsRepository {
                                     }
                                 }
                                 if (evaluation.stream == null && !evaluation.hasPendingDebridCandidate && !stillAnswering) {
-                                    if (localFallbackStream != null) {
-                                        _uiState.update { it.copy(autoPlayStream = localFallbackStream) }
-                                    } else _uiState.update {
+                                    _uiState.update {
                                         it.copy(
                                             isDirectAutoPlayFlow = false,
                                             showDirectAutoPlayOverlay = false,
@@ -1038,11 +1039,11 @@ object StreamsRepository {
             if (isDirectAutoPlayFlow && !autoSelectTriggered) {
                 autoSelectTriggered = true
                 val allStreams = _uiState.value.groups
-                    .filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID }
+                    .filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID && !localAmongSources }
                     .flatMap { it.streams }
                     .autoPlayEligible()
                 val evaluation = pickRules.evaluate(allStreams)
-                val picked = evaluation.stream ?: localFallbackStream
+                val picked = evaluation.stream
                 PlaybackPick.logPick("$pickTrigger (all answered)", pickRules, picked, allStreams.size)
                 picked?.let { PlaybackStartTrace.mark("autoSelect:allResponses:${it.addonName}") }
                 _uiState.update {
@@ -1126,10 +1127,38 @@ object StreamsRepository {
         }
     }
 
+    /** The completed download of this title, as a local stream row (one stat of the file, off the UI thread). */
+    private suspend fun downloadedStreams(parentMetaId: String?, season: Int?, episode: Int?, videoId: String): List<StreamItem> {
+        if (!AppFeaturePolicy.downloadsEnabled || parentMetaId.isNullOrBlank()) return emptyList()
+        return withContext(Dispatchers.IO) {
+            val item = DownloadsRepository.findPlayableDownload(
+                parentMetaId = parentMetaId,
+                seasonNumber = season,
+                episodeNumber = episode,
+                videoId = videoId,
+            ) ?: return@withContext emptyList()
+            val uri = DownloadsRepository.playableLocalFileUri(item) ?: return@withContext emptyList()
+            listOf(
+                StreamItem(
+                    name = item.streamTitle.ifBlank { item.fileName },
+                    title = item.fileName,
+                    url = uri,
+                    addonName = DOWNLOADS_GROUP_NAME,
+                    addonId = "locallibrary",
+                    streamType = "local",
+                ),
+            )
+        }
+    }
+
+    private const val DOWNLOADS_GROUP_NAME = "Downloads"
+
+    /** Only local copies to offer; with [playLocal] (the local files row may auto-play) the first one plays. */
     private fun localOnlyStreamsState(
         requestToken: String,
         localStreams: List<StreamItem>,
         badgeRules: StreamBadgeRules,
+        playLocal: Boolean = false,
     ): StreamsUiState {
         val group = AddonStreamGroup(
             addonName = localStreams.first().addonName,
@@ -1146,6 +1175,9 @@ object StreamsRepository {
             groups = listOf(presentedGroup),
             activeAddonIds = setOf(LOCAL_LIBRARY_GROUP_ID),
             isAnyLoading = false,
+            autoPlayStream = localStreams.first().takeIf { playLocal },
+            isDirectAutoPlayFlow = playLocal,
+            showDirectAutoPlayOverlay = playLocal,
         )
     }
 

@@ -13,12 +13,13 @@ import kotlin.test.assertTrue
 class PlayerSourceAffinityTest {
 
     @Test
-    fun `stream affinity excludes local files from autoplay candidates`() {
+    fun `stream affinity leaves local files to the local files row`() {
+        // Whether a local file may play, and where, is What plays > Source priority (the pick's rules).
         val local = stream("local")
         val remote = stream("url")
 
         assertEquals(
-            listOf(remote),
+            listOf(local, remote),
             eligibleAutoPlayStreams(listOf(local, remote), PlayerSourceAffinity.Stream),
         )
     }

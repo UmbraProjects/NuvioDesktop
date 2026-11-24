@@ -204,17 +204,20 @@ object PlaybackPick {
         scoreContext = scoreContext,
     )
 
-    /** Whether a title's local copy is the fallback when nothing online can be picked ("local files last"). */
-    fun localFilesLast(contentId: String?, videoId: String?): Boolean {
+    /**
+     * Whether a title's local copy is picked at its place among the online sources: the local files row is below one
+     * of them, its switch is on, and the title has no override of its own.
+     */
+    fun localFilesAmongSources(contentId: String?, videoId: String?): Boolean {
         val title = LocalLibraryRepository.titleFor(contentId, videoId)
         val override = title?.let { LocalLibraryRepository.titlePlaybackFor(it.key) }
-        return override == null && PlaybackPickSettingsRepository.current.localFiles == LocalFilesPick.LAST
+        return override == null && PlaybackSources.currentLocalPlacement() == LocalFilesPick.LAST
     }
 
     /**
      * Whether the next episode's local copy (a completed download, a library file) plays ahead of every online
-     * source: local files first, or the title set to its local file. Null when it is never used ("never", or the
-     * title set to online); false when it is the fallback ("last").
+     * source: the local files row at the top, or the title set to its local file. Null when it is never used (switched
+     * off, or the title set to online); false when it is picked at its place lower down.
      */
     fun nextEpisodeLocalFirst(contentId: String?, videoId: String?): Boolean? {
         val title = LocalLibraryRepository.titleFor(contentId, videoId)
@@ -223,7 +226,7 @@ object PlaybackPick {
             LocalTitlePlayback.ONLINE_SOURCE -> return null
             null -> Unit
         }
-        return when (PlaybackPickSettingsRepository.current.localFiles) {
+        return when (PlaybackSources.currentLocalPlacement()) {
             LocalFilesPick.FIRST -> true
             LocalFilesPick.LAST -> false
             LocalFilesPick.NEVER -> null

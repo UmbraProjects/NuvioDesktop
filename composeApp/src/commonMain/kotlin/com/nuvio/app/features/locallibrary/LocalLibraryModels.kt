@@ -149,23 +149,25 @@ enum class LocalLibraryPlaybackPreference {
 }
 
 /**
- * What a plain click does with a title's local copy, from What plays and the title's own [override]:
+ * What a plain click does with a title's local copy, from What plays ([onPlay], where the local files row sits:
+ * [placement]) and the title's own [override]:
  *
  * - The title set to its local file plays it; set to online, the file is a backup (listed, never auto-played).
  * - Show me the sources: the picker, with the file in it (the alternate click plays the file).
- * - Local files first: the file plays.
- * - Local files last or never: online sources auto-play as if there were no file; the file is listed, and with "last"
- *   it plays when nothing online can be picked (StreamsRepository).
+ * - Local files at the top of Source priority: the file plays straight away.
+ * - Lower down, or switched off: the stream search runs as if there were no file; the file is listed, and where it may
+ *   auto-play it is picked at its place in the order (StreamsRepository).
  */
 fun localTitleRouting(
     override: LocalTitlePlayback?,
-    settings: com.nuvio.app.features.streams.PlaybackPickSettings,
+    onPlay: com.nuvio.app.features.streams.PlayClick,
+    placement: com.nuvio.app.features.streams.LocalFilesPick,
 ): LocalTitleRouting = when {
     override == LocalTitlePlayback.LOCAL_FILE -> LocalTitleRouting(LocalLibraryPlaybackPreference.LOCAL_LIBRARY, ignoresLocalFile = false)
     override == LocalTitlePlayback.ONLINE_SOURCE -> LocalTitleRouting(LocalLibraryPlaybackPreference.SOURCE_PICKER, ignoresLocalFile = true)
-    settings.onPlay == com.nuvio.app.features.streams.PlayClick.SHOW_SOURCES ->
+    onPlay == com.nuvio.app.features.streams.PlayClick.SHOW_SOURCES ->
         LocalTitleRouting(LocalLibraryPlaybackPreference.SOURCE_PICKER, ignoresLocalFile = false)
-    settings.localFiles == com.nuvio.app.features.streams.LocalFilesPick.FIRST ->
+    placement == com.nuvio.app.features.streams.LocalFilesPick.FIRST ->
         LocalTitleRouting(LocalLibraryPlaybackPreference.LOCAL_LIBRARY, ignoresLocalFile = false)
     else -> LocalTitleRouting(LocalLibraryPlaybackPreference.SOURCE_PICKER, ignoresLocalFile = true)
 }

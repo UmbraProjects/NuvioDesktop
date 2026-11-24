@@ -5117,10 +5117,10 @@
     <string name="settings_what_plays_next_episode">Episodio successivo</string>
     <string name="settings_what_plays_next_episode_desc">Stessa release prima mantiene la release che stavi guardando, episodio dopo episodio e la prossima volta. Chiedimelo apre l’elenco delle fonti a ogni episodio.</string>
     <string name="settings_what_plays_same_release">Stessa release prima</string>
-    <string name="settings_what_plays_same_rules">Stesse regole di Riproduci</string>
+    <string name="settings_what_plays_same_rules">Come Scelta</string>
     <string name="settings_what_plays_ask_me">Chiedimelo</string>
     <string name="settings_what_plays_local_files">File locali</string>
-    <string name="settings_what_plays_local_files_desc">La posizione della libreria locale nell’ordine di priorità. Prima riproduce la copia locale di un titolo; Ultima la riproduce solo se online non si può scegliere nulla. È sempre nell’elenco delle fonti.</string>
+    <string name="settings_what_plays_local_files_desc">I file locali sono una riga di Priorità fonti. In cima, la copia locale di un titolo parte subito; più in basso, parte quando nessuna fonte sopra ha uno stream. Disattivata, è solo elencata.</string>
     <string name="settings_what_plays_local_first">Prima</string>
     <string name="settings_what_plays_local_last">Ultima</string>
     <string name="settings_what_plays_local_never">Mai in automatico</string>
@@ -5146,4 +5146,5 @@
     <string name="settings_what_plays_summary_next_ask">L’episodio successivo apre l’elenco delle fonti.</string>
     <string name="settings_stream_scoring_apply_what_plays">Scegliere cosa riprodurre</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Punteggio migliore fa scegliere a questo profilo lo stream per Riproduci e l’episodio successivo. È la stessa impostazione di Scelta in Riproduzione &gt; Cosa viene riprodotto.</string>
+    <string name="settings_what_plays_local_position">%1$d di %2$d</string>
 </resources>

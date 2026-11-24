@@ -5115,10 +5115,10 @@
     <string name="settings_what_plays_next_episode">Επόμενο επεισόδιο</string>
     <string name="settings_what_plays_next_episode_desc">Το Ίδια έκδοση πρώτα κρατά την έκδοση που έβλεπες, από επεισόδιο σε επεισόδιο και την επόμενη φορά. Το Ρώτα με ανοίγει τη λίστα πηγών σε κάθε επεισόδιο.</string>
     <string name="settings_what_plays_same_release">Ίδια έκδοση πρώτα</string>
-    <string name="settings_what_plays_same_rules">Ίδιοι κανόνες με την Αναπαραγωγή</string>
+    <string name="settings_what_plays_same_rules">Όπως η Επιλογή</string>
     <string name="settings_what_plays_ask_me">Ρώτα με</string>
     <string name="settings_what_plays_local_files">Τοπικά αρχεία</string>
-    <string name="settings_what_plays_local_files_desc">Πού βρίσκεται η τοπική βιβλιοθήκη στη σειρά προτεραιότητας. Το Πρώτα παίζει το τοπικό αντίγραφο ενός τίτλου· το Τελευταία το παίζει μόνο όταν δεν μπορεί να επιλεγεί τίποτα online. Είναι πάντα στη λίστα πηγών.</string>
+    <string name="settings_what_plays_local_files_desc">Τα τοπικά αρχεία είναι μια γραμμή στην Προτεραιότητα πηγών. Στην κορυφή, το τοπικό αντίγραφο ενός τίτλου παίζει αμέσως· πιο κάτω, παίζει όταν καμία πηγή από πάνω δεν έχει ροή. Απενεργοποιημένο, απλώς εμφανίζεται στη λίστα.</string>
     <string name="settings_what_plays_local_first">Πρώτα</string>
     <string name="settings_what_plays_local_last">Τελευταία</string>
     <string name="settings_what_plays_local_never">Ποτέ αυτόματα</string>
@@ -5144,4 +5144,5 @@
     <string name="settings_what_plays_summary_next_ask">Το επόμενο επεισόδιο ανοίγει τη λίστα πηγών.</string>
     <string name="settings_stream_scoring_apply_what_plays">Επιλογή του τι αναπαράγεται</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Η Καλύτερη βαθμολογία αφήνει αυτό το προφίλ να διαλέγει τη ροή για την Αναπαραγωγή και το επόμενο επεισόδιο. Ίδια ρύθμιση με την Επιλογή στο Αναπαραγωγή &gt; Τι αναπαράγεται.</string>
+    <string name="settings_what_plays_local_position">%1$d από %2$d</string>
 </resources>

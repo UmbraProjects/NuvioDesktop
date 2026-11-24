@@ -5117,10 +5117,10 @@
     <string name="settings_what_plays_next_episode">Neste episode</string>
     <string name="settings_what_plays_next_episode_desc">Samme utgivelse først beholder utgivelsen du så på, fra episode til episode og neste gang du kommer tilbake. Spør meg åpner kildelisten ved hver episode.</string>
     <string name="settings_what_plays_same_release">Samme utgivelse først</string>
-    <string name="settings_what_plays_same_rules">Samme regler som Spill av</string>
+    <string name="settings_what_plays_same_rules">Som Valg</string>
     <string name="settings_what_plays_ask_me">Spør meg</string>
     <string name="settings_what_plays_local_files">Lokale filer</string>
-    <string name="settings_what_plays_local_files_desc">Hvor det lokale biblioteket står i prioritetsrekkefølgen. Først spiller en tittels lokale kopi; Sist spiller den bare når ingenting på nett kan velges. Den står alltid i kildelisten.</string>
+    <string name="settings_what_plays_local_files_desc">Lokale filer er en rad i Kildeprioritet. Øverst spilles en tittels lokale kopi med en gang; lenger ned spilles den når ingen kilde over har en strøm. Slått av blir den bare vist i listen.</string>
     <string name="settings_what_plays_local_first">Først</string>
     <string name="settings_what_plays_local_last">Sist</string>
     <string name="settings_what_plays_local_never">Aldri automatisk</string>
@@ -5146,4 +5146,5 @@
     <string name="settings_what_plays_summary_next_ask">Neste episode åpner kildelisten.</string>
     <string name="settings_stream_scoring_apply_what_plays">Velge hva som spilles</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Beste poengsum lar denne profilen velge strømmen for Spill av og neste episode. Samme valg som Valg under Avspilling &gt; Hva som spilles.</string>
+    <string name="settings_what_plays_local_position">%1$d av %2$d</string>
 </resources>

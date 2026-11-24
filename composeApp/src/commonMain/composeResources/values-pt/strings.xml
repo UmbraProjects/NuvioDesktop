@@ -5115,10 +5115,10 @@
     <string name="settings_what_plays_next_episode">Próximo episódio</string>
     <string name="settings_what_plays_next_episode_desc">Mesma release primeiro mantém a release que estavas a ver, episódio após episódio e da próxima vez. Perguntar-me abre a lista de fontes em cada episódio.</string>
     <string name="settings_what_plays_same_release">Mesma release primeiro</string>
-    <string name="settings_what_plays_same_rules">Mesmas regras que Reproduzir</string>
+    <string name="settings_what_plays_same_rules">Igual a Escolha</string>
     <string name="settings_what_plays_ask_me">Perguntar-me</string>
     <string name="settings_what_plays_local_files">Ficheiros locais</string>
-    <string name="settings_what_plays_local_files_desc">Onde fica a tua biblioteca local na ordem de prioridade. Primeiro reproduz a cópia local de um título; Último só a reproduz se nada online puder ser escolhido. Está sempre na lista de fontes.</string>
+    <string name="settings_what_plays_local_files_desc">Os ficheiros locais são uma linha da Prioridade das fontes. No topo, a cópia local de um título é reproduzida de imediato; mais abaixo, é reproduzida quando nenhuma fonte acima tem stream. Desligada, fica só na lista.</string>
     <string name="settings_what_plays_local_first">Primeiro</string>
     <string name="settings_what_plays_local_last">Último</string>
     <string name="settings_what_plays_local_never">Nunca automático</string>
@@ -5144,4 +5144,5 @@
     <string name="settings_what_plays_summary_next_ask">O próximo episódio abre a lista de fontes.</string>
     <string name="settings_stream_scoring_apply_what_plays">Escolher o que é reproduzido</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Melhor pontuação deixa este perfil escolher o stream para Reproduzir e o próximo episódio. É a mesma definição que Escolha em Reprodução &gt; O que é reproduzido.</string>
+    <string name="settings_what_plays_local_position">%1$d de %2$d</string>
 </resources>

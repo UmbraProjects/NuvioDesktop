@@ -36,16 +36,17 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
+/**
+ * The streams next-episode autoplay may consider. Local files stay in: whether one may play, and where, is the local
+ * files row of Source priority (the pick's rules), as at the first click.
+ */
 internal fun eligibleAutoPlayStreams(
     streams: List<StreamItem>,
-    sourceAffinity: PlayerSourceAffinity,
+    @Suppress("UNUSED_PARAMETER") sourceAffinity: PlayerSourceAffinity,
     /** This binge's addons that gave a placeholder go last; null when the memory does not apply. */
     avoid: PlaceholderSourceMemory? = null,
     keepMarkedIfOnly: Boolean = true,
-): List<StreamItem> = when (sourceAffinity) {
-    PlayerSourceAffinity.Local -> streams
-    PlayerSourceAffinity.Stream -> streams.filterNot { it.streamType.equals("local", ignoreCase = true) }
-}.filterNot { stream ->
+): List<StreamItem> = streams.filterNot { stream ->
     // A Usenet release that already failed to open this run (missing articles, a password) fails
     // the same way again; picking it would leave the next-episode card waiting on nothing.
     stream.needsUsenetPreparation && UsenetEngine.hasFailed(stream)
@@ -108,7 +109,14 @@ internal fun nextEpisodeAutoPlayPicker(
     parentMetaId: String,
     contentType: String,
 ): NextEpisodeAutoPlayPicker {
-    val pickSettings = PlaybackPickSettingsRepository.current
+    // A title set to online keeps its local copy out of the pick, as at the first click.
+    val pickSettings = PlaybackPickSettingsRepository.current.let { settings ->
+        if (PlaybackPick.nextEpisodeLocalFirst(parentMetaId, null) == null) {
+            settings.copy(autoPlay = settings.autoPlay + (PlaybackSources.LOCAL to false))
+        } else {
+            settings
+        }
+    }
     val localAffinity = sourceAffinity == PlayerSourceAffinity.Local
     val preferredBingeGroup = currentStreamBingeGroup.takeIf {
         shouldPreferNextEpisodeBingeGroup(
@@ -459,22 +467,15 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
             stream = selected,
             candidates = pickedFrom.size,
         )
-        // Local files last: nothing online could be picked, so the next episode's local copy plays.
-        if (selected == null && localFirst == false) {
-            val localStream = finalState.groups.flatMap { it.streams }
-                .firstOrNull { it.streamType.equals("local", ignoreCase = true) }
-            if (downloadedFallback != null || localStream != null) {
-                BingeAdvanceLog.i { "nothing online for S${nextSeasonNumber}E${nextEpisodeNumber}; playing its local copy" }
-                onSearchingChanged(false)
-                onSourceNameChanged(null)
-                onCountdownChanged(null)
-                if (downloadedFallback != null) {
-                    onDownloadedEpisodeSelected(downloadedFallback, nextVideo)
-                } else if (localStream != null) {
-                    onEpisodeStreamSelected(localStream, nextVideo) { onManualSelectionRequired(nextVideo) }
-                }
-                return@launch
-            }
+        // The local files row below an online source: a library file was already a candidate at its place; a completed
+        // download (not a source row in the player) plays when nothing could be picked.
+        if (selected == null && downloadedFallback != null) {
+            BingeAdvanceLog.i { "nothing picked for S${nextSeasonNumber}E${nextEpisodeNumber}; playing its download" }
+            onSearchingChanged(false)
+            onSourceNameChanged(null)
+            onCountdownChanged(null)
+            onDownloadedEpisodeSelected(downloadedFallback, nextVideo)
+            return@launch
         }
         if (shouldRetryEmptyNextEpisodeSearch(selected, emptyResultRetriesRemaining)) {
             BingeAdvanceLog.i {

@@ -40,7 +40,6 @@ import com.nuvio.app.features.addons.enabledAddons
 import com.nuvio.app.features.debrid.DebridSettingsRepository
 import com.nuvio.app.features.plugins.PluginRepository
 import com.nuvio.app.features.servers.ServerRepository
-import com.nuvio.app.features.streams.LocalFilesPick
 import com.nuvio.app.features.streams.NextEpisodePick
 import com.nuvio.app.features.streams.PickBy
 import com.nuvio.app.features.streams.PlayClick
@@ -104,8 +103,6 @@ internal fun WhatPlaysSettingsRows(isTablet: Boolean, onEditRegex: () -> Unit) {
         onSelected = PlaybackPickSettingsRepository::setNextEpisode,
     )
     SettingsGroupDivider(isTablet = isTablet)
-    LocalFilesChoiceRow(selected = pick.localFiles, isTablet = isTablet)
-    SettingsGroupDivider(isTablet = isTablet)
     SourcePriorityRow(pick = pick, sources = sources, isTablet = isTablet)
     SettingsGroupDivider(isTablet = isTablet)
     SettingsNavigationRow(
@@ -127,22 +124,38 @@ internal fun WhatPlaysSettingsRows(isTablet: Boolean, onEditRegex: () -> Unit) {
     WhatPlaysSummary(pick = pick, sources = sources, isTablet = isTablet)
 }
 
-/** Where local files sit in the priority order; also on the Local library page. */
+/**
+ * The Local library page's way to the local files row: where it sits in Source priority, and the same list to move it
+ * or switch it off.
+ */
 @Composable
-internal fun LocalFilesChoiceRow(selected: LocalFilesPick, isTablet: Boolean) {
-    SettingsDropdownChoiceRow(
+internal fun LocalFilesPriorityRow(isTablet: Boolean) {
+    val pick by PlaybackPickSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val sources = rememberAvailablePlaybackSources()
+    var editing by remember { mutableStateOf(false) }
+    val position = sources.keys.indexOf(PlaybackSources.LOCAL)
+    SettingsNavigationRow(
         title = stringResource(Res.string.settings_what_plays_local_files),
         description = stringResource(Res.string.settings_what_plays_local_files_desc),
-        options = listOf(
-            SettingsChoiceOption(LocalFilesPick.FIRST, stringResource(Res.string.settings_what_plays_local_first)),
-            SettingsChoiceOption(LocalFilesPick.LAST, stringResource(Res.string.settings_what_plays_local_last)),
-            SettingsChoiceOption(LocalFilesPick.NEVER, stringResource(Res.string.settings_what_plays_local_never)),
-        ),
-        selectedValue = selected,
         isTablet = isTablet,
         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("what-plays-local-files")),
-        onSelected = PlaybackPickSettingsRepository::setLocalFiles,
+        trailingContent = {
+            Text(
+                text = if (!pick.mayAutoPlay(PlaybackSources.LOCAL)) {
+                    stringResource(Res.string.settings_what_plays_local_never)
+                } else {
+                    stringResource(Res.string.settings_what_plays_local_position, position + 1, sources.keys.size)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.nuvio.colors.textMuted,
+                maxLines = 1,
+            )
+        },
+        onClick = { editing = true },
     )
+    if (editing) {
+        SourcePriorityDialog(sources = sources, onDismiss = { editing = false })
+    }
 }
 
 /** The sources this install has, in What plays order: the rows of the source priority list. */
@@ -162,6 +175,7 @@ private fun rememberAvailablePlaybackSources(): AvailablePlaybackSources {
         .filter { it.isNotBlank() }
         .distinct()
     val present = buildSet {
+        add(PlaybackSources.LOCAL)
         if (debrid.canResolvePlayableLinks) add(PlaybackSources.DEBRID)
         if (servers.connections.any { it.enabled }) add(PlaybackSources.SERVERS)
         if (usenet.sources.ready) add(PlaybackSources.USENET)
@@ -342,11 +356,6 @@ private fun WhatPlaysSummary(pick: PlaybackPickSettings, sources: AvailablePlayb
                     order,
                 ),
             )
-            when (pick.localFiles) {
-                LocalFilesPick.FIRST -> add(stringResource(Res.string.settings_what_plays_summary_local_first))
-                LocalFilesPick.LAST -> add(stringResource(Res.string.settings_what_plays_summary_local_last))
-                LocalFilesPick.NEVER -> Unit
-            }
         }
         add(
             stringResource(

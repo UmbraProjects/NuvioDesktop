@@ -5197,10 +5197,10 @@
     <string name="settings_what_plays_next_episode">Épisode suivant</string>
     <string name="settings_what_plays_next_episode_desc">Même release d’abord garde la release que vous regardiez, d’un épisode à l’autre et la prochaine fois. Me demander ouvre la liste des sources à chaque épisode.</string>
     <string name="settings_what_plays_same_release">Même release d’abord</string>
-    <string name="settings_what_plays_same_rules">Mêmes règles que Lecture</string>
+    <string name="settings_what_plays_same_rules">Comme Choix</string>
     <string name="settings_what_plays_ask_me">Me demander</string>
     <string name="settings_what_plays_local_files">Fichiers locaux</string>
-    <string name="settings_what_plays_local_files_desc">La place de votre bibliothèque locale dans l’ordre de priorité. En premier lit la copie locale d’un titre ; En dernier ne la lit que si rien en ligne ne peut être choisi. Elle reste toujours dans la liste des sources.</string>
+    <string name="settings_what_plays_local_files_desc">Les fichiers locaux sont une ligne de la priorité des sources. En haut, la copie locale d’un titre est lue tout de suite ; plus bas, elle est lue quand aucune source au-dessus n’a de flux. Désactivée, elle est seulement listée.</string>
     <string name="settings_what_plays_local_first">En premier</string>
     <string name="settings_what_plays_local_last">En dernier</string>
     <string name="settings_what_plays_local_never">Jamais automatiquement</string>
@@ -5226,4 +5226,5 @@
     <string name="settings_what_plays_summary_next_ask">L’épisode suivant ouvre la liste des sources.</string>
     <string name="settings_stream_scoring_apply_what_plays">Choisir ce qui est lu</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Meilleur score laisse ce profil choisir le flux pour Lecture et l’épisode suivant. Le même réglage que Choix dans Lecture &gt; Ce qui est lu.</string>
+    <string name="settings_what_plays_local_position">%1$d sur %2$d</string>
 </resources>

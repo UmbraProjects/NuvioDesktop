@@ -5114,10 +5114,10 @@
     <string name="settings_what_plays_next_episode">Sonraki bölüm</string>
     <string name="settings_what_plays_next_episode_desc">Önce aynı sürüm, izlediğin sürümü bölümden bölüme ve bir dahaki sefere de korur. Bana sor her bölümde kaynak listesini açar.</string>
     <string name="settings_what_plays_same_release">Önce aynı sürüm</string>
-    <string name="settings_what_plays_same_rules">Oynat ile aynı kurallar</string>
+    <string name="settings_what_plays_same_rules">Seçim ile aynı</string>
     <string name="settings_what_plays_ask_me">Bana sor</string>
     <string name="settings_what_plays_local_files">Yerel dosyalar</string>
-    <string name="settings_what_plays_local_files_desc">Yerel kitaplığın öncelik sırasındaki yeri. İlk, bir başlığın yerel kopyasını oynatır; Son, yalnızca çevrimiçi hiçbir şey seçilemezse oynatır. Kaynak listesinde her zaman bulunur.</string>
+    <string name="settings_what_plays_local_files_desc">Yerel dosyalar, Kaynak önceliği’nde bir satırdır. En üstte bir başlığın yerel kopyası hemen oynatılır; daha aşağıda, üstündeki hiçbir kaynağın akışı yoksa oynatılır. Kapalıyken yalnızca listede durur.</string>
     <string name="settings_what_plays_local_first">İlk</string>
     <string name="settings_what_plays_local_last">Son</string>
     <string name="settings_what_plays_local_never">Asla otomatik</string>
@@ -5143,4 +5143,5 @@
     <string name="settings_what_plays_summary_next_ask">Sonraki bölüm kaynak listesini açar.</string>
     <string name="settings_stream_scoring_apply_what_plays">Ne oynatılacağını seçme</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">En iyi puan, Oynat ve sonraki bölüm için akışı bu profilin seçmesini sağlar. Oynatma &gt; Ne oynatılır altındaki Seçim ile aynı ayar.</string>
+    <string name="settings_what_plays_local_position">%1$d / %2$d</string>
 </resources>

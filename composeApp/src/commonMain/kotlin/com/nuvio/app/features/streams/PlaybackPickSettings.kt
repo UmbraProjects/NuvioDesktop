@@ -1,7 +1,12 @@
 package com.nuvio.app.features.streams
 
 import co.touchlab.kermit.Logger
+import com.nuvio.app.core.build.AppFeaturePolicy
 import com.nuvio.app.features.addons.AddonRepository
+import com.nuvio.app.features.addons.enabledAddons
+import com.nuvio.app.features.debrid.DebridSettingsRepository
+import com.nuvio.app.features.plugins.PluginRepository
+import com.nuvio.app.features.usenet.UsenetSettingsRepository
 import com.nuvio.app.features.locallibrary.LocalLibraryPlaybackPreference
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.player.PlayerSettingsRepository
@@ -40,16 +45,17 @@ enum class NextEpisodePick {
     ASK_ME,
 }
 
-/** Where local files (the local library) sit in the priority order. */
-@Serializable
+/**
+ * Where the local files row sits in Source priority, as far as a pick cares (see [PlaybackPickSettings.localPlacement]).
+ */
 enum class LocalFilesPick {
-    /** Above every online source: a title with a local copy plays it. */
+    /** No online source that may auto-play is above it: a title's local copy plays straight away, without a search. */
     FIRST,
 
-    /** Below every online source: played only when nothing online can be picked. */
+    /** Below at least one online source: the local copy plays when no source above it has a stream. */
     LAST,
 
-    /** Listed in the source list, never auto-played. */
+    /** Its auto-play switch is off: listed in the source list, never auto-played. */
     NEVER,
 }
 
@@ -64,7 +70,6 @@ data class PlaybackPickSettings(
     val onPlay: PlayClick = PlayClick.SHOW_SOURCES,
     val pickBy: PickBy = PickBy.PRIORITY_ORDER,
     val nextEpisode: NextEpisodePick = NextEpisodePick.SAME_RELEASE_FIRST,
-    val localFiles: LocalFilesPick = LocalFilesPick.LAST,
     /** Source keys ([PlaybackSources]) in priority order; sources missing from it take their default place. */
     val order: List<String> = emptyList(),
     /** Per-source auto-play switches; a source not listed may auto-play (an addon: [newAddonsAutoPlay]). */
@@ -74,9 +79,16 @@ data class PlaybackPickSettings(
     /** Only streams matching this (case-insensitive regex) are auto-played; blank = no filter. */
     val regexFilter: String = "",
 ) {
-    fun mayAutoPlay(key: String): Boolean = when (key) {
-        PlaybackSources.LOCAL -> localFiles != LocalFilesPick.NEVER
-        else -> autoPlay[key] ?: if (PlaybackSources.isAddon(key)) newAddonsAutoPlay else true
+    fun mayAutoPlay(key: String): Boolean = autoPlay[key] ?: if (PlaybackSources.isAddon(key)) newAddonsAutoPlay else true
+
+    /**
+     * Where the local files row sits for a pick: first when no source in [present] that may auto-play is above it
+     * (absent sources and switched-off ones do not count), last when one is, never when its own switch is off.
+     */
+    fun localPlacement(present: Set<String>, addonNames: List<String>): LocalFilesPick {
+        if (!mayAutoPlay(PlaybackSources.LOCAL)) return LocalFilesPick.NEVER
+        val above = PlaybackSources.effectiveOrder(order, addonNames).takeWhile { it != PlaybackSources.LOCAL }
+        return if (above.none { it in present && mayAutoPlay(it) }) LocalFilesPick.FIRST else LocalFilesPick.LAST
     }
 }
 
@@ -112,10 +124,10 @@ object PlaybackSources {
     }
 
     /**
-     * The online rows in priority order: [stored] first (entries for sources that are gone dropped), then any source it
-     * does not mention yet. A new addon goes after the last addon listed (after the debrid row when none is); anything
-     * else new goes at the end. The default, with nothing stored: debrid, the addons in their install order, media
-     * servers, built-in Usenet, plugins.
+     * The rows in priority order: [stored] first (entries for sources that are gone dropped), then any source it does
+     * not mention yet. A new addon goes after the last addon listed (after the debrid row when none is); anything else
+     * new goes at the end. The default, with nothing stored: debrid, the addons in their install order, media servers,
+     * built-in Usenet, plugins, local files.
      */
     fun effectiveOrder(stored: List<String>, addonNames: List<String>): List<String> {
         val defaults = buildList {
@@ -124,6 +136,7 @@ object PlaybackSources {
             add(SERVERS)
             add(USENET)
             add(PLUGINS)
+            add(LOCAL)
         }
         if (stored.isEmpty()) return defaults
         val result = stored.filter { it in defaults }.distinct().toMutableList()
@@ -142,7 +155,7 @@ object PlaybackSources {
     /**
      * Orders source groups by the priority list, so what the source list shows is what auto-play walks. Groups in
      * [preferredGroupIds] (a media server whose "use its catalog" setting is on, or a title opened from a server's
-     * catalog) go first; local files go first or last as [local] says; the rest keep their arrival order within a row.
+     * catalog) go first; the rest keep their arrival order within a row.
      */
     fun orderGroups(
         groups: List<AddonStreamGroup>,
@@ -153,17 +166,34 @@ object PlaybackSources {
         if (groups.isEmpty()) return groups
         val names = installedAddonNames.toSet()
         val rank = effectiveOrder(settings.order, installedAddonNames).withIndex().associate { it.value to it.index }
-        val localRank = if (settings.localFiles == LocalFilesPick.FIRST) -1 else Int.MAX_VALUE
         return groups.withIndex().sortedWith(
             compareBy<IndexedValue<AddonStreamGroup>> { if (it.value.addonId in preferredGroupIds) 0 else 1 }
-                .thenBy { (index, group) ->
-                    when (val key = keyForGroup(group.addonId, group.addonName, names)) {
-                        LOCAL -> localRank
-                        else -> rank[key] ?: (Int.MAX_VALUE - 1)
-                    }
-                }
+                .thenBy { (_, group) -> rank[keyForGroup(group.addonId, group.addonName, names)] ?: Int.MAX_VALUE }
                 .thenBy { it.index },
         ).map { it.value }
+    }
+
+    /** The enabled addons that serve streams, by the name their streams carry, in install order. */
+    fun installedStreamAddonNames(): List<String> = AddonRepository.uiState.value.addons.enabledAddons()
+        .filter { addon -> addon.manifest?.resources?.any { it.name == "stream" } == true }
+        .map { addon -> addon.displayTitle.ifBlank { addon.manifest?.name.orEmpty() } }
+        .filter { it.isNotBlank() }
+        .distinct()
+
+    /** The rows this install has: local files, each addon, and debrid, servers, Usenet and plugins when set up. */
+    fun presentKeys(addonNames: List<String> = installedStreamAddonNames()): Set<String> = buildSet {
+        add(LOCAL)
+        if (DebridSettingsRepository.snapshot().canResolvePlayableLinks) add(DEBRID)
+        if (ServerRepository.enabledConnections().isNotEmpty()) add(SERVERS)
+        if (UsenetSettingsRepository.sources.ready) add(USENET)
+        if (AppFeaturePolicy.pluginsEnabled && PluginRepository.uiState.value.scrapers.any { it.enabled }) add(PLUGINS)
+        addonNames.forEach { add(addon(it)) }
+    }
+
+    /** Where local files sit right now, with the current settings and sources. */
+    fun currentLocalPlacement(): LocalFilesPick {
+        val names = installedStreamAddonNames()
+        return PlaybackPickSettingsRepository.current.localPlacement(presentKeys(names), names)
     }
 
     /** [orderGroups] with the current What plays settings, for the stream repositories. */
@@ -181,7 +211,7 @@ object PlaybackSources {
      *   pattern becomes the auto-play filter.
      * - Manual with "Apply to next episode" -> Ask me; binge preference off, or scoring overriding it -> Same rules as
      *   Play; otherwise Same release first.
-     * - The local library's "Local file" play action -> local files first; "Source picker" -> last.
+     * - The local library's "Local file" play action -> the local files row at the top; "Source picker" -> at the end.
      * - Source scope and the allowed lists -> the auto-play switches. Built-in Usenet counted as a plugin, and no
      *   plugin list ever offered it, so a plugin list switches it off, as it was.
      */
@@ -226,12 +256,13 @@ object PlaybackSources {
             onPlay = if (mode == StreamAutoPlayMode.MANUAL) PlayClick.SHOW_SOURCES else PlayClick.PLAY_FOR_ME,
             pickBy = if (scored) PickBy.BEST_SCORE else PickBy.PRIORITY_ORDER,
             nextEpisode = nextEpisode,
-            localFiles = if (localPreference == LocalLibraryPlaybackPreference.LOCAL_LIBRARY) {
-                LocalFilesPick.FIRST
-            } else {
-                LocalFilesPick.LAST
+            order = buildList {
+                if (localPreference == LocalLibraryPlaybackPreference.LOCAL_LIBRARY) add(LOCAL)
+                if (serversListedFirst) {
+                    add(SERVERS)
+                    add(DEBRID)
+                }
             },
-            order = if (serversListedFirst) listOf(SERVERS, DEBRID) else emptyList(),
             autoPlay = autoPlay,
             newAddonsAutoPlay = addonsAllowed,
             regexFilter = if (mode == StreamAutoPlayMode.REGEX_MATCH) player.streamAutoPlayRegex.trim() else "",
@@ -317,14 +348,7 @@ object PlaybackPickSettingsRepository {
     fun setOnPlay(value: PlayClick) = update { it.copy(onPlay = value) }
     fun setPickBy(value: PickBy) = update { it.copy(pickBy = value) }
     fun setNextEpisode(value: NextEpisodePick) = update { it.copy(nextEpisode = value) }
-    fun setLocalFiles(value: LocalFilesPick) = update { it.copy(localFiles = value) }
     fun setRegexFilter(value: String) = update { it.copy(regexFilter = value.trim()) }
     fun setOrder(order: List<String>) = update { it.copy(order = order) }
-    fun setAutoPlay(key: String, enabled: Boolean) = update {
-        if (key == PlaybackSources.LOCAL) {
-            it.copy(localFiles = if (enabled) LocalFilesPick.LAST else LocalFilesPick.NEVER)
-        } else {
-            it.copy(autoPlay = it.autoPlay + (key to enabled))
-        }
-    }
+    fun setAutoPlay(key: String, enabled: Boolean) = update { it.copy(autoPlay = it.autoPlay + (key to enabled)) }
 }

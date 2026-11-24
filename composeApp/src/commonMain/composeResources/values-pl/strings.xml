@@ -5126,10 +5126,10 @@
     <string name="settings_what_plays_next_episode">Następny odcinek</string>
     <string name="settings_what_plays_next_episode_desc">Najpierw to samo wydanie zachowuje wydanie, które oglądałeś, z odcinka na odcinek i przy następnym powrocie. Zapytaj mnie otwiera listę źródeł przy każdym odcinku.</string>
     <string name="settings_what_plays_same_release">Najpierw to samo wydanie</string>
-    <string name="settings_what_plays_same_rules">Te same reguły co Odtwórz</string>
+    <string name="settings_what_plays_same_rules">Jak Wybór</string>
     <string name="settings_what_plays_ask_me">Zapytaj mnie</string>
     <string name="settings_what_plays_local_files">Pliki lokalne</string>
-    <string name="settings_what_plays_local_files_desc">Miejsce biblioteki lokalnej w kolejności priorytetów. Najpierw odtwarza lokalną kopię tytułu; Na końcu odtwarza ją tylko, gdy nic online nie da się wybrać. Zawsze jest na liście źródeł.</string>
+    <string name="settings_what_plays_local_files_desc">Pliki lokalne to wiersz w Priorytecie źródeł. Na górze lokalna kopia tytułu jest odtwarzana od razu; niżej jest odtwarzana, gdy żadne źródło powyżej nie ma strumienia. Wyłączona jest tylko na liście.</string>
     <string name="settings_what_plays_local_first">Najpierw</string>
     <string name="settings_what_plays_local_last">Na końcu</string>
     <string name="settings_what_plays_local_never">Nigdy automatycznie</string>
@@ -5155,4 +5155,5 @@
     <string name="settings_what_plays_summary_next_ask">Następny odcinek otwiera listę źródeł.</string>
     <string name="settings_stream_scoring_apply_what_plays">Wybór tego, co jest odtwarzane</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Najlepszy wynik pozwala temu profilowi wybierać strumień dla Odtwórz i następnego odcinka. To samo ustawienie co Wybór w Odtwarzanie &gt; Co jest odtwarzane.</string>
+    <string name="settings_what_plays_local_position">%1$d z %2$d</string>
 </resources>

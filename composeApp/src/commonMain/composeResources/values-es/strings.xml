@@ -5197,10 +5197,10 @@
     <string name="settings_what_plays_next_episode">Siguiente episodio</string>
     <string name="settings_what_plays_next_episode_desc">Misma release primero mantiene la release que veías, episodio tras episodio y la próxima vez que vuelvas. Preguntarme abre la lista de fuentes en cada episodio.</string>
     <string name="settings_what_plays_same_release">Misma release primero</string>
-    <string name="settings_what_plays_same_rules">Mismas reglas que Reproducir</string>
+    <string name="settings_what_plays_same_rules">Igual que Elección</string>
     <string name="settings_what_plays_ask_me">Preguntarme</string>
     <string name="settings_what_plays_local_files">Archivos locales</string>
-    <string name="settings_what_plays_local_files_desc">Dónde queda tu biblioteca local en el orden de prioridad. Primero reproduce la copia local de un título; Último solo la reproduce si no se puede elegir nada en línea. Siempre aparece en la lista de fuentes.</string>
+    <string name="settings_what_plays_local_files_desc">Los archivos locales son una fila de Prioridad de fuentes. Arriba del todo, la copia local de un título se reproduce enseguida; más abajo, se reproduce cuando ninguna fuente por encima tiene stream. Desactivada, solo aparece en la lista.</string>
     <string name="settings_what_plays_local_first">Primero</string>
     <string name="settings_what_plays_local_last">Último</string>
     <string name="settings_what_plays_local_never">Nunca automático</string>
@@ -5226,4 +5226,5 @@
     <string name="settings_what_plays_summary_next_ask">El siguiente episodio abre la lista de fuentes.</string>
     <string name="settings_stream_scoring_apply_what_plays">Elegir qué se reproduce</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Mejor puntuación deja que este perfil elija el stream para Reproducir y el siguiente episodio. Es el mismo ajuste que Elección en Reproducción &gt; Qué se reproduce.</string>
+    <string name="settings_what_plays_local_position">%1$d de %2$d</string>
 </resources>

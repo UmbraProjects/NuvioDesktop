@@ -356,7 +356,8 @@ object PlayerStreamsRepository {
         val installedAddonOrder = streamAddons.map { it.addonName }
         // The local file rides along as an already-loaded group next to the addon results, so
         // episode switching still offers it even when scrapers are also in play.
-        val initialGroups = listOfNotNull(localGroup) + PlaybackSources.orderAddonStreams(streamAddons.map { addon ->
+        // The local file rides along at the local files row's place in Source priority.
+        val initialGroups = PlaybackSources.orderAddonStreams(listOfNotNull(localGroup) + streamAddons.map { addon ->
             AddonStreamGroup(
                 addonName = addon.addonName,
                 addonId = addon.addonId,

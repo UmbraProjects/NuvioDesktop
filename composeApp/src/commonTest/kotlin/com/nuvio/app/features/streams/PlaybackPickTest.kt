@@ -129,7 +129,7 @@ class PlaybackPickTest {
     @Test
     fun `the default order is debrid, addons, servers, usenet, plugins`() {
         assertEquals(
-            listOf("debrid", "addon:A", "addon:B", "servers", "usenet", "plugins"),
+            listOf("debrid", "addon:A", "addon:B", "servers", "usenet", "plugins", "local"),
             PlaybackSources.effectiveOrder(emptyList(), listOf("A", "B")),
         )
     }
@@ -138,13 +138,13 @@ class PlaybackPickTest {
     fun `a stored order keeps its places and new sources take theirs`() {
         val stored = listOf("usenet", "addon:B", "gone", "debrid")
         assertEquals(
-            listOf("usenet", "addon:B", "addon:A", "debrid", "servers", "plugins"),
+            listOf("usenet", "addon:B", "addon:A", "debrid", "servers", "plugins", "local"),
             PlaybackSources.effectiveOrder(stored, listOf("A", "B")),
         )
     }
 
     @Test
-    fun `groups are ordered by the priority list with local files first or last`() {
+    fun `groups are ordered by the priority list, local files at their row`() {
         val groups = listOf(
             AddonStreamGroup(addonName = "Plugin", addonId = "plugin:p", streams = emptyList()),
             AddonStreamGroup(addonName = "Built-in Usenet", addonId = "usenet:built-in", streams = emptyList()),
@@ -152,13 +152,32 @@ class PlaybackPickTest {
             AddonStreamGroup(addonName = "B", addonId = "addon:b", streams = emptyList()),
             AddonStreamGroup(addonName = "A", addonId = "addon:a", streams = emptyList()),
         )
-        val usenetFirst = PlaybackPickSettings(order = listOf("usenet"), localFiles = LocalFilesPick.LAST)
+        val usenetFirst = PlaybackPickSettings(order = listOf("usenet"))
         assertEquals(
             listOf("usenet:built-in", "addon:a", "addon:b", "plugin:p", "local-library"),
             PlaybackSources.orderGroups(groups, listOf("A", "B"), usenetFirst).map { it.addonId },
         )
-        val localFirst = usenetFirst.copy(localFiles = LocalFilesPick.FIRST)
-        assertEquals("local-library", PlaybackSources.orderGroups(groups, listOf("A", "B"), localFirst).first().addonId)
+        val localSecond = PlaybackPickSettings(order = listOf("usenet", "local"))
+        assertEquals(
+            listOf("usenet:built-in", "local-library", "addon:a", "addon:b", "plugin:p"),
+            PlaybackSources.orderGroups(groups, listOf("A", "B"), localSecond).map { it.addonId },
+        )
+    }
+
+    @Test
+    fun `local placement counts only sources that exist and may auto-play`() {
+        val names = listOf("A")
+        val present = setOf("local", "addon:A")
+        // Debrid is above local here, but this install has no debrid, so local is in effect first.
+        val behindDebrid = PlaybackPickSettings(order = listOf("debrid", "local", "addon:A"))
+        assertEquals(LocalFilesPick.FIRST, behindDebrid.localPlacement(present, names))
+        val behindAddon = PlaybackPickSettings(order = listOf("addon:A", "local"))
+        assertEquals(LocalFilesPick.LAST, behindAddon.localPlacement(present, names))
+        // An addon above it that never auto-plays does not count.
+        val addonOff = behindAddon.copy(autoPlay = mapOf("addon:A" to false))
+        assertEquals(LocalFilesPick.FIRST, addonOff.localPlacement(present, names))
+        val localOff = behindAddon.copy(autoPlay = mapOf("local" to false))
+        assertEquals(LocalFilesPick.NEVER, localOff.localPlacement(present, names))
     }
 
     @Test
@@ -179,20 +198,17 @@ class PlaybackPickTest {
 
     @Test
     fun `local routing follows what plays and the title override`() {
-        val play = PlaybackPickSettings(onPlay = PlayClick.PLAY_FOR_ME)
-        assertEquals(
-            LocalLibraryPlaybackPreference.LOCAL_LIBRARY,
-            localTitleRouting(null, play.copy(localFiles = LocalFilesPick.FIRST)).preference,
-        )
-        assertTrue(localTitleRouting(null, play.copy(localFiles = LocalFilesPick.LAST)).ignoresLocalFile)
-        val show = localTitleRouting(null, play.copy(onPlay = PlayClick.SHOW_SOURCES, localFiles = LocalFilesPick.FIRST))
+        val play = PlayClick.PLAY_FOR_ME
+        assertEquals(LocalLibraryPlaybackPreference.LOCAL_LIBRARY, localTitleRouting(null, play, LocalFilesPick.FIRST).preference)
+        assertTrue(localTitleRouting(null, play, LocalFilesPick.LAST).ignoresLocalFile)
+        val show = localTitleRouting(null, PlayClick.SHOW_SOURCES, LocalFilesPick.FIRST)
         assertEquals(LocalLibraryPlaybackPreference.SOURCE_PICKER, show.preference)
         assertFalse(show.ignoresLocalFile)
         assertEquals(
             LocalLibraryPlaybackPreference.LOCAL_LIBRARY,
-            localTitleRouting(LocalTitlePlayback.LOCAL_FILE, play.copy(localFiles = LocalFilesPick.NEVER)).preference,
+            localTitleRouting(LocalTitlePlayback.LOCAL_FILE, play, LocalFilesPick.NEVER).preference,
         )
-        assertTrue(localTitleRouting(LocalTitlePlayback.ONLINE_SOURCE, play.copy(localFiles = LocalFilesPick.FIRST)).ignoresLocalFile)
+        assertTrue(localTitleRouting(LocalTitlePlayback.ONLINE_SOURCE, play, LocalFilesPick.FIRST).ignoresLocalFile)
     }
 
     // --- Migration ---------------------------------------------------------------------------------------------------
@@ -210,7 +226,7 @@ class PlaybackPickTest {
         assertEquals(PlayClick.SHOW_SOURCES, migrated.onPlay)
         assertEquals(PickBy.PRIORITY_ORDER, migrated.pickBy)
         assertEquals(NextEpisodePick.SAME_RELEASE_FIRST, migrated.nextEpisode)
-        assertEquals(LocalFilesPick.LAST, migrated.localFiles)
+        assertTrue(migrated.order.isEmpty())
         assertTrue(migrated.autoPlay.isEmpty())
     }
 
@@ -259,7 +275,7 @@ class PlaybackPickTest {
         )
         assertTrue(renamed.mayAutoPlay(PlaybackSources.addon("Torrentio RD")))
 
-        assertEquals(LocalFilesPick.FIRST, migrate(local = LocalLibraryPlaybackPreference.LOCAL_LIBRARY).localFiles)
+        assertEquals(listOf("local"), migrate(local = LocalLibraryPlaybackPreference.LOCAL_LIBRARY).order)
         assertEquals(listOf("servers", "debrid"), migrate(serversFirst = true).order)
     }
 

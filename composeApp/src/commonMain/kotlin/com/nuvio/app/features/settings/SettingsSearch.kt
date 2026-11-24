@@ -2084,7 +2084,6 @@ private fun settingsSearchEntries(
             add(PlaybackSearchRow("what-plays-on-play", resolve(Res.string.settings_what_plays_on_play), resolve(Res.string.settings_what_plays_on_play_desc)))
             add(PlaybackSearchRow("what-plays-pick-by", resolve(Res.string.settings_what_plays_pick_by), resolve(Res.string.settings_what_plays_pick_by_desc)))
             add(PlaybackSearchRow("what-plays-next-episode", resolve(Res.string.settings_what_plays_next_episode), resolve(Res.string.settings_what_plays_next_episode_desc)))
-            add(PlaybackSearchRow("what-plays-local-files", resolve(Res.string.settings_what_plays_local_files), resolve(Res.string.settings_what_plays_local_files_desc)))
             add(PlaybackSearchRow("what-plays-source-priority", resolve(Res.string.settings_what_plays_source_priority), resolve(Res.string.settings_what_plays_source_priority_desc)))
             add(PlaybackSearchRow("what-plays-regex", resolve(Res.string.settings_what_plays_regex), resolve(Res.string.settings_what_plays_regex_desc)))
             add(PlaybackSearchRow("stream-timeout", resolve(Res.string.settings_playback_stream_timeout), resolve(Res.string.settings_playback_stream_timeout_description)))

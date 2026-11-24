@@ -5195,10 +5195,10 @@
     <string name="settings_what_plays_next_episode">Nächste Folge</string>
     <string name="settings_what_plays_next_episode_desc">Gleiches Release zuerst behält das Release, das du geschaut hast, von Folge zu Folge und auch beim nächsten Mal. Frag mich öffnet bei jeder Folge die Quellenliste.</string>
     <string name="settings_what_plays_same_release">Gleiches Release zuerst</string>
-    <string name="settings_what_plays_same_rules">Gleiche Regeln wie Abspielen</string>
+    <string name="settings_what_plays_same_rules">Wie Auswahl</string>
     <string name="settings_what_plays_ask_me">Frag mich</string>
     <string name="settings_what_plays_local_files">Lokale Dateien</string>
-    <string name="settings_what_plays_local_files_desc">Wo deine lokale Bibliothek in der Prioritätsreihenfolge steht. Zuerst spielt die lokale Kopie eines Titels; Zuletzt spielt sie nur, wenn online nichts gewählt werden kann. Sie steht immer in der Quellenliste.</string>
+    <string name="settings_what_plays_local_files_desc">Lokale Dateien sind eine Zeile in der Quellenpriorität. Ganz oben spielt die lokale Kopie eines Titels sofort; weiter unten spielt sie, wenn keine Quelle darüber einen Stream hat. Ausgeschaltet wird sie nur aufgelistet.</string>
     <string name="settings_what_plays_local_first">Zuerst</string>
     <string name="settings_what_plays_local_last">Zuletzt</string>
     <string name="settings_what_plays_local_never">Nie automatisch</string>
@@ -5224,4 +5224,5 @@
     <string name="settings_what_plays_summary_next_ask">Die nächste Folge öffnet die Quellenliste.</string>
     <string name="settings_stream_scoring_apply_what_plays">Wählen, was abgespielt wird</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Beste Bewertung lässt dieses Profil den Stream für Abspielen und die nächste Folge wählen. Dieselbe Einstellung wie Auswahl unter Wiedergabe &gt; Was abgespielt wird.</string>
+    <string name="settings_what_plays_local_position">%1$d von %2$d</string>
 </resources>

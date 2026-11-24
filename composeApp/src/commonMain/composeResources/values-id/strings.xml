@@ -5114,10 +5114,10 @@
     <string name="settings_what_plays_next_episode">Episode berikutnya</string>
     <string name="settings_what_plays_next_episode_desc">Rilis yang sama dulu mempertahankan rilis yang kamu tonton, dari episode ke episode dan saat kamu kembali. Tanya saya membuka daftar sumber di setiap episode.</string>
     <string name="settings_what_plays_same_release">Rilis yang sama dulu</string>
-    <string name="settings_what_plays_same_rules">Aturan sama dengan Putar</string>
+    <string name="settings_what_plays_same_rules">Sama dengan Pilihan</string>
     <string name="settings_what_plays_ask_me">Tanya saya</string>
     <string name="settings_what_plays_local_files">File lokal</string>
-    <string name="settings_what_plays_local_files_desc">Posisi pustaka lokal dalam urutan prioritas. Pertama memutar salinan lokal judul; Terakhir hanya memutarnya bila tak ada yang bisa dipilih secara online. Selalu ada di daftar sumber.</string>
+    <string name="settings_what_plays_local_files_desc">File lokal adalah satu baris di Prioritas sumber. Di paling atas, salinan lokal judul langsung diputar; lebih bawah, diputar bila tak ada sumber di atasnya yang punya stream. Saat dimatikan, hanya ditampilkan di daftar.</string>
     <string name="settings_what_plays_local_first">Pertama</string>
     <string name="settings_what_plays_local_last">Terakhir</string>
     <string name="settings_what_plays_local_never">Jangan putar otomatis</string>
@@ -5143,4 +5143,5 @@
     <string name="settings_what_plays_summary_next_ask">Episode berikutnya membuka daftar sumber.</string>
     <string name="settings_stream_scoring_apply_what_plays">Memilih yang diputar</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Skor terbaik membiarkan profil ini memilih stream untuk Putar dan episode berikutnya. Sama dengan Pilihan di Pemutaran &gt; Yang diputar.</string>
+    <string name="settings_what_plays_local_position">%1$d dari %2$d</string>
 </resources>

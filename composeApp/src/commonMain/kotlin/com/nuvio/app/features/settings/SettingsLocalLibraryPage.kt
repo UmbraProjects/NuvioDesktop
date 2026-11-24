@@ -267,14 +267,13 @@ private fun LocalLibraryBrowseSection(
 private fun LocalLibraryPlaybackSection(
     isTablet: Boolean,
 ) {
-    val pick by PlaybackPickSettingsRepository.uiState.collectAsStateWithLifecycle()
     SettingsSection(
         title = stringResource(Res.string.settings_local_library_playback_title),
         isTablet = isTablet,
     ) {
         SettingsGroup(isTablet = isTablet) {
-            // The same setting as the local row of Playback > What plays, reachable from either page.
-            LocalFilesChoiceRow(selected = pick.localFiles, isTablet = isTablet)
+            // The local files row of Playback > What plays > Source priority, reachable from either page.
+            LocalFilesPriorityRow(isTablet = isTablet)
             // Governs how matched local anime is addressed. Shares its value with the copy beside
             // the Continue Watching source — one setting, reachable from either surface it affects.
             AnimeIdPreferenceRow(isTablet = isTablet)

@@ -5272,10 +5272,10 @@
     <string name="settings_what_plays_next_episode">Next episode</string>
     <string name="settings_what_plays_next_episode_desc">Same release first keeps the release you were watching, episode after episode and the next time you come back. Ask me opens the source list at every episode.</string>
     <string name="settings_what_plays_same_release">Same release first</string>
-    <string name="settings_what_plays_same_rules">Same rules as Play</string>
+    <string name="settings_what_plays_same_rules">Same as Pick</string>
     <string name="settings_what_plays_ask_me">Ask me</string>
     <string name="settings_what_plays_local_files">Local files</string>
-    <string name="settings_what_plays_local_files_desc">Where your local library sits in the priority order. First plays a title’s local copy; Last plays it only when nothing online can be picked. It is always in the source list.</string>
+    <string name="settings_what_plays_local_files_desc">Local files are a row in Source priority. At the top, a title’s local copy plays straight away; lower down, it plays when no source above it has a stream. Switched off, it is only listed.</string>
     <string name="settings_what_plays_local_first">First</string>
     <string name="settings_what_plays_local_last">Last</string>
     <string name="settings_what_plays_local_never">Never auto-play</string>
@@ -5301,4 +5301,5 @@
     <string name="settings_what_plays_summary_next_ask">The next episode opens the source list.</string>
     <string name="settings_stream_scoring_apply_what_plays">Choosing what plays</string>
     <string name="settings_stream_scoring_apply_what_plays_desc">Best score lets this profile pick the stream for Play and the next episode. The same choice as Pick in Playback &gt; What plays.</string>
+    <string name="settings_what_plays_local_position">%1$d of %2$d</string>
 </resources>
