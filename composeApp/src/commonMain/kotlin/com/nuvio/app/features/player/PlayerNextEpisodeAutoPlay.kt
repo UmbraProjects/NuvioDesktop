@@ -11,6 +11,8 @@ import com.nuvio.app.features.downloads.DownloadsRepository
 import com.nuvio.app.features.locallibrary.LocalLibraryRepository
 import com.nuvio.app.features.player.skip.NextEpisodeInfo
 import com.nuvio.app.features.streams.BingeReleaseHint
+import com.nuvio.app.features.streams.PlaybackPick
+import com.nuvio.app.features.streams.PlaybackPickRules
 import com.nuvio.app.features.streams.AddonStreamGroup
 import com.nuvio.app.features.streams.StreamAutoPlayMode
 import com.nuvio.app.features.streams.StreamAutoPlayPolicy
@@ -92,77 +94,29 @@ internal fun shouldOpenManualNextEpisodeSelection(
  * which runs the same pick over the preloaded answers to warm that stream's link before the episode
  * ends (see [PlaybackSourceWarmup]); a pick that differs at advance time only costs the warm-up.
  */
-internal class NextEpisodeAutoPlayPicker(
-    val source: StreamAutoPlaySource,
-    val selectedAddons: Set<String>,
-    val selectedPlugins: Set<String>,
-    val installedAddonNames: Set<String>,
-    private val mode: StreamAutoPlayMode,
-    private val regex: String,
-    private val preferredBingeGroup: String?,
-    private val preferredRelease: BingeReleaseHint?,
-    private val preferBingeGroup: Boolean,
-    private val debridEnabled: Boolean,
-    private val activeResolverProviderId: String?,
-    private val scoreProfile: StreamScoreProfile,
-    private val scoreContext: StreamScoreContext,
-) {
+internal class NextEpisodeAutoPlayPicker(val rules: PlaybackPickRules) {
+    val source: StreamAutoPlaySource get() = rules.source
+    val selectedAddons: Set<String> get() = rules.selectedAddons
+    val selectedPlugins: Set<String> get() = rules.selectedPlugins
+    val installedAddonNames: Set<String> get() = rules.installedAddonNames
+
     /** The configured selection, falling back to the first stream the scope allows. */
     fun select(streams: List<StreamItem>): StreamItem? =
-        StreamAutoPlaySelector.selectAutoPlayStream(
-            streams = streams,
-            mode = mode,
-            regexPattern = regex,
-            source = source,
-            installedAddonNames = installedAddonNames,
-            selectedAddons = selectedAddons,
-            selectedPlugins = selectedPlugins,
-            preferredBingeGroup = preferredBingeGroup,
-            preferredRelease = preferredRelease,
-            preferBingeGroupInSelection = preferBingeGroup,
-            bingeGroupOnly = false,
-            debridEnabled = debridEnabled,
-            activeResolverProviderId = activeResolverProviderId,
-            scoreProfile = scoreProfile,
-            scoreContext = scoreContext,
-        ) ?: StreamAutoPlaySelector.selectAutoPlayStream(
-            streams = streams,
-            mode = StreamAutoPlayMode.FIRST_STREAM,
-            regexPattern = "",
-            source = source,
-            installedAddonNames = installedAddonNames,
-            selectedAddons = selectedAddons,
-            selectedPlugins = selectedPlugins,
-            preferredBingeGroup = preferredBingeGroup,
-            preferredRelease = preferredRelease,
-            preferBingeGroupInSelection = preferBingeGroup,
-            bingeGroupOnly = false,
-            debridEnabled = debridEnabled,
-            activeResolverProviderId = activeResolverProviderId,
-        )
+        rules.select(streams) ?: rules.firstStreamFallback().select(streams)
 
     /** The early pick autoplay takes while providers are still answering: the current binge group. */
     fun selectBingeGroupOnly(streams: List<StreamItem>): StreamItem? {
-        if (preferredBingeGroup == null || !preferBingeGroup) return null
-        return StreamAutoPlaySelector.selectAutoPlayStream(
-            streams = streams,
-            mode = mode,
-            regexPattern = regex,
-            source = source,
-            installedAddonNames = installedAddonNames,
-            selectedAddons = selectedAddons,
-            selectedPlugins = selectedPlugins,
-            preferredBingeGroup = preferredBingeGroup,
-            preferredRelease = preferredRelease,
-            preferBingeGroupInSelection = true,
-            bingeGroupOnly = true,
-            debridEnabled = debridEnabled,
-            activeResolverProviderId = activeResolverProviderId,
-        )
+        if (rules.bingeGroup == null || !rules.preferBingeGroup) return null
+        // A binge-group-only pick reads nothing but the group, the release and the source scope.
+        return rules.select(streams, bingeGroupOnly = true)
     }
 
     /** What autoplay ends up with given every provider's answer: the binge-group match, else [select]. */
     fun predict(streams: List<StreamItem>): StreamItem? = selectBingeGroupOnly(streams) ?: select(streams)
+
+    /** Which rule chose [stream]: the fallback's reason when the configured pick found nothing. */
+    fun rulesFor(stream: StreamItem, streams: List<StreamItem>): PlaybackPickRules =
+        if (selectBingeGroupOnly(streams) == stream || rules.select(streams) == stream) rules else rules.firstStreamFallback()
 }
 
 internal fun nextEpisodeAutoPlayPicker(
@@ -209,25 +163,27 @@ internal fun nextEpisodeAutoPlayPicker(
     }
     val debridSettings = DebridSettingsRepository.snapshot()
     return NextEpisodeAutoPlayPicker(
-        source = if (shouldUseFirstAvailable) StreamAutoPlaySource.ALL_SOURCES else settings.streamAutoPlaySource,
-        selectedAddons = if (shouldUseFirstAvailable) emptySet() else settings.streamAutoPlaySelectedAddons,
-        selectedPlugins = if (shouldUseFirstAvailable) emptySet() else settings.streamAutoPlaySelectedPlugins,
-        installedAddonNames = AddonRepository.uiState.value.addons
-            .enabledAddons()
-            .map { it.displayTitle }
-            .toSet(),
-        mode = effectiveMode,
-        regex = if (shouldUseFirstAvailable) "" else settings.streamAutoPlayRegex,
-        preferredBingeGroup = preferredBingeGroup,
-        preferredRelease = preferredRelease,
-        preferBingeGroup = shouldPreferBingeGroup,
-        debridEnabled = debridSettings.canResolvePlayableLinks,
-        activeResolverProviderId = debridSettings.activeResolverProviderId,
-        scoreProfile = scoreProfile,
-        scoreContext = StreamScoreContexts.forPlayback(
-            isEpisode = true,
-            contentId = parentMetaId,
-            contentType = contentType,
+        PlaybackPickRules(
+            mode = effectiveMode,
+            regex = if (shouldUseFirstAvailable) "" else settings.streamAutoPlayRegex,
+            source = if (shouldUseFirstAvailable) StreamAutoPlaySource.ALL_SOURCES else settings.streamAutoPlaySource,
+            installedAddonNames = AddonRepository.uiState.value.addons
+                .enabledAddons()
+                .map { it.displayTitle }
+                .toSet(),
+            selectedAddons = if (shouldUseFirstAvailable) emptySet() else settings.streamAutoPlaySelectedAddons,
+            selectedPlugins = if (shouldUseFirstAvailable) emptySet() else settings.streamAutoPlaySelectedPlugins,
+            bingeGroup = preferredBingeGroup,
+            release = preferredRelease,
+            preferBingeGroup = shouldPreferBingeGroup,
+            debridEnabled = debridSettings.canResolvePlayableLinks,
+            activeResolverProviderId = debridSettings.activeResolverProviderId,
+            scoreProfile = scoreProfile,
+            scoreContext = StreamScoreContexts.forPlayback(
+                isEpisode = true,
+                contentId = parentMetaId,
+                contentType = contentType,
+            ),
         ),
     )
 }
@@ -540,6 +496,13 @@ internal fun CoroutineScope.launchPlayerNextEpisodeAutoPlay(
                 "providers=$providerCount loading=$loadingProviderCount errors=$errorProviderCount " +
                 "streams=$returnedStreamCount retriesRemaining=$emptyResultRetriesRemaining"
         }
+        val pickedFrom = eligibleAutoPlayStreams(finalState.groups.flatMap { it.streams }, sourceAffinity, placeholderSources)
+        PlaybackPick.logPick(
+            trigger = "next episode S${nextSeasonNumber}E$nextEpisodeNumber",
+            rules = selected?.let { picker.rulesFor(it, pickedFrom) } ?: picker.rules,
+            stream = selected,
+            candidates = pickedFrom.size,
+        )
         if (shouldRetryEmptyNextEpisodeSearch(selected, emptyResultRetriesRemaining)) {
             BingeAdvanceLog.i {
                 "autoplay search returned no selectable stream for S${nextSeasonNumber}E${nextEpisodeNumber}; " +

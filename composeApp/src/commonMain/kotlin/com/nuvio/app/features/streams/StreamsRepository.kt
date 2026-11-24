@@ -231,29 +231,21 @@ object StreamsRepository {
         // Scoring turns any automatic pick into a best-score pick; see StreamAutoPlayPolicy.
         // fork:live-tv-on-demand - a play armed to pick its own source does so even with the picker set.
         val forcedAuto = !manualSelection && StreamAutoPlayOverride.take(videoId, effectiveVideoId)
-        val autoPlayMode = StreamAutoPlayPolicy.effectiveMode(playerSettings.streamAutoPlayMode, scoreProfile).let { mode ->
-            if (forcedAuto) StreamAutoPlayOverride.modeFor(mode, StreamAutoPlayPolicy.isRegexSelectionConfigured(playerSettings.streamAutoPlayRegex)) else mode
-        }
-        val isAutoPlayEnabled = !manualSelection && autoPlayMode != StreamAutoPlayMode.MANUAL &&
-            !(autoPlayMode == StreamAutoPlayMode.REGEX_MATCH &&
-                !StreamAutoPlayPolicy.isRegexSelectionConfigured(playerSettings.streamAutoPlayRegex))
-
-        // Look up persisted binge group when both settings are enabled, unless the score profile is
-        // set to override binge affinity — every downstream use here keys off this being non-null, so
-        // clearing it is all it takes to hand the pick back to the scored order.
-        val persistedBingeGroup = if (
-            playerSettings.streamAutoPlayPreferBingeGroup &&
-            playerSettings.streamAutoPlayReuseBingeGroup &&
-            !StreamAutoPlayPolicy.scoreOverridesBingeGroup(autoPlayMode, scoreProfile)
-        ) {
-            parentMetaId?.let { BingeGroupCacheRepository.get(it) }
-        } else null
-        // The release watched last within that group (upstream d2cc0fb8a), aimed at this episode in
-        // the numbering filenames use, so autoplay picks the same release rather than any row that
-        // happens to share the group.
-        val persistedRelease = if (persistedBingeGroup != null) {
-            parentMetaId?.let { BingeGroupCacheRepository.releaseHint(it, season, episode) }
-        } else null
+        // Every rule a first click picks by (scoring, Live TV's forced pick, the remembered binge group): PlaybackPick.
+        val firstPlayPick = PlaybackPick.firstPlay(
+            settings = playerSettings,
+            debridSettings = debridSettings,
+            scoreProfile = scoreProfile,
+            scoreContext = scoreContext,
+            manualSelection = manualSelection,
+            forcedAuto = forcedAuto,
+            parentMetaId = parentMetaId,
+            season = season,
+            episode = episode,
+        )
+        val isAutoPlayEnabled = firstPlayPick.isAutoPlayEnabled
+        val persistedBingeGroup = firstPlayPick.bingeGroup
+        val pickTrigger = if (effectiveEpisode != null) "first play S${effectiveSeason}E$effectiveEpisode" else "first play"
 
         // A local file reached from Home/Search is an additional source, not a silent override
         // for add-on streams. Keep the picker open so the user can choose between them.
@@ -444,6 +436,7 @@ object StreamsRepository {
                 pluginProviderGroups.sumOf { it.scrapers.size }
 
             val installedAddonNames = installedAddonOrder.toSet()
+            val pickRules = firstPlayPick.rules(installedAddonNames)
             val installedAddonIds = streamAddons.map { it.addonId }.toSet()
             val debridAvailabilityJobs = mutableListOf<Job>()
             var autoSelectTriggered = false
@@ -463,24 +456,9 @@ object StreamsRepository {
                     .flatMap { it.streams }
                     .autoPlayEligible()
                 if (allStreams.isEmpty()) return
-                val selected = StreamAutoPlaySelector.selectAutoPlayStream(
-                    streams = allStreams,
-                    mode = autoPlayMode,
-                    scoreProfile = scoreProfile,
-                    scoreContext = scoreContext,
-                    regexPattern = playerSettings.streamAutoPlayRegex,
-                    source = playerSettings.streamAutoPlaySource,
-                    installedAddonNames = installedAddonNames,
-                    selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
-                    selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                    preferredBingeGroup = persistedBingeGroup,
-                    preferredRelease = persistedRelease,
-                    preferBingeGroupInSelection = persistedBingeGroup != null,
-                    bingeGroupOnly = !timeoutElapsed,
-                    debridEnabled = debridSettings.canResolvePlayableLinks,
-                    activeResolverProviderId = debridSettings.activeResolverProviderId,
-                ) ?: return
+                val selected = pickRules.select(allStreams, bingeGroupOnly = !timeoutElapsed) ?: return
                 autoSelectTriggered = true
+                PlaybackPick.logPick("$pickTrigger (on response)", pickRules, selected, allStreams.size)
                 PlaybackStartTrace.mark("autoSelect:${selected.addonName}")
                 _uiState.update { it.copy(autoPlayStream = selected) }
             }
@@ -615,23 +593,8 @@ object StreamsRepository {
                                     .flatMap { it.streams }
                                     .autoPlayEligible()
                                 if (allStreams.isNotEmpty()) {
-                                    val selected = StreamAutoPlaySelector.selectAutoPlayStream(
-                                        streams = allStreams,
-                                        mode = autoPlayMode,
-                                        scoreProfile = scoreProfile,
-                                        scoreContext = scoreContext,
-                                        regexPattern = playerSettings.streamAutoPlayRegex,
-                                        source = playerSettings.streamAutoPlaySource,
-                                        installedAddonNames = installedAddonNames,
-                                        selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
-                                        selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                                        preferredBingeGroup = persistedBingeGroup,
-                                        preferredRelease = persistedRelease,
-                                        preferBingeGroupInSelection = persistedBingeGroup != null,
-                                        bingeGroupOnly = false,
-                                        debridEnabled = debridSettings.canResolvePlayableLinks,
-                                        activeResolverProviderId = debridSettings.activeResolverProviderId,
-                                    )
+                                    val selected = pickRules.select(allStreams)
+                                    PlaybackPick.logPick("$pickTrigger (60 s fallback)", pickRules, selected, allStreams.size)
                                     selected?.let { PlaybackStartTrace.mark("autoSelect:fallback60s:${it.addonName}") }
                                     _uiState.update { it.copy(autoPlayStream = selected) }
                                 }
@@ -659,25 +622,10 @@ object StreamsRepository {
                                 .flatMap { it.streams }
                                 .autoPlayEligible()
                             if (allStreams.isNotEmpty()) {
-                                val evaluation = StreamAutoPlaySelector.evaluateAutoPlayStream(
-                                    streams = allStreams,
-                                    mode = autoPlayMode,
-                                    scoreProfile = scoreProfile,
-                                    scoreContext = scoreContext,
-                                    regexPattern = playerSettings.streamAutoPlayRegex,
-                                    source = playerSettings.streamAutoPlaySource,
-                                    installedAddonNames = installedAddonNames,
-                                    selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
-                                    selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                                    preferredBingeGroup = persistedBingeGroup,
-                                    preferredRelease = persistedRelease,
-                                    preferBingeGroupInSelection = persistedBingeGroup != null,
-                                    bingeGroupOnly = false,
-                                    debridEnabled = debridSettings.canResolvePlayableLinks,
-                                    activeResolverProviderId = debridSettings.activeResolverProviderId,
-                                )
+                                val evaluation = pickRules.evaluate(allStreams)
                                 if (evaluation.stream != null || !evaluation.hasPendingDebridCandidate) {
                                     autoSelectTriggered = true
+                                    PlaybackPick.logPick("$pickTrigger (timeout)", pickRules, evaluation.stream, allStreams.size)
                                     evaluation.stream?.let { PlaybackStartTrace.mark("autoSelect:timeout:${it.addonName}") }
                                     _uiState.update {
                                         it.copy(
@@ -1075,23 +1023,8 @@ object StreamsRepository {
                     .filterNot { it.addonId == LOCAL_LIBRARY_GROUP_ID }
                     .flatMap { it.streams }
                     .autoPlayEligible()
-                val evaluation = StreamAutoPlaySelector.evaluateAutoPlayStream(
-                    streams = allStreams,
-                    mode = autoPlayMode,
-                    scoreProfile = scoreProfile,
-                    scoreContext = scoreContext,
-                    regexPattern = playerSettings.streamAutoPlayRegex,
-                    source = playerSettings.streamAutoPlaySource,
-                    installedAddonNames = installedAddonNames,
-                    selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
-                    selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                    preferredBingeGroup = persistedBingeGroup,
-                    preferredRelease = persistedRelease,
-                    preferBingeGroupInSelection = persistedBingeGroup != null,
-                    bingeGroupOnly = false,
-                    debridEnabled = debridSettings.canResolvePlayableLinks,
-                    activeResolverProviderId = debridSettings.activeResolverProviderId,
-                )
+                val evaluation = pickRules.evaluate(allStreams)
+                PlaybackPick.logPick("$pickTrigger (all answered)", pickRules, evaluation.stream, allStreams.size)
                 evaluation.stream?.let { PlaybackStartTrace.mark("autoSelect:allResponses:${it.addonName}") }
                 _uiState.update {
                     it.copy(
