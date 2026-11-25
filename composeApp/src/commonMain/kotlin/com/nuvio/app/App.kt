@@ -2675,7 +2675,9 @@ private fun MainAppContent(
                 )
             ) {
                 is ExternalPlayerIntentResult.Success -> {
-                    val launched = launchExternalPlayer(intentResult)
+                    // Off the UI thread: starting the player process (and a first player lookup)
+                    // held it 183 ms at a Play click (Nov 25).
+                    val launched = withContext(Dispatchers.IO) { launchExternalPlayer(intentResult) }
                     if (!launched) {
                         NuvioToastController.show(externalPlayerFailedText)
                     }

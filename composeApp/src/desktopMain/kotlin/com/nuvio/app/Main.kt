@@ -316,19 +316,43 @@ private val NuvioDesktopNativeBackground = AwtColor(0x0D, 0x0D, 0x0D)
 private const val NuvioDesktopIconPath = "icons/nuvio-app-icon.png"
 private const val MacosDarkAquaAppearance = "NSAppearanceNameDarkAqua"
 
-private fun installDesktopTray(
-    window: java.awt.Window,
-    onExit: () -> Unit,
-): (() -> Unit)? {
+/** What the tray needs that is slow to get: the decoded icon and the localized menu label. */
+private class PreparedDesktopTray(
+    val tray: SystemTray,
+    val iconUrl: java.net.URL,
+    val renderedIcon: java.awt.Image?,
+    val openLabel: String,
+)
+
+/**
+ * Off the UI thread: decoding the 1080 px icon master into tray-sized variants and resolving the
+ * menu label (a blocking resource read) both ran in the tray's DisposableEffect on the UI thread,
+ * during the window's first frames (2026-11-24 startup report).
+ */
+private fun prepareDesktopTray(): PreparedDesktopTray? {
     if (!SystemTray.isSupported()) return null
     val iconUrl = Thread.currentThread().contextClassLoader.getResource(NuvioDesktopIconPath)
         ?: return null
     val tray = SystemTray.getSystemTray()
     // Pre-rendered variants beat isImageAutoSize, which scales the 1080px master down to 16px with
     // the toolkit's fast path and leaves the icon visibly aliased in the tray.
-    val renderedIcon = loadDesktopTrayIconImage(iconUrl, tray.trayIconSize)
+    return PreparedDesktopTray(
+        tray = tray,
+        iconUrl = iconUrl,
+        renderedIcon = loadDesktopTrayIconImage(iconUrl, tray.trayIconSize),
+        openLabel = localizedString(Res.string.tray_open_nuvio),
+    )
+}
+
+private fun installDesktopTray(
+    window: java.awt.Window,
+    onExit: () -> Unit,
+    prepared: PreparedDesktopTray,
+): (() -> Unit)? {
+    val tray = prepared.tray
+    val renderedIcon = prepared.renderedIcon
     val trayIcon = TrayIcon(
-        renderedIcon ?: Toolkit.getDefaultToolkit().getImage(iconUrl),
+        renderedIcon ?: Toolkit.getDefaultToolkit().getImage(prepared.iconUrl),
         "Nuvio HTPC",
     ).apply {
         isImageAutoSize = renderedIcon == null
@@ -347,7 +371,7 @@ private fun installDesktopTray(
     // No PopupMenu is attached, so the right-click reaches us as a plain mouse event and the menu
     // is ours to draw. See DesktopTrayMenu for why the native one had to go.
     val menuEntries = listOf(
-        DesktopTrayMenuEntry.Action(localizedString(Res.string.tray_open_nuvio)) { restoreWindow() },
+        DesktopTrayMenuEntry.Action(prepared.openLabel) { restoreWindow() },
         DesktopTrayMenuEntry.Separator,
         DesktopTrayMenuEntry.Info("Nuvio ${AppVersionPolicy.displayVersionName}"),
         DesktopTrayMenuEntry.Separator,
@@ -558,7 +582,11 @@ fun main(args: Array<String>) {
         "Info: (DesktopStartup) " + com.nuvio.app.core.ui.FrameProfiler.startIfBenching()
     )
     desktopStartupStep("configure chrome") { configureDesktopChrome() }
-    desktopStartupStep("subtitle font warm request") { com.nuvio.app.features.player.warmSubtitleFontCache() }
+    // After Home rather than now: AWT's font scan competes with the window coming up, and a player
+    // opened before it finishes simply shows the default font until it does (SubtitleFonts).
+    desktopStartupStep("subtitle font warm request") {
+        com.nuvio.app.core.build.StartupReadySignal.onHomeReady { com.nuvio.app.features.player.warmSubtitleFontCache() }
+    }
     desktopStartupStep("app font warm request") { com.nuvio.app.core.ui.warmSystemFontCache() }
     // Idle until Home has rows and the user opted in; see ArtworkPrewarmer.
     desktopStartupStep("artwork prewarm") { com.nuvio.app.core.ui.ArtworkPrewarmer.start() }
@@ -751,14 +779,17 @@ fun main(args: Array<String>) {
                 }
                 onDispose { DesktopSingleInstance.onActivate = null }
             }
-            DisposableEffect(window, closeToTray) {
-                val uninstallTray = if (closeToTray) {
-                    installDesktopTray(window, exitDesktopApplication)
-                } else {
-                    null
+            LaunchedEffect(window, closeToTray) {
+                if (!closeToTray) {
+                    trayInstalled.value = false
+                    return@LaunchedEffect
                 }
+                val prepared = withContext(Dispatchers.IO) { runCatching { prepareDesktopTray() }.getOrNull() }
+                val uninstallTray = prepared?.let { installDesktopTray(window, exitDesktopApplication, it) }
                 trayInstalled.value = uninstallTray != null
-                onDispose {
+                try {
+                    kotlinx.coroutines.awaitCancellation()
+                } finally {
                     trayInstalled.value = false
                     uninstallTray?.invoke()
                 }

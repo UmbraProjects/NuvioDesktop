@@ -1,6 +1,7 @@
 package com.nuvio.app.features.player
 
 import java.awt.GraphicsEnvironment
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Enumerating installed fonts via AWT can take a few hundred ms the first time, so cache it
 // for the session. Prepend "" so the player default is always the first option.
@@ -9,7 +10,7 @@ import java.awt.GraphicsEnvironment
 // names go to mpv, which does its own matching and takes AWT's style variants ("Arial Black",
 // "Calibri Light") as families in their own right. Narrowing this to Skia's typographic families
 // would drop subtitle fonts that work today.
-private val systemSubtitleFontFamilies: List<String> by lazy {
+private fun enumerateSubtitleFontFamilies(): List<String> {
     val families = runCatching {
         GraphicsEnvironment.getLocalGraphicsEnvironment()
             .availableFontFamilyNames
@@ -24,14 +25,30 @@ private val systemSubtitleFontFamilies: List<String> by lazy {
         // breaks every later AWT font use (the tray menu) with "Could not initialize class".
         co.touchlab.kermit.Logger.withTag("SubtitleFonts").e(error) { "AWT font enumeration failed" }
     }.getOrDefault(emptyList())
-    listOf("") + families
+    return listOf("") + families
 }
 
-actual fun availableSubtitleFontFamilies(): List<String> = systemSubtitleFontFamilies
+@Volatile private var subtitleFontFamilies: List<String>? = null
+private val subtitleFontWarmStarted = AtomicBoolean(false)
 
-/** Warms the system-font cache off the UI thread so the first player open isn't janky. */
+/**
+ * The installed font families, or only the player default while they are still being listed.
+ * Never waits: the list used to be a lazy the player's UI thread read while the warm-up thread
+ * held it, and on one launch that wait was an 18.7 s UI stall (2026-11-24 startup report). The
+ * player rebuilds its controls model continually, so the full list appears on the next rebuild.
+ */
+actual fun availableSubtitleFontFamilies(): List<String> =
+    subtitleFontFamilies ?: run {
+        warmSubtitleFontCache()
+        DefaultOnlyFontFamilies
+    }
+
+private val DefaultOnlyFontFamilies = listOf("")
+
+/** Lists the system fonts off the UI thread, once, so the player finds them ready. */
 fun warmSubtitleFontCache() {
-    Thread { systemSubtitleFontFamilies }
+    if (!subtitleFontWarmStarted.compareAndSet(false, true)) return
+    Thread { subtitleFontFamilies = enumerateSubtitleFontFamilies() }
         .apply {
             name = "nuvio-subtitle-font-warmup"
             isDaemon = true

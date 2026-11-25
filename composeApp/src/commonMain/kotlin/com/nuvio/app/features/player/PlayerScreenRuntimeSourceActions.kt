@@ -1037,10 +1037,7 @@ internal fun StreamItem.preferredAudioLanguageRank(preferredAudioLanguages: List
 internal fun StreamItem.advertisedAudioLanguages(): Set<String> {
     val structured = audioLanguages +
         clientResolve?.stream?.raw?.parsed?.languages.orEmpty()
-    val supportedCodes = AvailableLanguageOptions
-        .mapNotNull { option -> normalizeLanguageCode(option.code) }
-        .map { it.substringBefore('-') }
-        .toSet() + setOf("multi", "mul")
+    val supportedCodes = SupportedAudioLanguageCodes
 
     val normalizedStructured = structured
         .mapNotNull(::normalizeLanguageCode)
@@ -1075,6 +1072,17 @@ internal fun StreamItem.advertisedAudioLanguages(): Set<String> {
 }
 
 private val languageTokenRegex = Regex("""[\p{L}]{2,20}""")
+
+/**
+ * The language codes [advertisedAudioLanguages] accepts. Built once: it was rebuilt (every option
+ * normalised) for each stream ranked, on the UI thread when Play picks a fallback (Nov 25).
+ */
+private val SupportedAudioLanguageCodes: Set<String> by lazy {
+    AvailableLanguageOptions
+        .mapNotNull { option -> normalizeLanguageCode(option.code) }
+        .map { it.substringBefore('-') }
+        .toSet() + setOf("multi", "mul")
+}
 
 internal fun selectFailoverResumePositionMs(
     lastTrustedPositionMs: Long,

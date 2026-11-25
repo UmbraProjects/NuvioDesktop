@@ -386,6 +386,10 @@ private val LanguageNameAliases = mapOf(
     "zulu" to "zu",
 )
 
+// Compiled once: normalizeLanguageCode runs on every stream's titles while sources are ranked,
+// and compiling this per call was most of a 376 ms UI-thread stall on Play (Nov 25).
+private val WhitespaceRun = Regex("\\s+")
+
 fun normalizeLanguageCode(language: String?): String? {
     val raw = language
         ?.trim()
@@ -398,7 +402,7 @@ fun normalizeLanguageCode(language: String?): String? {
         .replace('-', ' ')
         .replace('.', ' ')
         .replace('/', ' ')
-        .replace(Regex("\\s+"), " ")
+        .replace(WhitespaceRun, " ")
         .trim()
 
     fun containsAny(vararg values: String): Boolean =
