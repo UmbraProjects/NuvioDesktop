@@ -89,6 +89,26 @@ class CoalescingCachePersisterTest {
     }
 
     @Test
+    fun `flushAll writes every persister with a pending change, as the exit hook needs`() = runBlocking {
+        val first = Recorder()
+        val second = Recorder()
+        val idle = Recorder()
+        val a = CoalescingCachePersister("a", writeDelayMs = 60_000L) { first.record() }
+        val b = CoalescingCachePersister("b", writeDelayMs = 60_000L) { second.record() }
+        CoalescingCachePersister("idle", writeDelayMs = 60_000L) { idle.record() }
+
+        a.schedule()
+        b.schedule()
+        delay(SETTLE_MS)
+        assertEquals(0, first.writes + second.writes, "nothing should have been written this early")
+
+        CoalescingCachePersister.flushAll()
+        assertEquals(1, first.writes)
+        assertEquals(1, second.writes)
+        assertEquals(0, idle.writes, "a persister never scheduled has nothing to write")
+    }
+
+    @Test
     fun `flush with nothing pending does not write`() = runBlocking {
         val recorder = Recorder()
         val persister = CoalescingCachePersister("test", WINDOW_MS) { recorder.record() }

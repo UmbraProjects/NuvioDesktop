@@ -527,6 +527,7 @@ fun main(args: Array<String>) {
     // Now that this copy owns the data directory and before any store is read: a settings import
     // staged by the previous session lands here (see applyPendingSettingsImport).
     com.nuvio.app.features.settings.applyPendingSettingsImport(com.nuvio.app.core.storage.DesktopStorage.rootDir)
+    com.nuvio.app.core.storage.DesktopStorage.installExitFlush()
     // Not from a nativeSmoke launch: it would point the user's nuvio:// links at the build folder.
     if (!com.nuvio.app.core.build.NativeImageSupport.selfTestRequested) DesktopUrlScheme.registerInBackground()
     // Held as the pending link until the app's navigation is up to take it. Straight to the link
@@ -1346,13 +1347,9 @@ fun main(args: Array<String>) {
     // between the user and the process going away.
     runBlocking {
         withTimeoutOrNull(CACHE_FLUSH_TIMEOUT_MS) {
-            runCatching { HeroCastMetadataService.flushPendingWrites() }
-            runCatching { MdbListMetadataService.flushPendingWrites() }
-            runCatching { com.nuvio.app.features.details.LightweightMetaDiskCache.flushPendingWrites() }
-            runCatching { com.nuvio.app.features.home.HeroBundleCache.flushPendingWrites() }
-            runCatching { com.nuvio.app.features.metadata.AnimeArtworkDiskCache.flushPendingWrites() }
-            runCatching { com.nuvio.app.features.details.filler.AnimeFillerRepository.flushPendingWrites() }
-            runCatching { com.nuvio.app.features.streams.CwStreamCache.flushPendingWrites() }
+            // Every batched cache that has pending writes (the shutdown hook does the same for exit
+            // paths that never reach this line).
+            runCatching { com.nuvio.app.core.storage.CoalescingCachePersister.flushAll() }
         }
     }
     // Home settings are encoded off the UI thread now; a change made just before exit is written

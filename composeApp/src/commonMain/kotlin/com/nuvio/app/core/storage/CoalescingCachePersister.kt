@@ -74,6 +74,14 @@ internal class CoalescingCachePersister(
      */
     fun schedule() {
         scope.launch {
+            if (!registered) {
+                registryMutex.withLock {
+                    if (!registered) {
+                        registry += this@CoalescingCachePersister
+                        registered = true
+                    }
+                }
+            }
             stateMutex.withLock {
                 dirty = true
                 if (scheduled != null) return@withLock
@@ -118,12 +126,28 @@ internal class CoalescingCachePersister(
             }
     }
 
-    private companion object {
+    @Volatile private var registered = false
+
+    internal companion object {
         /**
          * Long enough that a hero prefetch walking a row collapses into a handful of writes, short
          * enough that the crash-loss window stays small for something a user might have spent real
          * API budget filling.
          */
-        const val DEFAULT_WRITE_DELAY_MS = 3_000L
+        private const val DEFAULT_WRITE_DELAY_MS = 3_000L
+
+        private val registryMutex = Mutex()
+        private val registry = mutableListOf<CoalescingCachePersister>()
+
+        /**
+         * Flushes every persister that has ever had a write scheduled. For every exit path: main()'s
+         * own exit and the desktop shutdown hook (exitProcess, a restart, a session end), which used
+         * to flush nothing of these. Writes also wait for a quiet moment, up to five minutes, so a
+         * short session's lookups were lost and re-fetched next launch (anime artwork, Nov 25).
+         */
+        suspend fun flushAll() {
+            val all = registryMutex.withLock { registry.toList() }
+            all.forEach { persister -> runCatching { persister.flush() } }
+        }
     }
 }

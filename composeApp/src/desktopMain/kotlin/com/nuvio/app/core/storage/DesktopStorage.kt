@@ -470,10 +470,36 @@ internal object DesktopStorage {
     private val flushExecutor: ScheduledExecutorService by lazy {
         Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "nuvio-storage-flush").apply { isDaemon = true }
-        }.also {
-            Runtime.getRuntime().addShutdownHook(Thread({ flushAll() }, "nuvio-storage-exit-flush"))
-        }
+        }.also { installExitFlush() }
     }
+
+    private val exitFlushInstalled = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * The shutdown hook for exit paths that skip main()'s own flush (exitProcess, a restart, the
+     * session ending). First the batched disk caches (CoalescingCachePersister: lookups that would
+     * otherwise be fetched again next launch), whose writes land in stores here, then every store.
+     * One hook, in that order: JVM shutdown hooks run concurrently, so two hooks could flush the
+     * stores before the caches had written into them. Installed from main() too, so it exists even
+     * before the first store write.
+     */
+    fun installExitFlush() {
+        if (!exitFlushInstalled.compareAndSet(false, true)) return
+        Runtime.getRuntime().addShutdownHook(
+            Thread({
+                runCatching {
+                    kotlinx.coroutines.runBlocking {
+                        kotlinx.coroutines.withTimeoutOrNull(EXIT_CACHE_FLUSH_TIMEOUT_MS) {
+                            CoalescingCachePersister.flushAll()
+                        }
+                    }
+                }
+                flushAll()
+            }, "nuvio-storage-exit-flush"),
+        )
+    }
+
+    private const val EXIT_CACHE_FLUSH_TIMEOUT_MS = 2_000L
 
     private const val FLUSH_DELAY_MS = 1_500L
     private const val MAX_RETRY_DELAY_MS = 30_000L
