@@ -44,19 +44,68 @@ internal object AnimeArtworkService {
         val ids = animeArtworkLookupIds(nativeId) ?: return null
         val cacheKey = nativeId.nativeAnimeBase().lowercase()
         cacheMutex.withLock { if (cache.containsKey(cacheKey)) return cache[cacheKey] }
-        AnimeArtworkDiskCache.get("backdrop|$cacheKey")?.let { stored ->
-            cacheMutex.withLock { cache[cacheKey] = stored }
-            return stored
+        when (val stored = AnimeArtworkDiskCache.lookup("backdrop|$cacheKey")) {
+            is AnimeArtworkDiskCache.Lookup.Found -> {
+                cacheMutex.withLock { cache[cacheKey] = stored.url }
+                return stored.url
+            }
+            AnimeArtworkDiskCache.Lookup.KnownNone -> {
+                cacheMutex.withLock { cache[cacheKey] = null }
+                return null
+            }
+            AnimeArtworkDiskCache.Lookup.Unknown -> Unit
         }
 
         // Kitsu first: same key art as AniList in most cases but at 3360×800 vs ~1900×400,
         // which survives the hero's vertical crop much better.
-        val backdrop = ids.kitsu?.let { fetchKitsuCover(it) }
-            ?: ids.anilist?.let { fetchAniListBanner(it) }
-        cacheMutex.withLock { cache[cacheKey] = backdrop }
-        if (backdrop != null) AnimeArtworkDiskCache.put("backdrop|$cacheKey", backdrop)
-        return backdrop
+        val backdrop = firstFound(
+            { ids.kitsu?.let { fetchKitsuCover(it) } },
+            { ids.anilist?.let { fetchAniListBanner(it) } },
+        )
+        return remember(backdrop, "backdrop|$cacheKey") { url -> cache[cacheKey] = url }
     }
+
+    /**
+     * Keeps [result] in memory and on disk when it is an answer (found, or none from every provider
+     * asked); a failed lookup is kept nowhere, so it is tried again later. Returns the url, if any.
+     */
+    private suspend fun remember(result: ArtResult, diskKey: String, inMemory: (String?) -> Unit): String? =
+        when (result) {
+            is ArtResult.Found -> {
+                cacheMutex.withLock { inMemory(result.url) }
+                AnimeArtworkDiskCache.put(diskKey, result.url)
+                result.url
+            }
+            ArtResult.None -> {
+                cacheMutex.withLock { inMemory(null) }
+                AnimeArtworkDiskCache.putNone(diskKey)
+                null
+            }
+            ArtResult.Failed -> null
+        }
+
+    /** The first provider that found art; none when every provider asked answered without; failed otherwise. */
+    private suspend fun firstFound(vararg providers: suspend () -> ArtResult?): ArtResult {
+        var failed = false
+        for (provider in providers) {
+            when (val result = provider() ?: continue) {
+                is ArtResult.Found -> return result
+                ArtResult.None -> Unit
+                ArtResult.Failed -> failed = true
+            }
+        }
+        return if (failed) ArtResult.Failed else ArtResult.None
+    }
+
+    private sealed interface ArtResult {
+        data class Found(val url: String) : ArtResult
+        /** The provider answered: it has no such picture. */
+        data object None : ArtResult
+        /** No answer (timeout, error, rate limit): says nothing about the title. */
+        data object Failed : ArtResult
+    }
+
+    private fun String?.asArt(): ArtResult = this?.takeIf { it.isNotBlank() }?.let { ArtResult.Found(it) } ?: ArtResult.None
 
     /**
      * Entry-specific **portrait poster** for [nativeId], straight from Kitsu/AniList.
@@ -77,16 +126,23 @@ internal object AnimeArtworkService {
         val ids = animeArtworkLookupIds(nativeId) ?: return null
         val cacheKey = nativeId.nativeAnimeBase().lowercase()
         cacheMutex.withLock { if (posterCache.containsKey(cacheKey)) return posterCache[cacheKey] }
-        AnimeArtworkDiskCache.get("poster|$cacheKey")?.let { stored ->
-            cacheMutex.withLock { posterCache[cacheKey] = stored }
-            return stored
+        when (val stored = AnimeArtworkDiskCache.lookup("poster|$cacheKey")) {
+            is AnimeArtworkDiskCache.Lookup.Found -> {
+                cacheMutex.withLock { posterCache[cacheKey] = stored.url }
+                return stored.url
+            }
+            AnimeArtworkDiskCache.Lookup.KnownNone -> {
+                cacheMutex.withLock { posterCache[cacheKey] = null }
+                return null
+            }
+            AnimeArtworkDiskCache.Lookup.Unknown -> Unit
         }
 
-        val poster = ids.kitsu?.let { fetchKitsuPoster(it) }
-            ?: ids.anilist?.let { fetchAniListCover(it) }
-        cacheMutex.withLock { posterCache[cacheKey] = poster }
-        if (poster != null) AnimeArtworkDiskCache.put("poster|$cacheKey", poster)
-        return poster
+        val poster = firstFound(
+            { ids.kitsu?.let { fetchKitsuPoster(it) } },
+            { ids.anilist?.let { fetchAniListCover(it) } },
+        )
+        return remember(poster, "poster|$cacheKey") { url -> posterCache[cacheKey] = url }
     }
 
     /**
@@ -155,10 +211,21 @@ internal object AnimeArtworkService {
         }
     }
 
-    private suspend fun fetchAniListBanner(anilistId: Int): String? =
+    private suspend fun fetchAniListBanner(anilistId: Int): ArtResult =
+        aniListMedia(anilistId, fields = "bannerImage") { media -> media?.bannerImage.asArt() }
+
+    /**
+     * One AniList `Media` query through [AniListGate]. A 404 is an answer (no such entry); a 429 starts the gate's
+     * cooldown; anything else that is not a 2xx, or no answer at all, is [ArtResult.Failed].
+     */
+    private suspend fun aniListMedia(
+        anilistId: Int,
+        fields: String,
+        pick: (AniListMedia?) -> ArtResult,
+    ): ArtResult = AniListGate.run {
         runCatchingNonCancellable {
             withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-                val body = """{"query":"query(${'$'}id:Int){Media(id:${'$'}id,type:ANIME){bannerImage}}","variables":{"id":$anilistId}}"""
+                val body = """{"query":"query(${'$'}id:Int){Media(id:${'$'}id,type:ANIME){$fields}}","variables":{"id":$anilistId}}"""
                 val response = httpRequestRaw(
                     method = "POST",
                     url = "https://graphql.anilist.co",
@@ -169,15 +236,59 @@ internal object AnimeArtworkService {
                     body = body,
                     callTimeoutMs = FETCH_TIMEOUT_MS,
                 )
-                if (response.status !in 200..299) return@withTimeoutOrNull null
-                json.decodeFromString<AniListResponse>(response.body)
-                    .data?.media?.bannerImage?.takeIf { it.isNotBlank() }
+                when (response.status) {
+                    in 200..299 -> pick(json.decodeFromString<AniListResponse>(response.body).data?.media)
+                    404 -> ArtResult.None
+                    429 -> {
+                        val retryAfter = response.headers.entries
+                            .firstOrNull { it.key.equals("Retry-After", ignoreCase = true) }
+                            ?.value?.trim()?.toLongOrNull()
+                        AniListGate.coolDown(retryAfter)
+                        ArtResult.Failed
+                    }
+                    else -> ArtResult.Failed
+                }
             }
         }
+    } ?: ArtResult.Failed
 
-    private suspend fun fetchKitsuCover(kitsuId: Int): String? {
-        val cover = fetchKitsuAttributes(kitsuId)?.coverImage
-        return (cover?.original ?: cover?.large)?.takeIf { it.isNotBlank() }
+    /**
+     * AniList's public API allows 30 requests a minute while degraded (90 normally) and answers 429 past it. Home
+     * asked it about every Kitsu-less anime at once at launch: 23 calls in 4 s, 16 refused (2026-11-25). Requests now
+     * go one at a time, [SpacingMs] apart, and after a 429 none are sent until its Retry-After (or a minute) has
+     * passed; lookups in that time count as failed, so they are tried again later rather than remembered as "none".
+     */
+    private object AniListGate {
+        private const val SpacingMs = 2_000L
+        private const val DefaultCooldownMs = 60_000L
+        private val mutex = Mutex()
+        private var nextAllowedAtMs = 0L
+        @kotlin.concurrent.Volatile private var cooldownUntilMs = 0L
+
+        private fun now() = com.nuvio.app.features.watchprogress.WatchProgressClock.nowEpochMs()
+
+        suspend fun <T> run(block: suspend () -> T): T? {
+            if (now() < cooldownUntilMs) return null
+            mutex.withLock {
+                val waitMs = nextAllowedAtMs - now()
+                if (waitMs > 0) kotlinx.coroutines.delay(waitMs)
+                nextAllowedAtMs = now() + SpacingMs
+            }
+            if (now() < cooldownUntilMs) return null
+            return block()
+        }
+
+        fun coolDown(retryAfterSeconds: Long?) {
+            val ms = retryAfterSeconds?.takeIf { it in 1..600 }?.times(1_000) ?: DefaultCooldownMs
+            cooldownUntilMs = maxOf(cooldownUntilMs, now() + ms)
+            log.i { "AniList rate limit: no requests for ${ms / 1_000} s" }
+        }
+    }
+
+    private suspend fun fetchKitsuCover(kitsuId: Int): ArtResult {
+        val attributes = fetchKitsuAttributes(kitsuId) ?: return ArtResult.Failed
+        val cover = attributes.coverImage
+        return (cover?.original ?: cover?.large).asArt()
     }
 
     // One Kitsu request per entry fills both the cover and the poster (optimization audit B4: the two lookups asked
@@ -199,6 +310,8 @@ internal object AnimeArtworkService {
                                 body = "",
                                 callTimeoutMs = FETCH_TIMEOUT_MS,
                             )
+                            // No such entry is an answer (no art), not a failure to retry.
+                            if (response.status == 404) return@withTimeoutOrNull KitsuAttributes()
                             if (response.status !in 200..299 || response.body.isBlank()) return@withTimeoutOrNull null
                             json.decodeFromString<KitsuResponse>(response.body).data?.attributes ?: KitsuAttributes()
                         }
@@ -211,29 +324,15 @@ internal object AnimeArtworkService {
         return pending.await()
     }
 
-    private suspend fun fetchAniListCover(anilistId: Int): String? =
-        runCatchingNonCancellable {
-            withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-                val body = """{"query":"query(${'$'}id:Int){Media(id:${'$'}id,type:ANIME){coverImage{extraLarge large}}}","variables":{"id":$anilistId}}"""
-                val response = httpRequestRaw(
-                    method = "POST",
-                    url = "https://graphql.anilist.co",
-                    headers = mapOf(
-                        "Content-Type" to "application/json",
-                        "Accept" to "application/json",
-                    ),
-                    body = body,
-                    callTimeoutMs = FETCH_TIMEOUT_MS,
-                )
-                if (response.status !in 200..299) return@withTimeoutOrNull null
-                val cover = json.decodeFromString<AniListResponse>(response.body).data?.media?.coverImage
-                (cover?.extraLarge ?: cover?.large)?.takeIf { it.isNotBlank() }
-            }
+    private suspend fun fetchAniListCover(anilistId: Int): ArtResult =
+        aniListMedia(anilistId, fields = "coverImage{extraLarge large}") { media ->
+            (media?.coverImage?.extraLarge ?: media?.coverImage?.large).asArt()
         }
 
-    private suspend fun fetchKitsuPoster(kitsuId: Int): String? {
-        val poster = fetchKitsuAttributes(kitsuId)?.posterImage
-        return (poster?.original ?: poster?.large)?.takeIf { it.isNotBlank() }
+    private suspend fun fetchKitsuPoster(kitsuId: Int): ArtResult {
+        val attributes = fetchKitsuAttributes(kitsuId) ?: return ArtResult.Failed
+        val poster = attributes.posterImage
+        return (poster?.original ?: poster?.large).asArt()
     }
 
     private inline fun <T> runCatchingNonCancellable(block: () -> T?): T? =
