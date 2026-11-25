@@ -60,8 +60,13 @@ internal object DesktopStorage {
      */
     val accountDir: Path by lazy { DesktopAccountSlots.activeSlotDir() }
 
-    fun store(name: String): Store = synchronized(stores) {
-        stores.getOrPut(name) { Store(storeFile(name)) }
+    fun store(name: String): Store {
+        // Resolve storeFile (and therefore accountDir) outside the stores lock so another thread
+        // resolving accountDir -> activeSlotDir() -> store(REGISTRY_STORE) cannot invert locks.
+        val file = storeFile(name)
+        return synchronized(stores) {
+            stores.getOrPut(name) { Store(file) }
+        }
     }
 
     /**
@@ -74,7 +79,10 @@ internal object DesktopStorage {
      * launch means the screen that needs the store later finds it in memory. A few threads, because
      * one stuck open must not hold up the rest.
      */
+    private val prewarmStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun prewarmStoresAsync() {
+        if (!prewarmStarted.compareAndSet(false, true)) return
         Thread({
             val files = runCatching {
                 listOf(accountDir, rootDir).distinct().flatMap { dir ->
@@ -109,23 +117,49 @@ internal object DesktopStorage {
     private const val PREWARM_THREADS = 4
 
     /**
-     * Big stores nothing on Home reads, prewarmed a few seconds after Home is up instead of during
-     * its first frames: the plugin code is MBs of scraper JS (298 ms to 3.9 s to read at launch,
-     * 2026-11-24 startup report) that App.kt already holds back until then for the young-GC cost,
-     * and the lyric cache is only for the music player. Still prewarmed, on this pool, so a slow
-     * scanner-held open never lands on the UI thread.
+     * Big or non-Home stores prewarmed a few seconds after Home is up instead of during `0-500ms`:
+     * prewarming all 136 stores at launch had `nuvio_simkl_calendar_cache` (2.9 MB, 253-277ms parse),
+     * `nuvio_music_library` (1.2 MB), `nuvio_local_library` (772 KB), etc. contending with Window
+     * init, ImageDiskCache journal replay, and early startup bootstrap. Still prewarmed after Home
+     * on a low-priority pool so a slow scanner-held open never lands on the UI thread later.
      */
-    private val PREWARM_AFTER_HOME = setOf("nuvio_plugin_code", "nuvio_music_lyric_cache")
+    private val PREWARM_AFTER_HOME = setOf(
+        "nuvio_plugin_code",
+        "nuvio_simkl_calendar_cache",
+        "nuvio_music_lyric_cache",
+        "nuvio_music_library",
+        "nuvio_local_library",
+        "nuvio_stream_link_cache",
+        "nuvio_downloads",
+        "nuvio_discover_rows_cache",
+        "nuvio_trivia_cache",
+        "nuvio_trakt_library",
+        "nuvio_library_title_facts",
+        "nuvio_library",
+        "nuvio_simkl_list_cache",
+        "nuvio_filename_lookups",
+        "nuvio_postshow_cache",
+        "nuvio_playback_redirect_verdicts_v2",
+    )
     private const val PREWARM_AFTER_HOME_DELAY_MS = 3_000L
+    private const val PREWARM_AFTER_HOME_THREADS = 2
 
     private fun prewarmAfterHome(names: List<String>) {
         com.nuvio.app.core.build.StartupReadySignal.onHomeReady {
             Thread({
                 runCatching { Thread.sleep(PREWARM_AFTER_HOME_DELAY_MS) }
                 val startedAt = System.nanoTime()
-                names.forEach { name -> runCatching { store(name).contains("") } }
-                log.i { "store prewarm after Home: ${names.joinToString()} in ${(System.nanoTime() - startedAt) / 1_000_000}ms" }
-            }, "nuvio-storage-prewarm-late").apply {
+                val pool = Executors.newFixedThreadPool(PREWARM_AFTER_HOME_THREADS) { runnable ->
+                    Thread(runnable, "nuvio-storage-prewarm-late").apply {
+                        isDaemon = true
+                        priority = Thread.MIN_PRIORITY
+                    }
+                }
+                names.forEach { name -> pool.execute { runCatching { store(name).contains("") } } }
+                pool.shutdown()
+                pool.awaitTermination(2, TimeUnit.MINUTES)
+                log.i { "store prewarm after Home: ${names.size} stores in ${(System.nanoTime() - startedAt) / 1_000_000}ms" }
+            }, "nuvio-storage-prewarm-late-main").apply {
                 isDaemon = true
                 priority = Thread.MIN_PRIORITY
             }.start()
@@ -505,8 +539,16 @@ internal object DesktopStorage {
     private const val MAX_RETRY_DELAY_MS = 30_000L
     private val LOAD_RETRY_DELAYS_MS = longArrayOf(50L, 250L, 1_000L)
 
+    private val flushListeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
+
+    /** Registers a non-properties storage (e.g. a coalesced blob file) to flush on [flushAll]. */
+    fun registerFlushListener(listener: () -> Unit) {
+        flushListeners.addIfAbsent(listener)
+    }
+
     /** Writes every store with pending changes, on the calling thread. Safe to call repeatedly. */
     fun flushAll() {
+        flushListeners.forEach { listener -> runCatching { listener() } }
         val snapshot = synchronized(stores) { stores.values.toList() }
         snapshot.forEach { store -> store.flush() }
     }

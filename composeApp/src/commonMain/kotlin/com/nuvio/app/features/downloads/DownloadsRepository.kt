@@ -46,7 +46,15 @@ object DownloadsRepository {
     }
 
     fun onProfileChanged() {
-        synchronized(loadLock) { loadFromDisk() }
+        // Invalidate lazily rather than reading the store and stat-ing files on the profile-switch
+        // thread: warmProfileDeferredRepositories loads this on Dispatchers.IO after Home is up,
+        // and every caller that touches downloads first goes through ensureLoaded().
+        synchronized(loadLock) {
+            fileResolveJob?.cancel()
+            fileResolveJob = null
+            hasLoaded = false
+            _uiState.value = DownloadsUiState()
+        }
     }
 
     fun clearLocalState() {

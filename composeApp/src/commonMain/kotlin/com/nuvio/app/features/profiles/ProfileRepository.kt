@@ -85,12 +85,25 @@ object ProfileRepository {
     private val log = Logger.withTag("ProfileRepository")
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val profileSwitchMutex = Mutex()
+    private val cacheLoadLock = Any()
     private fun localizedString(resource: StringResource): String = runBlocking { getString(resource) }
 
     private val _state = MutableStateFlow(ProfileState())
     val state: StateFlow<ProfileState> = _state.asStateFlow()
 
+    @Volatile
     private var activeProfileIndexBacking: Int = 1
+
+    /**
+     * False until the first profile activation in this process. On cold start, when the initial
+     * profile matches [activeProfileIndex] (which [loadCachedProfiles]/[ensureLoaded] already set
+     * and loaded the theme/settings UI for), no other profile-scoped repository has loaded another
+     * profile's data yet — so we can skip the ~40 synchronous `onProfileChanged` resets and let
+     * the critical/deferred warm-ups load only what is needed, in parallel. Any later profile
+     * switch (or a cold start that picks a different profile) runs the full reload.
+     */
+    @Volatile
+    private var everActivatedProfile: Boolean = false
 
     /**
      * The active profile, with the process-wide caches that are keyed on it invalidated on change.
@@ -127,7 +140,10 @@ object ProfileRepository {
         persist()
     }
 
-    fun loadCachedProfiles(): Boolean {
+    fun loadCachedProfiles(): Boolean = synchronized(cacheLoadLock) {
+        if (loadedCacheForUserId != null && _state.value.isLoaded) {
+            return _state.value.profiles.isNotEmpty()
+        }
         val stored = decodeStoredPayload() ?: return false
         loadedCacheForUserId = stored.userId
         applyStoredPayload(stored)
@@ -142,29 +158,53 @@ object ProfileRepository {
     }
 
     fun ensureLoaded(userId: String) {
-        if (loadedCacheForUserId == userId && _state.value.isLoaded) return
+        synchronized(cacheLoadLock) {
+            if (loadedCacheForUserId == userId && _state.value.isLoaded) return
 
-        val stored = decodeStoredPayload()
-        loadedCacheForUserId = userId
-        if (stored == null) {
-            _state.value = ProfileState()
-            activeProfileIndex = 1
-            return
+            val stored = decodeStoredPayload()
+            loadedCacheForUserId = userId
+            if (stored == null) {
+                _state.value = ProfileState()
+                activeProfileIndex = 1
+                return
+            }
+
+            if (stored.userId != userId) {
+                _state.value = ProfileState()
+                activeProfileIndex = 1
+                return
+            }
+
+            applyStoredPayload(stored)
+            SettingsCategoryOrderRepository.onProfileChanged()
+            SettingsCategoryNamesRepository.onProfileChanged()
+            SettingsFavoritesRepository.onProfileChanged()
+            SettingsSearchHistoryRepository.onProfileChanged()
+            SettingsHiddenCategoriesRepository.onProfileChanged()
+            SettingsCollapsedSectionsRepository.onProfileChanged()
         }
+    }
 
-        if (stored.userId != userId) {
-            _state.value = ProfileState()
-            activeProfileIndex = 1
-            return
+    /**
+     * The profile that can be entered automatically at launch without showing the profile picker:
+     * the remembered last profile (when enabled and not PIN-protected), or the sole non-PIN
+     * profile. Shared by early startup bootstrap and the UI gate so both make the exact same call.
+     */
+    internal fun resolveAutoStartupProfile(
+        profileState: ProfileState = _state.value,
+        activeId: Int = activeProfileId,
+    ): NuvioProfile? {
+        val profiles = profileState.profiles
+        if (profiles.isEmpty()) return null
+        if (profileState.rememberLastProfileEnabled && profileState.hasEverSelectedProfile) {
+            profiles.find { it.profileIndex == activeId }
+                ?.takeUnless { it.pinEnabled }
+                ?.let { return it }
         }
-
-        applyStoredPayload(stored)
-        SettingsCategoryOrderRepository.onProfileChanged()
-        SettingsCategoryNamesRepository.onProfileChanged()
-        SettingsFavoritesRepository.onProfileChanged()
-        SettingsSearchHistoryRepository.onProfileChanged()
-        SettingsHiddenCategoriesRepository.onProfileChanged()
-        SettingsCollapsedSectionsRepository.onProfileChanged()
+        if (profiles.size == 1) {
+            return profiles.first().takeUnless { it.pinEnabled }
+        }
+        return null
     }
 
     fun clearInMemory() {
@@ -211,13 +251,30 @@ object ProfileRepository {
     }
 
     private fun selectProfile(profileIndex: Int) {
+        val coldStartSameProfile = !everActivatedProfile && profileIndex == activeProfileIndex
+        everActivatedProfile = true
+        val previousState = _state.value
+        val previousIndex = activeProfileIndex
         activeProfileIndex = profileIndex
-        val selectedProfile = _state.value.profiles.find { it.profileIndex == profileIndex }
-        _state.value = _state.value.copy(
+        val selectedProfile = previousState.profiles.find { it.profileIndex == profileIndex }
+        val nextHasEverSelected = selectedProfile != null || previousState.hasEverSelectedProfile
+        _state.value = previousState.copy(
             activeProfile = selectedProfile,
-            hasEverSelectedProfile = selectedProfile != null || _state.value.hasEverSelectedProfile,
+            hasEverSelectedProfile = nextHasEverSelected,
         )
-        persist()
+        val stateChanged = previousIndex != profileIndex ||
+            previousState.hasEverSelectedProfile != nextHasEverSelected
+        if (stateChanged || !coldStartSameProfile) {
+            persist()
+        }
+        if (coldStartSameProfile) {
+            // Fresh process entering the same profile that loadCachedProfiles/ensureLoaded already
+            // set: no other profile-scoped repository holds another profile's state yet. Skipping
+            // the ~40 synchronous onProfileChanged() resets lets warmProfileStartupRepositories
+            // load Home-critical repos in parallel and keeps Library/LocalLibrary/Downloads
+            // deferred until after Home is up.
+            return
+        }
         reloadForkProfileSettings() // fork:profile-reload
         // Anime identity was already invalidated by the activeProfileIndex assignment above, which
         // has to happen before these reloads: they run legacy anime-id migrations against it, and a

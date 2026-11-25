@@ -46,5 +46,6 @@ internal actual object PlatformLocalAccountDataCleaner {
 
     actual fun wipe() {
         DesktopStorage.wipe(accountStoreNames)
+        com.nuvio.app.features.watched.WatchedStorage.clearAll()
     }
 }

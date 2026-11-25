@@ -395,6 +395,7 @@ std::string sourceHostSummary(const std::string &sourceUrl) {
 }
 const wchar_t *kMessageWindowClass = L"NuvioPlayerBridgeMessageWindow";
 const wchar_t *kContainerWindowClass = L"NuvioPlayerBridgeContainerWindow";
+constexpr DWORD kDwmwaCloak = 13;
 constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
 constexpr DWORD kDwmwaUseImmersiveDarkModeLegacy = 19;
 constexpr DWORD kDwmwaBorderColor = 34;
@@ -785,6 +786,12 @@ void applyDwmWindowChrome(HWND hwnd, bool darkMode, COLORREF captionColor, COLOR
     setDwmWindowAttribute(hwnd, kDwmwaCaptionColor, &captionColor, sizeof(captionColor));
     setDwmWindowAttribute(hwnd, kDwmwaBorderColor, &borderColor, sizeof(borderColor));
     setDwmWindowAttribute(hwnd, kDwmwaTextColor, &textColor, sizeof(textColor));
+}
+
+void setWindowCloaked(HWND hwnd, bool cloaked) {
+    if (!hwnd || !IsWindow(hwnd)) return;
+    BOOL value = cloaked ? TRUE : FALSE;
+    setDwmWindowAttribute(hwnd, kDwmwaCloak, &value, sizeof(value));
 }
 
 bool containsCaseInsensitive(const std::string &haystack, const std::string &needle) {
@@ -8563,6 +8570,16 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_applyWindowChrome(
         rgbIntToColorRef(borderColorRgb),
         rgbIntToColorRef(textColorRgb)
     );
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setWindowCloaked(
+    JNIEnv *,
+    jobject,
+    jlong windowHwnd,
+    jboolean cloaked
+) {
+    setWindowCloaked((HWND)(intptr_t)windowHwnd, cloaked == JNI_TRUE);
 }
 
 extern "C" JNIEXPORT void JNICALL

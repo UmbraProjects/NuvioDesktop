@@ -1,0 +1,54 @@
+package com.nuvio.app.features.watched
+
+import com.nuvio.app.core.storage.DesktopStorage
+import java.nio.file.Files
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class WatchedStorageDesktopTest {
+
+    @Test
+    fun `legacy properties store migrates all profiles to raw json blobs and deletes itself`() {
+        WatchedStorage.clearAll()
+        DesktopStorage.store("nuvio_watched").apply {
+            putString("watched_1", """{"items":[{"id":"tt1","type":"movie"}]}""")
+            putString("watched_2", """{"items":[{"id":"tt2","type":"series"}]}""")
+            flush()
+        }
+
+        // Reading profile 2 first must still migrate profile 1 before deleting the legacy store.
+        assertEquals("""{"items":[{"id":"tt2","type":"series"}]}""", WatchedStorage.loadPayload(2))
+        assertEquals("""{"items":[{"id":"tt1","type":"movie"}]}""", WatchedStorage.loadPayload(1))
+        assertFalse(Files.exists(DesktopStorage.storeFile("nuvio_watched")))
+        assertEquals(
+            """{"items":[{"id":"tt1","type":"movie"}]}""",
+            Files.readString(DesktopStorage.accountDir.resolve("nuvio_watched_1.json")),
+        )
+        assertEquals(
+            """{"items":[{"id":"tt2","type":"series"}]}""",
+            Files.readString(DesktopStorage.accountDir.resolve("nuvio_watched_2.json")),
+        )
+    }
+
+    @Test
+    fun `savePayload is readable immediately, flushes on DesktopStorage flushAll, and clears cleanly`() {
+        WatchedStorage.clearAll()
+        val payload = """{"items":[{"id":"tt99","type":"movie"}]}"""
+        WatchedStorage.savePayload(1, payload)
+
+        // Visible immediately before the coalesced timer fires.
+        assertEquals(payload, WatchedStorage.loadPayload(1))
+
+        DesktopStorage.flushAll()
+        val blobFile = DesktopStorage.accountDir.resolve("nuvio_watched_1.json")
+        assertTrue(Files.exists(blobFile))
+        assertEquals(payload, Files.readString(blobFile))
+
+        WatchedStorage.clearAll()
+        assertFalse(Files.exists(blobFile))
+        assertNull(WatchedStorage.loadPayload(1))
+    }
+}

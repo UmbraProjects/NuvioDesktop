@@ -117,14 +117,20 @@ object WatchedRepository {
     private var lastProviderHistoryPullAtMs: Long = 0L
     internal var syncAdapter: WatchedSyncAdapter = SupabaseWatchedSyncAdapter
 
+    private val loadLock = Any()
+
     fun ensureLoaded() {
-        if (hasLoaded) return
-        loadFromDisk(ProfileRepository.activeProfileId)
+        synchronized(loadLock) {
+            if (hasLoaded) return
+            loadFromDisk(ProfileRepository.activeProfileId)
+        }
     }
 
     fun onProfileChanged(profileId: Int) {
-        if (profileId == currentProfileId && hasLoaded) return
-        loadFromDisk(profileId)
+        synchronized(loadLock) {
+            if (profileId == currentProfileId && hasLoaded) return
+            loadFromDisk(profileId)
+        }
     }
 
     fun clearLocalState() {

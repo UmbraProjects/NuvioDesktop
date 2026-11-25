@@ -103,11 +103,25 @@ object LocalLibraryRepository {
     }
 
     fun onProfileChanged(newProfileId: Int) {
+        // Invalidate lazily rather than decoding the local library cache on the profile-switch
+        // thread: warmProfileDeferredRepositories loads this on Dispatchers.IO after Home is up,
+        // and every caller that touches the local library goes through ensureLoaded().
         synchronized(loadLock) {
             if (newProfileId == profileId && hasLoaded) return
             scanJob?.cancel()
             scannedThisSession = false
-            loadFromDisk(newProfileId)
+            profileId = newProfileId
+            hasLoaded = false
+            folders = emptyList()
+            catalogs = emptyList()
+            hideEmptyCatalogs = false
+            playbackPreference = LocalLibraryPlaybackPreference.SOURCE_PICKER
+            assignmentsByKey = emptyMap()
+            titlePlaybackByKey = emptyMap()
+            serverLinks = emptySet()
+            overridesByKey = emptyMap()
+            itemsByKey = emptyMap()
+            _uiState.value = LocalLibraryUiState()
         }
     }
 

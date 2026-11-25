@@ -16,6 +16,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.collections_import_error_collection_blank_id
 import nuvio.composeapp.generated.resources.collections_import_error_collection_blank_title
@@ -42,34 +43,41 @@ object CollectionRepository {
     internal val localChangeEvents: SharedFlow<Unit> = _localChangeEvents.asSharedFlow()
     private var rawCollectionsJson: JsonElement = JsonArray(emptyList())
 
+    private val loadLock = Any()
     private var hasLoaded = false
 
     fun initialize() {
-        if (hasLoaded) return
-        hasLoaded = true
-        val payload = CollectionStorage.loadPayload()
-        if (payload.isNullOrBlank()) return
+        synchronized(loadLock) {
+            if (hasLoaded) return
+            hasLoaded = true
+            val payload = CollectionStorage.loadPayload()
+            if (payload.isNullOrBlank()) return
 
-        runCatching {
-            val parsed = json.parseToJsonElement(payload)
-            rawCollectionsJson = parsed
-            val decoded = json.decodeFromString<List<Collection>>(payload)
-            _collections.value = CollectionMobileSettingsRepository.applyToCollections(decoded)
-        }.onFailure { e ->
-            log.e(e) { "Failed to load collections from storage" }
+            runCatching {
+                val parsed = json.parseToJsonElement(payload)
+                rawCollectionsJson = parsed
+                val decoded = json.decodeFromJsonElement<List<Collection>>(parsed)
+                _collections.value = CollectionMobileSettingsRepository.applyToCollections(decoded)
+            }.onFailure { e ->
+                log.e(e) { "Failed to load collections from storage" }
+            }
         }
     }
 
     fun onProfileChanged() {
-        hasLoaded = false
-        _collections.value = emptyList()
-        rawCollectionsJson = JsonArray(emptyList())
+        synchronized(loadLock) {
+            hasLoaded = false
+            _collections.value = emptyList()
+            rawCollectionsJson = JsonArray(emptyList())
+        }
     }
 
     fun clearLocalState() {
-        hasLoaded = false
-        _collections.value = emptyList()
-        rawCollectionsJson = JsonArray(emptyList())
+        synchronized(loadLock) {
+            hasLoaded = false
+            _collections.value = emptyList()
+            rawCollectionsJson = JsonArray(emptyList())
+        }
     }
 
     fun getCollection(id: String): Collection? =

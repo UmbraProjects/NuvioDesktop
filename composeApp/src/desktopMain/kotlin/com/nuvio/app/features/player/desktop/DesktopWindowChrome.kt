@@ -58,6 +58,21 @@ internal fun applyNativeDesktopWindowChrome(window: Window) {
     }
 }
 
+/**
+ * Cloaks or uncloaks the Win32 window via DWM (`DWMWA_CLOAK`). While cloaked, DWM does not
+ * composite the window onto the monitor — eliminating white title-bar, unpainted Swing/GDI, and
+ * windowed-to-fullscreen resize flashes — while keeping AWT, focus, and Skiko rendering active.
+ */
+internal fun applyNativeWindowCloaked(window: Window, cloaked: Boolean): Boolean {
+    if (DesktopHostOs.current != DesktopHostOs.WINDOWS || !window.isDisplayable) return false
+
+    return runCatching {
+        val hwnd = AwtNativeViewResolver.resolveNativeViewPointer(window)
+        NativePlayerBridge.setWindowCloaked(hwnd, cloaked)
+        true
+    }.getOrDefault(false)
+}
+
 internal fun applyNativeBorderlessFullscreen(window: Window, enabled: Boolean) {
     // isShowing (not just isDisplayable): restyling a created-but-not-yet-shown window
     // desyncs AWT's show/bounds bookkeeping and breaks activation and keyboard focus.

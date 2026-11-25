@@ -153,6 +153,8 @@ internal object NativePlayerBridge {
         textColorRgb: Int,
     )
 
+    external fun setWindowCloaked(windowHwnd: Long, cloaked: Boolean)
+
     external fun setBorderlessFullscreen(windowHwnd: Long, enabled: Boolean)
     external fun setBorderlessFullscreenSuspended(windowHwnd: Long, suspended: Boolean)
     external fun setCompactPlayerWindow(windowHwnd: Long, enabled: Boolean)

@@ -71,6 +71,7 @@ import com.nuvio.app.features.player.desktop.DesktopWindowGeometryDiagnostics
 import com.nuvio.app.features.player.desktop.DesktopWindowModeStorage
 import com.nuvio.app.features.player.desktop.applyNativeBorderlessFullscreen
 import com.nuvio.app.features.player.desktop.applyNativeDesktopWindowChrome
+import com.nuvio.app.features.player.desktop.applyNativeWindowCloaked
 import com.nuvio.app.features.player.desktop.applyNativeCompactPlayerWindow
 import com.nuvio.app.features.player.desktop.desktopAppFullscreenState
 import com.nuvio.app.features.player.desktop.desktopPictureInPictureState
@@ -81,11 +82,15 @@ import com.nuvio.app.features.player.desktop.registerDesktopPictureInPictureHand
 import com.nuvio.app.features.player.desktop.setDesktopPictureInPicture
 import com.nuvio.app.features.player.desktop.suspendNativeBorderlessFullscreen
 import com.nuvio.app.features.player.desktop.toggleDesktopAppFullscreen
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.withFrameNanos
+import kotlin.math.abs
 import java.awt.AWTEvent
 import java.awt.Color as AwtColor
 import java.awt.EventQueue
@@ -562,6 +567,16 @@ fun main(args: Array<String>) {
     desktopStartupStep("image disk cache open") {
         com.nuvio.app.core.ui.ImageDiskCacheWarmup.start { com.nuvio.app.core.ui.buildArtworkDiskCache() }
     }
+    // Prewarm property stores and overlap auth/profile/Home disk restore with Window creation
+    // (~430 ms) so Home-critical data is ready in memory before the first Compose frame lands.
+    desktopStartupStep("store prewarm start") {
+        com.nuvio.app.core.storage.DesktopStorage.prewarmStoresAsync()
+    }
+    if (!smokeLaunch) {
+        desktopStartupStep("early app bootstrap") {
+            com.nuvio.app.StartupBootstrap.start()
+        }
+    }
     // Before any window exists: Windows caches the process AppUserModelID early, and the media
     // session created later is labelled "Unknown app" without it.
     desktopStartupStep("app identity") {
@@ -572,6 +587,7 @@ fun main(args: Array<String>) {
     desktopStartupStep("startup class preload") { com.nuvio.app.core.build.StartupClassPreloader.start() }    // Same idea for the one native library Home's first composition loads: see warmPhysicalMemoryProbe.
     desktopStartupStep("memory probe warm") { com.nuvio.app.core.ui.warmPhysicalMemoryProbe() }
     desktopStartupStep("configure renderer") { configureDesktopRenderer() }
+    desktopStartupStep("configure chrome") { configureDesktopChrome() }
     limitSwingBackBuffer()
     com.nuvio.app.core.ui.IdleHeapCollector.start()
     // Before the first Skia layer exists: the vsync properties this flips are read at layer
@@ -582,7 +598,6 @@ fun main(args: Array<String>) {
     System.out.println(
         "Info: (DesktopStartup) " + com.nuvio.app.core.ui.FrameProfiler.startIfBenching()
     )
-    desktopStartupStep("configure chrome") { configureDesktopChrome() }
     // After Home rather than now: AWT's font scan competes with the window coming up, and a player
     // opened before it finishes simply shows the default font until it does (SubtitleFonts).
     desktopStartupStep("subtitle font warm request") {
@@ -739,6 +754,46 @@ fun main(args: Array<String>) {
                     composeDefault?.onException(error) ?: throw error
                 }
             }
+            val startupWindowUncloaked = remember(window) { java.util.concurrent.atomic.AtomicBoolean(false) }
+            val startupWindowCloaked = remember(window) { java.util.concurrent.atomic.AtomicBoolean(false) }
+            val cloakStartupWindowIfPossible = remember(window, isWindowsHost) {
+                {
+                    if (isWindowsHost &&
+                        !startupWindowUncloaked.get() &&
+                        !startupWindowCloaked.get() &&
+                        window.isDisplayable
+                    ) {
+                        // Apply dark DWM chrome and cloak BEFORE ShowWindow so DWM never composites
+                        // an unpainted Swing/GDI surface, white title bar, or windowed-to-fullscreen jump.
+                        applyNativeDesktopWindowChrome(window)
+                        if (applyNativeWindowCloaked(window, true)) {
+                            startupWindowCloaked.set(true)
+                            System.out.println(
+                                "Info: (DesktopStartup) startup window cloaked after " +
+                                    "${System.currentTimeMillis() - desktopStartupStartedAt}ms " +
+                                    "(showing=${window.isShowing})"
+                            )
+                        }
+                    }
+                }
+            }
+            val uncloakStartupWindowIfNeeded = remember(window, isWindowsHost) {
+                { reason: String ->
+                    startupWindowUncloaked.set(true)
+                    if (isWindowsHost && startupWindowCloaked.compareAndSet(true, false)) {
+                        applyNativeWindowCloaked(window, false)
+                        System.out.println(
+                            "Info: (DesktopStartup) startup window uncloaked ($reason) after " +
+                                "${System.currentTimeMillis() - desktopStartupStartedAt}ms"
+                        )
+                    }
+                }
+            }
+            remember(window) {
+                applyDarkDesktopWindowBackgrounds(window)
+                cloakStartupWindowIfPossible()
+                Unit
+            }
             val windowSideEffectLogged = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
             SideEffect {
                 desktopWindow.value = window
@@ -747,12 +802,25 @@ fun main(args: Array<String>) {
                         "Info: (DesktopStartup) Window side effect after " +
                             "${System.currentTimeMillis() - desktopStartupStartedAt}ms"
                     )
-                    com.nuvio.app.core.storage.DesktopStorage.prewarmStoresAsync()
                 }
-                window.background = NuvioDesktopNativeBackground
-                window.rootPane.background = NuvioDesktopNativeBackground
-                window.contentPane.background = NuvioDesktopNativeBackground
-                (window.contentPane as? JComponent)?.isOpaque = true
+                applyDarkDesktopWindowBackgrounds(window)
+                cloakStartupWindowIfPossible()
+            }
+            DisposableEffect(window, isWindowsHost) {
+                val cloakHierarchyListener =
+                    if (isWindowsHost && !startupWindowCloaked.get() && !startupWindowUncloaked.get()) {
+                        java.awt.event.HierarchyListener { event ->
+                            if ((event.changeFlags and java.awt.event.HierarchyEvent.DISPLAYABILITY_CHANGED.toLong()) != 0L) {
+                                cloakStartupWindowIfPossible()
+                            }
+                        }.also { window.rootPane.addHierarchyListener(it) }
+                    } else {
+                        null
+                    }
+                onDispose {
+                    cloakHierarchyListener?.let(window.rootPane::removeHierarchyListener)
+                    uncloakStartupWindowIfNeeded("dispose")
+                }
             }
             // Replaces the single 192dp render Compose gave AWT for `icon` with one image per size
             // the shell asks for, cropped to the glyph like the tray icon - otherwise the taskbar
@@ -769,6 +837,7 @@ fun main(args: Array<String>) {
             DisposableEffect(window) {
                 DesktopSingleInstance.onActivate = {
                     EventQueue.invokeLater {
+                        uncloakStartupWindowIfNeeded("single-instance-activate")
                         window.isVisible = true
                         if (window.extendedState and Frame.ICONIFIED != 0) {
                             window.extendedState = Frame.NORMAL
@@ -1097,41 +1166,94 @@ fun main(args: Array<String>) {
             }
 
             LaunchedEffect(window) {
-                if (startWindowed) {
-                    if (isWindowsHost) {
-                        withContext(Dispatchers.IO) { runCatching { ensureNativePlayerBridgeLoaded() } }
-                        var shownWaitMs = 0
-                        while (!window.isShowing && shownWaitMs < 10_000) {
-                            delay(16)
-                            shownWaitMs += 16
-                        }
-                        if (window.isShowing) applyNativeDesktopWindowChrome(window)
-                    }
-                    desktopAppFullscreenState.value = false
-                    return@LaunchedEffect
-                }
                 if (!isWindowsHost) {
-                    delay(400)
-                    toggleDesktopAppFullscreen(window)
+                    if (startWindowed) {
+                        desktopAppFullscreenState.value = false
+                    } else {
+                        delay(400)
+                        toggleDesktopAppFullscreen(window)
+                    }
                     return@LaunchedEffect
                 }
-                // Load the bridge off the AWT event thread (warmed from main(), so this is
-                // usually already done), then wait for Compose to actually show the window.
-                // Native styling must only ever touch a showing window: applying it pre-show
-                // desyncs AWT's own show/bounds bookkeeping and breaks activation/focus.
-                withContext(Dispatchers.IO) { runCatching { ensureNativePlayerBridgeLoaded() } }
-                var shownWaitMs = 0
-                while (!window.isShowing && shownWaitMs < 10_000) {
-                    delay(16)
-                    shownWaitMs += 16
+                // Hard safety net: never leave the window cloaked even if startup stalls.
+                val safetyUncloakJob = launch {
+                    delay(2_000)
+                    uncloakStartupWindowIfNeeded("safety-timeout")
                 }
-                if (window.isShowing) {
-                    desktopStartupStep("apply startup borderless fullscreen") {
-                        applyNativeDesktopWindowChrome(window)
-                        applyNativeBorderlessFullscreen(window, true)
-                        isBorderlessFullscreen.value = true
-                        desktopAppFullscreenState.value = true
+                try {
+                    // Load the bridge off the AWT event thread (warmed from main(), so this is
+                    // usually already done), then wait for Compose to actually show the window.
+                    // Native styling must only ever touch a showing window: applying it pre-show
+                    // desyncs AWT's own show/bounds bookkeeping and breaks activation/focus.
+                    withContext(Dispatchers.IO) { runCatching { ensureNativePlayerBridgeLoaded() } }
+                    cloakStartupWindowIfPossible()
+
+                    if (!window.isShowing) {
+                        val shown = CompletableDeferred<Unit>()
+                        val listener = object : java.awt.event.ComponentAdapter() {
+                            override fun componentShown(e: java.awt.event.ComponentEvent?) {
+                                shown.complete(Unit)
+                            }
+                        }
+                        window.addComponentListener(listener)
+                        try {
+                            if (window.isShowing) {
+                                shown.complete(Unit)
+                            } else {
+                                withTimeoutOrNull(10_000) {
+                                    while (!window.isShowing) {
+                                        withTimeoutOrNull(50) { shown.await() }
+                                    }
+                                }
+                            }
+                        } finally {
+                            window.removeComponentListener(listener)
+                        }
                     }
+
+                    if (window.isShowing) {
+                        applyDarkDesktopWindowBackgrounds(window)
+                        if (startWindowed) {
+                            applyNativeDesktopWindowChrome(window)
+                            desktopAppFullscreenState.value = false
+                            // Wait for Skiko to present the first AppLaunchOverlay frames before uncloaking.
+                            withFrameNanos { }
+                            withFrameNanos { }
+                        } else {
+                            desktopStartupStep("apply startup borderless fullscreen") {
+                                applyNativeDesktopWindowChrome(window)
+                                applyNativeBorderlessFullscreen(window, true)
+                                isBorderlessFullscreen.value = true
+                                desktopAppFullscreenState.value = true
+                            }
+                            // Wait for SWP_ASYNCWINDOWPOS + DesktopBorderlessRootPaneFix to settle at
+                            // full-monitor bounds and Skiko to present 2 AppLaunchOverlay frames into
+                            // the final fullscreen surface before uncloaking.
+                            val settleDeadlineNs = System.nanoTime() + 400_000_000L
+                            var settledFrames = 0
+                            while (settledFrames < 2 && System.nanoTime() < settleDeadlineNs) {
+                                withFrameNanos { }
+                                val rp = window.rootPane.bounds
+                                val monitor = window.graphicsConfiguration?.bounds
+                                val fillsWindow = rp.x == 0 && rp.y == 0 &&
+                                    rp.width == window.width && rp.height == window.height &&
+                                    window.width > 0 && window.height > 0
+                                val matchesMonitor = monitor == null ||
+                                    (abs(window.width - monitor.width) <= 2 && abs(window.height - monitor.height) <= 2)
+                                if (fillsWindow && matchesMonitor) {
+                                    settledFrames++
+                                } else {
+                                    settledFrames = 0
+                                }
+                            }
+                            if (settledFrames == 0) {
+                                withFrameNanos { }
+                            }
+                        }
+                    }
+                } finally {
+                    safetyUncloakJob.cancel()
+                    uncloakStartupWindowIfNeeded(if (startWindowed) "windowed-ready" else "fullscreen-ready")
                 }
             }
 
@@ -1374,6 +1496,34 @@ private fun configureDesktopChrome() {
     if (System.getProperty("os.name").contains("mac", ignoreCase = true)) {
         System.setProperty("apple.awt.application.appearance", MacosDarkAquaAppearance)
     }
+    if (DesktopHostOs.current == DesktopHostOs.WINDOWS) {
+        // Prevent AWT's native WComponentPeer from GDI-erasing the client area with the default
+        // white/light-gray brush on WM_ERASEBKGND during window show and fullscreen resize.
+        System.setProperty("sun.awt.noerasebackground", "true")
+    }
+}
+
+private fun applyDarkDesktopWindowBackgrounds(window: java.awt.Window) {
+    window.background = NuvioDesktopNativeBackground
+    val rootPane = (window as? javax.swing.RootPaneContainer)?.rootPane ?: return
+    rootPane.background = NuvioDesktopNativeBackground
+    rootPane.isOpaque = true
+    rootPane.layeredPane?.background = NuvioDesktopNativeBackground
+    rootPane.glassPane?.background = NuvioDesktopNativeBackground
+    rootPane.contentPane?.let { content ->
+        content.background = NuvioDesktopNativeBackground
+        (content as? JComponent)?.isOpaque = true
+    }
+    fun darkenChildren(container: java.awt.Container) {
+        for (i in 0 until container.componentCount) {
+            val child = container.getComponent(i)
+            if (child.background != NuvioDesktopNativeBackground) {
+                child.background = NuvioDesktopNativeBackground
+            }
+            if (child is java.awt.Container) darkenChildren(child)
+        }
+    }
+    darkenChildren(rootPane)
 }
 
 // Selects the Compose/Skiko UI graphics backend from the persisted renderer setting. Skiko

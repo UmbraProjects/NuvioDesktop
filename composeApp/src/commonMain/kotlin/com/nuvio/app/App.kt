@@ -882,29 +882,50 @@ private fun registerTrackingProviders() {
     TrackingProviderRegistry.registerWatchedProvider(YamtrackWatchedAdapter)
 }
 
-private suspend fun warmProfileStartupRepositories() {
+internal suspend fun warmProfileStartupRepositories() {
     registerTrackingProviders()
     withContext(Dispatchers.Default) {
         val startedAt = System.currentTimeMillis()
         appStartupLog.i { "critical profile warm started" }
-        startupWarmStep("addons local load") { AddonRepository.initialize() }
-        startupWarmStep("collections local load") { CollectionRepository.initialize() }
-        startupWarmStep("continue watching preferences load") { ContinueWatchingPreferencesRepository.ensureLoaded() }
-        // Home reads it in its first composition; cold, that was a file load and JSON decode on
-        // the UI thread.
-        startupWarmStep("continue watching enrichment cache load") {
-            com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache.warm()
-        }
+        // Start the two async operations first (addon manifest network refreshes + cached Home
+        // rows disk restore) so they overlap with the heavy JSON decodes below.
         startupWarmStep("home catalog settings load") { HomeCatalogSettingsRepository.snapshot() }
         // Background: parses last launch's rows while the rest of the warm-up and the gate run, so
         // Home opens with them in place. Needs the catalog settings above to know which rows show.
         startupWarmStep("home rows disk restore start") { HomeRepository.restoreFromDiskInBackground() }
-        startupWarmStep("player settings load") { PlayerSettingsRepository.ensureLoaded() }
-        startupWarmStep("p2p settings load") { P2pSettingsRepository.ensureLoaded() }
-        startupWarmStep("trakt settings load") { TraktSettingsRepository.ensureLoaded() }
-        startupWarmStep("trakt auth load") { TraktAuthRepository.ensureLoaded() }
-        startupWarmStep("watch progress load") { WatchProgressRepository.ensureLoaded() }
-        startupWarmStep("watched state load") { WatchedRepository.ensureLoaded() }
+        startupWarmStep("addons local load") { AddonRepository.initialize() }
+        // Lightweight Home-visible settings and tracking credentials before WatchProgressRepository
+        // loads (its init checks connected tracking providers; on cold start selectProfile no
+        // longer eagerly reloads all ~40 repositories).
+        startupWarmStep("home startup settings load") {
+            ContinueWatchingPreferencesRepository.ensureLoaded()
+            ContinueWatchingSourceRepository.ensureLoaded()
+            com.nuvio.app.features.tmdb.TmdbSettingsRepository.ensureLoaded()
+            MdbListSettingsRepository.ensureLoaded()
+            SimklSettingsRepository.ensureLoaded()
+            SimklAuthRepository.ensureLoaded()
+            TraktSettingsRepository.ensureLoaded()
+            TraktAuthRepository.ensureLoaded()
+            com.nuvio.app.core.ui.PosterCardStyleRepository.ensureLoaded()
+            com.nuvio.app.features.posterservice.CustomPosterSettingsRepository.ensureLoaded()
+            com.nuvio.app.features.collection.CollectionMobileSettingsRepository.ensureLoaded()
+            PlayerSettingsRepository.ensureLoaded()
+            P2pSettingsRepository.ensureLoaded()
+        }
+        // Heavy JSON decodes (collections ~565 KB, CW enrichment ~100 KB, watched ~2.6 MB,
+        // watch progress ~810 KB) run in parallel instead of serially.
+        kotlinx.coroutines.coroutineScope {
+            launch { startupWarmStep("collections local load") { CollectionRepository.initialize() } }
+            launch {
+                // Home reads it in its first composition; cold, that was a file load and JSON
+                // decode on the UI thread.
+                startupWarmStep("continue watching enrichment cache load") {
+                    com.nuvio.app.features.watchprogress.ContinueWatchingEnrichmentCache.warm()
+                }
+            }
+            launch { startupWarmStep("watched state load") { WatchedRepository.ensureLoaded() } }
+            launch { startupWarmStep("watch progress load") { WatchProgressRepository.ensureLoaded() } }
+        }
         appStartupLog.i { "critical profile warm completed in ${System.currentTimeMillis() - startedAt}ms" }
     }
 }
@@ -1169,7 +1190,16 @@ fun App() {
             )
         }
 
-        var gateScreen by rememberSaveable { mutableStateOf(AppGateScreen.Loading.name) }
+        val bootstrapState by StartupBootstrap.state.collectAsStateWithLifecycle()
+        var gateScreen by rememberSaveable {
+            mutableStateOf(
+                if (StartupBootstrap.isReadyFor(AuthRepository.state.value, ProfileRepository.state.value)) {
+                    AppGateScreen.Main.name
+                } else {
+                    AppGateScreen.Loading.name
+                },
+            )
+        }
         var editingProfile by remember { mutableStateOf<NuvioProfile?>(null) }
         var isNewProfile by remember { mutableStateOf(false) }
         var autoSkipProfileSelection by rememberSaveable { mutableStateOf(false) }
@@ -1196,28 +1226,16 @@ fun App() {
         }
 
         fun enterProfileGate(profiles: List<NuvioProfile>, syncOnEnter: Boolean) {
-            if (profiles.isEmpty()) {
-                autoSkipProfileSelection = true
-                gateScreen = AppGateScreen.ProfileSelection.name
+            val autoProfile = ProfileRepository.resolveAutoStartupProfile(
+                profileState = ProfileRepository.state.value.copy(profiles = profiles),
+                activeId = ProfileRepository.activeProfileId,
+            )
+            if (autoProfile != null) {
+                requestProfileSwitch(autoProfile, syncOnEnter)
                 return
             }
-
-            rememberedStartupProfile(profiles)?.let { profile ->
-                requestProfileSwitch(profile, syncOnEnter)
-                return
-            }
-
             autoSkipProfileSelection = true
-            if (profiles.size == 1) {
-                val onlyProfile = profiles.first()
-                if (onlyProfile.pinEnabled) {
-                    gateScreen = AppGateScreen.ProfileSelection.name
-                    return
-                }
-                requestProfileSwitch(onlyProfile, syncOnEnter)
-            } else {
-                gateScreen = AppGateScreen.ProfileSelection.name
-            }
+            gateScreen = AppGateScreen.ProfileSelection.name
         }
 
         LaunchedEffect(gateScreen, pendingProfileSwitch) {
@@ -1245,7 +1263,7 @@ fun App() {
             }
         }
 
-        LaunchedEffect(authState, networkStatusUiState.condition, profileState.profiles) {
+        LaunchedEffect(authState, networkStatusUiState.condition, profileState.profiles, bootstrapState) {
             if (gateScreen == AppGateScreen.ProfileSwitching.name) return@LaunchedEffect
 
             val cachedProfiles = profileState.profiles
@@ -1282,12 +1300,27 @@ fun App() {
                     } else {
                         // Also covers signing out mid-session (profiles wiped, so no cached
                         // access): the user must land back on the auth gate, not stay inside.
+                        StartupBootstrap.invalidate()
                         ProfileRepository.clearInMemory()
                         gateScreen = AppGateScreen.Auth.name
                     }
                 }
                 is AuthState.Authenticated -> {
                     val authenticatedState = authState as AuthState.Authenticated
+                    if (gateScreen == AppGateScreen.Loading.name) {
+                        val ready = bootstrapState as? StartupBootstrapState.Ready
+                        if (ready != null && ready.userId == authenticatedState.userId) {
+                            // Early bootstrap in main() already activated and warmed this profile.
+                            autoSkipProfileSelection = false
+                            gateScreen = AppGateScreen.Main.name
+                            return@LaunchedEffect
+                        }
+                        if (bootstrapState is StartupBootstrapState.Running) {
+                            // Early bootstrap is already warming this profile off the UI thread;
+                            // wait for it rather than starting a duplicate switchToProfile pass.
+                            return@LaunchedEffect
+                        }
+                    }
                     ProfileRepository.ensureLoaded(authenticatedState.userId)
                     if (gateScreen == AppGateScreen.Loading.name || gateScreen == AppGateScreen.Auth.name) {
                         // Warm startups now pass through here (they used to enter via the
@@ -1305,7 +1338,9 @@ fun App() {
         LaunchedEffect((authState as? AuthState.Authenticated)?.userId) {
             val authenticatedState = authState as? AuthState.Authenticated ?: return@LaunchedEffect
             ProfileRepository.ensureLoaded(authenticatedState.userId)
-            ProfileRepository.pullProfiles()
+            if (!StartupBootstrap.consumePulledProfiles(authenticatedState.userId)) {
+                ProfileRepository.pullProfiles()
+            }
         }
 
         // Explicit "Sign In" request from deep inside Settings (see ReauthenticationTrigger):
@@ -1314,6 +1349,7 @@ fun App() {
         // the main app indefinitely.
         LaunchedEffect(Unit) {
             ReauthenticationTrigger.events.collect {
+                StartupBootstrap.invalidate()
                 ProfileRepository.clearInMemory()
                 gateScreen = AppGateScreen.Auth.name
             }
@@ -1356,13 +1392,30 @@ fun App() {
             modifier = Modifier.fillMaxSize(),
             uiScalePercent = desktopAppUiScalePercent,
         ) {
-          Box(modifier = Modifier.fillMaxSize()) {
+          Box(
+              modifier = Modifier
+                  .fillMaxSize()
+                  .background(MaterialTheme.nuvio.colors.background),
+          ) {
             AnimatedContent(
                 targetState = gateScreen,
                 label = "app_gate",
                 transitionSpec = {
-                    (fadeIn(tween(400)) + scaleIn(tween(400), initialScale = 0.94f))
-                        .togetherWith(fadeOut(tween(250)))
+                    val coveredByLaunchOverlay =
+                        initialState == AppGateScreen.Loading.name ||
+                            initialState == AppGateScreen.ProfileSwitching.name ||
+                            targetState == AppGateScreen.Loading.name ||
+                            targetState == AppGateScreen.ProfileSwitching.name
+                    if (coveredByLaunchOverlay) {
+                        // AppLaunchOverlay already covers Loading/ProfileSwitching and fades out
+                        // once Home has content; scaling MainAppContent off-screen underneath only
+                        // adds 400ms of full-resolution Skia graphicsLayer compositing.
+                        androidx.compose.animation.EnterTransition.None
+                            .togetherWith(androidx.compose.animation.ExitTransition.None)
+                    } else {
+                        (fadeIn(tween(400)) + scaleIn(tween(400), initialScale = 0.94f))
+                            .togetherWith(fadeOut(tween(250)))
+                    }
                 },
             ) { currentGate ->
                 when (currentGate) {
@@ -1439,7 +1492,12 @@ fun App() {
             androidx.compose.animation.AnimatedVisibility(
                 visibleState = launchCoverState,
                 enter = fadeIn(),
-                exit = fadeOut(tween(400)),
+                exit = fadeOut(
+                    tween(
+                        durationMillis = 220,
+                        easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                    ),
+                ),
             ) {
                 AppLaunchOverlay(modifier = Modifier.fillMaxSize())
             }
@@ -5323,8 +5381,21 @@ private fun MainAppContent(
             )
 
             // The launch overlay itself is drawn once, above the gate in App(); this only says
-            // whether Main still needs it covering (see LaunchOverlayCover).
-            val needsLaunchCover = !initialHomeReady || profileSwitchLoading
+            // whether Main still needs it covering (see LaunchOverlayCover). Once Home reports
+            // ready (lifting Scaffold's alpha to 1f), hold the opaque overlay for two rendered
+            // frames so Home completes its first real layout, draw, and GPU texture upload behind
+            // the cover before the fade-out begins.
+            var homePaintedBehindCover by remember { mutableStateOf(false) }
+            LaunchedEffect(initialHomeReady, profileSwitchLoading) {
+                if (!initialHomeReady || profileSwitchLoading) {
+                    homePaintedBehindCover = false
+                } else {
+                    androidx.compose.runtime.withFrameNanos { }
+                    androidx.compose.runtime.withFrameNanos { }
+                    homePaintedBehindCover = true
+                }
+            }
+            val needsLaunchCover = !initialHomeReady || profileSwitchLoading || !homePaintedBehindCover
             SideEffect { LaunchOverlayCover.mainNeedsCover = needsLaunchCover }
 
             // fork:voice-control - the push-to-talk pill; a bare Box takes no input, so the screen below stays usable.

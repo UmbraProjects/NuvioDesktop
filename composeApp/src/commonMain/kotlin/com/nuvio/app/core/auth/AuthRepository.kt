@@ -32,46 +32,50 @@ object AuthRepository {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val initLock = Any()
+    @Volatile
     private var initialized = false
     private var sessionStatusJob: Job? = null
 
     fun initialize() {
-        if (initialized) return
-        initialized = true
+        synchronized(initLock) {
+            if (initialized) return
+            initialized = true
 
-        val savedAnonId = AuthStorage.loadAnonymousUserId()
-        if (savedAnonId != null) {
-            publishAuthenticated(
-                AuthState.Authenticated(
-                    userId = savedAnonId,
-                    email = null,
-                    isAnonymous = true,
-                ),
-            )
-        }
+            val savedAnonId = AuthStorage.loadAnonymousUserId()
+            if (savedAnonId != null) {
+                publishAuthenticated(
+                    AuthState.Authenticated(
+                        userId = savedAnonId,
+                        email = null,
+                        isAnonymous = true,
+                    ),
+                )
+            }
 
-        sessionStatusJob = scope.launch {
-            SupabaseProvider.client.auth.sessionStatus.collect { status ->
-                if (AuthStorage.loadAnonymousUserId() != null) return@collect
-                when (status) {
-                    is SessionStatus.Authenticated -> {
-                        val user = status.session.user
-                        publishAuthenticated(
-                            AuthState.Authenticated(
-                                userId = user?.id ?: "",
-                                email = user?.email,
-                                isAnonymous = false,
-                            ),
-                        )
-                    }
-                    is SessionStatus.NotAuthenticated -> {
-                        _state.value = AuthState.Unauthenticated
-                    }
-                    is SessionStatus.Initializing -> {
-                        if (savedAnonId == null) _state.value = AuthState.Loading
-                    }
-                    is SessionStatus.RefreshFailure -> {
-                        _state.value = AuthState.Unauthenticated
+            sessionStatusJob = scope.launch {
+                SupabaseProvider.client.auth.sessionStatus.collect { status ->
+                    if (AuthStorage.loadAnonymousUserId() != null) return@collect
+                    when (status) {
+                        is SessionStatus.Authenticated -> {
+                            val user = status.session.user
+                            publishAuthenticated(
+                                AuthState.Authenticated(
+                                    userId = user?.id ?: "",
+                                    email = user?.email,
+                                    isAnonymous = false,
+                                ),
+                            )
+                        }
+                        is SessionStatus.NotAuthenticated -> {
+                            _state.value = AuthState.Unauthenticated
+                        }
+                        is SessionStatus.Initializing -> {
+                            if (savedAnonId == null) _state.value = AuthState.Loading
+                        }
+                        is SessionStatus.RefreshFailure -> {
+                            _state.value = AuthState.Unauthenticated
+                        }
                     }
                 }
             }
@@ -166,9 +170,11 @@ object AuthRepository {
         // Detach from the outgoing client first: SupabaseProvider.reset() closes it moments from
         // now, and a collector still attached to a closed client keeps publishing the previous
         // backend's session state.
-        sessionStatusJob?.cancel()
-        sessionStatusJob = null
-        initialized = false
+        synchronized(initLock) {
+            sessionStatusJob?.cancel()
+            sessionStatusJob = null
+            initialized = false
+        }
         AuthStorage.clearAnonymousUserId()
         SupabaseProvider.client.auth.clearSession()
         PlatformAccountScope.onServerSwitch()
@@ -186,12 +192,14 @@ object AuthRepository {
      * the previous backend's session state.
      */
     fun reinitialize() {
-        sessionStatusJob?.cancel()
-        sessionStatusJob = null
-        initialized = false
-        _state.value = AuthState.Loading
-        log.i { "Re-initializing auth against the active server" }
-        initialize()
+        synchronized(initLock) {
+            sessionStatusJob?.cancel()
+            sessionStatusJob = null
+            initialized = false
+            _state.value = AuthState.Loading
+            log.i { "Re-initializing auth against the active server" }
+            initialize()
+        }
     }
 
     suspend fun deleteAccount(): Result<Unit> = runCatching {

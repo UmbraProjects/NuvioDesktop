@@ -398,6 +398,8 @@ object WatchProgressRepository {
         publish()
     }
 
+    private val loadLock = Any()
+
     fun ensureLoaded() {
         TraktAuthRepository.ensureLoaded()
         TraktSettingsRepository.ensureLoaded()
@@ -406,8 +408,12 @@ object WatchProgressRepository {
         SimklAuthRepository.ensureLoaded()
         MdbListProgressRepository.ensureLoaded()
         SimklProgressRepository.ensureLoaded()
-        if (hasLoaded) return
-        loadFromDisk(ProfileRepository.activeProfileId)
+        val loadedNow = synchronized(loadLock) {
+            if (hasLoaded) return
+            loadFromDisk(ProfileRepository.activeProfileId)
+            true
+        }
+        if (!loadedNow) return
         when {
             shouldUseMdbListProgress() -> MdbListProgressRepository.refreshAsync()
             shouldUseSimklProgress() -> SimklProgressRepository.refreshAsync()

@@ -105,15 +105,22 @@ object ThemeSettingsRepository {
     private val _selectedAppLanguage = MutableStateFlow(AppLanguage.ENGLISH)
     val selectedAppLanguage: StateFlow<AppLanguage> = _selectedAppLanguage.asStateFlow()
 
+    private val loadLock = Any()
+    @Volatile
     private var hasLoaded = false
 
     fun ensureLoaded() {
         if (hasLoaded) return
-        loadFromDisk()
+        synchronized(loadLock) {
+            if (hasLoaded) return
+            loadFromDisk()
+        }
     }
 
     fun onProfileChanged() {
-        loadFromDisk()
+        synchronized(loadLock) {
+            loadFromDisk()
+        }
     }
 
     fun clearLocalState() {
