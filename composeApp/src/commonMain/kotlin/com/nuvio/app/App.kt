@@ -1356,6 +1356,7 @@ fun App() {
             modifier = Modifier.fillMaxSize(),
             uiScalePercent = desktopAppUiScalePercent,
         ) {
+          Box(modifier = Modifier.fillMaxSize()) {
             AnimatedContent(
                 targetState = gateScreen,
                 label = "app_gate",
@@ -1367,7 +1368,8 @@ fun App() {
                 when (currentGate) {
                     AppGateScreen.Loading.name,
                     AppGateScreen.ProfileSwitching.name -> {
-                        AppLaunchOverlay(modifier = Modifier.fillMaxSize())
+                        // Covered by the one launch overlay below.
+                        Box(modifier = Modifier.fillMaxSize())
                     }
                     AppGateScreen.Auth.name -> {
                         AuthScreen(modifier = Modifier.fillMaxSize())
@@ -1419,8 +1421,36 @@ fun App() {
                     }
                 }
             }
+
+            // One launch overlay from the first frame until Home has content, across Loading,
+            // ProfileSwitching and Main's wait for Home. It used to be three: one per gate inside the
+            // cross-fade above (two identical overlays fading into each other) and Main's own on top,
+            // each drawing the same full-screen wash: three `(LaunchOverlay) up` lines a launch, each
+            // with its own first-frame gap (Nov 25).
+            LaunchedEffect(gateScreen) {
+                // Main entered again later (after profile selection) starts covered, as it did.
+                if (gateScreen != AppGateScreen.Main.name) LaunchOverlayCover.mainNeedsCover = true
+            }
+            val launchCoverVisible = gateScreen == AppGateScreen.Loading.name ||
+                gateScreen == AppGateScreen.ProfileSwitching.name ||
+                (gateScreen == AppGateScreen.Main.name && LaunchOverlayCover.mainNeedsCover)
+            val launchCoverState = remember { androidx.compose.animation.core.MutableTransitionState(true) }
+            launchCoverState.targetState = launchCoverVisible
+            androidx.compose.animation.AnimatedVisibility(
+                visibleState = launchCoverState,
+                enter = fadeIn(),
+                exit = fadeOut(tween(400)),
+            ) {
+                AppLaunchOverlay(modifier = Modifier.fillMaxSize())
+            }
+          }
         }
     }
+}
+
+/** Whether MainAppContent still needs the launch overlay over it (Home not ready, or a profile switch). */
+private object LaunchOverlayCover {
+    var mainNeedsCover by mutableStateOf(true)
 }
 
 /**
@@ -5290,13 +5320,10 @@ private fun MainAppContent(
                 },
             )
 
-            androidx.compose.animation.AnimatedVisibility(
-                visible = !initialHomeReady || profileSwitchLoading,
-                enter = fadeIn(),
-                exit = fadeOut(androidx.compose.animation.core.tween(400)),
-            ) {
-                AppLaunchOverlay(modifier = Modifier.fillMaxSize())
-            }
+            // The launch overlay itself is drawn once, above the gate in App(); this only says
+            // whether Main still needs it covering (see LaunchOverlayCover).
+            val needsLaunchCover = !initialHomeReady || profileSwitchLoading
+            SideEffect { LaunchOverlayCover.mainNeedsCover = needsLaunchCover }
 
             // fork:voice-control - the push-to-talk pill; a bare Box takes no input, so the screen below stays usable.
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
