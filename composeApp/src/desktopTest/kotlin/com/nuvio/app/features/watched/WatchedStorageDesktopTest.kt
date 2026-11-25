@@ -39,16 +39,25 @@ class WatchedStorageDesktopTest {
         val payload = """{"items":[{"id":"tt99","type":"movie"}]}"""
         WatchedStorage.savePayload(1, payload)
 
-        // Visible immediately before the coalesced timer fires.
+        // Visible immediately before the coalesced timer fires (both string and stream reads).
         assertEquals(payload, WatchedStorage.loadPayload(1))
+        assertEquals(
+            payload,
+            WatchedStorage.loadPayloadStream(1) { it.readBytes().toString(Charsets.UTF_8) },
+        )
 
         DesktopStorage.flushAll()
         val blobFile = DesktopStorage.accountDir.resolve("nuvio_watched_1.json")
         assertTrue(Files.exists(blobFile))
         assertEquals(payload, Files.readString(blobFile))
+        assertEquals(
+            payload,
+            WatchedStorage.loadPayloadStream(1) { it.readBytes().toString(Charsets.UTF_8) },
+        )
 
         WatchedStorage.clearAll()
         assertFalse(Files.exists(blobFile))
         assertNull(WatchedStorage.loadPayload(1))
+        assertNull(WatchedStorage.loadPayloadStream(1) { it.readBytes() })
     }
 }

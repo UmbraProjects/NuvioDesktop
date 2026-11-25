@@ -6,6 +6,8 @@ import com.nuvio.app.core.ui.NuvioToastController
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.effectiveEpisodeNumber
 import com.nuvio.app.features.details.effectiveSeasonNumber
+import com.nuvio.app.features.metadata.AnimeIdMappingRepository
+import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.trakt.TraktAuthRepository
 import com.nuvio.app.features.trakt.TraktSettingsRepository
@@ -44,10 +46,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromStream
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.watched_episode_provider_success
 import org.jetbrains.compose.resources.getString
@@ -79,7 +83,7 @@ object WatchedRepository {
     private val log = Logger.withTag("WatchedRepository")
     private val json = Json {
         ignoreUnknownKeys = true
-        encodeDefaults = true
+        encodeDefaults = false
     }
 
     private val _uiState = MutableStateFlow(WatchedUiState())
@@ -97,6 +101,7 @@ object WatchedRepository {
     private val itemsLock = Any()
 
     private var publishedAliasVersion = -1L
+    private val animeIndexListenerRegistered = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
      * What the Continue Watching provider's import reported, so Up Next can tell its history apart
@@ -147,6 +152,7 @@ object WatchedRepository {
         _uiState.value = WatchedUiState()
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     private fun loadFromDisk(profileId: Int) {
         currentProfileId = profileId
         hasLoaded = true
@@ -156,18 +162,21 @@ object WatchedRepository {
             sourceHistoryKeys = emptySet()
         }
 
-        val payload = WatchedStorage.loadPayload(profileId).orEmpty().trim()
-        if (payload.isNotEmpty()) {
-            val storedPayload = runCatching {
-                json.decodeFromString<StoredWatchedPayload>(payload)
-            }.getOrDefault(StoredWatchedPayload())
+        val storedPayload = runCatching {
+            WatchedStorage.loadPayloadStream(profileId) { stream ->
+                json.decodeFromStream<StoredWatchedPayload>(stream)
+            }
+        }.getOrNull()
+
+        if (storedPayload != null) {
             lastSuccessfulPushEpochMs = storedPayload.lastSuccessfulPushEpochMs
             deltaCursorEventId = storedPayload.deltaCursorEventId
             deltaInitialized = storedPayload.deltaInitialized
-            val loaded = storedPayload.items
-                .map(WatchedItem::normalizedMarkedAt)
-                .associateBy { watchedItemKey(it.type, it.id, it.season, it.episode) }
-                .toMutableMap()
+            val loaded = LinkedHashMap<String, WatchedItem>(storedPayload.items.size * 4 / 3 + 1)
+            for (raw in storedPayload.items) {
+                val item = raw.normalizedMarkedAt()
+                loaded[watchedItemKey(item.type, item.id, item.season, item.episode)] = item
+            }
             synchronized(itemsLock) { itemsByKey = loaded }
         } else {
             lastSuccessfulPushEpochMs = 0L
@@ -1031,26 +1040,63 @@ object WatchedRepository {
     }
 
     private fun publish() {
-        val (sourceProvider, sourceKeys) = synchronized(itemsLock) { sourceHistoryProvider to sourceHistoryKeys }
-        val items = itemSnapshot()
-            .map(WatchedItem::normalizedMarkedAt)
-            .sortedByDescending { it.markedAtEpochMs }
-        val watchedKeys = items.mapTo(linkedSetOf()) {
-            watchedItemKey(it.type, it.id, it.season, it.episode)
+        val snapshot = synchronized(itemsLock) {
+            Triple(
+                ArrayList(itemsByKey.values),
+                LinkedHashSet(itemsByKey.keys),
+                sourceHistoryProvider to sourceHistoryKeys,
+            )
         }
+        val rawItems = snapshot.first
+        val watchedKeys = snapshot.second
+        val (sourceProvider, sourceKeys) = snapshot.third
+        for (i in rawItems.indices) {
+            val normalized = rawItems[i].normalizedMarkedAt()
+            if (normalized !== rawItems[i]) rawItems[i] = normalized
+        }
+        rawItems.sortByDescending { it.markedAtEpochMs }
+
         // History keyed on a native anime id also answers under the franchise ids the same entry
         // is known by, so switching content ids to franchise-first does not orphan it.
-        watchedKeys += animeAlternateWatchedKeys(items)
+        // Skip forcing the ~6 MB / 40k-entry anime-list-mini.json parse synchronously during
+        // startup; once AnimeIdMappingRepository finishes warming in the background, republish
+        // the alias keys onto the existing state.
+        val animeMappingReady = AnimeIdMappingRepository.isLoaded
+        if (animeMappingReady) {
+            watchedKeys += animeAlternateWatchedKeys(rawItems, onlyIfMappingLoaded = true)
+        } else if (rawItems.any { it.id.hasAnimeNamespacePrefix() }) {
+            scheduleAnimeAliasRepublish()
+        }
+
         // The same title under another id space (`tmdb:` page vs `tt` import) — see WatchedIdAliases.
         publishedAliasVersion = WatchedIdAliases.version
-        watchedKeys += aliasedWatchedKeys(items, WatchedIdAliases::aliasesOf)
+        watchedKeys += aliasedWatchedKeys(rawItems, WatchedIdAliases::aliasesOf)
         _uiState.value = WatchedUiState(
-            items = items,
+            items = rawItems,
             watchedKeys = watchedKeys,
             isLoaded = true,
             sourceHistoryProvider = sourceProvider,
             sourceHistoryKeys = sourceKeys,
         )
+    }
+
+    private fun scheduleAnimeAliasRepublish() {
+        if (!animeIndexListenerRegistered.compareAndSet(false, true)) return
+        AnimeIdMappingRepository.onIndexLoaded {
+            syncScope.launch {
+                val current = _uiState.value
+                if (!current.isLoaded || current.items.isEmpty()) return@launch
+                val extraKeys = animeAlternateWatchedKeys(current.items, onlyIfMappingLoaded = true)
+                if (extraKeys.isEmpty() || extraKeys.all { it in current.watchedKeys }) return@launch
+                val mergedKeys = LinkedHashSet<String>(current.watchedKeys.size + extraKeys.size).apply {
+                    addAll(current.watchedKeys)
+                    addAll(extraKeys)
+                }
+                // Preserve the exact `items` reference so HomeRepository's `old === new` check
+                // does not unnecessarily re-run Home filtering.
+                _uiState.value = current.copy(watchedKeys = mergedKeys)
+            }
+        }
     }
 
     private fun persist() {

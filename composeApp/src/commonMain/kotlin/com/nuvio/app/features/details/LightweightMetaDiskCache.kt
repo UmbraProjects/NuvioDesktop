@@ -125,18 +125,25 @@ internal object LightweightMetaDiskCache {
             log.w { "Discarding unreadable lightweight meta cache: ${error.message}" }
         }.getOrDefault(emptyMap())
         // Expired entries stay (served stale while they refresh); only very old ones are dropped,
-        // and the next write leaves those out of the file too.
-        val kept = loaded.filterValues { now - it.savedAtMs <= STALE_LIMIT_MS }
-            // Episode lists from older files are counted and dropped, and the file is rewritten without them.
-            .mapValues { (_, stored) -> stored.slimmed() }
-        val slimmed = kept.count { (key, stored) -> stored !== loaded[key] }
-        val fresh = kept.values.count { now - it.savedAtMs <= lifetime }
+        // and the next write leaves those out of the file too. Single-pass build avoids allocating
+        // three intermediate 4,700-entry maps during Home's first draw.
+        val kept = LinkedHashMap<String, StoredLightweightMeta>(loaded.size * 4 / 3 + 1)
+        var slimmed = 0
+        var fresh = 0
+        for ((key, stored) in loaded) {
+            val age = now - stored.savedAtMs
+            if (age > STALE_LIMIT_MS) continue
+            val entry = stored.slimmed()
+            if (entry !== stored) slimmed++
+            if (age <= lifetime) fresh++
+            kept[key] = entry
+        }
         log.i {
             "Loaded ${kept.size} of ${loaded.size} cached lightweight meta entries ($fresh fresh, ${kept.size - fresh} to refresh" +
                 (if (slimmed > 0) ", $slimmed episode lists dropped)" else ")")
         }
         if (slimmed > 0) persister.schedule()
-        return LinkedHashMap(kept).also { entries = it }
+        return kept.also { entries = it }
     }
 }
 

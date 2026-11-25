@@ -649,6 +649,12 @@ fun main(args: Array<String>) {
         val restoreWindowPlacement = remember { mutableStateOf(WindowPlacement.Floating) }
         val isBorderlessFullscreen = remember { mutableStateOf(false) }
         val isWindowsHost = remember { DesktopHostOs.current == DesktopHostOs.WINDOWS }
+        remember(isWindowsHost, smokePlayerUrl) {
+            if (isWindowsHost && smokePlayerUrl == null) {
+                com.nuvio.app.StartupWindowRevealGate.arm()
+            }
+            Unit
+        }
         val closeToTray by remember {
             DesktopWindowStartupPreference.ensureLoaded()
             DesktopWindowStartupPreference.closeToTray
@@ -787,6 +793,7 @@ fun main(args: Array<String>) {
                                 "${System.currentTimeMillis() - desktopStartupStartedAt}ms"
                         )
                     }
+                    com.nuvio.app.StartupWindowRevealGate.release()
                 }
             }
             remember(window) {

@@ -110,6 +110,7 @@ object HomeRepository {
     // Rows it restored are shown at once but are refetched by that refresh regardless of `force`;
     // a key leaves this set when its refetch has finished, whichever way.
     private var diskRestoreDone = false
+    private var startupRevalidateDeferredOnce = false
     private val revalidateKeys = mutableSetOf<String>()
     private var diskRestoreJob: Job? = null
     // The row list the restore worked from, for rows whose addon is still loading (see refresh).
@@ -240,6 +241,18 @@ object HomeRepository {
                 )
                 log.i { "Home refresh completed from cache in ${System.currentTimeMillis() - refreshStartedAt}ms" }
                 return@launch
+            }
+            val onlyRevalidatingDiskRows = !force &&
+                pendingRequests.all { definition ->
+                    definition.key in cachedSections && definition.key in revalidateKeys
+                }
+            if (onlyRevalidatingDiskRows && !startupRevalidateDeferredOnce) {
+                startupRevalidateDeferredOnce = true
+                // Disk-restored rows are already displayed on Home; let the first draw, hero
+                // backdrop decode, and launch overlay fade-out finish before firing 30+ live
+                // catalog decodes that compete for the young-gen heap.
+                kotlinx.coroutines.delay(HOME_STARTUP_REVALIDATE_DEFER_MS)
+                if (activeRequestKey != requestKey) return@launch
             }
             val loadedSections = linkedMapOf<String, HomeCatalogSection>().apply {
                 putAll(cachedSections)
@@ -375,6 +388,7 @@ object HomeRepository {
         diskRestoreJob?.cancel()
         diskRestoreJob = null
         diskRestoreDone = false
+        startupRevalidateDeferredOnce = false
         revalidateKeys.clear()
         restoredDefinitions = emptyList()
         _uiState.value = HomeUiState()
@@ -984,6 +998,7 @@ private const val HOME_HERO_ITEM_LIMIT = 8
 private const val HOME_COLLECTION_HERO_SOURCE_LIMIT = 6
 private const val HOME_COLLECTION_HERO_SOURCE_ITEM_LIMIT = 8
 private const val HOME_CATALOG_FETCH_BATCH_SIZE = 4
+private const val HOME_STARTUP_REVALIDATE_DEFER_MS = 700L
 private const val HOME_CATALOG_PREVIEW_FETCH_LIMIT = 18
 private const val HOME_CATALOG_PUBLISH_INTERVAL = 2
 /** A catalog slower than this is named in the log at info level, so a slow addon is easy to find. */

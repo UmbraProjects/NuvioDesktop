@@ -101,11 +101,7 @@ fun watchedItemKey(
     id: String,
     season: Int? = null,
     episode: Int? = null,
-): String = watchedKey(
-    content = WatchingContentRef(type = type, id = id),
-    seasonNumber = season,
-    episodeNumber = episode,
-)
+): String = "${type.trim()}:${id.trim()}:${season ?: -1}:${episode ?: -1}"
 
 private const val CompactWatchedTimestampMin = 19000101000000L
 private const val CompactWatchedTimestampMax = 29991231235959L

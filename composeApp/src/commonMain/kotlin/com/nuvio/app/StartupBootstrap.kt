@@ -39,6 +39,24 @@ internal sealed interface StartupBootstrapState {
 }
 
 /**
+ * Holds heavy `MainAppContent` composition back while the desktop window is still cloaked and
+ * settling its initial borderless-fullscreen bounds. Defaults to `true` so tests, non-Windows
+ * targets, and smoke launches never wait.
+ */
+internal object StartupWindowRevealGate {
+    private val _ready = MutableStateFlow(true)
+    val ready: StateFlow<Boolean> = _ready.asStateFlow()
+
+    fun arm() {
+        _ready.value = false
+    }
+
+    fun release() {
+        _ready.value = true
+    }
+}
+
+/**
  * Overlaps auth session load, cached profile load, and Home-critical repository warming with
  * desktop `Window` creation in `main()` (~430 ms) and the first-frame fullscreen settle (~200 ms).
  *

@@ -27,8 +27,12 @@ import com.nuvio.app.features.metadata.hasAnimeNamespacePrefix
 internal fun animeFranchiseTitleIds(item: WatchedItem): List<String> =
     item.id.animeEntryForNativeId()?.franchiseWatchedIds(item.type).orEmpty()
 
-internal fun animeAlternateWatchedKeys(items: Collection<WatchedItem>): Set<String> {
+internal fun animeAlternateWatchedKeys(
+    items: Collection<WatchedItem>,
+    onlyIfMappingLoaded: Boolean = false,
+): Set<String> {
     if (items.isEmpty()) return emptySet()
+    if (onlyIfMappingLoaded && !AnimeIdMappingRepository.isLoaded) return emptySet()
     val keys = linkedSetOf<String>()
     for (item in items) {
         val entry = item.id.animeEntryForNativeId() ?: continue

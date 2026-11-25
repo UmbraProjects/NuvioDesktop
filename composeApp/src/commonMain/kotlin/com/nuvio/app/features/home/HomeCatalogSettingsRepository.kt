@@ -826,7 +826,11 @@ object HomeCatalogSettingsRepository {
         // every catalog from every addon on each return to home.
         val catalogKeys = definitions.map(HomeCatalogDefinition::key) +
             collectionDefinitions.map(CollectionCatalogDefinition::key)
-        val catalogSetChanged = lastSyncedCatalogKeys != catalogKeys
+        // First sync of the session (lastSyncedCatalogKeys == null) is not a user catalog edit:
+        // HomeRepository already revalidates every disk-restored row and fetches any missing row
+        // with force=false, while letting the startup grace window avoid competing with Home's
+        // first draw and launch-overlay fade-out.
+        val catalogSetChanged = lastSyncedCatalogKeys != null && lastSyncedCatalogKeys != catalogKeys
         lastSyncedCatalogKeys = catalogKeys
         lastCatalogSync = Triple(definitions, collectionDefinitions, _uiState.value)
         HomeRepository.refresh(addons.enabledAddons(), force = catalogSetChanged)

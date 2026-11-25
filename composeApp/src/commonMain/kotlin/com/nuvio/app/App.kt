@@ -1191,6 +1191,7 @@ fun App() {
         }
 
         val bootstrapState by StartupBootstrap.state.collectAsStateWithLifecycle()
+        val windowSurfaceReady by StartupWindowRevealGate.ready.collectAsStateWithLifecycle()
         var gateScreen by rememberSaveable {
             mutableStateOf(
                 if (StartupBootstrap.isReadyFor(AuthRepository.state.value, ProfileRepository.state.value)) {
@@ -1465,12 +1466,20 @@ fun App() {
                         )
                     }
                     AppGateScreen.Main.name -> {
-                        MainAppContent(
-                            onSwitchProfile = {
-                                autoSkipProfileSelection = false
-                                gateScreen = AppGateScreen.ProfileSelection.name
-                            },
-                        )
+                        if (windowSurfaceReady) {
+                            MainAppContent(
+                                onSwitchProfile = {
+                                    autoSkipProfileSelection = false
+                                    gateScreen = AppGateScreen.ProfileSelection.name
+                                },
+                            )
+                        } else {
+                            // Window is still cloaked while settling borderless fullscreen +
+                            // rootPane bounds; keep only AppLaunchOverlay in the tree so
+                            // pinRootPane / SkiaLayer.reshape runs once on a 2-node scene
+                            // instead of laying out and rendering Home twice.
+                            Box(modifier = Modifier.fillMaxSize())
+                        }
                     }
                 }
             }

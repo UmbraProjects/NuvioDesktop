@@ -5,17 +5,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.DecodeSequenceMode
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.decodeToSequence
+import java.io.InputStream
 
 private const val ANIME_LIST_RESOURCE = "anime-list-mini.json"
 
@@ -28,6 +24,7 @@ private val animeMappingLog = Logger.withTag("AnimeIdMapping")
 
 internal expect object AnimeIdMappingStorage {
     fun loadAnimeListText(): String?
+    fun openAnimeListStream(): InputStream?
 }
 
 internal data class AnimeIdMapping(
@@ -129,6 +126,29 @@ internal object AnimeIdMappingRepository {
     @Volatile
     private var cachedIndex: Index? = null
     private val indexLock = Any()
+    private val loadedListenersLock = Any()
+    private val loadedListeners = mutableListOf<() -> Unit>()
+
+    /** True once [ANIME_LIST_RESOURCE] has been parsed into memory. Does not trigger a load. */
+    val isLoaded: Boolean
+        get() = cachedIndex != null
+
+    /**
+     * Runs [listener] once the anime id index is loaded (immediately if already loaded, otherwise
+     * right after the first [loadIndex] completes). Lets startup callers skip blocking on the
+     * ~6 MB / 40k-entry parse while still picking up anime aliases as soon as [warmAsync] lands.
+     */
+    fun onIndexLoaded(listener: () -> Unit) {
+        val alreadyLoaded = synchronized(loadedListenersLock) {
+            if (cachedIndex != null) {
+                true
+            } else {
+                loadedListeners += listener
+                false
+            }
+        }
+        if (alreadyLoaded) runCatching(listener)
+    }
 
     fun lookup(ids: ResolvedMediaIds): AnimeIdMapping? {
         val index = loadIndex()
@@ -273,46 +293,78 @@ internal object AnimeIdMappingRepository {
     // unsynchronized var risked two callers racing to parse anime-list-mini.json concurrently.
     private fun loadIndex(): Index {
         cachedIndex?.let { return it }
-        return synchronized(indexLock) {
+        var freshlyLoaded = false
+        val index = synchronized(indexLock) {
             cachedIndex?.let { return@synchronized it }
-            buildIndex().also { cachedIndex = it }
+            buildIndex().also {
+                cachedIndex = it
+                freshlyLoaded = true
+            }
         }
+        if (freshlyLoaded) {
+            val pending = synchronized(loadedListenersLock) {
+                if (loadedListeners.isEmpty()) emptyList()
+                else loadedListeners.toList().also { loadedListeners.clear() }
+            }
+            pending.forEach { listener -> runCatching(listener) }
+        }
+        return index
     }
 
+    @OptIn(ExperimentalSerializationApi::class)
     private fun buildIndex(): Index {
-        val text = AnimeIdMappingStorage.loadAnimeListText()
-        if (text.isNullOrBlank()) {
+        val stream = AnimeIdMappingStorage.openAnimeListStream()
+        val text = if (stream == null) AnimeIdMappingStorage.loadAnimeListText() else null
+        if (stream == null && text.isNullOrBlank()) {
             animeMappingLog.w { "$ANIME_LIST_RESOURCE was not found; anime ID conversion will be limited." }
             return emptyIndex()
         }
 
-        val mappings = runCatching {
-            animeMappingJson.decodeFromString<List<AnimeListMiniEntry>>(text)
-                .map(AnimeListMiniEntry::toDomain)
-        }.onFailure { error ->
-            animeMappingLog.w(error) { "Failed to parse $ANIME_LIST_RESOURCE" }
-        }.getOrElse { emptyList() }
+        // Pre-sized HashMaps avoid ~12 rehashes per map across ~40k entries and drop LinkedHashMap's
+        // per-node doubly-linked pointers (nothing depends on iteration order).
+        val byAnidb = HashMap<Int, AnimeIdMapping>(40_960)
+        val byAnilist = HashMap<Int, AnimeIdMapping>(32_768)
+        val byKitsu = HashMap<Int, AnimeIdMapping>(32_768)
+        val byMal = HashMap<Int, AnimeIdMapping>(40_960)
+        val bySimkl = HashMap<Int, AnimeIdMapping>(32_768)
+        val byImdb = HashMap<String, MutableList<AnimeIdMapping>>(16_384)
+        val byTmdbTv = HashMap<Int, MutableList<AnimeIdMapping>>(16_384)
+        val byTmdbMovie = HashMap<Int, MutableList<AnimeIdMapping>>(8_192)
+        val byTvdb = HashMap<Int, MutableList<AnimeIdMapping>>(16_384)
 
-        val byAnidb = linkedMapOf<Int, AnimeIdMapping>()
-        val byAnilist = linkedMapOf<Int, AnimeIdMapping>()
-        val byKitsu = linkedMapOf<Int, AnimeIdMapping>()
-        val byMal = linkedMapOf<Int, AnimeIdMapping>()
-        val bySimkl = linkedMapOf<Int, AnimeIdMapping>()
-        val byImdb = linkedMapOf<String, MutableList<AnimeIdMapping>>()
-        val byTmdbTv = linkedMapOf<Int, MutableList<AnimeIdMapping>>()
-        val byTmdbMovie = linkedMapOf<Int, MutableList<AnimeIdMapping>>()
-        val byTvdb = linkedMapOf<Int, MutableList<AnimeIdMapping>>()
-
-        mappings.forEach { mapping ->
+        fun ingest(entry: AnimeListMiniEntry) {
+            val mapping = entry.toDomain()
             mapping.anidbId?.let { byAnidb.putIfAbsent(it, mapping) }
             mapping.anilistId?.let { byAnilist.putIfAbsent(it, mapping) }
             mapping.kitsuId?.let { byKitsu.putIfAbsent(it, mapping) }
             mapping.malId?.let { byMal.putIfAbsent(it, mapping) }
             mapping.simklId?.let { bySimkl.putIfAbsent(it, mapping) }
-            mapping.imdbIds.forEach { byImdb.getOrPut(it.lowercase()) { mutableListOf() } += mapping }
-            mapping.tmdbTvId?.let { byTmdbTv.getOrPut(it) { mutableListOf() } += mapping }
-            mapping.tmdbMovieIds.forEach { byTmdbMovie.getOrPut(it) { mutableListOf() } += mapping }
-            mapping.tvdbId?.let { byTvdb.getOrPut(it) { mutableListOf() } += mapping }
+            if (mapping.imdbIds.isNotEmpty()) {
+                for (imdb in mapping.imdbIds) {
+                    byImdb.getOrPut(imdb.lowercase()) { ArrayList(2) } += mapping
+                }
+            }
+            mapping.tmdbTvId?.let { byTmdbTv.getOrPut(it) { ArrayList(2) } += mapping }
+            if (mapping.tmdbMovieIds.isNotEmpty()) {
+                for (movieId in mapping.tmdbMovieIds) {
+                    byTmdbMovie.getOrPut(movieId) { ArrayList(2) } += mapping
+                }
+            }
+            mapping.tvdbId?.let { byTvdb.getOrPut(it) { ArrayList(2) } += mapping }
+        }
+
+        runCatching {
+            if (stream != null) {
+                stream.buffered().use { buffered ->
+                    animeMappingJson
+                        .decodeToSequence<AnimeListMiniEntry>(buffered, DecodeSequenceMode.ARRAY_WRAPPED)
+                        .forEach(::ingest)
+                }
+            } else {
+                animeMappingJson.decodeFromString<List<AnimeListMiniEntry>>(text!!).forEach(::ingest)
+            }
+        }.onFailure { error ->
+            animeMappingLog.w(error) { "Failed to parse $ANIME_LIST_RESOURCE" }
         }
 
         return Index(
@@ -342,6 +394,12 @@ internal object AnimeIdMappingRepository {
 }
 
 @Serializable
+private data class AnimeListTmdbIds(
+    val movie: List<Int> = emptyList(),
+    val tv: Int? = null,
+)
+
+@Serializable
 private data class AnimeListMiniEntry(
     val type: String? = null,
     @SerialName("anime-planet_id") val animePlanetId: String? = null,
@@ -351,13 +409,19 @@ private data class AnimeListMiniEntry(
     @SerialName("mal_id") val malId: Int? = null,
     @SerialName("simkl_id") val simklId: Int? = null,
     @SerialName("imdb_id") val imdbIds: List<String> = emptyList(),
-    @SerialName("themoviedb_id") val tmdbIds: JsonElement? = null,
+    @SerialName("themoviedb_id") val tmdbIds: AnimeListTmdbIds? = null,
     @SerialName("tvdb_id") val tvdbId: Int? = null,
     val season: AnimeListSeason? = null,
     @SerialName("episode_offset") val episodeOffset: AnimeListSeason? = null,
 ) {
     fun toDomain(): AnimeIdMapping {
-        val tmdbObject = tmdbIds as? JsonObject
+        val cleanImdbIds = if (imdbIds.isEmpty()) {
+            emptyList()
+        } else if (imdbIds.all(String::isNotBlank)) {
+            imdbIds
+        } else {
+            imdbIds.filter(String::isNotBlank)
+        }
         return AnimeIdMapping(
             type = type,
             animePlanetId = animePlanetId,
@@ -366,9 +430,9 @@ private data class AnimeListMiniEntry(
             kitsuId = kitsuId,
             malId = malId,
             simklId = simklId,
-            imdbIds = imdbIds.filter(String::isNotBlank),
-            tmdbMovieIds = tmdbObject?.get("movie").toIntList(),
-            tmdbTvId = tmdbObject?.get("tv").toIntList().firstOrNull(),
+            imdbIds = cleanImdbIds,
+            tmdbMovieIds = tmdbIds?.movie ?: emptyList(),
+            tmdbTvId = tmdbIds?.tv,
             tvdbId = tvdbId,
             tvdbSeason = season?.tvdb,
             tmdbSeason = season?.tmdb,
@@ -389,16 +453,3 @@ private data class AnimeListSeason(
     val tvdb: Int? = null,
     val tmdb: Int? = null,
 )
-
-private fun JsonElement?.toIntList(): List<Int> =
-    when (this) {
-        null -> emptyList()
-        is JsonPrimitive -> listOfNotNull(jsonPrimitive.intOrNull)
-        else -> runCatching {
-            jsonArray.mapNotNull { item -> item.jsonPrimitive.intOrNull }
-        }.getOrElse {
-            runCatching {
-                animeMappingJson.decodeFromJsonElement<List<Int>>(this)
-            }.getOrDefault(emptyList())
-        }
-    }

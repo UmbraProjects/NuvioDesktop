@@ -4,6 +4,8 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.core.storage.DesktopBlobFile
 import com.nuvio.app.core.storage.DesktopStorage
+import java.io.ByteArrayInputStream
+import java.io.InputStream
 import java.nio.file.Files
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -51,6 +53,16 @@ actual object WatchedStorage {
             pendingPayloads[profileId]?.let { return it }
         }
         return blobFor(profileId).read()
+    }
+
+    actual fun <T> loadPayloadStream(profileId: Int, decode: (InputStream) -> T): T? {
+        migrateLegacyStoreIfPresent()
+        synchronized(pendingLock) {
+            pendingPayloads[profileId]?.let { pending ->
+                return ByteArrayInputStream(pending.toByteArray(Charsets.UTF_8)).use(decode)
+            }
+        }
+        return blobFor(profileId).readStream(decode)
     }
 
     actual fun savePayload(profileId: Int, payload: String) {
