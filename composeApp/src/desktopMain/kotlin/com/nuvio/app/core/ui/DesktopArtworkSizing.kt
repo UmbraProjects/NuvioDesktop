@@ -23,6 +23,7 @@ import coil3.size.SizeResolver
 import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 private val DesktopArtworkSizeKey = Extras.Key(default = false)
 
@@ -129,11 +130,16 @@ internal fun ImageRequest.Builder.desktopArtworkCacheSize(): ImageRequest.Builde
  */
 internal class DesktopArtworkSizeInterceptor(
     private val memoryCache: () -> MemoryCache? = { HeroArtworkMemory.cache },
+    private val maxHeroWidthPx: () -> Int? = {
+        ImageCacheSettingsRepository.settings.value.backdropResolution.maxWidthPx
+    },
 ) : Interceptor {
     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
         if (chain.size.isHeroArtworkSize()) {
+            val effectiveSize = cappedHeroArtworkSize(chain.size, maxHeroWidthPx())
+            val effectiveChain = if (effectiveSize != chain.size) chain.withSize(effectiveSize) else chain
             return HeroArtworkInFlight.joinOrRun(chain.request.data) {
-                reuseNearSizeHero(chain) ?: chain.proceed().also { result ->
+                reuseNearSizeHero(effectiveChain, effectiveSize) ?: effectiveChain.proceed().also { result ->
                     if (result is SuccessResult) HeroArtworkMemory.remember(chain.request.data, result.memoryCacheKey)
                 }
             }
@@ -153,10 +159,10 @@ internal class DesktopArtworkSizeInterceptor(
      * (2026-10-19 07:11). Reusing it costs a 1.14x upscale on Details; a cold open still decodes at
      * full size, and that larger bitmap then serves Home too.
      */
-    private fun reuseNearSizeHero(chain: Interceptor.Chain): SuccessResult? {
+    private fun reuseNearSizeHero(chain: Interceptor.Chain, size: Size): SuccessResult? {
         if (!chain.request.memoryCachePolicy.readEnabled) return null
-        val width = (chain.size.width as? Dimension.Pixels)?.px ?: return null
-        val height = (chain.size.height as? Dimension.Pixels)?.px ?: return null
+        val width = (size.width as? Dimension.Pixels)?.px ?: return null
+        val height = (size.height as? Dimension.Pixels)?.px ?: return null
         val key = HeroArtworkMemory.keyFor(chain.request.data) ?: return null
         val cached = memoryCache()?.get(key) ?: return null
         val image = cached.image
@@ -173,6 +179,23 @@ internal class DesktopArtworkSizeInterceptor(
             isPlaceholderCached = false,
         )
     }
+}
+
+/**
+ * Scales a hero slot's target dimensions down proportionally when [maxWidthPx] is narrower than
+ * the slot (Settings -> Advanced -> Backdrop Resolution). Keeping both axes scaled preserves the
+ * slot's aspect ratio so Coil's `Scale.FILL` multiplier lands on the exact target width (e.g.
+ * 1920x1080 or 2560x1440 for a 16:9 backdrop) and memory-cache hits stay valid across Home and
+ * Details.
+ */
+internal fun cappedHeroArtworkSize(size: Size, maxWidthPx: Int?): Size {
+    if (maxWidthPx == null || maxWidthPx <= 0) return size
+    val width = (size.width as? Dimension.Pixels)?.px ?: return size
+    val height = (size.height as? Dimension.Pixels)?.px ?: return size
+    if (width <= maxWidthPx) return size
+    val scale = maxWidthPx.toDouble() / width.toDouble()
+    val cappedHeight = (height * scale).roundToInt().coerceAtLeast(1)
+    return Size(Dimension.Pixels(maxWidthPx), Dimension.Pixels(cappedHeight))
 }
 
 /** How much of a hero slot a cached bitmap must fill to serve it; see [DesktopArtworkSizeInterceptor]. */

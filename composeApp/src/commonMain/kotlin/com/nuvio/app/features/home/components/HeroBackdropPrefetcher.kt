@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -52,17 +53,34 @@ internal object HeroBackdropPrefetcher {
     // Confined to [confined].
     private var queue: List<String> = emptyList()
     private var worker: Job? = null
+    private var settleJob: Job? = null
+
+    /**
+     * Wait this long after the latest focus move before decoding speculative neighbors.
+     * Browsing pauses longer than this so neighbors still land in the memory cache before the next
+     * click, while mouse-wheel scrolling (~250-450 ms per notch) and fast key-repeat never trigger
+     * speculative 4x24 MB neighbor decodes (2026-11-25 capture).
+     */
+    internal const val PrefetchSettleMs = 650L
 
     /** Read from any thread by [awaitInFlight]; written only on [confined]. */
     private val inFlight = MutableStateFlow<Map<String, CompletableDeferred<Unit>>>(emptyMap())
 
-    /** Replaces the pending queue with [models], nearest first. */
+    /** Replaces the pending queue with [models], nearest first, once focus has settled briefly. */
     fun request(context: PlatformContext, loader: ImageLoader, models: List<String>) {
         val (width, height) = slotSizePx.value ?: return
         scope.launch {
-            queue = models
-            if (worker?.isActive == true) return@launch
-            worker = scope.launch { drain(context, loader, width, height) }
+            // Clear any queued-but-unstarted neighbors immediately so an already-running worker
+            // finishes at most the single decode in flight instead of churning through stale cards.
+            queue = emptyList()
+            settleJob?.cancel()
+            if (models.isEmpty()) return@launch
+            settleJob = scope.launch {
+                delay(PrefetchSettleMs)
+                queue = models
+                if (worker?.isActive == true) return@launch
+                worker = scope.launch { drain(context, loader, width, height) }
+            }
         }
     }
 

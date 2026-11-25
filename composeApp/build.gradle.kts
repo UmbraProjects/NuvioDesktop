@@ -2633,19 +2633,22 @@ val nativeCompile = tasks.register<Exec>("nativeCompile") {
             // -H:-RemoveLoopSafepoints was tried too and made no difference.
             add("-R:MaxHeapSize=1g")
             add("-R:MaxNewSize=192m")
-            // Heap floor for the old generation. Serial GC's default policy (Adaptive2) kept the old
-            // generation sized just above the ~200-280 MB live set, so ordinary browsing promoted
-            // it full every 20-40 s: a natural 250-316 ms stop-the-world full GC each time, every
-            // (UiStall) of 250 ms or more in the 2026-10-19 session, and back-to-back pairs ~400 ms
-            // apart. 512m leaves ~320 MB of old generation, so most growth is collected by
-            // IdleHeapCollector while the user is not interacting.
-            // 768m since 2026-11-23: the live set has grown to ~420 MB (lightweight meta for ~4,600
-            // titles, the TMDB answer cache, Live TV's 58,000-channel list and 180,000-programme
-            // guide), above the ~320 MB of old generation 512m leaves. The old generation then sat
-            // just above the live set again and each promotion forced another full GC: four in 4 s
-            // on opening Live TV, four in 3 s at a YouTube playback start, 400-470 ms each. 768m
-            // leaves ~576 MB, so the same ~150 MB of headroom as the original 512m had.
-            add("-R:MinHeapSize=768m")
+            // Serial GC policy + heap floor. GraalVM 25's default policy (Adaptive2) hardcodes
+            // MIN_HEAP_FREE_RATIO=0 and, once 5 full GCs have occurred (majorCount >= 5), shrinks
+            // oldSize down to liveOld + paddedAveragePromoted (~15-20 MB headroom), ignoring
+            // -R:MinHeapSize. In the 2026-11-25 baseline that caused 8 back-to-back natural full
+            // GCs in 11 s (2.82 s STW) when Live TV loaded after ~15 min of uptime.
+            //
+            // Proportionate (ProportionateSpacesPolicy) keeps 40-70% free headroom in the old
+            // generation across the whole session (oldSize >= liveOld / 0.60, shrinking in steps
+            // when >70% free) so promotion bursts like Live TV do not cascade into back-to-back
+            // full GCs, and unused chunks still return to the OS after leaving Live TV.
+            // With the compact image disk cache (-77 MB), lazy plugin JS, idle DesktopStorage
+            // eviction, and MDBList/AnimeIdMapping compaction, baseline live heap is ~70-90 MB
+            // (and ~180-200 MB with Live TV), so 512m floor leaves generous headroom without
+            // pinning 768m up front.
+            add("-R:InitialCollectionPolicy=Proportionate")
+            add("-R:MinHeapSize=512m")
             // Objects are promoted after surviving 3 young collections instead of up to 15 (the
             // serial GC's default). Startup builds ~60 MB of long-lived data (caches, catalogs, meta)
             // that was copied between survivor spaces on every young collection until it aged out:

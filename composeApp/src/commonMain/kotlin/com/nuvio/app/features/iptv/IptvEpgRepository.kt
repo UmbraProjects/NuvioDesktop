@@ -86,6 +86,35 @@ object IptvEpgRepository {
     }
 
     /**
+     * Releases parsed XMLTV guides and short-EPG caches while keeping [checkedThisLaunch] intact,
+     * so reopening Live TV reloads from the local `.json.gz` disk cache without refetching.
+     */
+    internal fun evictInMemoryCache(): Boolean {
+        var evicted = false
+        for ((playlistId, state) in guides) {
+            val lock = guideLocks.getOrPut(playlistId) { Mutex() }
+            if (!lock.tryLock()) continue
+            try {
+                if (!state.value.loading && state.value.guide != null) {
+                    state.value = GuideState()
+                    evicted = true
+                }
+            } finally {
+                lock.unlock()
+            }
+        }
+        if (providerGuides.isNotEmpty()) {
+            providerGuides.clear()
+            evicted = true
+        }
+        if (shortCache.isNotEmpty()) {
+            shortCache.clear()
+            evicted = true
+        }
+        return evicted
+    }
+
+    /**
      * Prepares [content]'s guides: its own XMLTV guide, and the [IptvProviderGuides] guide of every
      * free service it has channels of. Each comes from disk first, then a download when it is stale
      * by the refresh setting or [force]d.

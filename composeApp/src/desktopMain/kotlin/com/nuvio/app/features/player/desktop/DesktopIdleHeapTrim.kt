@@ -71,15 +71,22 @@ internal object DesktopIdleHeapTrim {
      * completes, and this is called from the UI's coroutine.
      */
     private const val PlaybackMinuteMillis = 60_000L
+    private const val PlaybackFiveMinuteExtraMillis = 240_000L
+    private val playbackTrimGeneration = java.util.concurrent.atomic.AtomicLong(0L)
 
     fun onPlaybackStarted() {
+        val generation = playbackTrimGeneration.incrementAndGet()
         thread(isDaemon = true, name = "nuvio-playback-heap-trim") {
             com.nuvio.app.core.ui.MemoryTrimLog.trim(reason = "playback started") { System.gc() }
             // Where the memory is, once the trim has settled and again when playback has filled its
             // buffers: so two builds or two sessions can be compared part by part, not by one total.
             com.nuvio.app.core.diagnostics.MemoryBreakdownSampler.log("playback start")
             runCatching { Thread.sleep(PlaybackMinuteMillis) }
+            if (playbackTrimGeneration.get() != generation) return@thread
             com.nuvio.app.core.diagnostics.MemoryBreakdownSampler.log("playback +1 min")
+            runCatching { Thread.sleep(PlaybackFiveMinuteExtraMillis) }
+            if (playbackTrimGeneration.get() != generation || !DesktopArtworkCaches.isPlaybackActive) return@thread
+            com.nuvio.app.core.diagnostics.MemoryBreakdownSampler.log("playback +5 min")
         }
     }
 }

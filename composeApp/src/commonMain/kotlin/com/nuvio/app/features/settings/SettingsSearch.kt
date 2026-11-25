@@ -1358,6 +1358,16 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.Advanced,
+            key = "backdrop-resolution",
+            title = resolve(Res.string.settings_advanced_backdrop_resolution),
+            description = resolve(Res.string.settings_advanced_backdrop_resolution_description),
+            pageLabel = advancedPage,
+            section = resolve(Res.string.settings_advanced_section_cache),
+            category = advancedCategory,
+            icon = Icons.Rounded.Tune,
+        )
+        addRow(
+            page = SettingsPage.Advanced,
             key = "home-catalog-cache",
             title = resolve(Res.string.settings_advanced_home_catalog_cache),
             description = resolve(Res.string.settings_advanced_home_catalog_cache_description),

@@ -225,6 +225,8 @@ object UsenetSeekProbe {
 
     /** Shorter waits are mpv's own seek inside its cache, not worth a line. */
     private const val MIN_REPORTED_MS = 300L
-    private const val BASELINE_EVERY_MS = 1_000L
+    // 5 s (was 1 s): still recent enough to distinguish a new seek range without polling
+    // localhost diagnostics HTTP + JSON 60 times a minute during smooth playback.
+    private const val BASELINE_EVERY_MS = 5_000L
     private const val SEEK_THRESHOLD_MS = 5_000L
 }

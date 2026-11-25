@@ -118,13 +118,12 @@ internal class ShardedImageDiskCache(
         fun build(cacheDir: Path, maxSizeBytes: Long): ShardedImageDiskCache {
             val perShard = (maxSizeBytes / ImageCacheShardCount).coerceAtLeast(1L)
             val root = cacheDir.toOkioPath()
-            val fileSystem = ShardEntryFileSystem(root)
             val shards = (0 until ImageCacheShardCount).map { index ->
-                DiskCache.Builder()
-                    .fileSystem(fileSystem)
-                    .directory(root / imageCacheShardName(index))
-                    .maxSizeBytes(perShard)
-                    .build()
+                CompactImageDiskCache(
+                    journalDir = cacheDir.resolve(imageCacheShardName(index)),
+                    entryDir = cacheDir,
+                    maxSize = perShard,
+                )
             }
             return ShardedImageDiskCache(shards, root)
         }

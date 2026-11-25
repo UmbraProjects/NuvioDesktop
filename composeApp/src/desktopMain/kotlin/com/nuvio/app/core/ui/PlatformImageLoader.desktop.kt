@@ -30,12 +30,14 @@ internal fun buildArtworkDiskCache(): DiskCache {
     ImageCacheSettingsRepository.ensureLoaded()
     val totalBytes = ImageCacheSettingsRepository.settings.value.diskCacheGb * BytesPerGb
     val animatedBytes = (totalBytes * AnimatedImageCacheFraction).toLong()
+    val animatedDir = DesktopStorage.rootDir.resolve(ANIMATED_IMAGE_CACHE_DIR_NAME)
     return PartitionedImageDiskCache(
         stills = ShardedImageDiskCache.build(cacheDir, totalBytes - animatedBytes),
-        animated = DiskCache.Builder()
-            .directory(DesktopStorage.rootDir.resolve(ANIMATED_IMAGE_CACHE_DIR_NAME).toOkioPath())
-            .maxSizeBytes(animatedBytes)
-            .build(),
+        animated = CompactImageDiskCache(
+            journalDir = animatedDir,
+            entryDir = animatedDir,
+            maxSize = animatedBytes.coerceAtLeast(1L),
+        ),
     )
 }
 

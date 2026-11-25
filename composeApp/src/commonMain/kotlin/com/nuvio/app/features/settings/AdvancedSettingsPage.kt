@@ -15,6 +15,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.features.details.LightweightMetaDiskCache
 import com.nuvio.app.features.home.HomeCatalogDiskCache
 import com.nuvio.app.isDesktop
+import com.nuvio.app.core.ui.BackdropResolution
 import com.nuvio.app.core.ui.ImageCacheSettings
 import com.nuvio.app.core.ui.ImageCacheSettingsRepository
 import com.nuvio.app.core.ui.MemoryUse
@@ -32,6 +33,11 @@ import nuvio.composeapp.generated.resources.settings_advanced_clear_cw_cache_sub
 import nuvio.composeapp.generated.resources.settings_advanced_home_catalog_cache
 import nuvio.composeapp.generated.resources.settings_advanced_home_catalog_cache_description
 import nuvio.composeapp.generated.resources.settings_advanced_metadata_cache
+import nuvio.composeapp.generated.resources.settings_advanced_backdrop_resolution
+import nuvio.composeapp.generated.resources.settings_advanced_backdrop_resolution_1080p
+import nuvio.composeapp.generated.resources.settings_advanced_backdrop_resolution_1440p
+import nuvio.composeapp.generated.resources.settings_advanced_backdrop_resolution_description
+import nuvio.composeapp.generated.resources.settings_advanced_backdrop_resolution_full
 import nuvio.composeapp.generated.resources.settings_advanced_memory_use
 import nuvio.composeapp.generated.resources.settings_advanced_memory_use_balanced
 import nuvio.composeapp.generated.resources.settings_advanced_memory_use_description
@@ -237,6 +243,28 @@ private fun ImageCacheRows(isTablet: Boolean) {
         isTablet = isTablet,
         modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("memory-use")),
         onSelected = ImageCacheSettingsRepository::setMemoryUse,
+    )
+
+    SettingsGroupDivider(isTablet = isTablet)
+    SettingsDropdownChoiceRow(
+        title = stringResource(Res.string.settings_advanced_backdrop_resolution),
+        description = stringResource(Res.string.settings_advanced_backdrop_resolution_description),
+        options = BackdropResolution.entries.map { resolution ->
+            SettingsChoiceOption(
+                resolution,
+                stringResource(
+                    when (resolution) {
+                        BackdropResolution.Full -> Res.string.settings_advanced_backdrop_resolution_full
+                        BackdropResolution.Qhd1440 -> Res.string.settings_advanced_backdrop_resolution_1440p
+                        BackdropResolution.Hd1080 -> Res.string.settings_advanced_backdrop_resolution_1080p
+                    },
+                ),
+            )
+        },
+        selectedValue = settings.backdropResolution,
+        isTablet = isTablet,
+        modifier = Modifier.settingsScrollAnchor(SettingsScrollAnchor.searchKey("backdrop-resolution")),
+        onSelected = ImageCacheSettingsRepository::setBackdropResolution,
     )
 
     SettingsGroupDivider(isTablet = isTablet)

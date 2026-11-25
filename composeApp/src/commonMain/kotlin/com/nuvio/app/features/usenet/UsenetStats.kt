@@ -401,13 +401,30 @@ object UsenetStats {
     }
 
     internal fun sessionClosed(sessionId: String) {
-        synchronized(sessions) { sessions.remove(sessionId) }
+        val removed = synchronized(sessions) { sessions.remove(sessionId) != null }
+        if (removed) flushPendingSave()
+    }
+
+    private fun flushPendingSave() {
+        val hadPending = synchronized(this) {
+            val active = saveJob?.isActive == true
+            saveJob?.cancel()
+            saveJob = null
+            active
+        }
+        if (hadPending) {
+            scope.launch {
+                runCatching { UsenetStorage.saveStats(json.encodeToString(UsenetStatsBook.serializer(), state.value)) }
+            }
+        }
     }
 
     private fun progress(counters: Map<Int, ProviderCounters>) = counters.values.sumOf { it.articles + it.missing + it.errors }
 
     private fun now() = System.currentTimeMillis()
 
-    private const val SAVE_DELAY_MS = 3_000L
+    // Diagnostics run periodically during playback; 3 s caused 10 JSON encodes + disk flushes every
+    // 30 s for the whole movie. 30 s (plus an immediate flush on session close) keeps stats fresh.
+    private const val SAVE_DELAY_MS = 30_000L
     private const val MAX_ORIGINS = 5_000
 }

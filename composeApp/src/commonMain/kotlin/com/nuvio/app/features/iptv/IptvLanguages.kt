@@ -106,10 +106,22 @@ object IptvLanguages {
         "sv" to phrases("swedish", "norwegian", "danish", "finnish", "nordic", "svt", "nrk", "dr1", "yle"),
     )
 
+    private val COMBINING_MARKS = Regex("\\p{M}+")
+    private val NON_ALNUM_PLUS = Regex("[^a-z0-9+ ]")
+    private val MULTI_SPACE = Regex("\\s+")
+    private val COUNTRY_PREFIX = Regex("""^\s*[|\[(]?\s*[A-Za-z]{2,3}\s*[|\])\]:-]+\s*""")
+
     /** Lower case, accents and punctuation gone: "Telemundo (Español)" -> "telemundo espanol". */
-    private fun plain(text: String): String =
-        Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
-            .replace("&", " and ").replace(Regex("[^a-z0-9+ ]"), " ").replace(Regex("\\s+"), " ").trim()
+    private fun plain(text: String): String {
+        val lower = text.lowercase()
+        val folded = if (lower.any { it.code >= 128 }) {
+            COMBINING_MARKS.replace(Normalizer.normalize(lower, Normalizer.Form.NFD), "")
+        } else {
+            lower
+        }
+        val withAnd = if ('&' in folded) folded.replace("&", " and ") else folded
+        return MULTI_SPACE.replace(NON_ALNUM_PLUS.replace(withAnd, " "), " ").trim()
+    }
 
     /** The language [text] names outright, if it names one. */
     fun named(text: String): String? {
@@ -119,8 +131,15 @@ object IptvLanguages {
 
     /** A channel's language: its own name, then its category's, then its country's; [OTHER] when nothing says. */
     fun ofChannel(channelName: String, categoryName: String, region: String?): String =
-        named(stripCountry(channelName)) ?: named(categoryName) ?: ofCountry(region) ?: OTHER
+        ofChannelResolved(channelName, named(categoryName), ofCountry(region))
+
+    /** Same as [ofChannel], reusing precomputed category and region fallbacks across a category's channels. */
+    internal fun ofChannelResolved(
+        channelName: String,
+        categoryLanguage: String?,
+        regionLanguage: String?,
+    ): String = named(stripCountry(channelName)) ?: categoryLanguage ?: regionLanguage ?: OTHER
 
     /** "US: ESPN" -> "ESPN", "|UK| BBC One" -> "BBC One": the country prefix is not a language ("ES" is Spain, here). */
-    private fun stripCountry(name: String): String = name.replace(Regex("""^\s*[|\[(]?\s*[A-Za-z]{2,3}\s*[|\])\]:-]+\s*"""), "")
+    private fun stripCountry(name: String): String = COUNTRY_PREFIX.replace(name, "")
 }

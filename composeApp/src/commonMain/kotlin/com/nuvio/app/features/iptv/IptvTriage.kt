@@ -121,10 +121,16 @@ object IptvTriageRules {
 
     /** The language of each channel in [categories], by channel key. */
     private fun languagesIn(content: IptvPlaylistContent, categories: List<IptvCategory>, categoryRegions: Map<String, String>): Map<String, String> {
-        val out = HashMap<String, String>()
+        val expected = categories.sumOf { content.byCategory[it.id]?.size ?: 0 }
+        val out = HashMap<String, String>((expected * 4) / 3 + 16)
         categories.forEach { category ->
-            val region = categoryRegions[category.id]
-            content.byCategory[category.id].orEmpty().forEach { channel -> out[channel.key] = IptvLanguages.ofChannel(channel.name, category.name, region) }
+            val channels = content.byCategory[category.id]
+            if (channels.isNullOrEmpty()) return@forEach
+            val categoryLanguage = IptvLanguages.named(category.name)
+            val regionLanguage = IptvLanguages.ofCountry(categoryRegions[category.id])
+            channels.forEach { channel ->
+                out[channel.key] = IptvLanguages.ofChannelResolved(channel.name, categoryLanguage, regionLanguage)
+            }
         }
         return out
     }

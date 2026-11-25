@@ -248,4 +248,42 @@ class DesktopArtworkSizingTest {
             file.delete()
         }
     }
+
+    @Test
+    fun `backdrop resolution cap shrinks hero decode and shares the capped bitmap across Home and Details`() = runBlocking {
+        assertEquals(Size(3264, 1012), cappedHeroArtworkSize(Size(3264, 1012), null))
+        assertEquals(Size(2560, 794), cappedHeroArtworkSize(Size(3264, 1012), 2560))
+        assertEquals(Size(1920, 595), cappedHeroArtworkSize(Size(3264, 1012), 1920))
+        // A slot narrower than the cap is untouched.
+        assertEquals(Size(1600, 900), cappedHeroArtworkSize(Size(1600, 900), 1920))
+
+        val file = Files.createTempFile("nuvio-hero-cap-test", ".jpg").toFile()
+        ImageIO.write(BufferedImage(3840, 2160, BufferedImage.TYPE_INT_RGB), "jpg", file)
+        val context = PlatformContext.INSTANCE
+        lateinit var loader: ImageLoader
+        loader = ImageLoader.Builder(context)
+            .memoryCache { MemoryCache.Builder().maxSizeBytes(128L * 1024 * 1024).build() }
+            .components {
+                add(DesktopArtworkSizeInterceptor(memoryCache = { loader.memoryCache }, maxHeroWidthPx = { 1920 }))
+                add(HighQualityBitmapDecoder.Factory())
+            }.build()
+        try {
+            val homeReq = ImageRequest.Builder(context).data(file).scale(Scale.FILL).size(3264, 1012).build()
+            val detailsReq = ImageRequest.Builder(context).data(file).scale(Scale.FILL).size(3840, 2160).build()
+
+            val first = loader.execute(homeReq) as SuccessResult
+            assertEquals(1920, first.image.width)
+            assertEquals(1080, first.image.height)
+
+            val secondHome = loader.execute(homeReq) as SuccessResult
+            assertEquals(DataSource.MEMORY_CACHE, secondHome.dataSource)
+
+            val details = loader.execute(detailsReq) as SuccessResult
+            assertEquals(DataSource.MEMORY_CACHE, details.dataSource)
+            assertEquals(1920, details.image.width)
+        } finally {
+            loader.shutdown()
+            file.delete()
+        }
+    }
 }

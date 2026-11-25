@@ -42,10 +42,21 @@ object IptvRegions {
 
     private val isoCountries: Set<String> = Locale.getISOCountries().toHashSet() + "EU" + "XK"
 
+    private val COMBINING_MARKS = Regex("\\p{M}+")
+    private val NON_ALNUM = Regex("[^a-z0-9 ]")
+    private val MULTI_SPACE = Regex("\\s+")
+
     /** Lower case, accents and punctuation gone: "Côte d'Ivoire" -> "cote d ivoire". */
-    private fun plain(text: String): String =
-        Normalizer.normalize(text.lowercase(), Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
-            .replace("&", " and ").replace(Regex("[^a-z0-9 ]"), " ").replace(Regex("\\s+"), " ").trim()
+    private fun plain(text: String): String {
+        val lower = text.lowercase()
+        val folded = if (lower.any { it.code >= 128 }) {
+            COMBINING_MARKS.replace(Normalizer.normalize(lower, Normalizer.Form.NFD), "")
+        } else {
+            lower
+        }
+        val withAnd = if ('&' in folded) folded.replace("&", " and ") else folded
+        return MULTI_SPACE.replace(NON_ALNUM.replace(withAnd, " "), " ").trim()
+    }
 
     /**
      * fork:live-tv-triage - countries written out ("Germany | TV", "Costa Rica | TV"): every ISO country's English
@@ -88,9 +99,10 @@ object IptvRegions {
             names[before]?.let { return it }
         }
         // The whole name is a country ("Germany").
-        if (before.isNotEmpty() && before == plain(categoryName) && before !in wordLike) names[before]?.let { return it }
+        val plainFull = plain(categoryName)
+        if (before.isNotEmpty() && before == plainFull && before !in wordLike) names[before]?.let { return it }
         // Space-separated ("Germany Sports"): the longest run of leading words that is a country, not an ordinary word.
-        val words = plain(categoryName).split(' ').filter { it.isNotEmpty() }
+        val words = plainFull.split(' ').filter { it.isNotEmpty() }
         for (n in minOf(4, words.size - 1) downTo 1) {
             val candidate = words.take(n).joinToString(" ")
             if (candidate.length < 4 || candidate in wordLike) continue

@@ -143,4 +143,43 @@ class DesktopStorageStoreTest {
         listOf("nuvio_auth", "nuvio_addons", "nuvio_watch_progress", "nuvio_watched", "nuvio_profiles")
             .forEach { name -> assertTrue(name in wiped, name) }
     }
+
+    @Test
+    fun `idle eviction drops clean large store, short-circuits unchanged put, and reloads on read or change`() {
+        val file = tempStoreFile()
+        val store = DesktopStorage.Store(file, flushDelayMs = 60_000L)
+        val payload = "x".repeat(2_000)
+        store.putString("big", payload)
+        // Dirty store must NOT be evicted.
+        assertEquals(0L, store.evictIfIdleAndClean(nowMs = System.currentTimeMillis() + 300_000L, idleMs = 1_000L, minChars = 1_000L))
+        assertTrue(store.isLoadedInMemory)
+
+        store.flush()
+        // Small threshold not met -> kept.
+        assertEquals(0L, store.evictIfIdleAndClean(nowMs = System.currentTimeMillis() + 300_000L, idleMs = 1_000L, minChars = 5_000L))
+        assertTrue(store.isLoadedInMemory)
+
+        // Clean, idle, large -> evicted.
+        val evicted = store.evictIfIdleAndClean(nowMs = System.currentTimeMillis() + 300_000L, idleMs = 1_000L, minChars = 1_000L)
+        assertTrue(evicted >= 2_000L)
+        assertFalse(store.isLoadedInMemory)
+
+        // contains / keys / unchanged putString must not reload from disk.
+        assertTrue(store.contains("big"))
+        assertEquals(setOf("big"), store.keys())
+        store.putString("big", payload)
+        assertFalse(store.isLoadedInMemory)
+
+        // getString transparently reloads from disk.
+        assertEquals(payload, store.getString("big"))
+        assertTrue(store.isLoadedInMemory)
+
+        // Evict again, then write a changed value -> reloads and persists cleanly.
+        assertTrue(store.evictIfIdleAndClean(nowMs = System.currentTimeMillis() + 300_000L, idleMs = 1_000L, minChars = 1_000L) >= 2_000L)
+        assertFalse(store.isLoadedInMemory)
+        store.putString("big", "updated")
+        assertTrue(store.isLoadedInMemory)
+        store.flush()
+        assertEquals("updated", readFile(file).getProperty("big"))
+    }
 }

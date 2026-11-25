@@ -11,12 +11,14 @@ import java.awt.Toolkit
 import java.awt.event.AWTEventListener
 import java.lang.management.GarbageCollectorMXBean
 import java.lang.management.ManagementFactory
+import java.lang.management.MemoryPoolMXBean
 import java.nio.file.Files
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /** When the user last touched the app: keyboard, mouse, wheel, or gamepad (posted as key events). */
 internal object UserInputActivity {
@@ -69,10 +71,17 @@ internal object FullGcLog {
 
     private var lastCount = -1L
     private var lastTimeMs = 0L
+    private var lastEdenMb = -1L
+    private var lastOldMb = -1L
 
     /** Heap in use right after the most recent full collection, whoever started it. */
     @Volatile
     var usedAfterLastFullBytes: Long = usedHeapBytes()
+        private set
+
+    /** Old-generation bytes in use right after the most recent full collection (-1 if unavailable). */
+    @Volatile
+    var oldUsedAfterLastFullBytes: Long = HeapPools.oldUsedBytes()
         private set
 
     /** When the most recent full collection was seen, whoever started it. */
@@ -81,6 +90,14 @@ internal object FullGcLog {
         private set
 
     fun usedHeapBytes(): Long = Runtime.getRuntime().let { it.totalMemory() - it.freeMemory() }
+
+    /** Old-generation growth since the last full collection (falls back to total heap if unavailable). */
+    fun oldGenGrowthBytes(): Long {
+        val currentOld = HeapPools.oldUsedBytes()
+        val baselineOld = oldUsedAfterLastFullBytes
+        if (currentOld >= 0L && baselineOld >= 0L) return currentOld - baselineOld
+        return usedHeapBytes() - usedAfterLastFullBytes
+    }
 
     /** Runs [action] (a `System.gc()`) with the collection it causes attributed to [reason]. */
     fun explicit(reason: String, action: () -> Unit) {
@@ -99,24 +116,145 @@ internal object FullGcLog {
         if (fullCollectors.isEmpty()) return
         val count = fullCollectors.sumOf { it.collectionCount.coerceAtLeast(0) }
         val timeMs = fullCollectors.sumOf { it.collectionTime.coerceAtLeast(0) }
+        val pools = HeapPools.sampleMb()
         if (lastCount < 0) {
             lastCount = count
             lastTimeMs = timeMs
+            lastEdenMb = pools.edenMb
+            lastOldMb = pools.oldMb
             return
         }
-        if (count <= lastCount) return
+        if (count <= lastCount) {
+            lastEdenMb = pools.edenMb
+            lastOldMb = pools.oldMb
+            return
+        }
+        val prevOld = lastOldMb
+        val prevEden = lastEdenMb
         val used = usedHeapBytes()
         usedAfterLastFullBytes = used
+        oldUsedAfterLastFullBytes = HeapPools.oldUsedBytes()
         lastFullAtMs = System.currentTimeMillis()
+        IdleHeapCollector.resetArtworkDecoded()
         val trigger = explicitReason ?: "natural"
         log.i {
-            "$trigger: ${count - lastCount}x ${timeMs - lastTimeMs}ms, heap now ${used / (1024 * 1024)}MB"
+            "$trigger: ${count - lastCount}x ${timeMs - lastTimeMs}ms, heap now ${used / (1024 * 1024)}MB " +
+                "(old ${prevOld}->${pools.oldMb}MB, prevEden ${prevEden}MB)"
         }
         lastCount = count
         lastTimeMs = timeMs
+        lastEdenMb = pools.edenMb
+        lastOldMb = pools.oldMb
         // Idle too: with the 768m heap floor (2026-11-23) natural full GCs are rare, and an idle
         // collection is the one moment a ~3 s dump freeze goes unseen.
         if (trigger == "natural" || trigger.startsWith("idle")) HeapDumpOnHighLiveSet.check(used)
+    }
+}
+
+internal data class HeapPoolsMb(val edenMb: Long, val survivorMb: Long, val oldMb: Long)
+
+internal object HeapPools {
+    private const val Mb = 1024L * 1024
+    private val pools: List<MemoryPoolMXBean> = runCatching {
+        ManagementFactory.getMemoryPoolMXBeans().filter { it.isValid }
+    }.getOrDefault(emptyList())
+    private val edenPool = pools.firstOrNull { "eden" in it.name.lowercase() }
+    private val survivorPool = pools.firstOrNull { "survivor" in it.name.lowercase() }
+    private val oldPool = pools.firstOrNull {
+        val n = it.name.lowercase()
+        "old" in n || "tenured" in n
+    }
+
+    private fun MemoryPoolMXBean?.usedMb(): Long =
+        this?.let { runCatching { it.usage.used / Mb }.getOrNull() } ?: -1L
+
+    fun oldUsedBytes(): Long =
+        oldPool?.let { runCatching { it.usage.used }.getOrNull() } ?: -1L
+
+    fun sampleMb(): HeapPoolsMb = HeapPoolsMb(
+        edenMb = edenPool.usedMb(),
+        survivorMb = survivorPool.usedMb(),
+        oldMb = oldPool.usedMb(),
+    )
+}
+
+/**
+ * Perf logging only: one `(HeapTrend)` line every [IntervalMs] showing young/full GC counts,
+ * eden/survivor/old pool usage, and old-gen growth rate across browsing and playback, plus two
+ * browsing `(MemoryBreakdown)` baselines (~30s and ~90s after launch).
+ */
+internal object HeapTrendTrace {
+    private const val IntervalMs = 15_000L
+    private const val HomeBaselineAtMs = 30_000L
+    private const val BrowsingLaterAtMs = 90_000L
+    private const val Mb = 1024L * 1024
+
+    private val log = Logger.withTag("HeapTrend")
+    private val startedAtMs = System.currentTimeMillis()
+    private val collectors: List<GarbageCollectorMXBean> = runCatching {
+        ManagementFactory.getGarbageCollectorMXBeans()
+    }.getOrDefault(emptyList())
+    private val youngCollectors = collectors.filterNot { bean ->
+        val n = bean.name.lowercase()
+        "complete" in n || "old" in n || "marksweep" in n
+    }
+    private val fullCollectors = collectors.filter { bean ->
+        val n = bean.name.lowercase()
+        "complete" in n || "old" in n || "marksweep" in n
+    }
+
+    private var lastSampleAtMs = 0L
+    private var lastYoungCount = -1L
+    private var lastYoungMs = 0L
+    private var lastFullCount = -1L
+    private var lastFullMs = 0L
+    private var lastOldMb = -1L
+    private var loggedHomeBaseline = false
+    private var loggedBrowsingLater = false
+
+    fun sample() {
+        if (!PerfTelemetry.enabled) return
+        val now = System.currentTimeMillis()
+        val uptimeMs = now - startedAtMs
+        val playbackActive = com.nuvio.app.core.ui.DesktopArtworkCaches.isPlaybackActive
+        if (!playbackActive && !loggedHomeBaseline && uptimeMs >= HomeBaselineAtMs) {
+            loggedHomeBaseline = true
+            runCatching { com.nuvio.app.core.diagnostics.MemoryBreakdownSampler.log("home +30s") }
+        } else if (!playbackActive && !loggedBrowsingLater && uptimeMs >= BrowsingLaterAtMs) {
+            loggedBrowsingLater = true
+            runCatching { com.nuvio.app.core.diagnostics.MemoryBreakdownSampler.log("browsing +90s") }
+        }
+        if (lastSampleAtMs == 0L) {
+            lastSampleAtMs = now
+            lastYoungCount = youngCollectors.sumOf { it.collectionCount.coerceAtLeast(0) }
+            lastYoungMs = youngCollectors.sumOf { it.collectionTime.coerceAtLeast(0) }
+            lastFullCount = fullCollectors.sumOf { it.collectionCount.coerceAtLeast(0) }
+            lastFullMs = fullCollectors.sumOf { it.collectionTime.coerceAtLeast(0) }
+            lastOldMb = HeapPools.sampleMb().oldMb
+            return
+        }
+        if (now - lastSampleAtMs < IntervalMs) return
+        val yCount = youngCollectors.sumOf { it.collectionCount.coerceAtLeast(0) }
+        val yMs = youngCollectors.sumOf { it.collectionTime.coerceAtLeast(0) }
+        val fCount = fullCollectors.sumOf { it.collectionCount.coerceAtLeast(0) }
+        val fMs = fullCollectors.sumOf { it.collectionTime.coerceAtLeast(0) }
+        val pools = HeapPools.sampleMb()
+        val heapUsage = runCatching { ManagementFactory.getMemoryMXBean().heapMemoryUsage }.getOrNull()
+        val oldDelta = if (lastOldMb >= 0 && pools.oldMb >= 0) pools.oldMb - lastOldMb else 0L
+        val deltaSign = if (oldDelta >= 0) "+" else ""
+        val mode = if (playbackActive) "playback" else "browsing"
+        log.i {
+            "mode=$mode young=${yCount - lastYoungCount}x/${yMs - lastYoungMs}ms " +
+                "full=${fCount - lastFullCount}x/${fMs - lastFullMs}ms " +
+                "eden=${pools.edenMb}MB surv=${pools.survivorMb}MB old=${pools.oldMb}MB(${deltaSign}${oldDelta}MB) " +
+                "heap=${heapUsage?.used?.div(Mb) ?: -1}/${heapUsage?.committed?.div(Mb) ?: -1}MB"
+        }
+        lastSampleAtMs = now
+        lastYoungCount = yCount
+        lastYoungMs = yMs
+        lastFullCount = fCount
+        lastFullMs = fMs
+        lastOldMb = pools.oldMb
     }
 }
 
@@ -129,12 +267,14 @@ internal object FullGcLog {
  * native-image/management for this to work.
  */
 internal object HeapDumpOnHighLiveSet {
-    // 380 MB never fired in the 07:11 session (natural full GCs peaked at 374 MB live while the
-    // post-GC heap crept 195 -> 374 MB), so one notch lower.
-    // 380 MB from 2026-11-23: the live set now settles around 420 MB, so 320 fired before it had grown.
-    private const val ThresholdBytes = 380L * 1024 * 1024
+    // Temporary baseline capture (2026-11-25): captures one baseline dump (>= 170 MB, e.g. settled
+    // Home) and optionally one high-heap dump (>= 350 MB, e.g. after opening Live TV). Flip Enabled
+    // back to false once the baseline capture is read and delete the .hprof files (they hold tokens).
+    private const val BaselineThresholdBytes = 170L * 1024 * 1024
+    private const val HighThresholdBytes = 350L * 1024 * 1024
     private val log = Logger.withTag("HeapDump")
-    private val done = AtomicBoolean(false)
+    private val baselineDone = AtomicBoolean(false)
+    private val highDone = AtomicBoolean(false)
 
     // Never during playback or just after it. A dump stops every thread for ~2.7 s, and the one
     // that landed as the player was closing (2026-10-19 07:49:28) was followed a second later by a
@@ -149,24 +289,26 @@ internal object HeapDumpOnHighLiveSet {
         if (active) lastPlaybackSeenAtMs = System.currentTimeMillis()
     }
 
-    // Off: two dumps (07:54 browsing, 08:26 just after launch) have been read, and each one freezes
-    // the app for ~2.7 s. Flip to true for a run that needs another.
-    // Off again: the 2026-11-23 02:10 dump was read (lightweight meta episode lists, the image disk cache index).
+    // Off again: baseline dump read on 2026-11-25 (nuvio-heap-baseline-20261125-050642.hprof).
     private const val Enabled = false
 
     fun check(usedBytes: Long) {
-        if (!Enabled || usedBytes < ThresholdBytes || !PerfTelemetry.enabled) return
+        if (!Enabled || !PerfTelemetry.enabled) return
         if (DesktopArtworkCaches.isPlaybackActive ||
             System.currentTimeMillis() - lastPlaybackSeenAtMs < AfterPlaybackQuietMs
         ) {
             return
         }
-        if (!done.compareAndSet(false, true)) return
+        val label = when {
+            usedBytes >= HighThresholdBytes && highDone.compareAndSet(false, true) -> "high"
+            usedBytes >= BaselineThresholdBytes && baselineDone.compareAndSet(false, true) -> "baseline"
+            else -> return
+        }
         runCatching {
             val logs = DesktopStorage.rootDir.resolve("logs")
             Files.createDirectories(logs)
             val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
-            val file = logs.resolve("nuvio-heap-$stamp.hprof")
+            val file = logs.resolve("nuvio-heap-$label-$stamp.hprof")
             val startedAt = System.nanoTime()
             val path = file.toAbsolutePath().toString()
             if (NativeImageSupport.inImage) {
@@ -178,7 +320,7 @@ internal object HeapDumpOnHighLiveSet {
                 ManagementFactory.getPlatformMXBean(HotSpotDiagnosticMXBean::class.java).dumpHeap(path, true)
             }
             log.i {
-                "live heap ${usedBytes / (1024 * 1024)}MB after a natural full GC: dumped to $file in " +
+                "live heap ${usedBytes / (1024 * 1024)}MB ($label) after full GC: dumped to $file in " +
                     "${(System.nanoTime() - startedAt) / 1_000_000}ms"
             }
         }.onFailure { error -> log.w(error) { "heap dump failed" } }
@@ -211,11 +353,26 @@ internal object IdleHeapCollector {
     // idle collection is invisible, a natural one lands mid-scroll. At 128 / 32 MB natural ones still
     // won 9 to 3 in a 10-minute session; at 48 / 16 MB, 4 to 14 (2026-10-16).
     private const val SlowIntervalMs = 60_000L
+    /** Native Skia pixels decoded since the last full GC before the slow cleaner rule fires. */
+    internal const val DefaultArtworkCleanBytes = 128L * 1024 * 1024
+    /** Heavy native Skia pixel backlog: reclaim on the fast 20 s idle rule instead of waiting 60 s. */
+    internal const val DefaultArtworkFastCleanBytes = 512L * 1024 * 1024
     private const val Mb = 1024L * 1024
 
     private val log = Logger.withTag("IdleHeapCollector")
     private val started = AtomicBoolean(false)
     private var lastRunAtMs = 0L
+    private var lastStoreEvictAtMs = 0L
+    private val artworkDecodedSinceFull = AtomicLong(0L)
+
+    /** Called from the artwork decode path (any thread) to track unfinalized native Skia pixels. */
+    fun noteArtworkDecoded(bytes: Long) {
+        if (bytes > 0L) artworkDecodedSinceFull.addAndGet(bytes)
+    }
+
+    internal fun resetArtworkDecoded() {
+        artworkDecodedSinceFull.set(0L)
+    }
 
     fun start() {
         if (!started.compareAndSet(false, true)) return
@@ -259,9 +416,21 @@ internal object IdleHeapCollector {
             HeapDumpOnHighLiveSet.notePlayback(DesktopArtworkCaches.isPlaybackActive)
             FullGcLog.poll()
             StartupYoungGcTrace.sample()
-            if (!NativeImageSupport.inImage) return
+            HeapTrendTrace.sample()
             val now = System.currentTimeMillis()
-            val grown = FullGcLog.usedHeapBytes() - FullGcLog.usedAfterLastFullBytes
+            if (now - lastStoreEvictAtMs >= 30_000L) {
+                lastStoreEvictAtMs = now
+                val evictedChars = com.nuvio.app.core.storage.DesktopStorage.evictIdleStores(now)
+                if (evictedChars > 0L) {
+                    log.d { "evicted ${evictedChars / 1024}K chars from idle DesktopStorage stores" }
+                }
+            }
+            if (!NativeImageSupport.inImage) return
+            // Measure old-generation growth, not total heap (eden + survivor + old): Eden filling
+            // with 48 MB of transient garbage used to trigger a 250-330 ms full STW GC every
+            // 40-60 s even when old gen grew by 0-4 MB (2026-11-25 baseline capture).
+            val grown = FullGcLog.oldGenGrowthBytes()
+            val decodedArtwork = artworkDecodedSinceFull.get()
             val memoryUse = ImageCacheSettingsRepository.settings.value.memoryUse
             val collect = shouldCollect(
                 growthBytes = memoryUse.idleGrowthMb * Mb,
@@ -272,11 +441,17 @@ internal object IdleHeapCollector {
                 playbackActive = DesktopArtworkCaches.isPlaybackActive,
                 grownBytes = grown,
                 sinceLastFullMs = now - FullGcLog.lastFullAtMs,
+                decodedArtworkBytes = decodedArtwork,
             )
             if (!collect) return
             lastRunAtMs = now
             val startedAt = System.nanoTime()
-            FullGcLog.explicit("idle, heap +${grown / (1024 * 1024)}MB") { System.gc() }
+            val reason = if (grown >= memoryUse.idleSlowGrowthMb * Mb) {
+                "idle, old +${grown / (1024 * 1024)}MB"
+            } else {
+                "idle, artwork ${decodedArtwork / (1024 * 1024)}MB decoded"
+            }
+            FullGcLog.explicit(reason) { System.gc() }
             log.d { "idle collection took ${(System.nanoTime() - startedAt) / 1_000_000}ms" }
         }.onFailure { error -> log.w(error) { "idle collection check failed" } }
     }
@@ -290,10 +465,18 @@ internal object IdleHeapCollector {
         playbackActive: Boolean,
         grownBytes: Long,
         sinceLastFullMs: Long,
+        decodedArtworkBytes: Long = 0L,
+        artworkCleanBytes: Long = DefaultArtworkCleanBytes,
+        artworkFastCleanBytes: Long = DefaultArtworkFastCleanBytes,
     ): Boolean =
         sinceLastRunMs >= MinIntervalMs &&
+            sinceLastFullMs >= MinIntervalMs &&
             sinceInputMs >= IdleInputMs &&
             motionQuietMs >= IdleInputMs &&
             !playbackActive &&
-            (grownBytes >= growthBytes || (grownBytes >= slowGrowthBytes && sinceLastFullMs >= SlowIntervalMs))
+            (
+                grownBytes >= growthBytes ||
+                    decodedArtworkBytes >= artworkFastCleanBytes ||
+                    (sinceLastFullMs >= SlowIntervalMs && (grownBytes >= slowGrowthBytes || decodedArtworkBytes >= artworkCleanBytes))
+                )
 }

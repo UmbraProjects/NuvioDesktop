@@ -891,6 +891,11 @@
     <string name="settings_advanced_memory_use_lean">Lean</string>
     <string name="settings_advanced_memory_use_balanced">Balanced</string>
     <string name="settings_advanced_memory_use_generous">Generous</string>
+    <string name="settings_advanced_backdrop_resolution">Backdrop Resolution</string>
+    <string name="settings_advanced_backdrop_resolution_description">Maximum decoded resolution for hero backdrops. Lower values cut memory use during browsing and apply immediately to newly loaded backdrops.</string>
+    <string name="settings_advanced_backdrop_resolution_full">Full (Native)</string>
+    <string name="settings_advanced_backdrop_resolution_1440p">1440p (2560px)</string>
+    <string name="settings_advanced_backdrop_resolution_1080p">1080p (1920px)</string>
     <string name="settings_advanced_metadata_cache_off">Off</string>
     <string name="settings_advanced_metadata_cache_hours">%1$d hours</string>
     <string name="settings_advanced_metadata_cache_days">%1$d days</string>

@@ -87,6 +87,7 @@ internal object DesktopArtworkTelemetry {
                 (sourceKey?.let(ImageFetchTimingListener::describeData) ?: "?")
         }
         ArtworkChurnTrim.onDecoded(outBytes)
+        IdleHeapCollector.noteArtworkDecoded(outBytes)
         // What the same source would have cost under the old unconditional 1536 px pin. That is the
         // baseline this change has to beat for destination-sized artwork - and the one it must NOT
         // be credited against for the hero paths, which the pin never governed.

@@ -3,12 +3,15 @@ package com.nuvio.app.features.iptv
 import co.touchlab.kermit.Logger
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -645,6 +648,68 @@ object IptvRepository {
 
     // Not tied to a screen: a refresh started from Settings keeps going after the page closes.
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private const val OFF_TAB_EVICT_DELAY_MS = 5 * 60 * 1000L
+    private val activeLiveTvScreens = AtomicInteger(0)
+    private val evictJobLock = Any()
+    private var idleEvictJob: Job? = null
+
+    /**
+     * Tracks whether the Live TV tab is currently mounted. Leaving the tab schedules a delayed
+     * release of the in-memory channel and EPG caches (100+ MB on large playlists) so returning
+     * within a few minutes stays instant while long movies/browsing away from Live TV reclaim the
+     * heap. Reopening later reloads from the local `.json.gz` cache without hitting the provider.
+     */
+    fun onLiveTvScreenMounted() {
+        activeLiveTvScreens.incrementAndGet()
+        synchronized(evictJobLock) {
+            idleEvictJob?.cancel()
+            idleEvictJob = null
+        }
+    }
+
+    fun onLiveTvScreenDisposed() {
+        val remaining = activeLiveTvScreens.updateAndGet { (it - 1).coerceAtLeast(0) }
+        if (remaining == 0) scheduleIdleEvictionIfOffTab()
+    }
+
+    internal fun scheduleIdleEvictionIfOffTab(delayMs: Long = OFF_TAB_EVICT_DELAY_MS) {
+        if (activeLiveTvScreens.get() > 0) return
+        synchronized(evictJobLock) {
+            idleEvictJob?.cancel()
+            idleEvictJob = backgroundScope.launch {
+                delay(delayMs)
+                evictInMemoryCachesIfIdle()
+            }
+        }
+    }
+
+    internal fun evictInMemoryCachesIfIdle(): Boolean {
+        if (activeLiveTvScreens.get() > 0) return false
+        if (IptvPlaybackSession.active.value != null) return false
+        if (_settings.value.reminders.isNotEmpty()) return false
+        if (contentStates.values.any { it.value.loading }) return false
+
+        var evictedPlaylists = 0
+        for ((playlistId, state) in contentStates) {
+            val lock = loadLocks.getOrPut(playlistId) { Mutex() }
+            if (!lock.tryLock()) continue
+            try {
+                if (!state.value.loading && state.value.content != null) {
+                    state.value = IptvContentState()
+                    evictedPlaylists++
+                }
+            } finally {
+                lock.unlock()
+            }
+        }
+        val evictedGuides = IptvEpgRepository.evictInMemoryCache()
+        if (evictedPlaylists > 0 || evictedGuides) {
+            log.i { "Evicted idle IPTV in-memory caches (playlists=$evictedPlaylists, guides=$evictedGuides)" }
+            return true
+        }
+        return false
+    }
 
     /** [refresh] then the playlist's guide, off any screen's scope. */
     fun refreshInBackground(playlistId: String, force: Boolean = false) {

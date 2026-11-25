@@ -39,6 +39,8 @@ data class ImageCacheSettings(
     val homeCatalogCacheHours: Int = DefaultHomeCatalogCacheHours,
     /** How much RAM the app may hold on to; see [MemoryUse]. Device-wide, like the rest. */
     val memoryUse: MemoryUse = MemoryUse.Balanced,
+    /** Maximum decoded width for hero backdrops; see [BackdropResolution]. Device-wide. */
+    val backdropResolution: BackdropResolution = BackdropResolution.Full,
 ) {
     val prewarmsAnything: Boolean
         get() = prewarmEnabled && (prewarmPosters || prewarmLogos || prewarmBackdrops)
@@ -81,6 +83,29 @@ enum class MemoryUse(
     }
 }
 
+/**
+ * Maximum decoded width for hero backdrops on high-resolution displays.
+ *
+ * Lower caps shrink each decoded hero bitmap (a 4K hero is ~24-33 MB RGBA at Full, ~15-19 MB at
+ * 1440p, and ~8.3 MB at 1080p) and apply immediately to newly decoded backdrops without needing a
+ * restart.
+ */
+enum class BackdropResolution(
+    val storageKey: String,
+    /** Maximum decoded width in pixels for hero-size requests, or null for native slot resolution. */
+    val maxWidthPx: Int?,
+) {
+    Full("full", maxWidthPx = null),
+    Qhd1440("1440p", maxWidthPx = 2560),
+    Hd1080("1080p", maxWidthPx = 1920),
+    ;
+
+    companion object {
+        fun fromStorageKey(key: String?): BackdropResolution? =
+            entries.firstOrNull { it.storageKey == key }
+    }
+}
+
 /** The outcome of the most recent prewarm pass, for the settings row to report. */
 data class ImageCachePrewarmStatus(
     val running: Boolean = false,
@@ -119,6 +144,8 @@ internal expect object ImageCacheSettingsStorage {
     fun saveHomeCatalogCacheHours(value: Int)
     fun loadMemoryUse(): String?
     fun saveMemoryUse(value: String)
+    fun loadBackdropResolution(): String?
+    fun saveBackdropResolution(value: String)
 
     /** Bytes the artwork cache currently holds on disk, or null before it has been opened. */
     fun usedBytes(): Long?
@@ -154,6 +181,9 @@ object ImageCacheSettingsRepository {
                 ?.takeIf { it in ImageCacheSettings.HomeCatalogCacheHoursChoices }
                 ?: defaults.homeCatalogCacheHours,
             memoryUse = MemoryUse.fromStorageKey(ImageCacheSettingsStorage.loadMemoryUse()) ?: defaults.memoryUse,
+            backdropResolution = BackdropResolution.fromStorageKey(
+                ImageCacheSettingsStorage.loadBackdropResolution(),
+            ) ?: defaults.backdropResolution,
         )
     }
 
@@ -162,6 +192,13 @@ object ImageCacheSettingsRepository {
         if (_settings.value.memoryUse == value) return
         _settings.value = _settings.value.copy(memoryUse = value)
         ImageCacheSettingsStorage.saveMemoryUse(value.storageKey)
+    }
+
+    fun setBackdropResolution(value: BackdropResolution) {
+        ensureLoaded()
+        if (_settings.value.backdropResolution == value) return
+        _settings.value = _settings.value.copy(backdropResolution = value)
+        ImageCacheSettingsStorage.saveBackdropResolution(value.storageKey)
     }
 
     fun setDiskCacheGb(value: Int) {

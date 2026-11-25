@@ -227,6 +227,7 @@ object IptvPlaybackSession {
 
     fun clear() {
         _active.value = null
+        IptvRepository.scheduleIdleEvictionIfOffTab()
     }
 }
 

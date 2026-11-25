@@ -2325,52 +2325,80 @@ internal fun PlayerScreenRuntime.activePlaybackSubtitleLabel(): String = if (use
 }
 
 @Composable
-private fun PlayerScreenRuntime.buildPlayerControlBuiltInSubtitleItems(): List<PlayerControlBuiltInSubtitleItem> =
-    visibleSubtitleTracks.map { track ->
-        PlayerControlBuiltInSubtitleItem(
-            index = track.index,
-            label = localizedTrackDisplayName(track.label, track.language, track.index),
-            id = track.id,
-            languageLabel = track.language?.let { languageLabelForCode(it) }.orEmpty(),
-            isSelected = !useCustomSubtitles && track.index == selectedSubtitleIndex,
-        )
+private fun PlayerScreenRuntime.buildPlayerControlBuiltInSubtitleItems(): List<PlayerControlBuiltInSubtitleItem> {
+    val tracks = visibleSubtitleTracks
+    val custom = useCustomSubtitles
+    val selected = selectedSubtitleIndex
+    val labels = tracks.map { localizedTrackDisplayName(it.label, it.language, it.index) }
+    val languageLabels = tracks.map { track -> track.language?.let { languageLabelForCode(it) }.orEmpty() }
+    return remember(tracks, custom, selected, labels, languageLabels) {
+        tracks.mapIndexed { i, track ->
+            PlayerControlBuiltInSubtitleItem(
+                index = track.index,
+                label = labels[i],
+                id = track.id,
+                languageLabel = languageLabels[i],
+                isSelected = !custom && track.index == selected,
+            )
+        }
     }
+}
 
 @Composable
-private fun PlayerScreenRuntime.buildPlayerControlAudioTrackItems(): List<PlayerControlAudioTrackItem> =
-    visibleAudioTracks.map { track ->
-        PlayerControlAudioTrackItem(
-            index = track.index,
-            label = localizedTrackDisplayName(track.label, track.language, track.index),
-            languageLabel = trackLanguageDisplayLabel(track.language),
-            isSelected = track.index == selectedAudioIndex,
-        )
+private fun PlayerScreenRuntime.buildPlayerControlAudioTrackItems(): List<PlayerControlAudioTrackItem> {
+    val tracks = visibleAudioTracks
+    val selected = selectedAudioIndex
+    val labels = tracks.map { localizedTrackDisplayName(it.label, it.language, it.index) }
+    val languageLabels = tracks.map { track -> trackLanguageDisplayLabel(track.language) }
+    return remember(tracks, selected, labels, languageLabels) {
+        tracks.mapIndexed { i, track ->
+            PlayerControlAudioTrackItem(
+                index = track.index,
+                label = labels[i],
+                languageLabel = languageLabels[i],
+                isSelected = track.index == selected,
+            )
+        }
     }
+}
 
 @Composable
-private fun PlayerScreenRuntime.buildPlayerControlAddonSubtitleItems(): List<PlayerControlAddonSubtitleItem> =
-    visibleAddonSubtitles.mapIndexed { index, subtitle ->
-        PlayerControlAddonSubtitleItem(
-            index = index,
-            id = subtitle.id,
-            display = subtitle.display,
-            languageLabel = languageLabelForCode(subtitle.language),
-            addonName = subtitle.addonName.orEmpty(),
-            isSelected = subtitle.id == selectedAddonSubtitleId || subtitle.url == selectedAddonSubtitleId,
-            isDownloading = subtitle.id.ifBlank { subtitle.url } == downloadingAddonSubtitleId,
-            isAutoSynced = automaticallySyncedSubtitle?.first == subtitle.url,
-        )
+private fun PlayerScreenRuntime.buildPlayerControlAddonSubtitleItems(): List<PlayerControlAddonSubtitleItem> {
+    val subtitles = visibleAddonSubtitles
+    val selectedId = selectedAddonSubtitleId
+    val downloadingId = downloadingAddonSubtitleId
+    val autoSyncedUrl = automaticallySyncedSubtitle?.first
+    val languageLabels = subtitles.map { subtitle -> languageLabelForCode(subtitle.language) }
+    return remember(subtitles, selectedId, downloadingId, autoSyncedUrl, languageLabels) {
+        subtitles.mapIndexed { index, subtitle ->
+            PlayerControlAddonSubtitleItem(
+                index = index,
+                id = subtitle.id,
+                display = subtitle.display,
+                languageLabel = languageLabels[index],
+                addonName = subtitle.addonName.orEmpty(),
+                isSelected = subtitle.id == selectedId || subtitle.url == selectedId,
+                isDownloading = subtitle.id.ifBlank { subtitle.url } == downloadingId,
+                isAutoSynced = autoSyncedUrl == subtitle.url,
+            )
+        }
     }
+}
 
-private fun PlayerScreenRuntime.buildPlayerControlSubtitleCueItems(): List<PlayerControlSubtitleCueItem> =
-    playerControlsNearestSubtitleCues().mapIndexed { index, cue ->
-        PlayerControlSubtitleCueItem(
-            index = index,
-            timeMs = cue.startTimeMs,
-            timeLabel = formatPlayerControlsCueTimestamp(cue.startTimeMs),
-            text = cue.text,
-        )
+@Composable
+private fun PlayerScreenRuntime.buildPlayerControlSubtitleCueItems(): List<PlayerControlSubtitleCueItem> {
+    val syncState = subtitleAutoSyncState
+    return remember(syncState) {
+        playerControlsNearestSubtitleCues().mapIndexed { index, cue ->
+            PlayerControlSubtitleCueItem(
+                index = index,
+                timeMs = cue.startTimeMs,
+                timeLabel = formatPlayerControlsCueTimestamp(cue.startTimeMs),
+                text = cue.text,
+            )
+        }
     }
+}
 
 // Cues delivered to the scrollable HUD list: enough to recover from heavy desync (±30 lines
 // around the capture point is minutes of dialogue) while keeping the controls JSON small.
@@ -2398,49 +2426,76 @@ private fun formatPlayerControlsCueTimestamp(timeMs: Long): String {
 
 @Composable
 private fun PlayerScreenRuntime.buildPlayerControlEpisodeItems(): List<PlayerControlEpisodeItem> {
-    val items = mutableListOf<PlayerControlEpisodeItem>()
     val fillerSettings by com.nuvio.app.features.details.filler.AnimeFillerSettings.state.collectAsState()
     val fillerKinds = if (fillerSettings.showBadges) playerFillerKinds else emptyMap()
     val fillerText = stringResource(Res.string.anime_episode_badge_filler)
     val mixedText = stringResource(Res.string.anime_episode_badge_mixed)
-    val current = playerMetaVideos.resolveSeriesEpisodePosition(
-        parentMetaId = parentMetaId,
-        videoId = activeVideoId,
-        seasonNumber = activeSeasonNumber,
-        episodeNumber = activeEpisodeNumber,
-    )
-    for ((index, video) in playerMetaVideos.withIndex()) {
-        val season = video.playbackSeasonNumber() ?: continue
-        val episode = video.playbackEpisodeNumber() ?: continue
-        val episodeVideoId = buildPlaybackVideoId(
-            parentMetaId = parentMetaId,
-            seasonNumber = season,
-            episodeNumber = episode,
-            fallbackVideoId = video.id,
+    val fullCodeTemplate = stringResource(Res.string.compose_player_episode_code_full, -1, -2)
+    val videos = playerMetaVideos
+    val metaId = parentMetaId
+    val metaType = parentMetaType
+    val videoId = activeVideoId
+    val seasonNumber = activeSeasonNumber
+    val episodeNumber = activeEpisodeNumber
+    val progressByVideoId = watchProgressUiState.byVideoId
+    val watchedKeys = watchedUiState.watchedKeys
+    return remember(
+        videos,
+        metaId,
+        metaType,
+        videoId,
+        seasonNumber,
+        episodeNumber,
+        progressByVideoId,
+        watchedKeys,
+        fillerKinds,
+        fillerText,
+        mixedText,
+        fullCodeTemplate,
+    ) {
+        val items = ArrayList<PlayerControlEpisodeItem>(videos.size)
+        val current = videos.resolveSeriesEpisodePosition(
+            parentMetaId = metaId,
+            videoId = videoId,
+            seasonNumber = seasonNumber,
+            episodeNumber = episodeNumber,
         )
-        val isWatched = watchProgressUiState.byVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
-            WatchingState.isEpisodeWatched(
-                watchedKeys = watchedUiState.watchedKeys,
-                metaType = parentMetaType,
-                metaId = parentMetaId,
-                episode = video,
+        for ((index, video) in videos.withIndex()) {
+            val season = video.playbackSeasonNumber() ?: continue
+            val episode = video.playbackEpisodeNumber() ?: continue
+            val episodeVideoId = buildPlaybackVideoId(
+                parentMetaId = metaId,
+                seasonNumber = season,
+                episodeNumber = episode,
+                fallbackVideoId = video.id,
             )
-        items.add(
-            PlayerControlEpisodeItem(
-                index = index,
-                id = video.id,
-                title = video.title,
-                code = video.playerControlsEpisodeCode(),
-                overview = video.overview.orEmpty(),
-                thumbnail = video.thumbnail.orEmpty(),
-                season = season.coerceAtLeast(0),
-                episode = episode,
-                isCurrent = current?.video == video,
-                isWatched = isWatched,
-            ).withFillerKind(fillerKinds[video.id], fillerText, mixedText),
-        )
+            val isWatched = progressByVideoId[episodeVideoId]?.isEffectivelyCompleted == true ||
+                WatchingState.isEpisodeWatched(
+                    watchedKeys = watchedKeys,
+                    metaType = metaType,
+                    metaId = metaId,
+                    episode = video,
+                )
+            val code = fullCodeTemplate
+                .replace("-1", season.toString())
+                .replace("-2", episode.toString())
+            items.add(
+                PlayerControlEpisodeItem(
+                    index = index,
+                    id = video.id,
+                    title = video.title,
+                    code = code,
+                    overview = video.overview.orEmpty(),
+                    thumbnail = video.thumbnail.orEmpty(),
+                    season = season.coerceAtLeast(0),
+                    episode = episode,
+                    isCurrent = current?.video == video,
+                    isWatched = isWatched,
+                ).withFillerKind(fillerKinds[video.id], fillerText, mixedText),
+            )
+        }
+        items
     }
-    return items
 }
 
 private fun PlayerControlEpisodeItem.withFillerKind(
@@ -2457,34 +2512,39 @@ private fun PlayerControlEpisodeItem.withFillerKind(
 private fun PlayerScreenRuntime.buildPlayerControlSeasonItems(
     episodes: List<PlayerControlEpisodeItem>,
 ): List<PlayerControlSeasonItem> {
-    val currentSeason = playerMetaVideos.resolveSeriesEpisodePosition(
-        parentMetaId = parentMetaId,
-        videoId = activeVideoId,
-        seasonNumber = activeSeasonNumber,
-        episodeNumber = activeEpisodeNumber,
-    )?.seasonNumber ?: activeSeasonNumber
-    val availableSeasons = episodes
-        .map { it.season }
-        .distinct()
-        .let { seasons ->
-            seasons.filter { it > 0 }.sorted() + seasons.filter { it == 0 }
-        }
-    val items = mutableListOf<PlayerControlSeasonItem>()
-    for (season in availableSeasons) {
-        val label = if (season == 0) {
-            stringResource(Res.string.episodes_specials)
-        } else {
-            stringResource(Res.string.episodes_season, season)
-        }
-        items.add(
+    val specialsLabel = stringResource(Res.string.episodes_specials)
+    val seasonTemplate = stringResource(Res.string.episodes_season, -1)
+    val videos = playerMetaVideos
+    val metaId = parentMetaId
+    val videoId = activeVideoId
+    val seasonNumber = activeSeasonNumber
+    val episodeNumber = activeEpisodeNumber
+    return remember(episodes, videos, metaId, videoId, seasonNumber, episodeNumber, specialsLabel, seasonTemplate) {
+        val currentSeason = videos.resolveSeriesEpisodePosition(
+            parentMetaId = metaId,
+            videoId = videoId,
+            seasonNumber = seasonNumber,
+            episodeNumber = episodeNumber,
+        )?.seasonNumber ?: seasonNumber
+        val availableSeasons = episodes
+            .map { it.season }
+            .distinct()
+            .let { seasons ->
+                seasons.filter { it > 0 }.sorted() + seasons.filter { it == 0 }
+            }
+        availableSeasons.map { season ->
+            val label = if (season == 0) {
+                specialsLabel
+            } else {
+                seasonTemplate.replace("-1", season.toString())
+            }
             PlayerControlSeasonItem(
                 season = season,
                 label = label,
                 isSelected = currentSeason == season,
-            ),
-        )
+            )
+        }
     }
-    return items
 }
 
 @Composable

@@ -25,6 +25,8 @@ internal actual object ImageCacheSettingsStorage {
     actual fun saveHomeCatalogCacheHours(value: Int) = store.putInt("home_catalog_cache_hours", value)
     actual fun loadMemoryUse(): String? = store.getString("memory_use")
     actual fun saveMemoryUse(value: String) = store.putString("memory_use", value)
+    actual fun loadBackdropResolution(): String? = store.getString("backdrop_resolution")
+    actual fun saveBackdropResolution(value: String) = store.putString("backdrop_resolution", value)
 
     actual fun usedBytes(): Long? =
         runCatching { SingletonImageLoader.get(PlatformContext.INSTANCE).diskCache?.size }.getOrNull()

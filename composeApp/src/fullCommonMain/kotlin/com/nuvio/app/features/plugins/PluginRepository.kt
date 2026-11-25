@@ -372,7 +372,7 @@ actual object PluginRepository {
 
         return runCatching {
             PluginRuntime.executePlugin(
-                code = scraper.code,
+                code = resolvePluginScraperCode(scraper),
                 tmdbId = resolvedTmdbId,
                 mediaType = normalizePluginType(mediaType),
                 season = season,
@@ -414,6 +414,7 @@ actual object PluginRepository {
                 }
                 runCatching {
                     val code = httpGetText(codeUrl)
+                    val codeHash = PluginStorage.saveCode(code)
                     val scraperId = "${manifestUrl.lowercase()}:${info.id}"
                     val previous = previousScrapers[scraperId]
                     val enabled = when {
@@ -436,7 +437,8 @@ actual object PluginRepository {
                         logo = info.logo,
                         contentLanguage = info.contentLanguage ?: emptyList(),
                         formats = info.formats ?: info.supportedFormats,
-                        code = code,
+                        code = "",
+                        codeHash = codeHash,
                     )
                 }.getOrNull()
             }
@@ -533,7 +535,7 @@ actual object PluginRepository {
                     formats = scraper.formats,
                     // The source lives once per hash in its own store, so toggling a scraper
                     // rewrites a small metadata blob instead of ~1.8 MB of JavaScript per profile.
-                    codeHash = PluginStorage.saveCode(scraper.code),
+                    codeHash = scraper.codeHash ?: PluginStorage.saveCode(scraper.code),
                 )
             },
         )
@@ -603,7 +605,10 @@ actual object PluginRepository {
                         logo = it.logo,
                         contentLanguage = it.contentLanguage,
                         formats = it.formats,
-                        code = it.codeHash?.let(PluginStorage::loadCode) ?: it.code,
+                        // Keep JS source out of PluginsUiState (was 5.35 MB live heap across
+                        // 66 scrapers in 2026-11-25 baseline); loaded on demand via codeHash.
+                        code = if (it.codeHash != null) "" else it.code,
+                        codeHash = it.codeHash,
                     )
                 }
                 ?: emptyList(),
@@ -651,3 +656,6 @@ actual object PluginRepository {
         return if (active != null && !active.id.isBlank() && active.usesPrimaryPlugins) 1 else profileId
     }
 }
+
+internal fun resolvePluginScraperCode(scraper: PluginScraper): String =
+    scraper.code.ifEmpty { scraper.codeHash?.let(PluginStorage::loadCode).orEmpty() }

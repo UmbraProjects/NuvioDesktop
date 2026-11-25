@@ -563,7 +563,18 @@ fun HomeHeroSection(
         val prefetchSlots = remember { Semaphore(HERO_METADATA_PREFETCH_CONCURRENCY) }
         // Lookups already running, so a restart does not queue a second one for the same title.
         val warmInFlight = remember { mutableSetOf<String>() }
-        LaunchedEffect(metadataTargets, HeroDiscoveryMetadataService.CACHE_VERSION) {
+        val lastMetadataWarmAt = remember { longArrayOf(0L) }
+        val metadataTargetKeys = metadataTargets.map { "${it.type}:${it.id}" }
+        LaunchedEffect(metadataTargetKeys, HeroDiscoveryMetadataService.CACHE_VERSION) {
+            val now = WatchProgressClock.nowEpochMs()
+            val prev = lastMetadataWarmAt[0]
+            lastMetadataWarmAt[0] = now
+            // Debounce only during rapid scrolling so flying past rows does not queue dozens of
+            // uncancellable heroWarmScope lookups (cast, badges, credits, interests, ratings)
+            // and their UI state updates for titles already scrolled past.
+            if (shouldDebounceRapidHeroChange(prev, now, HeroMetadataRapidScrollWindowMs)) {
+                delay(HeroMetadataRapidScrollSettleMs)
+            }
             val settings = MdbListSettingsRepository.snapshot()
             fun launchOnce(tag: String, block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) {
                 if (!warmInFlight.add(tag)) return
@@ -965,6 +976,12 @@ private fun HeroBackdropImage(
         framingPriorBias = framingPriorBias,
     )
 }
+
+internal const val HeroMetadataRapidScrollWindowMs = 700L
+internal const val HeroMetadataRapidScrollSettleMs = 350L
+
+internal fun shouldDebounceRapidHeroChange(prevMs: Long, nowMs: Long, windowMs: Long): Boolean =
+    prevMs != 0L && (nowMs - prevMs) < windowMs
 
 /** See the diagnostic in [HeroBackdropImage]. */
 private class HeroBackdropSwapTracker {

@@ -57,7 +57,8 @@ data class PluginScraper(
     val logo: String? = null,
     val contentLanguage: List<String> = emptyList(),
     val formats: List<String>? = null,
-    val code: String,
+    val code: String = "",
+    val codeHash: String? = null,
 ) {
     fun supportsType(type: String): Boolean {
         val normalizedType = normalizePluginType(type)

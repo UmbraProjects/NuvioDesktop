@@ -185,7 +185,7 @@ fun PluginsSettingsPageContent(
     }
     val openScraperSettings: (PluginScraper) -> Unit = { scraper ->
         coroutineScope.launch {
-            PluginRuntime.getPluginSettingsLayout(scraper.code, scraper.id)?.let { layout ->
+            PluginRuntime.getPluginSettingsLayout(resolvePluginScraperCode(scraper), scraper.id)?.let { layout ->
                 configuringScraper = scraper
                 configuringLayout = layout
             }

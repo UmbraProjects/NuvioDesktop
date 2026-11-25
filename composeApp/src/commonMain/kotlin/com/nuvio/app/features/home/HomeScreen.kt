@@ -3553,30 +3553,31 @@ fun HomeScreen(
     // just Home: Discover served 24% of backdrops from memory against Home's 88% before this
     // (2026-10-16). Outside Home the hero can hold a row's own art until enrichment replaces it,
     // so there only a backdrop that is already final is decoded: an enriched one, or provider art.
-    if (heroFollowsFocusedItem && tvFocusedRowIndex >= 0) {
+    if (heroFollowsFocusedItem && settledHeroFocus.rowIndex >= 0) {
         val isHomeMode = displayMode is HomeContentMode.Normal
-        val focusedIndex = tvFocus.itemIndex
+        val settledRowIndex = settledHeroFocus.rowIndex
+        val settledItemIndex = settledHeroFocus.itemIndex
         val lastFocus = remember { intArrayOf(-1, -1, 1, 1) } // row, item, row step, item step
-        LaunchedEffect(tvFocusedRowIndex, focusedIndex, tvRows) {
-            if (lastFocus[0] == tvFocusedRowIndex) {
-                if (focusedIndex != lastFocus[1]) lastFocus[3] = if (focusedIndex < lastFocus[1]) -1 else 1
+        LaunchedEffect(settledRowIndex, settledItemIndex, tvRows) {
+            if (lastFocus[0] == settledRowIndex) {
+                if (settledItemIndex != lastFocus[1]) lastFocus[3] = if (settledItemIndex < lastFocus[1]) -1 else 1
             } else if (lastFocus[0] >= 0) {
-                lastFocus[2] = if (tvFocusedRowIndex < lastFocus[0]) -1 else 1
+                lastFocus[2] = if (settledRowIndex < lastFocus[0]) -1 else 1
             }
-            lastFocus[0] = tvFocusedRowIndex
-            lastFocus[1] = focusedIndex
+            lastFocus[0] = settledRowIndex
+            lastFocus[1] = settledItemIndex
             val rowStep = lastFocus[2]
             val itemStep = lastFocus[3]
             fun landingCard(row: Int): MetaPreview? {
                 val items = tvRows.getOrNull(row)?.metaItems.orEmpty()
-                return items.getOrNull(focusedIndex.coerceAtMost(items.size - 1))
+                return items.getOrNull(settledItemIndex.coerceAtMost(items.size - 1))
             }
-            val sameRow = tvRows.getOrNull(tvFocusedRowIndex)?.metaItems.orEmpty()
+            val sameRow = tvRows.getOrNull(settledRowIndex)?.metaItems.orEmpty()
             val landingItems = listOfNotNull(
-                sameRow.getOrNull(focusedIndex + itemStep),
-                landingCard(tvFocusedRowIndex + rowStep),
-                sameRow.getOrNull(focusedIndex - itemStep),
-                landingCard(tvFocusedRowIndex - rowStep),
+                sameRow.getOrNull(settledItemIndex + itemStep),
+                landingCard(settledRowIndex + rowStep),
+                sameRow.getOrNull(settledItemIndex - itemStep),
+                landingCard(settledRowIndex - rowStep),
             ).mapNotNull { raw ->
                 val enriched = heroEnrichmentMap[canonicalHeroKey(raw.type, raw.id)]
                 val normalized = raw.withNormalizedHeroBackdrop()
@@ -3797,9 +3798,10 @@ fun HomeScreen(
         } else {
             IMMERSIVE_HERO_METADATA_PREFETCH_PER_ROW
         }
+        val settledRowForPrefetch = settledHeroFocus.rowIndex.takeIf { it >= 0 } ?: getImmersiveRowIndex()
         buildList {
-            tvRows.getOrNull(getImmersiveRowIndex())?.metaItems?.take(perRowLimit)?.let(::addAll)
-            tvRows.getOrNull(getImmersiveRowIndex() + 1)?.metaItems?.take(perRowLimit)?.let(::addAll)
+            tvRows.getOrNull(settledRowForPrefetch)?.metaItems?.take(perRowLimit)?.let(::addAll)
+            tvRows.getOrNull(settledRowForPrefetch + 1)?.metaItems?.take(perRowLimit)?.let(::addAll)
         }
     } else {
         emptyList()

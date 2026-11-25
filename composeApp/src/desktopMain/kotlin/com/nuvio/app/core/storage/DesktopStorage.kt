@@ -554,6 +554,39 @@ internal object DesktopStorage {
         snapshot.forEach { store -> store.flush() }
     }
 
+    /**
+     * Releases in-memory [Properties] maps from clean, idle large stores so their raw serialized
+     * JSON/JS strings do not sit in the live heap after startup (23.7 MB across 142 stores in the
+     * 2026-11-25 baseline). Re-accessed stores reload transparently from disk, and unchanged
+     * [Store.putString] calls short-circuit via stored fingerprints without touching disk.
+     */
+    internal fun evictIdleStores(
+        nowMs: Long = System.currentTimeMillis(),
+        idleMs: Long = IDLE_STORE_EVICT_MS,
+        minChars: Long = IDLE_STORE_MIN_CHARS,
+    ): Long {
+        val snapshot = synchronized(stores) { stores.values.toList() }
+        var evictedChars = 0L
+        for (store in snapshot) {
+            evictedChars += store.evictIfIdleAndClean(nowMs, idleMs, minChars)
+        }
+        return evictedChars
+    }
+
+    private const val IDLE_STORE_EVICT_MS = 90_000L
+    private const val IDLE_STORE_MIN_CHARS = 128L * 1024L
+
+    private data class ValueStamp(val length: Int, val hash: Long)
+
+    private fun valueStamp(value: String): ValueStamp {
+        var h = -3750763034362895579L // FNV-1a 64-bit offset basis
+        for (i in value.indices) {
+            h = h xor value[i].code.toLong()
+            h *= 1099511628211L
+        }
+        return ValueStamp(value.length, h)
+    }
+
     internal class Store(
         private val file: Path,
         private val flushDelayMs: Long = FLUSH_DELAY_MS,
@@ -564,10 +597,12 @@ internal object DesktopStorage {
         /** Serialises disk writes and deletes of this store's files. Always taken before [lock]. */
         private val ioLock = Any()
         private val properties = Properties()
+        private val evictedStamps = HashMap<String, ValueStamp>()
         private var loaded = false
         private var dirty = false
         private var flushScheduled = false
         private var consecutiveFailures = 0
+        private var lastAccessMs = 0L
 
         /**
          * Set when the file exists but could not be read. Every later write would replace the real
@@ -583,16 +618,31 @@ internal object DesktopStorage {
         private val tempFile: Path get() = file.resolveSibling("${file.fileName}.tmp")
 
         fun contains(key: String): Boolean = synchronized(lock) {
+            lastAccessMs = System.currentTimeMillis()
+            if (!loaded && evictedStamps.isNotEmpty()) return evictedStamps.containsKey(key)
             ensureLoaded()
             properties.containsKey(key)
         }
 
         fun getString(key: String): String? = synchronized(lock) {
+            lastAccessMs = System.currentTimeMillis()
             ensureLoaded()
             properties.getProperty(key)
         }
 
         fun putString(key: String, value: String?) = synchronized(lock) {
+            lastAccessMs = System.currentTimeMillis()
+            if (!loaded && evictedStamps.isNotEmpty()) {
+                val unchanged = if (value == null) {
+                    !evictedStamps.containsKey(key)
+                } else {
+                    evictedStamps[key] == valueStamp(value)
+                }
+                if (unchanged) {
+                    PerfTelemetry.recordStoreWrite(perfName, key, changed = false)
+                    return@synchronized
+                }
+            }
             ensureLoaded()
             val previous = if (value == null) {
                 properties.remove(key)
@@ -608,6 +658,8 @@ internal object DesktopStorage {
         }
 
         fun keys(): Set<String> = synchronized(lock) {
+            lastAccessMs = System.currentTimeMillis()
+            if (!loaded && evictedStamps.isNotEmpty()) return evictedStamps.keys.toSet()
             ensureLoaded()
             properties.stringPropertyNames()
         }
@@ -643,6 +695,11 @@ internal object DesktopStorage {
         }
 
         fun remove(key: String) = synchronized(lock) {
+            lastAccessMs = System.currentTimeMillis()
+            if (!loaded && evictedStamps.isNotEmpty() && !evictedStamps.containsKey(key)) {
+                PerfTelemetry.recordStoreWrite(perfName, key, changed = false)
+                return@synchronized
+            }
             ensureLoaded()
             val previous = properties.remove(key)
             PerfTelemetry.recordStoreWrite(perfName, key, changed = previous != null)
@@ -650,6 +707,7 @@ internal object DesktopStorage {
         }
 
         fun removeAll(keys: Iterable<String>) = synchronized(lock) {
+            lastAccessMs = System.currentTimeMillis()
             ensureLoaded()
             keys.forEach(properties::remove)
             markDirty()
@@ -663,13 +721,39 @@ internal object DesktopStorage {
         fun deleteAll() = synchronized(ioLock) {
             synchronized(lock) {
                 properties.clear()
+                evictedStamps.clear()
                 loaded = false
                 dirty = false
                 readOnly = false
                 consecutiveFailures = 0
+                lastAccessMs = 0L
             }
             listOf(file, backupFile, tempFile).forEach { path -> runCatching { Files.deleteIfExists(path) } }
         }
+
+        internal fun evictIfIdleAndClean(nowMs: Long, idleMs: Long, minChars: Long): Long = synchronized(lock) {
+            if (!loaded || dirty || readOnly || flushScheduled) return 0L
+            if (nowMs - lastAccessMs < idleMs) return 0L
+            var chars = 0L
+            for (entry in properties.entries) {
+                val k = entry.key as? String ?: continue
+                val v = entry.value as? String ?: continue
+                chars += k.length + v.length
+            }
+            if (chars < minChars) return 0L
+            evictedStamps.clear()
+            for (entry in properties.entries) {
+                val k = entry.key as? String ?: continue
+                val v = entry.value as? String ?: continue
+                evictedStamps[k] = valueStamp(v)
+            }
+            properties.clear()
+            loaded = false
+            chars
+        }
+
+        internal val isLoadedInMemory: Boolean
+            get() = synchronized(lock) { loaded }
 
         /** Writes pending changes now, on the calling thread. */
         fun flush() = synchronized(ioLock) {
@@ -734,6 +818,8 @@ internal object DesktopStorage {
         private fun ensureLoaded() {
             if (loaded) return
             properties.clear()
+            evictedStamps.clear()
+            lastAccessMs = System.currentTimeMillis()
             // notExists, not !exists: `exists()` is also false when existence "cannot be
             // determined", which is exactly the locked-by-a-scanner case where treating the store
             // as new would let the next write wipe it.

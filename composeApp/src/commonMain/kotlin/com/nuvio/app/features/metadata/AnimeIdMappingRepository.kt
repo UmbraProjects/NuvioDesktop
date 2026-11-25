@@ -111,16 +111,72 @@ internal fun selectAnimeMappingByCoordinates(
 }
 
 internal object AnimeIdMappingRepository {
-    private data class Index(
-        val byAnidb: Map<Int, AnimeIdMapping>,
-        val byAnilist: Map<Int, AnimeIdMapping>,
-        val byKitsu: Map<Int, AnimeIdMapping>,
-        val byMal: Map<Int, AnimeIdMapping>,
-        val bySimkl: Map<Int, AnimeIdMapping>,
+    /**
+     * Compact sorted-array lookup for primitive int IDs -> single [AnimeIdMapping].
+     * Avoids `HashMap$Node` + boxed `Integer` overhead across ~150k index entries (~6-8 MB saved).
+     */
+    private class IntMappingTable(
+        private val keys: IntArray,
+        private val values: Array<AnimeIdMapping>,
+    ) {
+        operator fun get(key: Int): AnimeIdMapping? {
+            val idx = keys.binarySearch(key)
+            return if (idx >= 0) values[idx] else null
+        }
+
+        companion object {
+            val EMPTY = IntMappingTable(IntArray(0), emptyArray())
+
+            fun fromMap(map: Map<Int, AnimeIdMapping>): IntMappingTable {
+                if (map.isEmpty()) return EMPTY
+                val sortedKeys = IntArray(map.size)
+                var i = 0
+                for (k in map.keys) sortedKeys[i++] = k
+                sortedKeys.sort()
+                val sortedValues = Array(sortedKeys.size) { idx -> map.getValue(sortedKeys[idx]) }
+                return IntMappingTable(sortedKeys, sortedValues)
+            }
+        }
+    }
+
+    /** Compact sorted-array lookup for primitive int IDs -> list of [AnimeIdMapping]. */
+    private class IntMultiMappingTable(
+        private val keys: IntArray,
+        private val values: Array<List<AnimeIdMapping>>,
+    ) {
+        operator fun get(key: Int): List<AnimeIdMapping>? {
+            val idx = keys.binarySearch(key)
+            return if (idx >= 0) values[idx] else null
+        }
+
+        companion object {
+            val EMPTY = IntMultiMappingTable(IntArray(0), emptyArray())
+
+            fun fromMap(map: Map<Int, MutableList<AnimeIdMapping>>): IntMultiMappingTable {
+                if (map.isEmpty()) return EMPTY
+                val sortedKeys = IntArray(map.size)
+                var i = 0
+                for (k in map.keys) sortedKeys[i++] = k
+                sortedKeys.sort()
+                val sortedValues = Array<List<AnimeIdMapping>>(sortedKeys.size) { idx ->
+                    val list = map.getValue(sortedKeys[idx])
+                    if (list.size == 1) listOf(list[0]) else list
+                }
+                return IntMultiMappingTable(sortedKeys, sortedValues)
+            }
+        }
+    }
+
+    private class Index(
+        val byAnidb: IntMappingTable,
+        val byAnilist: IntMappingTable,
+        val byKitsu: IntMappingTable,
+        val byMal: IntMappingTable,
+        val bySimkl: IntMappingTable,
         val byImdb: Map<String, List<AnimeIdMapping>>,
-        val byTmdbTv: Map<Int, List<AnimeIdMapping>>,
-        val byTmdbMovie: Map<Int, List<AnimeIdMapping>>,
-        val byTvdb: Map<Int, List<AnimeIdMapping>>,
+        val byTmdbTv: IntMultiMappingTable,
+        val byTmdbMovie: IntMultiMappingTable,
+        val byTvdb: IntMultiMappingTable,
     )
 
     @Volatile
@@ -162,15 +218,15 @@ internal object AnimeIdMappingRepository {
         // consult the map(s) matching the content type — a bare "movie" id must never match
         // an anime's tv mapping just because the numbers collide.
         ids.tmdb?.let { tmdb ->
-            tmdbCandidateMaps(ids.contentType, index).forEach { map ->
-                map[tmdb]?.selectBest(ids)?.let { mapping -> return mapping }
+            tmdbCandidateTables(ids.contentType, index).forEach { table ->
+                table[tmdb]?.selectBest(ids)?.let { mapping -> return mapping }
             }
         }
         ids.tvdb?.let { index.byTvdb[it]?.selectBest(ids)?.let { mapping -> return mapping } }
         return null
     }
 
-    private fun tmdbCandidateMaps(contentType: String, index: Index): List<Map<Int, List<AnimeIdMapping>>> =
+    private fun tmdbCandidateTables(contentType: String, index: Index): List<IntMultiMappingTable> =
         when (contentType.trim().lowercase()) {
             "movie", "movies", "film" -> listOf(index.byTmdbMovie)
             "series", "tv", "show", "tvshow" -> listOf(index.byTmdbTv)
@@ -320,8 +376,6 @@ internal object AnimeIdMappingRepository {
             return emptyIndex()
         }
 
-        // Pre-sized HashMaps avoid ~12 rehashes per map across ~40k entries and drop LinkedHashMap's
-        // per-node doubly-linked pointers (nothing depends on iteration order).
         val byAnidb = HashMap<Int, AnimeIdMapping>(40_960)
         val byAnilist = HashMap<Int, AnimeIdMapping>(32_768)
         val byKitsu = HashMap<Int, AnimeIdMapping>(32_768)
@@ -331,9 +385,15 @@ internal object AnimeIdMappingRepository {
         val byTmdbTv = HashMap<Int, MutableList<AnimeIdMapping>>(16_384)
         val byTmdbMovie = HashMap<Int, MutableList<AnimeIdMapping>>(8_192)
         val byTvdb = HashMap<Int, MutableList<AnimeIdMapping>>(16_384)
+        // Deduplicate repeated `type` ("TV", "MOVIE", "OVA"...) and shared franchise `imdb` strings.
+        val typePool = HashMap<String, String>(16)
+        val imdbPool = HashMap<String, String>(16_384)
 
         fun ingest(entry: AnimeListMiniEntry) {
-            val mapping = entry.toDomain()
+            val mapping = entry.toDomain(
+                internType = { raw -> typePool.getOrPut(raw) { raw } },
+                internImdb = { raw -> imdbPool.getOrPut(raw) { raw } },
+            )
             mapping.anidbId?.let { byAnidb.putIfAbsent(it, mapping) }
             mapping.anilistId?.let { byAnilist.putIfAbsent(it, mapping) }
             mapping.kitsuId?.let { byKitsu.putIfAbsent(it, mapping) }
@@ -341,7 +401,8 @@ internal object AnimeIdMappingRepository {
             mapping.simklId?.let { bySimkl.putIfAbsent(it, mapping) }
             if (mapping.imdbIds.isNotEmpty()) {
                 for (imdb in mapping.imdbIds) {
-                    byImdb.getOrPut(imdb.lowercase()) { ArrayList(2) } += mapping
+                    val key = imdbPool.getOrPut(imdb.lowercase()) { imdb.lowercase() }
+                    byImdb.getOrPut(key) { ArrayList(2) } += mapping
                 }
             }
             mapping.tmdbTvId?.let { byTmdbTv.getOrPut(it) { ArrayList(2) } += mapping }
@@ -367,29 +428,32 @@ internal object AnimeIdMappingRepository {
             animeMappingLog.w(error) { "Failed to parse $ANIME_LIST_RESOURCE" }
         }
 
+        val compactImdb = HashMap<String, List<AnimeIdMapping>>((byImdb.size * 4) / 3 + 16)
+        byImdb.forEach { (k, v) -> compactImdb[k] = if (v.size == 1) listOf(v[0]) else v }
+
         return Index(
-            byAnidb = byAnidb,
-            byAnilist = byAnilist,
-            byKitsu = byKitsu,
-            byMal = byMal,
-            bySimkl = bySimkl,
-            byImdb = byImdb,
-            byTmdbTv = byTmdbTv,
-            byTmdbMovie = byTmdbMovie,
-            byTvdb = byTvdb,
+            byAnidb = IntMappingTable.fromMap(byAnidb),
+            byAnilist = IntMappingTable.fromMap(byAnilist),
+            byKitsu = IntMappingTable.fromMap(byKitsu),
+            byMal = IntMappingTable.fromMap(byMal),
+            bySimkl = IntMappingTable.fromMap(bySimkl),
+            byImdb = compactImdb,
+            byTmdbTv = IntMultiMappingTable.fromMap(byTmdbTv),
+            byTmdbMovie = IntMultiMappingTable.fromMap(byTmdbMovie),
+            byTvdb = IntMultiMappingTable.fromMap(byTvdb),
         )
     }
 
     private fun emptyIndex(): Index = Index(
-        byAnidb = emptyMap(),
-        byAnilist = emptyMap(),
-        byKitsu = emptyMap(),
-        byMal = emptyMap(),
-        bySimkl = emptyMap(),
+        byAnidb = IntMappingTable.EMPTY,
+        byAnilist = IntMappingTable.EMPTY,
+        byKitsu = IntMappingTable.EMPTY,
+        byMal = IntMappingTable.EMPTY,
+        bySimkl = IntMappingTable.EMPTY,
         byImdb = emptyMap(),
-        byTmdbTv = emptyMap(),
-        byTmdbMovie = emptyMap(),
-        byTvdb = emptyMap(),
+        byTmdbTv = IntMultiMappingTable.EMPTY,
+        byTmdbMovie = IntMultiMappingTable.EMPTY,
+        byTvdb = IntMultiMappingTable.EMPTY,
     )
 }
 
@@ -414,24 +478,31 @@ private data class AnimeListMiniEntry(
     val season: AnimeListSeason? = null,
     @SerialName("episode_offset") val episodeOffset: AnimeListSeason? = null,
 ) {
-    fun toDomain(): AnimeIdMapping {
-        val cleanImdbIds = if (imdbIds.isEmpty()) {
-            emptyList()
-        } else if (imdbIds.all(String::isNotBlank)) {
-            imdbIds
-        } else {
-            imdbIds.filter(String::isNotBlank)
+    fun toDomain(
+        internType: (String) -> String = { it },
+        internImdb: (String) -> String = { it },
+    ): AnimeIdMapping {
+        val nonBlankImdb = when {
+            imdbIds.isEmpty() -> emptyList()
+            imdbIds.size == 1 -> if (imdbIds[0].isNotBlank()) listOf(internImdb(imdbIds[0])) else emptyList()
+            else -> imdbIds.mapNotNull { id -> id.takeIf(String::isNotBlank)?.let(internImdb) }
+        }
+        val movieIds = tmdbIds?.movie.orEmpty()
+        val compactMovies = when (movieIds.size) {
+            0 -> emptyList()
+            1 -> listOf(movieIds[0])
+            else -> movieIds
         }
         return AnimeIdMapping(
-            type = type,
+            type = type?.let(internType),
             animePlanetId = animePlanetId,
             anidbId = anidbId,
             anilistId = anilistId,
             kitsuId = kitsuId,
             malId = malId,
             simklId = simklId,
-            imdbIds = cleanImdbIds,
-            tmdbMovieIds = tmdbIds?.movie ?: emptyList(),
+            imdbIds = nonBlankImdb,
+            tmdbMovieIds = compactMovies,
             tmdbTvId = tmdbIds?.tv,
             tvdbId = tvdbId,
             tvdbSeason = season?.tvdb,
