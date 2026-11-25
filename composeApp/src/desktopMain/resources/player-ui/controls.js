@@ -3502,6 +3502,13 @@ const setContextMenuDynamicItems = (key, items) => {
     selected: Boolean(item.selected),
     swatch: item.swatch,
   })), submenu);
+  // Track names (an addon subtitle's release name, since upstream's longer labels) run far past the
+  // menu's width: these lists get a wider flyout whose rows wrap to two lines, with the whole name on
+  // hover. Colour and font lists keep the narrow flyout.
+  if (key === "subtitleTracks" || key === "addonSubtitles" || key === "audioTracks") {
+    submenu.classList.add("context-menu-submenu-tracks");
+    submenu.querySelectorAll(".context-menu-label").forEach(label => { label.title = label.textContent; });
+  }
   if (normalized.length === 0) {
     const empty = document.createElement("div");
     empty.className = "context-menu-empty";
@@ -3870,12 +3877,22 @@ const positionSubmenu = group => {
   submenu.style.top = "";
   submenu.style.maxHeight = "";
   submenu.style.overflowY = "";
+  submenu.style.maxWidth = "";
   if (!hasNested) {
     submenu.style.maxHeight = `${Math.max(120, window.innerHeight - margin * 2)}px`;
     submenu.style.overflowY = "auto";
   }
-  const rect = submenu.getBoundingClientRect();
+  let rect = submenu.getBoundingClientRect();
   if (rect.height <= 0) return;
+  // A wide flyout (a track list) narrows to the room left beside its parent rather than running off
+  // the window; its rows then wrap sooner.
+  if (rect.right > window.innerWidth - margin) {
+    submenu.style.maxWidth = `${Math.max(180, Math.floor(window.innerWidth - margin - rect.left))}px`;
+    rect = submenu.getBoundingClientRect();
+  } else if (rect.left < margin) {
+    submenu.style.maxWidth = `${Math.max(180, Math.floor(rect.right - margin))}px`;
+    rect = submenu.getBoundingClientRect();
+  }
   if (rect.bottom > window.innerHeight - margin) {
     const groupRect = group.getBoundingClientRect();
     const shift = rect.bottom - (window.innerHeight - margin);

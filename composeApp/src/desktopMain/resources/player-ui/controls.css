@@ -396,6 +396,20 @@ button:disabled {
   min-width: calc(var(--panel-scale) * clamp(104px, 8.4vw, 130px));
 }
 
+/* Subtitle and audio track lists: release names are long, so each name wraps onto a second line before
+   it is cut (the mouse flyout also grows wider, below). On the P menu's page the same rows wrap. */
+.context-menu-submenu-tracks .context-menu-item {
+  white-space: normal;
+}
+
+.context-menu-submenu-tracks .context-menu-item .context-menu-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
 .context-menu-group:hover > .context-menu-submenu,
 .context-menu-group:focus-within > .context-menu-submenu,
 .context-menu-group.is-open > .context-menu-submenu {
@@ -8996,6 +9010,10 @@ svg {
   width: max-content;
   min-width: 0;
   max-width: calc(var(--panel-scale) * 420px);
+}
+/* Track lists may be wider than the rest (never past the window; positionSubmenu narrows one that would run off). */
+.player:not(.tv-menus) .context-menu-submenu.context-menu-submenu-tracks {
+  max-width: min(calc(var(--panel-scale) * 560px), calc(100vw - 24px));
 }
 .player:not(.tv-menus) .context-menu-item { padding-right: calc(var(--panel-scale) * 16px); }
 .player:not(.tv-menus) .context-menu-quick { grid-template-columns: repeat(3, max-content); justify-content: stretch; }
