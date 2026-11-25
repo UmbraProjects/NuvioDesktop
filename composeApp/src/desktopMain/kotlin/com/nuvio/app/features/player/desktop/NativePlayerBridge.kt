@@ -98,10 +98,16 @@ internal object NativePlayerBridge {
     )
 
     /**
-     * Registers the process AppUserModelID and the matching Start Menu shortcut, without which
-     * Windows labels the media session "Unknown app" and shows no icon. Call once at startup.
+     * Sets the process AppUserModelID, without which Windows labels the media session "Unknown app"
+     * and shows no icon. Once at startup, before any window exists.
      */
-    external fun initializeAppIdentity()
+    external fun setAppUserModelId()
+
+    /**
+     * Writes the Start Menu shortcut carrying that AUMID and repairs taskbar/desktop shortcuts to
+     * this exe that lack it (COM, every .lnk there). Slow; on its own thread, after [setAppUserModelId].
+     */
+    external fun repairAppShortcuts()
 
     external fun beginVideoProfile(handle: Long)
     external fun endVideoProfile(handle: Long)

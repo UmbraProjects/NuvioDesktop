@@ -1607,9 +1607,15 @@ bool removeLegacyStartMenuShortcut(const std::wstring &exePath) {
     return DeleteFileW(linkPath.c_str()) != 0;
 }
 
-void initializeAppIdentity() {
+// Must run before any window exists (Windows caches the process AppUserModelID early); cheap.
+void setAppUserModelId() {
     SetCurrentProcessExplicitAppUserModelID(kNuvioAppUserModelId);
+}
 
+// The Start Menu shortcut and the AUMID repair on existing pins: COM and a walk of every .lnk on
+// the taskbar and desktop, so it runs on its own thread after the AUMID is set, not before the
+// window (it was most of the 165-533 ms "app identity" step, Nov 24).
+void repairAppShortcuts() {
     const std::wstring exePath = currentExecutablePath();
     if (exePath.empty()) return;
 
@@ -8169,8 +8175,13 @@ Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setDataDirectory(J
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_initializeAppIdentity(JNIEnv *, jobject) {
-    initializeAppIdentity();
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_setAppUserModelId(JNIEnv *, jobject) {
+    setAppUserModelId();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_nuvio_app_features_player_desktop_NativePlayerBridge_repairAppShortcuts(JNIEnv *, jobject) {
+    repairAppShortcuts();
 }
 
 extern "C" JNIEXPORT void JNICALL

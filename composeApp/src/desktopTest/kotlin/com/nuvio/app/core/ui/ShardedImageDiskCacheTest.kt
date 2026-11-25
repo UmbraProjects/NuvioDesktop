@@ -14,6 +14,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import okio.Path.Companion.toOkioPath
+import okio.Path.Companion.toPath
 import okio.buffer
 import okio.use
 
@@ -115,6 +116,54 @@ class ShardedImageDiskCacheTest {
         val sharded = ShardedImageDiskCache.build(dir, 100_000_000)
         keys.forEach { key -> assertEquals("body-$key", sharded.read(key)) }
         sharded.shutdown()
+    }
+
+    /** Answers every key as cached (a non-null snapshot is not needed: a call count is enough). */
+    private class FakeShard(private val hangOnOpen: java.util.concurrent.CountDownLatch?) : DiskCache {
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        override val size = 0L
+        override val maxSize = 1L
+        override val directory = "/fake".toPath()
+        override val fileSystem = okio.FileSystem.SYSTEM
+        override fun openSnapshot(key: String): DiskCache.Snapshot? {
+            calls.incrementAndGet()
+            hangOnOpen?.await()
+            return null
+        }
+        override fun openEditor(key: String): DiskCache.Editor? { calls.incrementAndGet(); return null }
+        override fun remove(key: String) = false
+        override fun clear() = Unit
+        override fun shutdown() = Unit
+    }
+
+    @Test
+    fun aShardStuckOpeningIsSkippedAfterTheBudget() {
+        val stuckKey = keys.first()
+        val stuckIndex = imageCacheShardIndex(stuckKey)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val shards = (0 until ImageCacheShardCount).map { FakeShard(if (it == stuckIndex) release else null) }
+        val cache = ShardedImageDiskCache(shards, "/fake".toPath())
+        val warm = Thread { cache.warmAll() }.apply { isDaemon = true; start() }
+        try {
+            Thread.sleep(50)
+            val otherKey = keys.first { imageCacheShardIndex(it) != stuckIndex }
+            cache.openSnapshot(otherKey)
+            assertEquals(2, shards[imageCacheShardIndex(otherKey)].calls.get(), "an open shard serves at once")
+
+            val startedAt = System.nanoTime()
+            assertNull(cache.openSnapshot(stuckKey))
+            assertNull(cache.openEditor(stuckKey))
+            val waitedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertTrue(waitedMs < ShardedImageDiskCache.ShardOpenBudgetMs + 500, "waited ${waitedMs}ms")
+            assertEquals(1, shards[stuckIndex].calls.get(), "the stuck shard is not asked again while it opens")
+
+            release.countDown()
+            warm.join(5_000)
+            cache.openSnapshot(stuckKey)
+            assertEquals(2, shards[stuckIndex].calls.get(), "once open, the shard is used again")
+        } finally {
+            release.countDown()
+        }
     }
 
     @Test

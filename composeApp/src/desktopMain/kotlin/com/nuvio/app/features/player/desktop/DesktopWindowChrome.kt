@@ -14,8 +14,34 @@ private const val NuvioWindowTextRgb = 0xF5F7F8
  */
 internal fun registerDesktopAppIdentity() {
     if (DesktopHostOs.current != DesktopHostOs.WINDOWS) return
-    runCatching { NativePlayerBridge.initializeAppIdentity() }
+    // Timed in parts: the whole step was 165-533 ms before the window (Nov 24), and the report it
+    // came from could not say how much was loading the bridge DLL (which has to happen here) and
+    // how much the shortcut walk (which does not).
+    val startedAt = System.nanoTime()
+    val bridgeLoaded = runCatching { NativePlayerBridge.hashCode() }.isSuccess
+    val loadedAt = System.nanoTime()
+    if (!bridgeLoaded) {
+        appIdentityLog.w { "App identity skipped: native bridge did not load in ${(loadedAt - startedAt) / 1_000_000}ms" }
+        return
+    }
+    runCatching { NativePlayerBridge.setAppUserModelId() }
+    val aumidAt = System.nanoTime()
+    appIdentityLog.i {
+        "App identity: bridge load ${(loadedAt - startedAt) / 1_000_000}ms, AUMID ${(aumidAt - loadedAt) / 1_000_000}ms"
+    }
+    Thread({
+        val repairStartedAt = System.nanoTime()
+        runCatching { NativePlayerBridge.repairAppShortcuts() }
+            .onFailure { appIdentityLog.w(it) { "App shortcut repair failed" } }
+        appIdentityLog.i { "App shortcuts checked in ${(System.nanoTime() - repairStartedAt) / 1_000_000}ms (background)" }
+    }, "nuvio-app-shortcuts").apply {
+        isDaemon = true
+        priority = Thread.MIN_PRIORITY
+        start()
+    }
 }
+
+private val appIdentityLog = co.touchlab.kermit.Logger.withTag("DesktopStartup")
 
 internal fun applyNativeDesktopWindowChrome(window: Window) {
     if (DesktopHostOs.current != DesktopHostOs.WINDOWS || !window.isDisplayable) return

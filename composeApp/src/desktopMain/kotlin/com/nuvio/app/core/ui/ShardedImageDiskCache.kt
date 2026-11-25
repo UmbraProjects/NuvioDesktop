@@ -6,6 +6,9 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicIntegerArray
 import kotlin.io.path.exists
 import okio.ByteString.Companion.encodeUtf8
 import okio.FileSystem
@@ -42,25 +45,74 @@ internal class ShardedImageDiskCache(
     override val maxSize: Long get() = shards.sumOf { it.maxSize }
     override val fileSystem: FileSystem get() = shards.first().fileSystem
 
-    private fun shardFor(key: String): DiskCache = shards[imageCacheShardIndex(key)]
+    /** Counted down when [warmAll] has opened that shard (or given up on it with an error). */
+    private val opened = Array(shards.size) { CountDownLatch(1) }
+    @Volatile private var warmStartedAtNs = 0L
+    private val budgetMissLogged = AtomicIntegerArray(shards.size)
 
-    override fun openSnapshot(key: String): DiskCache.Snapshot? = shardFor(key).openSnapshot(key)
-    override fun openEditor(key: String): DiskCache.Editor? = shardFor(key).openEditor(key)
-    override fun remove(key: String): Boolean = shardFor(key).remove(key)
+    /**
+     * Whether a request may use shard [index] now. Every shard is opened by [warmAll] at launch;
+     * a request for one still opening waits for it until [ShardOpenBudgetMs] after the warm-up
+     * started, then treats the image as not cached (it loads from the network, unsaved) until the
+     * shard is open. Without the budget, a shard whose journal open is held up waits as long as the
+     * holdup: one shard sat 6-8 s in the file open itself on two of four launches (Nov 25, the
+     * on-access scan pattern), its posters blank all that time. Not warmed (tests): always usable.
+     */
+    private fun usable(index: Int): Boolean {
+        val latch = opened[index]
+        if (latch.count == 0L) return true
+        val warmStart = warmStartedAtNs
+        if (warmStart == 0L) return true
+        val remainingMs = ShardOpenBudgetMs - (System.nanoTime() - warmStart) / 1_000_000
+        if (remainingMs > 0 && latch.await(remainingMs, TimeUnit.MILLISECONDS)) return true
+        if (budgetMissLogged.compareAndSet(index, 0, 1)) {
+            shardLog.w { "Image cache shard $index not open after ${ShardOpenBudgetMs}ms; its images skip the disk cache until it is" }
+        }
+        return false
+    }
+
+    override fun openSnapshot(key: String): DiskCache.Snapshot? {
+        val index = imageCacheShardIndex(key)
+        return if (usable(index)) shards[index].openSnapshot(key) else null
+    }
+
+    override fun openEditor(key: String): DiskCache.Editor? {
+        val index = imageCacheShardIndex(key)
+        return if (usable(index)) shards[index].openEditor(key) else null
+    }
+
+    override fun remove(key: String): Boolean {
+        val index = imageCacheShardIndex(key)
+        return usable(index) && shards[index].remove(key)
+    }
+
     override fun clear() = shards.forEach { it.clear() }
     override fun shutdown() = shards.forEach { it.shutdown() }
 
     /** Opens every shard (each replays its journal) in parallel; returns once all are open. */
     fun warmAll() {
+        warmStartedAtNs = System.nanoTime()
         val threads = shards.mapIndexed { index, shard ->
-            Thread({ runCatching { shard.openSnapshot(ShardWarmupKey)?.close() } }, "nuvio-image-cache-open-$index")
-                .apply { isDaemon = true; start() }
+            Thread({
+                val startedAt = System.nanoTime()
+                try {
+                    runCatching { shard.openSnapshot(ShardWarmupKey)?.close() }
+                } finally {
+                    opened[index].countDown()
+                }
+                val tookMs = (System.nanoTime() - startedAt) / 1_000_000
+                if (tookMs >= SlowShardOpenMs) shardLog.w { "Image cache shard $index took ${tookMs}ms to open" }
+            }, "nuvio-image-cache-open-$index").apply { isDaemon = true; start() }
         }
         threads.forEach { it.join() }
     }
 
     companion object {
         private const val ShardWarmupKey = "nuvio-disk-cache-warmup"
+
+        /** A normal open is ~350 ms for all 16; this leaves room for a cold disk after a reboot. */
+        internal const val ShardOpenBudgetMs = 2_000L
+        private const val SlowShardOpenMs = 1_000L
 
         /** The shards under [cacheDir], built (not yet opened), with [maxSizeBytes] split evenly. */
         fun build(cacheDir: Path, maxSizeBytes: Long): ShardedImageDiskCache {
