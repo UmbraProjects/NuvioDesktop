@@ -1862,6 +1862,12 @@ fun HomeScreen(
 
     LaunchedEffect(catalogRefreshKey) {
         if (catalogRefreshKey.isEmpty()) return@LaunchedEffect
+        // While enabled addons are still fetching their manifests in parallel at startup,
+        // coalesce staggered arrivals over a short window so HomeCatalogSettingsRepository
+        // syncs once instead of cancelling and restarting HomeRepository.refresh() per addon.
+        if (addonsUiState.addons.any { it.enabled && it.isRefreshing }) {
+            delay(150L)
+        }
         HomeCatalogSettingsRepository.syncCatalogs(enabledAddons)
     }
 

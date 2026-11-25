@@ -65,6 +65,8 @@ internal object ContinueWatchingEnrichmentCache {
     }
 
     private const val storageKey = "cw_enrichment_cache"
+    private const val artworkRefreshAtKey = "cw_artwork_refresh_at"
+    internal const val DEFAULT_ARTWORK_REFRESH_COOLDOWN_MS = 6L * 60L * 60L * 1000L
     private var lastPayloadHash: Int? = null
     private val _cacheCleared = MutableStateFlow(0)
     val cacheCleared: StateFlow<Int> = _cacheCleared.asStateFlow()
@@ -72,15 +74,38 @@ internal object ContinueWatchingEnrichmentCache {
     private val _artworkRefreshRequests = MutableStateFlow(0)
 
     /**
-     * Bumped by the manual Continue Watching resync. Home watches it to re-resolve Up Next cards
-     * whose artwork is still incomplete, bypassing the meta LRU — an episode still can gain a
-     * thumbnail hours after it airs, and the cached card would otherwise keep the blank one until
-     * the seed changes.
+     * Bumped by the manual Continue Watching resync (or startup once [DEFAULT_ARTWORK_REFRESH_COOLDOWN_MS]
+     * has elapsed). Home watches it to re-resolve Up Next cards whose artwork is still incomplete,
+     * bypassing the meta LRU — an episode can gain a thumbnail hours after it airs, and the cached
+     * card would otherwise keep the blank one until the seed changes.
      */
     val artworkRefreshRequests: StateFlow<Int> = _artworkRefreshRequests.asStateFlow()
 
-    fun requestArtworkRefresh() {
+    fun requestArtworkRefresh(nowEpochMs: Long = WatchProgressClock.nowEpochMs()) {
+        ContinueWatchingEnrichmentStorage.savePayload(
+            ProfileScopedKey.of(artworkRefreshAtKey),
+            nowEpochMs.toString(),
+        )
         _artworkRefreshRequests.value += 1
+    }
+
+    /**
+     * Requests a Continue Watching artwork refresh only when at least [cooldownMs] has elapsed
+     * since the last refresh for this profile (or if never refreshed). Avoids re-fetching fresh
+     * episode thumbnails on every rapid restart while still picking up newly published stills.
+     */
+    fun requestArtworkRefreshIfDue(
+        cooldownMs: Long = DEFAULT_ARTWORK_REFRESH_COOLDOWN_MS,
+        nowEpochMs: Long = WatchProgressClock.nowEpochMs(),
+    ): Boolean {
+        val lastRefresh = ContinueWatchingEnrichmentStorage
+            .loadPayload(ProfileScopedKey.of(artworkRefreshAtKey))
+            ?.toLongOrNull()
+        if (lastRefresh != null && nowEpochMs >= lastRefresh && nowEpochMs - lastRefresh < cooldownMs) {
+            return false
+        }
+        requestArtworkRefresh(nowEpochMs)
+        return true
     }
 
     fun getNextUpSnapshot(): List<CachedNextUpItem> =
@@ -119,6 +144,7 @@ internal object ContinueWatchingEnrichmentCache {
     fun clearAll() {
         NextUpNoCardCache.clear()
         ContinueWatchingEnrichmentStorage.removePayload(ProfileScopedKey.of(storageKey))
+        ContinueWatchingEnrichmentStorage.removePayload(ProfileScopedKey.of(artworkRefreshAtKey))
         lastPayloadHash = null
         warmed = null
         _cacheCleared.value += 1

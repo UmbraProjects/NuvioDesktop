@@ -145,6 +145,8 @@ object CloudLibraryRepository {
     // The window is applied while listing, so changing it has to re-list rather than re-filter what
     // is already in hand — widening it needs rows the last refresh never kept.
     private var loadedWindow: DebridCloudLibraryWindow? = null
+    private val refreshLock = Any()
+    private var activeRefreshJob: Job? = null
     private var resolveNamesJob: Job? = null
     val uiState = _uiState.asStateFlow()
 
@@ -158,7 +160,7 @@ object CloudLibraryRepository {
             return
         }
         val current = _uiState.value
-        if (current.isRefreshing) return
+        if (current.isRefreshing || synchronized(refreshLock) { activeRefreshJob?.isActive == true }) return
         val connectedKeys = connectedCloudConnectionKeys()
         val window = DebridSettingsRepository.snapshot().cloudLibraryWindow
         if (!current.isLoaded || connectedKeys != loadedConnectionKeys || window != loadedWindow) {
@@ -166,51 +168,74 @@ object CloudLibraryRepository {
         }
     }
 
-    fun refresh() {
-        PerfTelemetry.count("CloudLibraryRepository.refresh")
+    fun refresh(force: Boolean = false) {
         DebridSettingsRepository.ensureLoaded()
         if (!DebridSettingsRepository.snapshot().cloudLibraryEnabled) {
+            synchronized(refreshLock) {
+                activeRefreshJob?.cancel()
+                activeRefreshJob = null
+            }
             loadedConnectionKeys = emptyList()
             loadedWindow = null
             _uiState.value = CloudLibraryUiState(isLoaded = true, isEnabled = false)
             return
         }
-        _uiState.update { current ->
-            current.copy(
-                isEnabled = true,
-                isRefreshing = true,
-                providers = current.providers.map { it.copy(isLoading = true, errorMessage = null) },
-            )
-        }
-        scope.launch {
-            // A throw here used to leave isRefreshing set for good, and ensureLoaded never retries
-            // while it is.
-            // The connections this refresh is for, read before it runs: read afterwards, a key that arrived during the
-            // refresh was recorded as loaded and the library never refreshed for it.
-            val keysForThisRefresh = connectedCloudConnectionKeys()
-            val windowForThisRefresh = DebridSettingsRepository.snapshot().cloudLibraryWindow
-            val refreshed = try {
-                store.refresh().carryResolvedNamesFrom(_uiState.value)
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                CloudLibraryLog.e(error) { "refresh failed" }
-                _uiState.update { current ->
-                    current.copy(
-                        isRefreshing = false,
-                        providers = current.providers.map { it.copy(isLoading = false, errorMessage = error.message) },
-                    )
+        synchronized(refreshLock) {
+            if (!force && activeRefreshJob?.isActive == true) {
+                return
+            }
+            if (force) {
+                activeRefreshJob?.cancel()
+            }
+            _uiState.update { current ->
+                current.copy(
+                    isEnabled = true,
+                    isRefreshing = true,
+                    providers = current.providers.map { it.copy(isLoading = true, errorMessage = null) },
+                )
+            }
+            var launchedJob: Job? = null
+            launchedJob = scope.launch {
+                try {
+                    // The connections this refresh is for, read before it runs: read afterwards, a key that arrived during the
+                    // refresh was recorded as loaded and the library never refreshed for it.
+                    val keysForThisRefresh = connectedCloudConnectionKeys()
+                    val windowForThisRefresh = DebridSettingsRepository.snapshot().cloudLibraryWindow
+                    val refreshed = try {
+                        store.refresh().carryResolvedNamesFrom(_uiState.value)
+                    } catch (error: Exception) {
+                        if (error is CancellationException) throw error
+                        CloudLibraryLog.e(error) { "refresh failed" }
+                        _uiState.update { current ->
+                            current.copy(
+                                isRefreshing = false,
+                                providers = current.providers.map { it.copy(isLoading = false, errorMessage = error.message) },
+                            )
+                        }
+                        return@launch
+                    }
+                    loadedConnectionKeys = keysForThisRefresh
+                    loadedWindow = windowForThisRefresh
+                    _uiState.value = refreshed
+                    val connectionsOrWindowChanged =
+                        connectedCloudConnectionKeys() != keysForThisRefresh ||
+                            DebridSettingsRepository.snapshot().cloudLibraryWindow != windowForThisRefresh
+                    if (connectionsOrWindowChanged) {
+                        CloudLibraryLog.i { "connections or window changed during refresh; refreshing again" }
+                        synchronized(refreshLock) {
+                            if (activeRefreshJob === launchedJob) activeRefreshJob = null
+                        }
+                        refresh()
+                        return@launch
+                    }
+                    resolveDisplayNames(refreshed)
+                } finally {
+                    synchronized(refreshLock) {
+                        if (activeRefreshJob === launchedJob) activeRefreshJob = null
+                    }
                 }
-                return@launch
             }
-            loadedConnectionKeys = keysForThisRefresh
-            loadedWindow = windowForThisRefresh
-            _uiState.value = refreshed
-            if (connectedCloudConnectionKeys() != keysForThisRefresh) {
-                CloudLibraryLog.i { "connections changed during refresh; refreshing again" }
-                refresh()
-                return@launch
-            }
-            resolveDisplayNames(refreshed)
+            activeRefreshJob = launchedJob
         }
     }
 

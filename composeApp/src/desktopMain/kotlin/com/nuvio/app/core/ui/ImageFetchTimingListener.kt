@@ -54,7 +54,13 @@ internal object RepeatedDecodes {
     }
 
     @Synchronized
-    fun note(data: String, width: Int, height: Int, now: Long = System.nanoTime()): String? {
+    fun note(
+        data: String,
+        width: Int,
+        height: Int,
+        now: Long = System.nanoTime(),
+        formatForLog: () -> String = { data },
+    ): String? {
         val run = runs.getOrPut(data) { Run(now) }
         if (now - run.startedAt > WindowNanos) {
             run.startedAt = now
@@ -67,7 +73,7 @@ internal object RepeatedDecodes {
         if (run.count < Limit || run.reported) return null
         run.reported = true
         return "REDECODE ${run.count}x in ${(now - run.startedAt) / 1_000_000}ms on ${PerfTelemetry.visibleScreen} " +
-            "sizes=${run.sizes.joinToString(",")} $data"
+            "sizes=${run.sizes.joinToString(",")} ${formatForLog()}"
     }
 }
 
@@ -123,7 +129,12 @@ internal class ImageFetchTimingListener(
             )
         }
         if (decodeNanos >= 0) {
-            RepeatedDecodes.note(describeData(request.data), result.image.width, result.image.height)?.let(emit)
+            RepeatedDecodes.note(
+                data = request.data.toString(),
+                width = result.image.width,
+                height = result.image.height,
+                formatForLog = { describeData(request.data) },
+            )?.let(emit)
         }
         if (source != DataSource.NETWORK && totalMs < SlowDiskLoadMs) return
         emit(
@@ -182,7 +193,12 @@ internal class ImageFetchTimingListener(
          */
         fun describeData(data: Any): String {
             // A Stalker channel's logo can sit on the portal, whose address may not reach a log.
-            val masked = SecretParam.replace(com.nuvio.app.features.iptv.redactIptvCredentials(data.toString()), "$1***")
+            val redacted = com.nuvio.app.features.iptv.redactIptvCredentials(data.toString())
+            val masked = if ('?' in redacted || '&' in redacted) {
+                SecretParam.replace(redacted, "$1***")
+            } else {
+                redacted
+            }
             if (masked.length <= MaxLoggedUrlLength) return masked
             val afterScheme = masked.substringAfter("://", missingDelimiterValue = masked)
             val host = afterScheme.substringBefore('/')

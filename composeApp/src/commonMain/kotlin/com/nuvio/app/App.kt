@@ -1051,6 +1051,9 @@ private suspend fun warmProfileDeferredRepositories() {
                 // The step above already imported it; a second forced pull here would only spend
                 // another request against the provider's daily budget.
                 reimportProviderHistory = false,
+                // Refresh episode thumbnails periodically (6 h cooldown) rather than busting the
+                // CW artwork cache on every launch; manual resync still forces an immediate refresh.
+                forceArtworkRefresh = false,
             )
         }.onSuccess {
             appStartupLog.i {

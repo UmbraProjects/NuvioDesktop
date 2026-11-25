@@ -13,6 +13,11 @@ internal actual object SkipDbDumpStorage {
     private val store = DesktopStorage.store("nuvio_skipdb")
     private val dumpFile: Path get() = DesktopStorage.rootDir.resolve("skipdb-dump.json")
 
+    actual fun hasDump(): Boolean {
+        val file = dumpFile
+        return file.exists() && runCatching { Files.size(file) > 0L }.getOrDefault(false)
+    }
+
     actual fun loadDump(): String? {
         val file = dumpFile
         if (!file.exists()) return null

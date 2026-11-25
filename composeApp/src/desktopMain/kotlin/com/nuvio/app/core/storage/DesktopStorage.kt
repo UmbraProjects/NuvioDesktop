@@ -140,6 +140,7 @@ internal object DesktopStorage {
         "nuvio_filename_lookups",
         "nuvio_postshow_cache",
         "nuvio_playback_redirect_verdicts_v2",
+        "nuvio_prewarm_failed_urls",
     )
     private const val PREWARM_AFTER_HOME_DELAY_MS = 3_000L
     private const val PREWARM_AFTER_HOME_THREADS = 2

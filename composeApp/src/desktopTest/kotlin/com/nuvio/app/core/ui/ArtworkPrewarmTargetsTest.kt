@@ -237,6 +237,16 @@ class ArtworkPrewarmTargetsTest {
         )
     }
 
+    @Test
+    fun `focused heroes skip synthetic cloud items`() {
+        val heroes = prewarmFocusedHeroes(
+            focusRows = listOf(listOf(item("cloud:torbox:123"), item("torbox:Torrent:91005966").copy(type = "cloud"), item("tt1234567"))),
+            library = listOf(item("cloud:rd:456"), item("torbox:Torrent:94932693").copy(type = "cloud"), item("tt7654321")),
+            settings = all,
+        )
+        assertEquals(listOf("tt1234567", "tt7654321"), heroes.map { it.item.id })
+    }
+
     private fun collection(id: String, vararg folders: CollectionFolder) =
         Collection(id = id, title = id, folders = folders.toList())
 

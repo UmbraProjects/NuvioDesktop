@@ -325,11 +325,13 @@ internal object ArtworkPrewarmer {
                 error
             }
             if (error == null) {
-                failedUrls.remove(url)
+                if (failedUrls.remove(url) != null) failedUrlsDirty.set(true)
                 downloaded.incrementAndGet()
                 ready.getValue(kind).incrementAndGet()
             } else {
-                failedUrls[url] = System.currentTimeMillis()
+                val retryTtl = if (isClientHttpFailure(error)) PermanentFailureRetryMs else FailureRetryMs
+                failedUrls[url] = System.currentTimeMillis() + retryTtl
+                failedUrlsDirty.set(true)
                 failed.incrementAndGet()
                 if (failedExamples.size < LoggedFailureExamples) {
                     failedExamples += "${ImageFetchTimingListener.describeData(url)} " +
@@ -371,6 +373,7 @@ internal object ArtworkPrewarmer {
             }
         }
 
+        ensureFailedUrlsLoaded()
         publish(running = true)
         try {
             coroutineScope {
@@ -415,6 +418,7 @@ internal object ArtworkPrewarmer {
                 }
             }
         } catch (error: CancellationException) {
+            persistFailedUrlsIfDirty()
             publish(running = false)
             // Otherwise a pass that Home restarted leaves no trace at all.
             prewarmLog.i {
@@ -423,6 +427,7 @@ internal object ArtworkPrewarmer {
             }
             throw error
         }
+        persistFailedUrlsIfDirty()
         publish(running = false)
         prewarmLog.i {
             "pass done in ${System.currentTimeMillis() - startedAt}ms: ${targets.size} targets " +
@@ -448,9 +453,10 @@ internal object ArtworkPrewarmer {
     }
 
     private fun recentlyFailed(failures: ConcurrentHashMap<String, Long>, key: String): Boolean {
-        val failedAt = failures[key] ?: return false
-        if (System.currentTimeMillis() - failedAt < FailureRetryMs) return true
-        failures.remove(key, failedAt)
+        val retryUntil = failures[key] ?: return false
+        if (System.currentTimeMillis() < retryUntil) return true
+        failures.remove(key, retryUntil)
+        if (failures === failedUrls) failedUrlsDirty.set(true)
         return false
     }
 
@@ -491,7 +497,7 @@ internal object ArtworkPrewarmer {
             ).first
         }
         if (shown == null || metaMissing) {
-            failedLookups[key] = System.currentTimeMillis()
+            failedLookups[key] = System.currentTimeMillis() + FailureRetryMs
             onFailed(if (shown == null) "$key (timed out)" else key)
         } else {
             failedLookups.remove(key)
@@ -501,6 +507,49 @@ internal object ArtworkPrewarmer {
 
     private val failedLookups = ConcurrentHashMap<String, Long>()
     private val failedUrls = ConcurrentHashMap<String, Long>()
+    private val failedUrlsLoaded = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val failedUrlsDirty = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    private fun isClientHttpFailure(error: Throwable): Boolean {
+        val msg = error.message.orEmpty()
+        return msg.contains("HTTP 404") || msg.contains("HTTP 400") || msg.contains("HTTP 410")
+    }
+
+    private fun ensureFailedUrlsLoaded() {
+        if (!failedUrlsLoaded.compareAndSet(false, true)) return
+        val now = System.currentTimeMillis()
+        runCatching {
+            val raw = com.nuvio.app.core.storage.DesktopStorage
+                .store(FAILED_URLS_STORE)
+                .getString(FAILED_URLS_KEY)
+                .orEmpty()
+            if (raw.isBlank()) return
+            raw.lineSequence().forEach { line ->
+                val tab = line.indexOf('\t')
+                if (tab <= 0) return@forEach
+                val retryUntil = line.substring(0, tab).toLongOrNull() ?: return@forEach
+                if (retryUntil <= now) return@forEach
+                val url = line.substring(tab + 1)
+                if (url.isNotEmpty()) failedUrls.putIfAbsent(url, retryUntil)
+            }
+        }
+    }
+
+    private fun persistFailedUrlsIfDirty() {
+        if (!failedUrlsDirty.compareAndSet(true, false)) return
+        val now = System.currentTimeMillis()
+        runCatching {
+            val active = failedUrls.entries
+                .asSequence()
+                .filter { it.value > now }
+                .sortedByDescending { it.value }
+                .take(MAX_PERSISTED_FAILED_URLS)
+                .joinToString("\n") { (url, retryUntil) -> "$retryUntil\t$url" }
+            com.nuvio.app.core.storage.DesktopStorage
+                .store(FAILED_URLS_STORE)
+                .putString(FAILED_URLS_KEY, active)
+        }
+    }
 
     /**
      * A folder's titles as its screen shows them: its catalogs' first pages, through the
@@ -552,8 +601,14 @@ internal object ArtworkPrewarmer {
     private const val PlaybackPollMs = 5_000L
     private const val StatusEvery = 25
 
-    /** How long a failed image or hero lookup is left alone before a pass tries it again. */
+    /** How long a transient failed image or hero lookup is left alone before a pass tries it again. */
     private const val FailureRetryMs = 30 * 60_000L
+
+    /** Permanent 4xx image responses (404/400/410) are persisted across launches for 24 h. */
+    private const val PermanentFailureRetryMs = 24L * 60L * 60L * 1000L
+    private const val FAILED_URLS_STORE = "nuvio_prewarm_failed_urls"
+    private const val FAILED_URLS_KEY = "entries"
+    private const val MAX_PERSISTED_FAILED_URLS = 500
 
     /** Longer than a healthy lookup takes; the addon's own socket timeout is a minute. */
     private const val LookupTimeoutMs = 15_000L
@@ -714,13 +769,20 @@ internal fun prewarmFocusedHeroes(
     val seen = HashSet<String>()
     val home = focusRows.asSequence()
         .flatMap { row -> row.asSequence().take(perRowLimit) }
+        .filterNot { it.isCloudSyntheticItem() }
         .filter { seen.add("home:${it.type}:${it.id}") }
         .map { PrewarmFocusedHero(it, normalHomeMode = true) }
     val libraryHeroes = library.asSequence()
+        .filterNot { it.isCloudSyntheticItem() }
         .filter { seen.add("library:${it.type}:${it.id}") }
         .map { PrewarmFocusedHero(it, normalHomeMode = false) }
     return (home + libraryHeroes).take(maxItems).toList()
 }
+
+private fun MetaPreview.isCloudSyntheticItem(): Boolean =
+    type.equals("cloud", ignoreCase = true) ||
+        metadataType.equals("cloud", ignoreCase = true) ||
+        id.startsWith("cloud:", ignoreCase = true)
 
 /** The hero's backdrop (its poster when it has none) and its logo, as HomeHeroSection draws them. */
 internal fun heroArtwork(item: MetaPreview): List<PrewarmTarget> {

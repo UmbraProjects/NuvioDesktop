@@ -241,7 +241,7 @@ object SkipIntroRepository {
         durationSeconds: Long?,
     ): List<SkipInterval> {
         return try {
-            SkipDbDumpRepository.lookup(imdbId, season, episode, durationSeconds)
+            SkipDbDumpRepository.lookupOrLoad(imdbId, season, episode, durationSeconds)
                 ?.let { segments -> return segments.toSkipIntervals() }
 
             SkipIntroApi

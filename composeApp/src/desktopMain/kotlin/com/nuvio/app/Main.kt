@@ -25,7 +25,6 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
@@ -737,7 +736,10 @@ fun main(args: Array<String>) {
             },
             title = if (smokePlayerUrl == null) "Nuvio HTPC" else "Nuvio Player Smoke",
             state = windowState,
-            icon = painterResource(NuvioDesktopIconPath),
+            // Window/taskbar icons are loaded off the UI thread below via loadDesktopWindowIconImages;
+            // omitting the synchronous painterResource avoids a main-thread PNG decode + redundant
+            // WWindowPeer.setIconImagesData during startup.
+            icon = null,
             // An arrow no control took (often because the control holding focus left the screen) is handled by the
             // focus router's fallback in the key listener below (KeyLayers): Music and Settings register there.
         ) {

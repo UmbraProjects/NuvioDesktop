@@ -27,6 +27,7 @@ internal val MACHINE_STORE_NAMES = setOf(
     "nuvio_osk_layout",
     "nuvio_updater",
     "nuvio_image_cache_settings",
+    "nuvio_prewarm_failed_urls",
     "nuvio_hs_err_pid",
     "nuvio_safepoint_pid",
     "nuvio_local_library",

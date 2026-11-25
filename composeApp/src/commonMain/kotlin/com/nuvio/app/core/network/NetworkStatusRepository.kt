@@ -140,6 +140,8 @@ object NetworkStatusRepository {
         val supabaseReachable = probeReachable(
             url = "${activeServer.backendUrl.trimEnd('/')}/rest/v1/",
             headers = mapOf("apikey" to activeServer.publishableKey),
+            // HEAD verifies reachability without downloading the ~98 KB PostgREST OpenAPI schema.
+            method = "HEAD",
         )
         if (!supabaseReachable) {
             return NetworkCondition.ServersUnreachable
@@ -154,11 +156,12 @@ object NetworkStatusRepository {
     private suspend fun probeReachable(
         url: String,
         headers: Map<String, String> = emptyMap(),
+        method: String = "GET",
     ): Boolean {
         val response = withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
             runCatching {
                 httpRequestRaw(
-                    method = "GET",
+                    method = method,
                     url = url,
                     headers = headers,
                     body = "",

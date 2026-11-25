@@ -36,24 +36,30 @@ object SkipDbDumpRepository {
     private val logger = Logger.withTag("SkipDbDump")
 
     private val mutex = Mutex()
+    @Volatile
     private var index: SkipDbDumpIndex? = null
     private var syncJob: Deferred<Unit>? = null
+    private var loadDiskJob: Deferred<SkipDbDumpIndex?>? = null
 
     /**
-     * Loads whatever is on disk and refreshes it if it has gone stale. Safe to call repeatedly; the
-     * work happens once and later callers join the run already in flight.
+     * Refreshes the local SkipDB export if it has gone stale. When [loadIntoMemory] is false
+     * (the startup background sync), a fresh on-disk dump is left unparsed until the first
+     * playback lookup ([lookupOrLoad]) so startup does not parse ~38 MB of JSON into RAM.
      */
-    suspend fun ensureSynced() {
+    suspend fun ensureSynced(loadIntoMemory: Boolean = true) {
         val existing = mutex.withLock {
-            syncJob ?: scope.async { runSync() }.also { syncJob = it }
+            syncJob ?: scope.async { runSync(loadIntoMemory = loadIntoMemory) }.also { syncJob = it }
         }
         runCatching { existing.await() }
         mutex.withLock { if (syncJob === existing) syncJob = null }
+        if (loadIntoMemory && index == null && SkipDbDumpStorage.hasDump()) {
+            ensureIndexLoadedFromDisk()
+        }
     }
 
-    /** Kicks off [ensureSynced] without waiting for it, for callers on the startup path. */
+    /** Kicks off a freshness check without parsing a fresh on-disk export into memory at startup. */
     fun syncInBackground() {
-        scope.launch { runCatching { ensureSynced() } }
+        scope.launch { runCatching { ensureSynced(loadIntoMemory = false) } }
     }
 
     /**
@@ -74,20 +80,51 @@ object SkipDbDumpRepository {
         return loaded.lookup(imdbId, season, episode, durationSeconds) ?: SkipDbSegments()
     }
 
-    private suspend fun runSync() {
-        if (index == null) {
-            loadFromDisk()?.let { index = it }
+    /**
+     * Like [lookup], but lazily parses an on-disk export on first playback if startup skipped
+     * loading it into RAM. Concurrent callers share one parse.
+     */
+    suspend fun lookupOrLoad(
+        imdbId: String,
+        season: Int?,
+        episode: Int?,
+        durationSeconds: Long?,
+    ): SkipDbSegments? {
+        if (index == null && SkipDbDumpStorage.hasDump()) {
+            ensureIndexLoadedFromDisk()
         }
+        return lookup(imdbId, season, episode, durationSeconds)
+    }
 
+    private suspend fun ensureIndexLoadedFromDisk(): SkipDbDumpIndex? {
+        index?.let { return it }
+        val existing = mutex.withLock {
+            index?.let { return it }
+            loadDiskJob ?: scope.async {
+                loadFromDisk()?.also { index = it }
+            }.also { loadDiskJob = it }
+        }
+        val loaded = runCatching { existing.await() }.getOrNull()
+        mutex.withLock { if (loadDiskJob === existing) loadDiskJob = null }
+        return loaded
+    }
+
+    private suspend fun runSync(loadIntoMemory: Boolean) {
+        val hasLocalDump = withContext(Dispatchers.Default) { SkipDbDumpStorage.hasDump() }
         val lastSync = SkipDbDumpStorage.loadLastSyncEpochMillis()
         val now = SkipDbDumpStorage.nowEpochMillis()
         // A clock that has moved backwards would otherwise park the next sync a day into the future.
         val isStale = lastSync == null || now - lastSync >= SYNC_INTERVAL_MILLIS || now < lastSync
-        if (!isStale && index != null) return
+        if (!isStale && hasLocalDump) {
+            if (loadIntoMemory && index == null) {
+                loadFromDisk()?.let { index = it }
+            }
+            return
+        }
 
         when (val response = httpGetFileRevalidated(DUMP_URL, SkipDbDumpStorage.loadEtag())) {
             is RevalidatedFileResponse.NotModified -> {
-                if (index == null) {
+                if (!hasLocalDump && index == null) {
                     // Revalidated against an export that is no longer on disk — deleted underneath
                     // us, or a write that failed after the etag was kept. Dropping the etag makes
                     // the next sync a full download instead of a 304 that answers nothing forever.
@@ -96,6 +133,9 @@ object SkipDbDumpRepository {
                     return
                 }
                 SkipDbDumpStorage.saveLastSyncEpochMillis(now)
+                if (loadIntoMemory && index == null) {
+                    loadFromDisk()?.let { index = it }
+                }
                 logger.d { "Export unchanged" }
             }
 
@@ -116,6 +156,9 @@ object SkipDbDumpRepository {
             is RevalidatedFileResponse.Failed -> {
                 // Whatever is already on disk keeps answering lookups; a failed refresh only means
                 // data up to a day older, which is worth far more than falling back to nothing.
+                if (loadIntoMemory && index == null && hasLocalDump) {
+                    loadFromDisk()?.let { index = it }
+                }
                 logger.w { "Export sync failed (${response.status}): ${response.message}" }
             }
         }
