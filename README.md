@@ -130,7 +130,7 @@ Example:
 
 ### Custom Badge Images
 
-Put image files directly in `%LOCALAPPDATA%\Nuvio\Badges`. Supported formats:
+Put image files directly in `%LOCALAPPDATA%\NuvioHTPC\Badges`. Supported formats:
 
 ```text
 .png
