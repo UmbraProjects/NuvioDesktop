@@ -218,6 +218,20 @@ class PlayerProgressFlushTest {
     }
 
     @Test
+    fun aStopUnderOnePercentAbandonsTheSessionUnlessItIsASeek() {
+        // Closing seconds in: the stop goes out, and the provider drops the resume point it leaves.
+        assertTrue(scrobbleStopAbandonsSession(percent = 0f, viaSeek = false))
+        assertTrue(scrobbleStopAbandonsSession(percent = 0.08f, viaSeek = false))
+        assertTrue(scrobbleStopAbandonsSession(percent = 0.99f, viaSeek = false))
+        // Real progress is kept as a resume point.
+        assertFalse(scrobbleStopAbandonsSession(percent = 1f, viaSeek = false))
+        assertFalse(scrobbleStopAbandonsSession(percent = 40f, viaSeek = false))
+        // A seek's stop is followed by a restart at once; there is nothing to drop.
+        assertFalse(scrobbleStopAbandonsSession(percent = 0.5f, viaSeek = true))
+        assertFalse(scrobbleStopAbandonsSession(percent = Float.NaN, viaSeek = false))
+    }
+
+    @Test
     fun aShortVideoEndsForRealOnlyWhenItCannotBeAPlaceholder() {
         // The 1:44 YouTube video autoplay sat at the end of (Nov 3): under two minutes reads as a placeholder clip.
         val end = { allowShort: Boolean ->

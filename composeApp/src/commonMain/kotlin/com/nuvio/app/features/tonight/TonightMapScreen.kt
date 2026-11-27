@@ -77,7 +77,9 @@ internal fun TonightMapView(
     val accent = MaterialTheme.nuvio.colors.accent
     remember { TonightMapAi.ensureLoaded() }
     val tones by TonightMapAi.tones.collectAsStateWithLifecycle()
-    val spots = remember(pool, tones) { tonightMapSpots(pool, tones) }
+    // Laid out from the pool as first shown: it grows while it gathers and re-filters every minute
+    // towards bedtime, and the titles must not jump around under the lens.
+    val spots = remember(pool.isEmpty(), tones) { tonightMapSpots(pool, tones) }
     var lensX by remember { mutableFloatStateOf(0.5f) }
     var lensY by remember { mutableFloatStateOf(0.5f) }
     var lensPlaced by remember { mutableStateOf(false) }

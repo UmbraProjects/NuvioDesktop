@@ -67,6 +67,14 @@ data class TrackingScrobbleEvent(
      * keeps it resumable. Providers without one ignore this and behave exactly as before.
      */
     val isPauseRatherThanStop: Boolean = false,
+    /**
+     * True when this `STOP` ends a session that never got anywhere: closed or paused below
+     * [TrackingScrobbleAbandonedPercent], seconds after the start (testing a source, the wrong
+     * episode). The stop is still sent, because a provider that never hears one keeps the session
+     * running on its own clock and eventually records a watch. But nothing about it is worth
+     * keeping, so providers also drop the resume point the stop leaves behind, where they can.
+     */
+    val abandonsSession: Boolean = false,
 )
 
 data class TrackingMutationResult(

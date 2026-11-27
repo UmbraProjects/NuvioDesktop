@@ -201,7 +201,9 @@ internal fun TonightCoinTossView(
     val accent = MaterialTheme.nuvio.colors.accent
     val vetoes = remember { mutableStateListOf<TonightVeto>() }
     val tossSeed = (clock.night.hashCode().toLong() shl 8) + vetoes.size
-    val current = remember(pool, vetoes.size) { tonightToss(pool, taste, vetoes, tossSeed) }
+    // Re-picked only by a veto (or once the first titles arrive): the pool grows while it gathers
+    // and re-filters every minute towards bedtime, and the coin must not flip under the viewer.
+    val current = remember(pool.isEmpty(), vetoes.size) { tonightToss(pool, taste, vetoes, tossSeed) }
     var secondsLeft by remember(current?.key) { mutableIntStateOf(TONIGHT_COIN_SECONDS) }
     var paused by remember(current?.key) { mutableStateOf(false) }
     val focus = rememberScreenFocus(Unit)

@@ -128,4 +128,26 @@ class NewznabClientUpgradeTest {
             assertEquals(listOf("75", "75", "25"), server.queries.map { it["limit"] })
         }
     }
+
+    @Test fun `unlimited fetch stops after thirty pages`() = runBlocking {
+        val fake = FakeIndexer { q ->
+            val offset = q["offset"]!!.toInt()
+            val limit = q["limit"]!!.toInt()
+            val items = (offset until offset + limit).joinToString("") { i ->
+                """<item><title>Movie.2020.1080p-G$i</title><link>http://127.0.0.1/get?id=$i</link></item>"""
+            }
+            200 to """<rss xmlns:n="urn:newznab"><channel><n:response total="10000"/>$items</channel></rss>"""
+        }
+        fake.use { server ->
+            val indexer = server.indexer(fetchResultsLimit = 0)
+            val found = NewznabClient().search(
+                indexer,
+                UsenetSearchRequest(imdbId = "tt1"),
+                NewznabCapabilities(limit = 100),
+                results = 0,
+            )
+            assertEquals(3000, found.size)
+            assertEquals(30, server.queries.size)
+        }
+    }
 }

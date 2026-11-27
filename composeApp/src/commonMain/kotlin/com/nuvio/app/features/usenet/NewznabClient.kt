@@ -358,8 +358,13 @@ class NewznabClient(
         val seenUrls = hashSetOf<String>()
         val seenPages = hashSetOf<List<Byte>>()
         var offset = 0
+        var pagesRead = 0
         while (results == 0 || offset < results) {
             currentCoroutineContext().ensureActive()
+            // "All" still stops somewhere: each page is an API hit, and an indexer (or NZBHydra)
+            // reporting thousands of matches for a title search would spend a day's allowance.
+            if (results == 0 && pagesRead >= MAX_UNLIMITED_PAGES) break
+            pagesRead++
             val pageSize = if (results == 0) limit else minOf(limit, results - offset)
             val next = (if (offset == 0) url else
                 NewznabProtocol.searchUrl(indexer, request, caps, offset, wholeSeason, byTitle) ?: break)
@@ -496,6 +501,8 @@ class NewznabClient(
         const val QUOTA_MS = 30 * 60_000L
         const val EXHAUSTED_MS = 15 * 60_000L
         const val SEASON_TTL_MS = 2 * 3600_000L
+        /** Pages an unlimited ("All") fetch reads at most: 3,000 releases at 100 a page. */
+        const val MAX_UNLIMITED_PAGES = 30
         const val MAX_SEASONS = 50
         const val SEARCH_CACHE_TTL_MS = 10 * 60_000L
         const val MAX_SEARCH_CACHE = 64

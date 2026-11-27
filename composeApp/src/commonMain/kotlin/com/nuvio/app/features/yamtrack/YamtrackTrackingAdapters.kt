@@ -156,9 +156,11 @@ internal object YamtrackScrobbleAdapter : TrackingScrobbler {
             isAnime = media.kind == TrackingMediaKind.ANIME,
         ) ?: return TrackingScrobbleResult.Declined
 
-        // Only `stop` writes durable history here, so a pause must not be reported as one.
+        // Only `stop` writes durable history here, so a pause must not be reported as one, and
+        // neither must an abandoned session (seconds in): a pause updates the live card and
+        // writes no history.
         val wireAction = if (
-            action == TrackingScrobbleAction.STOP && event.isPauseRatherThanStop
+            action == TrackingScrobbleAction.STOP && (event.isPauseRatherThanStop || event.abandonsSession)
         ) {
             TrackingScrobbleAction.PAUSE.wireValue
         } else {

@@ -39,3 +39,25 @@ remain in NuvioTV. The NuvioTV Android application is not included.
 
 The inherited project license is included in `LICENSE` (GNU GPL version 3).
 Upstream components retain their own licenses and notices as listed above.
+
+## NuvioDesktop fork changes
+
+This copy is `NuvioMedia/nuvio-usenet-engine` at `1f64198502f8455da0a2f885f1b58e43b5c3a3da` plus the
+Windows fork's own changes, which were made from 2026-11-17 on in a local checkout, carried onto 1f64198 on
+2026-11-27, and vendored here (NuvioDesktop commit df0c02b2b). They were never committed upstream; this
+directory is now their only home. To see them, diff it against a clean checkout of 1f64198.
+
+- Compressed 7z entries play: `sevenzip_decode.go` decodes LZMA/LZMA2/BCJ/BCJ2/Deflate/BZip2 (and AES)
+  folders forward through one shared decoder per entry, with a back-buffer for small backward re-reads and
+  an immediate refusal for an index read at the very end (MKV Cues, MP4 moov). `Config.MaxCompressedBytes`
+  refuses one too large to seek in. `third_party/sevenzip` gains the reader hooks and limits this needs.
+- Archive password from the app (`OpenRequest.password`, SABnzbd's `Name{{password}}` convention); the
+  NZB's own password meta still wins.
+- Fixed article grid: once posters' fixed part size is seen, a seek computes its article instead of
+  interpolating (`File.partSize`; `Config.NoPartGrid` turns it off), and `LocateMisses` counts wrong guesses.
+- Read-ahead tuning for seeks: `Config.ReadAheadRamp` (off by default), `Config.ReadAheadMiB` (in-flight
+  cap per reader), `Config.Pipeline` (bodies per connection) and `Config.AbortDrainBytes`.
+- Seek preview (`?preview=1`) and diagnostics for the app's Usenet info and mpv's stats page: per-provider
+  connection counts and connect time, the last Range request, and time to the first 4 MiB.
+- Tests for the above: `preview_test.go`, `seek_contention_test.go`, `sevenzip_decode_test.go`,
+  `sevenzip_repro_test.go`.

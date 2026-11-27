@@ -100,7 +100,18 @@ object TraktScrobbleAdapter : TrackingScrobbler {
             TrackingScrobbleAction.STOP -> if (isPauseThatStopWouldRecordAsWatched(event)) {
                 TrackingScrobbleResult.Declined
             } else {
-                TraktScrobbleRepository.scrobbleStop(item = item, progressPercent = progressPercent).copy(handled = true)
+                val result = TraktScrobbleRepository.scrobbleStop(item = item, progressPercent = progressPercent)
+                // The stop ends the session, and Trakt keeps any stop under 80% as a paused
+                // playback: for an abandoned one that is a resume point at a few seconds, shown in
+                // every Trakt app's Continue Watching. Drop it.
+                if (event.abandonsSession && result.handled) {
+                    TraktProgressRepository.discardAbandonedPlayback(
+                        contentId = catalog.contentId,
+                        seasonNumber = media.episode?.season,
+                        episodeNumber = media.episode?.number,
+                    )
+                }
+                result.copy(handled = true)
             }
             // Trakt has a pause endpoint, but nothing emits PAUSE yet and wiring it here would
             // change what this provider sends. It is added with the players that need it.

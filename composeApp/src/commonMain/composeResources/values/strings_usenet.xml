@@ -112,7 +112,7 @@
     <string name="usenet_fallback_min_score_tv">Minimum score (TV)</string>
     <string name="usenet_fallback_min_score_anime">Minimum score (Anime)</string>
     <string name="usenet_indexer_fetch_limit">Fetch limit</string>
-    <string name="usenet_indexer_fetch_limit_description">Maximum releases read from this indexer per search (each page of up to 100 is an API hit). Default follows the global setting; All reads every page (useful for NZBHydra).</string>
+    <string name="usenet_indexer_fetch_limit_description">Maximum releases read from this indexer per search (each page of up to 100 is an API hit). Default follows the global setting; All reads every page, up to 3,000 releases (useful for NZBHydra).</string>
     <string name="usenet_indexer_fetch_limit_default">Default</string>
     <string name="usenet_indexer_fetch_limit_row">Fetch %1$s</string>
     <string name="usenet_provider_tune">Tune connections</string>

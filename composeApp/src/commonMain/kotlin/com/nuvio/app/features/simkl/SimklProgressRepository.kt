@@ -6,6 +6,7 @@ import com.nuvio.app.features.addons.RawHttpResponse
 import com.nuvio.app.features.details.MetaDetails
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.profiles.ProfileRepository
+import com.nuvio.app.features.tracking.isNegligibleResumeProgress
 import com.nuvio.app.features.trakt.parseTraktIsoDateTimeToEpochMs
 import com.nuvio.app.features.watched.WatchedRepository
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
@@ -14,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +37,7 @@ data class SimklProgressUiState(
 )
 
 private const val BASE_URL = "https://api.simkl.com"
+private const val ABANDONED_SESSION_RETRY_MS = 3_000L
 
 internal object SimklProgressRepository {
     private val log = Logger.withTag("SimklProgress")
@@ -208,6 +211,63 @@ internal object SimklProgressRepository {
         log.d { "SIMKL playback session $sessionId deleted for $videoId" }
     }
 
+    /**
+     * Deletes the paused session an abandoned scrobble stop left on SIMKL (see
+     * [com.nuvio.app.features.tracking.TrackingScrobbleEvent.abandonsSession]).
+     *
+     * Only this item's sessions below the abandoned floor go, so real progress from any app stays.
+     * The session is matched the way Continue Watching reads it; a title SIMKL files under another
+     * id (some anime) is not found and its session stays, which Continue Watching ignores anyway.
+     * An empty first look is retried once, since the stop may not be listed yet. Never throws.
+     */
+    suspend fun discardAbandonedSession(
+        contentId: String,
+        seasonNumber: Int?,
+        episodeNumber: Int?,
+    ) {
+        val target = contentId.trim()
+        if (target.isBlank()) return
+        repeat(2) { attempt ->
+            if (attempt > 0) delay(ABANDONED_SESSION_RETRY_MS)
+            if (!SimklAuthRepository.hasUsableToken()) return
+            val sessions = try {
+                val url = SimklAuthRepository.appendParams("$BASE_URL/sync/playback?hide_watched=false&limit=100")
+                val response = simklRequest(method = "GET", url = url, body = "")
+                if (response.status !in 200..299) error("SIMKL /sync/playback returned ${response.status}")
+                json.decodeFromString<List<SimklPlaybackSession>>(response.body)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                log.w { "Could not list SIMKL sessions to drop an abandoned one: ${error.message}" }
+                return
+            }
+            val abandoned = sessions.filter { session ->
+                val progress = session.progress ?: return@filter false
+                if (!isNegligibleResumeProgress(progress)) return@filter false
+                val entry = session.toWatchProgressEntry() ?: return@filter false
+                entry.parentMetaId == target &&
+                    entry.seasonNumber == seasonNumber && entry.episodeNumber == episodeNumber
+            }
+            if (abandoned.isEmpty()) return@repeat
+            abandoned.forEach { session ->
+                val sessionId = session.id ?: return@forEach
+                try {
+                    val url = SimklAuthRepository.appendParams("$BASE_URL/sync/playback/$sessionId")
+                    requireSuccessfulSimklPlaybackDelete(simklRequest(method = "DELETE", url = url, body = ""), sessionId)
+                    log.d { "Dropped abandoned SIMKL session $sessionId for $target" }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    log.w { "Failed to drop abandoned SIMKL session $sessionId: ${error.message}" }
+                }
+            }
+            // The next Continue Watching read asks SIMKL again rather than serving the old list.
+            cachedPlaybackStamp = null
+            return
+        }
+        log.d { "No abandoned SIMKL session found for $target" }
+    }
+
     /** Called on disconnect: also forgets the stored watching list. */
     fun clearLocalState() {
         refreshJob?.cancel()
@@ -243,6 +303,8 @@ internal object SimklProgressRepository {
         sessionIdByVideoId.clear()
         val playbackEntries = sessions.mapNotNull { session ->
             val entry = session.toWatchProgressEntry() ?: return@mapNotNull null
+            // A session this early is no resume point (an abandoned one, here or in another app).
+            if (session.progress?.let(::isNegligibleResumeProgress) == true) return@mapNotNull null
             val pausedAtMs = session.pausedAtTimestamp?.let { parseSimklTimestamp(it) } ?: 0L
             if (entry.wasWatchedAfter(pausedAtMs)) {
                 log.d { "SIMKL playback session dropped as stale (watched after the pause): ${entry.videoId}" }

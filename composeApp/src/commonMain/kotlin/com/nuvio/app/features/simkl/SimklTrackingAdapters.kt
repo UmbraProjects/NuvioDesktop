@@ -175,8 +175,17 @@ internal object SimklScrobbleAdapter : TrackingScrobbler {
                     }
                     TrackingScrobbleResult(handled = true, confirmsWatched = recorded)
                 } else {
-                    SimklScrobbleRepository.scrobbleStop(item = item, progressPercent = progressPercent)
-                        .copy(handled = true)
+                    val result = SimklScrobbleRepository.scrobbleStop(item = item, progressPercent = progressPercent)
+                    // SIMKL keeps a stop under 80% as a paused session: for an abandoned one, a
+                    // resume point at a few seconds. Drop it once the stop has ended the session.
+                    if (event.abandonsSession && result.handled) {
+                        SimklProgressRepository.discardAbandonedSession(
+                            contentId = catalog.contentId,
+                            seasonNumber = media.episode?.season,
+                            episodeNumber = media.episode?.number,
+                        )
+                    }
+                    result.copy(handled = true)
                 }
             }
             // SIMKL's scrobble API has no pause action.

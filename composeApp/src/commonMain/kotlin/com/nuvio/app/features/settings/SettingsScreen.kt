@@ -659,12 +659,12 @@ fun SettingsScreen(
         }.collectAsStateWithLifecycle()
         val profileAvatars by AvatarRepository.avatars.collectAsStateWithLifecycle()
 
+        // On the UI thread, like Home's and the full-screen pages' calls: HomeCatalogSettingsRepository
+        // has no locking (nor does its own load), and every Homescreen toggle writes it from here.
+        // Home has loaded it by the time Settings opens, so these do no disk reads.
         LaunchedEffect(homescreenCatalogRefreshKey) {
             if (homescreenCatalogRefreshKey.isEmpty()) return@LaunchedEffect
-            val enabled = addonsUiState.addons.enabledAddons()
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                HomeCatalogSettingsRepository.syncCatalogs(enabled)
-            }
+            HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons.enabledAddons())
         }
 
         LaunchedEffect(Unit) {
@@ -672,9 +672,7 @@ fun SettingsScreen(
         }
 
         LaunchedEffect(collections) {
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-                HomeCatalogSettingsRepository.syncCollections(collections)
-            }
+            HomeCatalogSettingsRepository.syncCollections(collections)
         }
 
         var currentPage by rememberSaveable { mutableStateOf(SettingsPage.Addons.name) }

@@ -355,6 +355,13 @@ internal fun PlayerScreenRuntime.emitTrackingScrobbleStop(
     TrackingScrobbleCoordinator.launchDetached { request() }
 }
 
+/**
+ * Whether a stop at [percent] abandons its session ([TrackingScrobbleEvent.abandonsSession]).
+ * A seek's stop never does: its restart follows at once, so there is nothing to drop.
+ */
+internal fun scrobbleStopAbandonsSession(percent: Float, viaSeek: Boolean): Boolean =
+    !viaSeek && percent.isFinite() && percent < com.nuvio.app.features.tracking.TrackingScrobbleAbandonedPercent
+
 /** The stop counterpart of [prepareTrackingScrobbleStart]; see there for why this is split. */
 private fun PlayerScreenRuntime.prepareTrackingScrobbleStop(
     progressPercent: Float?,
@@ -375,6 +382,7 @@ private fun PlayerScreenRuntime.prepareTrackingScrobbleStop(
     val profileId = ProfileRepository.activeProfileId
     val positionSeconds = playbackSnapshot.positionSecondsOrNull()
     val durationSeconds = playbackSnapshot.durationSecondsOrNull()
+    val abandons = scrobbleStopAbandonsSession(percent, viaSeek)
     val request: suspend () -> Unit = {
         dispatchTrackingScrobble(
             profileId = profileId,
@@ -385,6 +393,7 @@ private fun PlayerScreenRuntime.prepareTrackingScrobbleStop(
             positionSeconds = positionSeconds,
             durationSeconds = durationSeconds,
             paused = paused,
+            abandonsSession = abandons,
         )
     }
     currentTrackingScrobbleMedia = null
@@ -403,6 +412,7 @@ private suspend fun dispatchTrackingScrobble(
     positionSeconds: Long?,
     durationSeconds: Long?,
     paused: Boolean = false,
+    abandonsSession: Boolean = false,
 ): TrackingScrobbleDispatch {
     val event = TrackingScrobbleEvent(
         media = media,
@@ -410,6 +420,7 @@ private suspend fun dispatchTrackingScrobble(
         positionSeconds = positionSeconds,
         durationSeconds = durationSeconds,
         isPauseRatherThanStop = paused,
+        abandonsSession = abandonsSession,
     )
     return if (viaSeek) {
         TrackingScrobbleCoordinator.scrobbleSeek(profileId = profileId, action = action, event = event)

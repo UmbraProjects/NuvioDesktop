@@ -121,8 +121,14 @@ internal object MdbListScrobbleAdapter : TrackingScrobbler {
                 MdbListScrobbleRepository.scrobbleStart(item, progressPercent)
             TrackingScrobbleAction.PAUSE ->
                 MdbListScrobbleRepository.scrobblePause(item, progressPercent)
+            // An abandoned session (see TrackingScrobbleEvent.abandonsSession) is ended even when
+            // paused, and then cleared: nothing seconds in is worth resuming.
+            TrackingScrobbleAction.STOP -> if (event.abandonsSession) {
+                MdbListScrobbleRepository.scrobbleStop(item, progressPercent).also { result ->
+                    if (result.handled) MdbListScrobbleRepository.scrobbleClear(item)
+                }
             // A pause keeps the session resumable; a stop ends it.
-            TrackingScrobbleAction.STOP -> if (event.isPauseRatherThanStop) {
+            } else if (event.isPauseRatherThanStop) {
                 MdbListScrobbleRepository.scrobblePause(item, progressPercent)
             } else {
                 MdbListScrobbleRepository.scrobbleStop(item, progressPercent)

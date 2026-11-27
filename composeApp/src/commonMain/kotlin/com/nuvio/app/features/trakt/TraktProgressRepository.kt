@@ -9,6 +9,7 @@ import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.tmdb.TmdbService
 import com.nuvio.app.features.tracking.ContinueWatchingSource
 import com.nuvio.app.features.tracking.ContinueWatchingSourceRepository
+import com.nuvio.app.features.tracking.isNegligibleResumeProgress
 import com.nuvio.app.features.watchprogress.ContinueWatchingPreferencesRepository
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import com.nuvio.app.features.watchprogress.WatchProgressSourceTraktHistory
@@ -44,6 +45,7 @@ import kotlinx.serialization.json.Json
 
 private const val BASE_URL = "https://api.trakt.tv"
 private const val TRAKT_COMPLETION_PERCENT_THRESHOLD = 90f
+private const val ABANDONED_PLAYBACK_RETRY_MS = 3_000L
 private const val HISTORY_PAGE_LIMIT = 1000
 private const val HISTORY_MAX_PAGES = 5
 private const val HISTORY_MAX_PAGES_ALL = 20
@@ -559,6 +561,71 @@ object TraktProgressRepository {
             }
 
         refreshNow()
+    }
+
+    /**
+     * Deletes the paused playback an abandoned scrobble stop left on Trakt (see
+     * [com.nuvio.app.features.tracking.TrackingScrobbleEvent.abandonsSession]).
+     *
+     * Only this item's playbacks below the abandoned floor go: real progress, from this app or any
+     * other, is never touched. Trakt can take a moment to list a playback it has just stored, so an
+     * empty first look is retried once. Failures are logged, not thrown: the stop has already done
+     * the part that matters, and Nuvio ignores a resume point this early anyway.
+     */
+    suspend fun discardAbandonedPlayback(
+        contentId: String,
+        seasonNumber: Int?,
+        episodeNumber: Int?,
+    ) {
+        val normalizedContentId = contentId.trim()
+        if (normalizedContentId.isBlank()) return
+        val isEpisode = seasonNumber != null && episodeNumber != null
+        repeat(2) { attempt ->
+            if (attempt > 0) delay(ABANDONED_PLAYBACK_RETRY_MS)
+            val headers = TraktAuthRepository.authorizedHeaders() ?: return
+            val items = try {
+                json.decodeFromString<List<TraktPlaybackItem>>(
+                    httpGetTextWithHeaders(
+                        url = "$BASE_URL/sync/playback/${if (isEpisode) "episodes" else "movies"}",
+                        headers = headers,
+                    ),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                log.w { "Could not list Trakt playbacks to drop an abandoned one: ${error.message}" }
+                return
+            }
+            val abandoned = items.filter { item ->
+                val progress = normalizeTraktProgressPercent(item.progress) ?: return@filter false
+                if (!isNegligibleResumeProgress(progress)) return@filter false
+                if (isEpisode) {
+                    normalizeTraktContentId(item.show?.ids, fallback = item.show?.title) == normalizedContentId &&
+                        item.episode?.season == seasonNumber && item.episode?.number == episodeNumber
+                } else {
+                    normalizeTraktContentId(item.movie?.ids, fallback = item.movie?.title) == normalizedContentId
+                }
+            }
+            if (abandoned.isEmpty()) return@repeat
+            abandoned.forEach { item ->
+                val playbackId = item.id ?: return@forEach
+                try {
+                    httpRequestRaw(
+                        method = "DELETE",
+                        url = "$BASE_URL/sync/playback/$playbackId",
+                        headers = headers,
+                        body = "",
+                    )
+                    log.d { "Dropped abandoned Trakt playback $playbackId for $normalizedContentId" }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    log.w { "Failed to drop abandoned Trakt playback $playbackId: ${error.message}" }
+                }
+            }
+            return
+        }
+        log.d { "No abandoned Trakt playback found for $normalizedContentId" }
     }
 
     /** Null when a page fails, so the caller keeps the last hidden set instead of a partial one. */
@@ -1129,7 +1196,8 @@ object TraktProgressRepository {
         if (parentMetaId.isBlank()) return null
 
         val progressPercent = normalizeTraktProgressPercent(item.progress) ?: return null
-        if (progressPercent <= 0f) return null
+        // A playback this early is no resume point (an abandoned session, here or in another app).
+        if (progressPercent <= 0f || isNegligibleResumeProgress(progressPercent)) return null
 
         return WatchProgressEntry(
             contentType = "movie",
@@ -1156,7 +1224,8 @@ object TraktProgressRepository {
         if (parentMetaId.isBlank()) return null
 
         val progressPercent = normalizeTraktProgressPercent(item.progress) ?: return null
-        if (progressPercent <= 0f) return null
+        // A playback this early is no resume point (an abandoned session, here or in another app).
+        if (progressPercent <= 0f || isNegligibleResumeProgress(progressPercent)) return null
 
         return WatchProgressEntry(
             contentType = "series",
@@ -1300,15 +1369,7 @@ object TraktProgressRepository {
         )
     }
 
-    private fun normalizeTraktProgressPercent(rawProgress: Float?): Float? {
-        val value = rawProgress ?: return null
-        if (!value.isFinite()) return null
-        val normalized = when {
-            value <= 1f -> value * 100f
-            else -> value
-        }
-        return normalized.coerceIn(0f, 100f)
-    }
+    private fun normalizeTraktProgressPercent(rawProgress: Float?): Float? = traktProgressPercent(rawProgress)
 
     private fun recentWatchCutoffMs(): Long? {
         val daysCap = normalizeTraktContinueWatchingDaysCap(
@@ -1445,6 +1506,19 @@ private fun RawHttpResponse.headerInt(name: String): Int? =
         ?.substringBefore(',')
         ?.trim()
         ?.toIntOrNull()
+
+/**
+ * A Trakt playback's `progress`, which Trakt always gives as a percentage (0-100).
+ *
+ * It used to be read as a fraction when 1 or less. Nothing Trakt sends is a fraction, and once a
+ * stop under 1% was sent (an abandoned session) that read 0.5% back as 50%, and 0.9% as 90%:
+ * finished.
+ */
+internal fun traktProgressPercent(rawProgress: Float?): Float? {
+    val value = rawProgress ?: return null
+    if (!value.isFinite()) return null
+    return value.coerceIn(0f, 100f)
+}
 
 @Serializable
 private data class TraktPlaybackItem(

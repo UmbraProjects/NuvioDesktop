@@ -5,6 +5,7 @@ import com.nuvio.app.core.perf.PerfTelemetry
 import com.nuvio.app.features.addons.httpRequestRaw
 import com.nuvio.app.features.details.MetaDetailsRepository
 import com.nuvio.app.features.trakt.parseTraktIsoDateTimeToEpochMs
+import com.nuvio.app.features.tracking.isNegligibleResumeProgress
 import com.nuvio.app.features.watchprogress.WatchProgressEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -194,6 +195,8 @@ internal object MdbListProgressRepository {
         // `progress` arrives as a decimal string ("73.80"), matching the field that rejects
         // full-precision floats on the way in.
         val progressPercent = progress?.toFloatOrNull() ?: return null
+        // A session this early is no resume point (an abandoned one, here or in another app).
+        if (isNegligibleResumeProgress(progressPercent)) return null
         val updatedMs = updatedAtTs?.let { it * 1000L }
             ?: updatedAt?.let(::parseTraktIsoDateTimeToEpochMs)
             ?: System.currentTimeMillis()
