@@ -84,7 +84,17 @@ import com.nuvio.app.features.player.primarySubtitleTargetsForSettings
 import com.nuvio.app.features.player.preferredMpvMediaTitle
 import com.nuvio.app.features.player.resolvePreferredAudioLanguageTargets
 import com.nuvio.app.features.player.toStorageHexString
+import com.nuvio.app.features.usenet.UsenetEngine
+import com.nuvio.app.features.usenet.UsenetEngineUrls
+import com.nuvio.app.features.usenet.formatUsenetMpvDiagnostics
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -115,6 +125,8 @@ internal class NativePlayerController(
     private val host: NativePlayerHost,
 ) : PlayerEngineController {
     private var diagnosticsOverlayEnabled = false
+    private val usenetDiagnosticsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var usenetDiagnosticsJob: Job? = null
     private data class AnimeShaderChoice(
         val mode: DesktopAnimeMode,
         val customShaderPath: String = "",
@@ -470,11 +482,19 @@ internal class NativePlayerController(
                 // Live TV over HLS with subtitles plays a local copy of its master playlist so the
                 // provider's repeated subtitle cues can be dropped (IptvHlsSubtitleServer). One
                 // playlist fetch, made here off the UI thread and outside the lifecycle lock.
-                val mpvSourceUrl = if (com.nuvio.app.features.iptv.IptvPlaybackSession.isIptvUrl(pending.sourceUrl)) {
+                val isIptv = com.nuvio.app.features.iptv.IptvPlaybackSession.isIptvUrl(pending.sourceUrl)
+                val mpvSourceUrl = if (isIptv) {
                     com.nuvio.app.features.iptv.IptvHlsSubtitleServer.playbackUrlFor(pending.sourceUrl, pending.headerLines)
                 } else {
                     // fork:faststream-optin - the loopback copy while FastStream is on for this stream.
                     com.nuvio.app.features.youtube.YouTubeFastStream.playbackUrl(pending.sourceUrl)
+                }
+                // ClearKey DASH channels (inline kid:key or remote license URL) resolve off the UI
+                // thread so FFmpeg's dash demuxer receives cenc_decryption_key before loadfile.
+                val iptvClearKeyOptions = if (isIptv) {
+                    com.nuvio.app.features.iptv.resolveIptvClearKeyMpvOptions(pending.sourceUrl, pending.headerLines)
+                } else {
+                    emptyList()
                 }
                 val mpvAudioUrl = com.nuvio.app.features.youtube.YouTubeFastStream.playbackAudio(pending.sourceAudioUrl)
                 synchronized(nativeProcessLifecycleLock) {
@@ -537,7 +557,7 @@ internal class NativePlayerController(
                             nvidiaRtxHdrEnabled = pending.nvidiaRtxHdrEnabled,
                             isAnimeContent = pending.isAnimeContent,
                             animeSvpFilter = pending.animeSvpFilter,
-                            extraMpvOptions = pending.extraMpvOptions.toTypedArray(),
+                            extraMpvOptions = (pending.extraMpvOptions + iptvClearKeyOptions).toTypedArray(),
                             eventSink = generationEventSink,
                         )
                         if (newHandle == 0L) error("Native player did not return a handle.")
@@ -650,6 +670,7 @@ internal class NativePlayerController(
             NativePlayerBridge.forceVideoRedraw(current)
         }
         updateControls(controlsState)
+        syncUsenetDiagnosticsPoller()
     }
 
     private fun takePlayerHandle(): Long = synchronized(handleLock) {
@@ -2021,6 +2042,9 @@ internal class NativePlayerController(
 
     fun dispose() {
         disposed = true
+        usenetDiagnosticsJob?.cancel()
+        usenetDiagnosticsJob = null
+        usenetDiagnosticsScope.cancel()
         autoFastStreamTimer.stop()
         attachGeneration.incrementAndGet()
         pendingSource?.takeIf { it.fastStreamEligible }?.let { closing ->
@@ -2240,6 +2264,43 @@ internal class NativePlayerController(
         if (diagnosticsOverlayEnabled == enabled) return
         NativePlayerBridge.toggleStatsOverlay(current)
         diagnosticsOverlayEnabled = enabled
+        syncUsenetDiagnosticsPoller()
+    }
+
+    /**
+     * Feeds live Usenet session diagnostics into mpv's `user-data/nuvio-usenet` property (read by
+     * `player-scripts/stats.lua`) only while the diagnostics overlay is open on a Usenet session.
+     */
+    private fun syncUsenetDiagnosticsPoller() {
+        usenetDiagnosticsJob?.cancel()
+        usenetDiagnosticsJob = null
+        val (current, enabled, sourceUrl) = synchronized(handleLock) {
+            Triple(handle, diagnosticsOverlayEnabled, livePending?.sourceUrl)
+        }
+        if (current == 0L) return
+        val usenetUrl = sourceUrl?.takeIf { UsenetEngineUrls.isSession(it) }
+        if (disposed || !enabled || usenetUrl == null) {
+            NativePlayerBridge.setMpvProperty(current, "user-data/nuvio-usenet", "")
+            return
+        }
+        usenetDiagnosticsJob = usenetDiagnosticsScope.launch {
+            var lastMissing = -1L
+            var lastErrors = -1L
+            while (isActive && !disposed) {
+                val activeHandle = synchronized(handleLock) {
+                    if (diagnosticsOverlayEnabled && handle == current && livePending?.sourceUrl == usenetUrl) current else 0L
+                }
+                if (activeHandle == 0L) break
+                val live = UsenetEngine.liveStats(usenetUrl)
+                if (live != null) {
+                    val payload = formatUsenetMpvDiagnostics(live, lastMissing, lastErrors)
+                    NativePlayerBridge.setMpvProperty(activeHandle, "user-data/nuvio-usenet", payload)
+                    lastMissing = live.missing
+                    lastErrors = live.errors
+                }
+                delay(1_000L)
+            }
+        }
     }
 
     /**

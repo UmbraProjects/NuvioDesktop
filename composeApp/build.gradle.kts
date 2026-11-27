@@ -962,7 +962,7 @@ val usenetSourceDir = providers.gradleProperty("nuvio.usenet.sourceDir").orNull
     ?.takeIf { it.isNotBlank() }
     ?.let(::File)
     ?: rootProject.projectDir.resolve("../nuvio-usenet-engine")
-val usenetExpectedCommit = "e4b0717ae5bfe44e76ca8c7662022bff326f3806"
+val usenetExpectedCommit = "1f64198502f8455da0a2f885f1b58e43b5c3a3da"
 val usenetGoRoot = nuvioEngineMsys2Root.resolve("lib/go")
 val usenetOutput = layout.buildDirectory.file("native/windows/nuvio-usenet.exe")
 

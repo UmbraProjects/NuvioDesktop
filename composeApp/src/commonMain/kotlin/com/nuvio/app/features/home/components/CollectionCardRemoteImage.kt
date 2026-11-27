@@ -8,8 +8,8 @@ import androidx.compose.ui.layout.ContentScale
  * @param staticImageUrl a non-animated cover for the same folder, when one exists. Desktop shows it
  *   immediately and swaps to the animation once its frames are decoded, because decoding a 73-frame
  *   GIF takes ~700ms and the card is otherwise blank for that whole time on a cold start.
- * @param playAnimation false holds an animated card on its first frame without leaving the
- *   animated path, so flipping it back on (focus-only playback) starts from the same picture.
+ * @param playAnimation false keeps an unfocused card on [staticImageUrl] when one exists, or on
+ *   the animation's first frame when the folder has no separate cover.
  */
 @Composable
 internal expect fun CollectionCardRemoteImage(

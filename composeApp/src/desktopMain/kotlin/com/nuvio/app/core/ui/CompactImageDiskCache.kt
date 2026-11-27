@@ -50,6 +50,9 @@ internal class CompactImageDiskCache(
     private var initialized = false
     private var closed = false
     private var hasJournalErrors = false
+
+    /** Set when the replayed journal's header was not Coil's own; rewritten so Coil can read it. */
+    private var journalHeaderStale = false
     private var totalSize = 0L
     private var redundantOpCount = 0
     private var journalWriter: OutputStreamWriter? = null
@@ -226,12 +229,11 @@ internal class CompactImageDiskCache(
         if (Files.exists(journalFile)) {
             val replayed = runCatching { replayJournalLocked() }.isSuccess
             if (replayed) {
+                // Writer first: the trim below records its REMOVEs, or the trimmed entries come back
+                // from the journal on the next launch and are trimmed (and miscounted) all over again.
+                openJournalWriterLocked(append = true)
                 trimToSizeLocked()
-                if (needsJournalRebuild()) {
-                    rebuildJournalLocked()
-                } else {
-                    openJournalWriterLocked(append = true)
-                }
+                if (needsJournalRebuild() || journalHeaderStale || hasJournalErrors) rebuildJournalLocked()
                 return
             }
             // Corrupt journal: reset in-memory index and start fresh without touching entry files.
@@ -257,6 +259,7 @@ internal class CompactImageDiskCache(
             ) {
                 throw IOException("Unexpected journal header: [$magic, $version, $appVersion, $valueCount, $blank]")
             }
+            journalHeaderStale = appVersion != AppVersionText
 
             while (true) {
                 val line = reader.readLine() ?: break
@@ -414,6 +417,7 @@ internal class CompactImageDiskCache(
 
         redundantOpCount = 0
         hasJournalErrors = false
+        journalHeaderStale = false
         openJournalWriterLocked(append = true)
     }
 
@@ -484,13 +488,16 @@ internal class CompactImageDiskCache(
         }
 
         if (success) {
+            var movedMeta = false
+            val previousMetaLen = metaLen[slot]
             try {
                 if (editor.writtenMeta && Files.exists(dirtyMeta)) {
                     moveReplace(dirtyMeta, cleanMeta)
                     val newLen = Files.size(cleanMeta)
-                    if (wasReadable) totalSize -= metaLen[slot]
+                    if (wasReadable) totalSize -= previousMetaLen
                     metaLen[slot] = newLen
                     totalSize += newLen
+                    movedMeta = true
                 } else {
                     deleteQuietly(dirtyMeta)
                 }
@@ -504,6 +511,11 @@ internal class CompactImageDiskCache(
                     deleteQuietly(dirtyData)
                 }
             } catch (_: IOException) {
+                if (movedMeta && !wasReadable) {
+                    totalSize -= metaLen[slot]
+                    metaLen[slot] = previousMetaLen
+                    deleteQuietly(cleanMeta)
+                }
                 completeAbortLocked(slot, hex, wasReadable, dirtyMeta, dirtyData)
                 return
             }
@@ -856,7 +868,10 @@ internal class CompactImageDiskCache(
         private const val JournalBackupName = "journal.bkp"
         private const val JournalMagic = "libcore.io.DiskLruCache"
         private const val JournalVersion = "1"
-        private const val AppVersionText = "2"
+        // Coil's RealDiskCache opens its DiskLruCache with appVersion 3 and rejects (and wipes) a
+        // journal with any other, so write the same: an older build, or Nick's fork, sharing this
+        // data folder then keeps the cache instead of clearing it.
+        private const val AppVersionText = "3"
         private const val ValueCountText = "2"
         private const val JournalCompactThreshold = 2_000
 

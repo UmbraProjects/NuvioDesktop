@@ -4928,6 +4928,7 @@
   <string name="streams_sort_highest_quality">En yüksek kalite</string>
   <string name="streams_sort_best_video_hdr_dv">En iyi video (HDR/DV)</string>
   <string name="streams_sort_best_audio">En iyi ses</string>
+  <string name="streams_sort_preferred_language">Önce tercih edilen dil</string>
   <string name="streams_sort_cached_first">Önbellektekiler önce</string>
   <string name="streams_single_column">Tek sütun</string>
   <string name="streams_two_columns">İki sütun</string>

@@ -27,15 +27,22 @@ import kotlin.math.sin
  * PanelRingMathTest.
  */
 
-/** One place the ring can go: an entry of the navigation, or Settings, which always closes it. */
+/** One place the ring can go: an entry of the navigation, Settings, or optionally Close app. */
 sealed interface PanelRingSlot {
     data class Nav(val entry: NavBarEntry) : PanelRingSlot
     data object Settings : PanelRingSlot
+    data object CloseApp : PanelRingSlot
 }
 
-/** The ring's slots: the navigation's entries as they show now, in its order, then Settings. */
-fun panelRingSlots(navEntries: List<NavBarEntry>): List<PanelRingSlot> =
-    navEntries.map { PanelRingSlot.Nav(it) } + PanelRingSlot.Settings
+/** The ring's slots: the navigation's entries as they show now, in its order, then Settings (and Close app if enabled). */
+fun panelRingSlots(
+    navEntries: List<NavBarEntry>,
+    includeCloseApp: Boolean = false,
+): List<PanelRingSlot> = buildList {
+    navEntries.forEach { add(PanelRingSlot.Nav(it)) }
+    add(PanelRingSlot.Settings)
+    if (includeCloseApp) add(PanelRingSlot.CloseApp)
+}
 
 /** What opened the ring. It decides what closes it and whether the slots show numbers. */
 enum class PanelRingSource { Keyboard, Mouse, Gamepad }

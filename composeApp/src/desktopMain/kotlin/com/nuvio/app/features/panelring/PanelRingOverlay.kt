@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.SportsEsports
@@ -113,7 +114,11 @@ private fun rememberRingAccent(): Color {
 @Composable
 internal fun PanelRingOverlay(window: ComposeWindow) {
     val entries = rememberNavBarEntries()
-    val slots = remember(entries) { panelRingSlots(entries) }
+    val includeCloseApp by remember {
+        GamepadSettingsRepository.ensureLoaded()
+        GamepadSettingsRepository.ringCloseAppState
+    }.collectAsState()
+    val slots = remember(entries, includeCloseApp) { panelRingSlots(entries, includeCloseApp = includeCloseApp) }
     SideEffect { PanelRingController.slots = slots }
 
     val state by PanelRingController.state.collectAsState()
@@ -560,6 +565,7 @@ private fun SlotIcon(slot: PanelRingSlot, tint: Color, size: Dp) {
     val label = slotLabel(slot)
     when (slot) {
         PanelRingSlot.Settings -> Icon(Icons.Rounded.Settings, label, modifier, tint)
+        PanelRingSlot.CloseApp -> Icon(Icons.Rounded.PowerSettingsNew, label, modifier, tint)
         is PanelRingSlot.Nav -> when (slot.entry) {
             NavBarEntry.Home -> Icon(Icons.Filled.Home, label, modifier, tint)
             NavBarEntry.Search -> Icon(painterResource(Res.drawable.sidebar_search), label, modifier, tint)
@@ -578,6 +584,7 @@ private fun SlotIcon(slot: PanelRingSlot, tint: Color, size: Dp) {
 @Composable
 private fun slotLabel(slot: PanelRingSlot): String = when (slot) {
     PanelRingSlot.Settings -> stringResource(Res.string.compose_settings_page_root)
+    PanelRingSlot.CloseApp -> stringResource(Res.string.panel_ring_close_app)
     is PanelRingSlot.Nav -> when (slot.entry) {
         NavBarEntry.Home -> stringResource(Res.string.compose_nav_home)
         NavBarEntry.Search -> stringResource(Res.string.compose_nav_search)

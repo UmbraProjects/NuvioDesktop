@@ -64,6 +64,7 @@ import com.nuvio.app.features.input.GamepadButton
 import com.nuvio.app.features.input.gamepadBindingsVersion
 import com.nuvio.app.features.input.gamepadButtonTargetIds
 import com.nuvio.app.features.input.gamepadTargetChoices
+import com.nuvio.app.features.input.panelRingCloseAppState
 import com.nuvio.app.features.input.panelRingMouseState
 import com.nuvio.app.features.input.ControllerLightBar
 import com.nuvio.app.features.input.controllerLightBarState
@@ -95,6 +96,7 @@ import com.nuvio.app.features.input.panelRingSizeState
 import com.nuvio.app.features.input.resetGamepadButton
 import com.nuvio.app.features.input.resetGamepadButtons
 import com.nuvio.app.features.input.setGamepadButtonTarget
+import com.nuvio.app.features.input.setPanelRingCloseApp
 import com.nuvio.app.features.input.setPanelRingMouse
 import com.nuvio.app.features.input.setPanelRingPadButton
 import com.nuvio.app.features.input.setPanelRingSize
@@ -659,6 +661,7 @@ private fun PanelRingSection(isTablet: Boolean) {
     LaunchedEffect(Unit) { ensureGamepadSettingsLoaded() }
     val padButton by panelRingPadButtonState().collectAsState()
     val mouse by panelRingMouseState().collectAsState()
+    val closeApp by panelRingCloseAppState().collectAsState()
     val size by panelRingSizeState().collectAsState()
     SettingsSection(
         title = stringResource(Res.string.panel_ring_settings_section),
@@ -684,6 +687,14 @@ private fun PanelRingSection(isTablet: Boolean) {
                 checked = mouse,
                 isTablet = isTablet,
                 onCheckedChange = { setPanelRingMouse(it) },
+            )
+            SettingsGroupDivider(isTablet = isTablet)
+            SettingsSwitchRow(
+                title = stringResource(Res.string.panel_ring_close_app),
+                description = stringResource(Res.string.panel_ring_close_app_description),
+                checked = closeApp,
+                isTablet = isTablet,
+                onCheckedChange = { setPanelRingCloseApp(it) },
             )
             SettingsGroupDivider(isTablet = isTablet)
             SettingsChoiceRow(

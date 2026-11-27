@@ -3,11 +3,13 @@ package com.nuvio.app.features.iptv
 object IptvStreamFormat {
     const val TS = "ts"
     const val HLS = "m3u8"
+    const val DASH = "mpd"
 }
 
 /** One way to open a channel. The player tries them in order (`ts` ⇄ `m3u8` fallback). */
 data class IptvStreamCandidate(val url: String, val format: String) {
     val isHls: Boolean get() = format == IptvStreamFormat.HLS
+    val isDash: Boolean get() = format == IptvStreamFormat.DASH
 }
 
 /**
@@ -40,6 +42,9 @@ fun iptvStreamCandidates(
     if (playlist.type == IptvPlaylistType.Stalker) return listOf(StalkerUrls.candidate(url, playlist))
     val path = url.substringBefore('?').substringBefore('#')
     return when {
+        path.endsWith(".mpd", ignoreCase = true) || !channel.drmScheme.isNullOrBlank() -> listOf(
+            IptvStreamCandidate(url, IptvStreamFormat.DASH),
+        )
         path.endsWith(".m3u8", ignoreCase = true) -> listOf(
             IptvStreamCandidate(url, IptvStreamFormat.HLS),
             IptvStreamCandidate(swapExtension(url, path, ".m3u8", ".ts"), IptvStreamFormat.TS),
@@ -60,8 +65,11 @@ fun iptvStreamCandidates(
 private fun swapExtension(url: String, path: String, from: String, to: String): String =
     path.dropLast(from.length) + to + url.substring(path.length)
 
-/** HTTP headers a channel asks for (M3U `#EXTVLCOPT`), with the IPTV user agent as the default. */
+/** HTTP headers a channel asks for (`#EXTVLCOPT`, `#EXTHTTP`, `#KODIPROP`, `|Header=Value`), with the IPTV user agent as the default. */
 fun IptvChannel.requestHeaders(): Map<String, String> = buildMap {
+    headers?.forEach { (k, v) ->
+        if (k.isNotBlank() && v.isNotBlank()) put(k, v)
+    }
     put("User-Agent", userAgent?.takeIf { it.isNotBlank() } ?: IPTV_USER_AGENT)
     referrer?.takeIf { it.isNotBlank() }?.let { put("Referer", it) }
 }

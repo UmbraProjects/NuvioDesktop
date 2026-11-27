@@ -375,8 +375,25 @@ fun StreamsScreen(
     // Only the picker panel offers two columns; the full-screen layouts stay a single list.
     val twoColumns = isPanel && panelTwoColumnsFit && streamBadgeSettings.listTwoColumns
     // Applied last, over whichever list the chip selected, so it also re-orders the HTPC tab.
-    val displayGroups = remember(filterGroups, listSortOrder, listCachedFirst) {
-        StreamListSort.apply(filterGroups, listSortOrder, listCachedFirst)
+    // Settings > Playback's audio languages, read only for the Preferred language sort.
+    val listSortLanguages = remember(listSortOrder, parentMetaId, type, isEpisode) {
+        if (listSortOrder == StreamListSortOrder.LANGUAGE) {
+            StreamScoreContexts.forPlayback(
+                isEpisode = isEpisode,
+                contentId = parentMetaId,
+                contentType = type,
+            ).preferredLanguages
+        } else {
+            emptyList()
+        }
+    }
+    val displayGroups = remember(filterGroups, listSortOrder, listCachedFirst, listSortLanguages) {
+        StreamListSort.apply(
+            groups = filterGroups,
+            order = listSortOrder,
+            cachedFirst = listCachedFirst,
+            preferredLanguages = listSortLanguages,
+        )
     }
     val selectableStreams = remember(displayGroups, debridSettings.canResolvePlayableLinks) {
         orderedStreams(displayGroups)

@@ -6073,6 +6073,43 @@ const moveKeyboardEpisodeStream = delta => {
   renderEpisodeStreams();
 };
 
+// Left/Right on a source list steps through its addon chips (a TV remote has no other way to
+// reach them). Returns the neighbouring chip's id, or null at either end of the row.
+const steppedFilterId = (filters, selectedId, delta) => {
+  const list = normalizeItems(filters);
+  if (list.length < 2) return null;
+  const ids = list.map(filter => String(filter.id || ""));
+  const at = Math.max(0, ids.indexOf(String(selectedId || "")));
+  const next = at + delta;
+  return next >= 0 && next < ids.length ? ids[next] : null;
+};
+
+const revealSelectedFilterChip = container => {
+  const chip = container && container.querySelector(".filter-chip.selected");
+  if (chip) chip.scrollIntoView({ block: "nearest", inline: "nearest" });
+};
+
+const stepKeyboardSourceFilter = delta => {
+  const next = steppedFilterId(state.sourceFilters, sourceFilterId, delta);
+  if (next == null) return;
+  sourceFilterId = next;
+  keyboardSourceIndex = 0;
+  pinSourceListTop();
+  renderSourceModal();
+  revealSelectedFilterChip(sourceFilterList);
+};
+
+// False at the first chip, so Left there can still go back to the episode list.
+const stepKeyboardEpisodeStreamFilter = delta => {
+  const next = steppedFilterId(state.episodeStreamFilters, episodeStreamFilterId, delta);
+  if (next == null) return false;
+  episodeStreamFilterId = next;
+  keyboardEpisodeStreamIndex = 0;
+  renderEpisodeStreams();
+  revealSelectedFilterChip(episodeStreamFilterList);
+  return true;
+};
+
 const moveKeyboardSeason = delta => {
   const seasons = normalizeItems(state.episodeSeasons);
   if (seasons.length === 0) return;
@@ -9105,6 +9142,8 @@ window.nuvioHandleKeyboardPanelKey = code => {
   if (keyboardPanelMode === "sources") {
     if (code === "ArrowUp") moveKeyboardSource(-1);
     if (code === "ArrowDown") moveKeyboardSource(1);
+    if (code === "ArrowLeft") stepKeyboardSourceFilter(-1);
+    if (code === "ArrowRight") stepKeyboardSourceFilter(1);
     if (code === "Enter") {
       const item = sourceVirtualItems[keyboardSourceIndex];
       if (item) send("selectSource", Number(item.index) || 0);
@@ -9115,7 +9154,8 @@ window.nuvioHandleKeyboardPanelKey = code => {
     if (keyboardEpisodeShowingStreams) {
       if (code === "ArrowUp") moveKeyboardEpisodeStream(-1);
       if (code === "ArrowDown") moveKeyboardEpisodeStream(1);
-      if (code === "ArrowLeft") send("backToEpisodes", 0);
+      if (code === "ArrowLeft" && !stepKeyboardEpisodeStreamFilter(-1)) send("backToEpisodes", 0);
+      if (code === "ArrowRight") stepKeyboardEpisodeStreamFilter(1);
       if (code === "Enter") {
         const item = visibleKeyboardEpisodeStreams()[keyboardEpisodeStreamIndex];
         if (item) send("selectEpisodeStream", Number(item.index) || 0);

@@ -281,43 +281,34 @@ fun MetaDetailsScreen(
         MetaScreenSettingsRepository.uiState
     }.collectAsStateWithLifecycle()
     val homeSettingsUiState by HomeCatalogSettingsRepository.uiState.collectAsStateWithLifecycle()
-    val traktAuthUiState by remember {
-        TraktAuthRepository.ensureLoaded()
-        TraktAuthRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val traktSettingsUiState by remember {
-        TraktSettingsRepository.ensureLoaded()
-        TraktSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val tmdbSettingsUiState by remember {
-        TmdbSettingsRepository.ensureLoaded()
-        TmdbSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val libraryUiState by remember {
-        LibraryRepository.ensureLoaded()
-        LibraryRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val watchedUiState by remember {
-        WatchedRepository.ensureLoaded()
-        WatchedRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val watchProgressUiState by remember {
-        WatchProgressRepository.ensureLoaded()
-        WatchProgressRepository.uiState
-    }.collectAsStateWithLifecycle()
+    // Load heavy / PREWARM_AFTER_HOME stores (nuvio_library, nuvio_local_library, nuvio_downloads,
+    // nuvio_trakt_library, nuvio_simkl_list_cache) off the first composition frame so opening
+    // Details never blocks the UI thread on disk reads or evicted stores.
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            TraktAuthRepository.ensureLoaded()
+            TraktSettingsRepository.ensureLoaded()
+            TmdbSettingsRepository.ensureLoaded()
+            LibraryRepository.ensureLoaded()
+            WatchedRepository.ensureLoaded()
+            WatchProgressRepository.ensureLoaded()
+            com.nuvio.app.features.tracking.TrackingRatingSourceRepository.ensureLoaded()
+            LocalLibraryRepository.ensureLoaded()
+            DownloadsRepository.ensureLoaded()
+            DiscoverAiSettingsRepository.ensureLoaded()
+            TraktCommentsSettings.ensureLoaded()
+        }
+    }
+    val traktAuthUiState by TraktAuthRepository.uiState.collectAsStateWithLifecycle()
+    val traktSettingsUiState by TraktSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val tmdbSettingsUiState by TmdbSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val libraryUiState by LibraryRepository.uiState.collectAsStateWithLifecycle()
+    val watchedUiState by WatchedRepository.uiState.collectAsStateWithLifecycle()
+    val watchProgressUiState by WatchProgressRepository.uiState.collectAsStateWithLifecycle()
     val connectedTrackingProviders by TrackingProviderRegistry.connectedProviderIds.collectAsStateWithLifecycle()
-    val ratingSource by remember {
-        com.nuvio.app.features.tracking.TrackingRatingSourceRepository.ensureLoaded()
-        com.nuvio.app.features.tracking.TrackingRatingSourceRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val localLibraryUiState by remember {
-        LocalLibraryRepository.ensureLoaded()
-        LocalLibraryRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val downloadsUiState by remember {
-        DownloadsRepository.ensureLoaded()
-        DownloadsRepository.uiState
-    }.collectAsStateWithLifecycle()
+    val ratingSource by com.nuvio.app.features.tracking.TrackingRatingSourceRepository.uiState.collectAsStateWithLifecycle()
+    val localLibraryUiState by LocalLibraryRepository.uiState.collectAsStateWithLifecycle()
+    val downloadsUiState by DownloadsRepository.uiState.collectAsStateWithLifecycle()
     val networkStatusUiState by NetworkStatusRepository.uiState.collectAsStateWithLifecycle()
     var autoLoadAttempted by remember(type, id) { mutableStateOf(false) }
     var randomPlayAutoPlayHandled by remember(type, id, autoPlayOnLoad) { mutableStateOf(false) }
@@ -329,14 +320,8 @@ fun MetaDetailsScreen(
     // The recap panel's boundary, and its open/closed state in one value: a recap is entirely
     // described by where it stops.
     var recapBoundary by remember(type, id) { mutableStateOf<RecapBoundary?>(null) }
-    val recapSettings by remember {
-        DiscoverAiSettingsRepository.ensureLoaded()
-        DiscoverAiSettingsRepository.uiState
-    }.collectAsStateWithLifecycle()
-    val commentsEnabled by remember {
-        TraktCommentsSettings.ensureLoaded()
-        TraktCommentsSettings.enabled
-    }.collectAsStateWithLifecycle()
+    val recapSettings by DiscoverAiSettingsRepository.uiState.collectAsStateWithLifecycle()
+    val commentsEnabled by TraktCommentsSettings.enabled.collectAsStateWithLifecycle()
     var comments by remember(type, id) { mutableStateOf<List<TraktCommentReview>>(emptyList()) }
     var commentsCurrentPage by remember(type, id) { mutableIntStateOf(0) }
     var commentsPageCount by remember(type, id) { mutableIntStateOf(0) }

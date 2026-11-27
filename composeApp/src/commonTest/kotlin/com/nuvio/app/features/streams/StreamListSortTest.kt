@@ -225,4 +225,50 @@ class StreamListSortTest {
         assertEquals(listOf("a2-cached", "a1", "notice", "b1-cached", "b2"), names(sorted))
         assertSame(groups[1], sorted[1])
     }
+
+    @Test
+    fun `preferred language first puts the first preferred language on top, then the next, then Multi`() {
+        val sorted = StreamListSort.apply(
+            listOf(
+                group(
+                    "A",
+                    stream("A", "Movie.2024.2160p.WEB-DL-GRP", size = 20 * gb),
+                    stream("A", "Movie.2024.1080p.FRENCH.WEB-DL-GRP", size = 4 * gb),
+                    stream("A", "Movie.2024.1080p.MULTI.WEB-DL-GRP", size = 6 * gb),
+                ),
+                group(
+                    "B",
+                    stream("B", "Movie.2024.720p.ITA.WEB-DL-GRP", size = 2 * gb),
+                    stream("B", "Movie.2024.2160p.ITA.WEB-DL-GRP", size = 18 * gb),
+                ),
+            ),
+            StreamListSortOrder.LANGUAGE,
+            preferredLanguages = listOf("it", "fr"),
+        )
+        assertEquals(
+            listOf(
+                "Movie.2024.2160p.ITA.WEB-DL-GRP",
+                "Movie.2024.720p.ITA.WEB-DL-GRP",
+                "Movie.2024.1080p.FRENCH.WEB-DL-GRP",
+                "Movie.2024.1080p.MULTI.WEB-DL-GRP",
+                "Movie.2024.2160p.WEB-DL-GRP",
+            ),
+            names(sorted),
+        )
+    }
+
+    @Test
+    fun `preferred language matches a regional setting by its language`() {
+        val brazilian = StreamTraitDetector.detect(stream("A", "Movie.2024.1080p.PORTUGUESE.WEB-DL-GRP"))
+        val english = StreamTraitDetector.detect(stream("A", "Movie.2024.1080p.WEB-DL-GRP"))
+        assertEquals(0, StreamListSort.languageRank(brazilian, listOf("pt-br")))
+        assertEquals(2, StreamListSort.languageRank(english, listOf("pt-br")))
+    }
+
+    @Test
+    fun `preferred language sort keeps the player panel ordinals of the older orders`() {
+        // The HTML sources panel sends the sort by ordinal; a new order must not shift the old ones.
+        assertEquals(5, StreamListSortOrder.AUDIO.ordinal)
+        assertEquals(StreamListSortOrder.entries.last(), StreamListSortOrder.LANGUAGE)
+    }
 }

@@ -4929,6 +4929,7 @@
   <string name="streams_sort_highest_quality">Høyeste kvalitet</string>
   <string name="streams_sort_best_video_hdr_dv">Beste video (HDR/DV)</string>
   <string name="streams_sort_best_audio">Beste lyd</string>
+  <string name="streams_sort_preferred_language">Foretrukket språk først</string>
   <string name="streams_sort_cached_first">Bufret først</string>
   <string name="streams_single_column">Én kolonne</string>
   <string name="streams_two_columns">To kolonner</string>

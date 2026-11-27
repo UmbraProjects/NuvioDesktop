@@ -4933,6 +4933,7 @@
     <string name="streams_sort_highest_quality">Mayor calidad</string>
     <string name="streams_sort_best_video_hdr_dv">Mejor video (HDR/DV)</string>
     <string name="streams_sort_best_audio">Mejor audio</string>
+    <string name="streams_sort_preferred_language">Idioma preferido primero</string>
     <string name="streams_sort_cached_first">En caché primero</string>
     <string name="streams_single_column">Una columna</string>
     <string name="streams_two_columns">Dos columnas</string>

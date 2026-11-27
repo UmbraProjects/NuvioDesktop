@@ -413,6 +413,43 @@ class HomeScreenTest {
     }
 
     @Test
+    fun `home next up seed keeps the episode just rewatched beside the furthest one`() {
+        // The whole show was marked watched; episode 3 was then watched again.
+        val finale = watchedItem(id = "show", season = 1, episode = 9, markedAtEpochMs = 1_000L)
+        val rewatched = watchedItem(id = "show", season = 1, episode = 3, markedAtEpochMs = 5_000L)
+        val inOrder = watchedItem(id = "other", season = 2, episode = 4, markedAtEpochMs = 4_000L)
+
+        val result = buildHomeNextUpSeedCandidates(
+            progressEntries = emptyList(),
+            watchedItems = listOf(finale, rewatched, inOrder),
+            isTraktProgressActive = false,
+            preferFurthestEpisode = true,
+            nowEpochMs = 6_000L,
+        )
+
+        val show = result.single { it.content.id == "show" }
+        assertEquals(1 to 9, show.seasonNumber to show.episodeNumber)
+        assertEquals(1 to 3, show.rewatchFallback?.let { it.seasonNumber to it.episodeNumber })
+        assertEquals(1 to 3, show.seedKey)
+        assertEquals(5_000L, show.latestActivityEpochMs)
+        // Most recent activity sorts first.
+        assertEquals("show", result.first().content.id)
+        val other = result.single { it.content.id == "other" }
+        assertEquals(null, other.rewatchFallback)
+        assertEquals(2 to 4, other.seedKey)
+
+        val latestOnly = buildHomeNextUpSeedCandidates(
+            progressEntries = emptyList(),
+            watchedItems = listOf(finale, rewatched),
+            isTraktProgressActive = false,
+            preferFurthestEpisode = false,
+            nowEpochMs = 6_000L,
+        ).single()
+        assertEquals(1 to 3, latestOnly.seasonNumber to latestOnly.episodeNumber)
+        assertEquals(null, latestOnly.rewatchFallback)
+    }
+
+    @Test
     fun `home next up seed uses furthest watched item when progress is older`() {
         val olderCompletedProgress = progressEntry(
             videoId = "show:4:10",

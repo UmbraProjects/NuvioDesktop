@@ -646,6 +646,24 @@ object IptvRepository {
         }
     }
 
+    /**
+     * [playlistId]'s channels for background work (the overnight weed), read back from the disk cache
+     * when [evictInMemoryCachesIfIdle] has released them. Never downloads. The caller should
+     * [scheduleIdleEvictionIfOffTab] once done, so a reload off the Live TV tab is released again.
+     */
+    suspend fun contentForBackgroundUse(playlistId: String): IptvPlaylistContent? {
+        val state = contentStates.getOrPut(playlistId) { MutableStateFlow(IptvContentState()) }
+        state.value.content?.let { return it }
+        val playlist = playlist(playlistId) ?: return null
+        val lock = loadLocks.getOrPut(playlistId) { Mutex() }
+        lock.withLock {
+            state.value.content?.let { return it }
+            val cached = readCachedContent(playlist) ?: return null
+            state.update { it.copy(content = cached) }
+            return cached
+        }
+    }
+
     // Not tied to a screen: a refresh started from Settings keeps going after the page closes.
     private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -705,6 +723,10 @@ object IptvRepository {
         }
         val evictedGuides = IptvEpgRepository.evictInMemoryCache()
         if (evictedPlaylists > 0 || evictedGuides) {
+            // Release cached derived/stage snapshots too so they do not keep the evicted
+            // playlist and merged-channel lists pinned in heap.
+            IptvScreenDerivedCache.clear()
+            IptvStageModelCache.clear()
             log.i { "Evicted idle IPTV in-memory caches (playlists=$evictedPlaylists, guides=$evictedGuides)" }
             return true
         }

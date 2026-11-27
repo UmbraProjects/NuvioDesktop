@@ -52,6 +52,7 @@ internal object SimklLibraryRepository {
     private val _uiState = MutableStateFlow(SimklLibraryUiState())
     val uiState: StateFlow<SimklLibraryUiState> = _uiState.asStateFlow()
 
+    private val loadStateLock = Any()
     private var refreshJob: Job? = null
     private var loaded = false
 
@@ -63,18 +64,32 @@ internal object SimklLibraryRepository {
     private var listCacheProfileId: Int? = null
 
     fun ensureLoaded() {
-        if (loaded) return
-        loaded = true
-        if (!SimklAuthRepository.isAuthenticated.value) return
-        // The stored list shows at once; the refresh then only asks SIMKL what changed.
-        val cache = cacheFor(ProfileRepository.activeProfileId)
-        if (cache.hasBaseline) publish(cache, touchedKeys = emptySet())
-        refreshAsync()
+        synchronized(loadStateLock) {
+            if (loaded) return
+            loaded = true
+            if (!SimklAuthRepository.isAuthenticated.value) return
+            // The stored list shows as soon as it is read; the refresh then only asks SIMKL what
+            // changed. Read off the caller's thread: this runs from Home's first composition, and the
+            // store's open has taken 7.8s at launch (2026-11-26: on-access scan of the file), which
+            // froze the window that long when it was read here.
+            refreshJob?.cancel()
+            refreshJob = scope.launch {
+                syncMutex.withLock {
+                    val cache = cacheFor(ProfileRepository.activeProfileId)
+                    if (cache.hasBaseline && _uiState.value.allItems.isEmpty()) {
+                        publish(cache, touchedKeys = emptySet())
+                    }
+                    refreshLocked()
+                }
+            }
+        }
     }
 
     fun refreshAsync() {
-        refreshJob?.cancel()
-        refreshJob = scope.launch { refreshNow() }
+        synchronized(loadStateLock) {
+            refreshJob?.cancel()
+            refreshJob = scope.launch { refreshNow() }
+        }
     }
 
     suspend fun refreshNow() = syncMutex.withLock { refreshLocked() }
@@ -194,11 +209,14 @@ internal object SimklLibraryRepository {
     }
 
     fun onProfileChanged() {
-        refreshJob?.cancel()
-        loaded = false
-        listCache = null
-        listCacheProfileId = null
-        _uiState.value = SimklLibraryUiState()
+        synchronized(loadStateLock) {
+            refreshJob?.cancel()
+            refreshJob = null
+            loaded = false
+            listCache = null
+            listCacheProfileId = null
+            _uiState.value = SimklLibraryUiState()
+        }
     }
 
     /** Called on disconnect: also forgets the stored list. */

@@ -52,6 +52,12 @@ data class IptvChannel(
     val url: String? = null,
     val userAgent: String? = null,
     val referrer: String? = null,
+    /** Extra HTTP headers from `#EXTHTTP`, `#EXTVLCOPT:http-origin`, `#KODIPROP:...stream_headers`, or `|Header=Value`. */
+    val headers: Map<String, String>? = null,
+    /** DRM scheme from `#KODIPROP:inputstream.adaptive.license_type` (e.g. `clearkey`, `org.w3.clearkey`). */
+    val drmScheme: String? = null,
+    /** DRM license key (`kid:key`, ClearKey JWK JSON, or license URL) from `#KODIPROP:inputstream.adaptive.license_key`. */
+    val drmLicenseKey: String? = null,
     /** Channel id in the XMLTV guide (`tvg-id` / `epg_channel_id`). */
     val epgId: String? = null,
     /** Days of catch-up the server keeps for this channel (0 = none). Not used by v1. */

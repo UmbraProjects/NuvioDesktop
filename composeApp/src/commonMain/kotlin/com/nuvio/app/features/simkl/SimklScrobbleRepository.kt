@@ -75,6 +75,9 @@ internal object SimklScrobbleRepository {
     private var lastSendAtMs = 0L
     private var requestCounter = 0L
     private val latestRequestByItem = mutableMapOf<String, Long>()
+    // Preserves arrival order across items when multiple non-completion requests wait on [minSendGapMs],
+    // so a newer item's start cannot jump ahead of the outgoing item's queued stop.
+    private val pendingQueue = ArrayDeque<Long>()
 
     suspend fun scrobbleStart(item: SimklScrobbleItem, progressPercent: Float) =
         send("start", item, progressPercent)
@@ -142,7 +145,10 @@ internal object SimklScrobbleRepository {
         // records the watch, and it is often the last thing sent before the player closes.
         val isCompletion = action == "stop" && progress >= SIMKL_COMPLETION_PERCENT
         val requestId = sendStateMutex.withLock {
-            (++requestCounter).also { latestRequestByItem[itemKey] = it }
+            (++requestCounter).also { id ->
+                latestRequestByItem.put(itemKey, id)?.let(pendingQueue::remove)
+                if (!isCompletion) pendingQueue.addLast(id)
+            }
         }
         try {
             if (!reserveSendSlot(action, itemKey, progress, requestId, isCompletion)) {
@@ -151,14 +157,16 @@ internal object SimklScrobbleRepository {
             return sendNow(action, item, itemKey, progress, isCompletion)
         } finally {
             sendStateMutex.withLock {
+                pendingQueue.remove(requestId)
                 if (latestRequestByItem[itemKey] == requestId) latestRequestByItem.remove(itemKey)
             }
         }
     }
 
     /**
-     * Waits until SIMKL's per-user lock has passed, then claims the slot. False means the request
-     * is not worth sending: a newer one for the same item replaced it, or it repeats the last send.
+     * Waits until SIMKL's per-user lock has passed and it is this request's turn, then claims the
+     * slot. False means the request is not worth sending: a newer one for the same item replaced
+     * it, or it repeats the last send.
      */
     private suspend fun reserveSendSlot(
         action: String,
@@ -170,17 +178,33 @@ internal object SimklScrobbleRepository {
         while (true) {
             val waitMs = sendStateMutex.withLock {
                 if (!isCompletion && latestRequestByItem[itemKey] != requestId) {
+                    pendingQueue.remove(requestId)
                     log.d { "SIMKL scrobble $action: $itemKey superseded while waiting" }
                     return false
                 }
-                if (shouldSkip(action, itemKey, progress)) return false
+                if (shouldSkip(action, itemKey, progress)) {
+                    pendingQueue.remove(requestId)
+                    return false
+                }
                 val now = System.currentTimeMillis()
-                val wait = if (isCompletion) 0L else lastSendAtMs + minSendGapMs - now
-                if (wait <= 0L) {
+                if (isCompletion) {
                     lastSendAtMs = now
                     lastStamp = ScrobbleStamp(action, itemKey, progress, now)
+                    0L
+                } else {
+                    val gapRemaining = (lastSendAtMs + minSendGapMs - now).coerceAtLeast(0L)
+                    val isFront = pendingQueue.firstOrNull() == requestId
+                    if (isFront && gapRemaining == 0L) {
+                        pendingQueue.removeFirst()
+                        lastSendAtMs = now
+                        lastStamp = ScrobbleStamp(action, itemKey, progress, now)
+                        0L
+                    } else if (isFront) {
+                        gapRemaining
+                    } else {
+                        maxOf(gapRemaining, 250L)
+                    }
                 }
-                wait
             }
             if (waitMs <= 0L) return true
             delay(waitMs)

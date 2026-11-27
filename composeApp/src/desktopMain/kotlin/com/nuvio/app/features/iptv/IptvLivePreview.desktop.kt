@@ -98,8 +98,8 @@ internal actual fun IptvLivePreview(
                 add("mute=yes")
                 add("volume=0")
                 add("ytdl=no")
-                add("network-timeout=${if (url.isHlsPlaylistUrl()) IPTV_HLS_NETWORK_TIMEOUT_SECONDS else IPTV_NETWORK_TIMEOUT_SECONDS}")
-                add(iptvDemuxerOption(url))
+                add("network-timeout=${if (url.isHlsPlaylistUrl() || url.isDashManifestUrl()) IPTV_HLS_NETWORK_TIMEOUT_SECONDS else IPTV_NETWORK_TIMEOUT_SECONDS}")
+                iptvDemuxerOption(url)?.let(::add)
                 // A preview needs no rewind: keep the cache small and in memory.
                 add("cache-secs=10")
                 if (settings.proxy.enabled) add("http-proxy=${IptvProxyRelay.mpvProxyUrl()}")

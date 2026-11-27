@@ -76,7 +76,13 @@ fun MusicTabHost(
 /** Whether the Music tab is in the navigation bar (Settings > Music > Show Music). */
 @Composable
 fun rememberMusicTabVisible(): Boolean {
-    remember { MusicLibraryRepository.ensureLoaded() }
+    // nuvio_music_library is a 1.2 MB PREWARM_AFTER_HOME store; load off the composition thread so
+    // the app's first frame never stalls waiting on disk I/O.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            MusicLibraryRepository.ensureLoaded()
+        }
+    }
     val state by MusicLibraryRepository.state.collectAsStateWithLifecycle()
     return state.settings.tabEnabled
 }

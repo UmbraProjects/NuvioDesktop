@@ -598,6 +598,13 @@ internal object DesktopStorage {
         private val ioLock = Any()
         private val properties = Properties()
         private val evictedStamps = HashMap<String, ValueStamp>()
+
+        /**
+         * Changes made while evicted, applied on the next load (null = removed). Lets a write to an
+         * evicted store return at once instead of re-reading the whole file on the caller's thread,
+         * often the UI's; the scheduled flush does the reload on the flush thread.
+         */
+        private val evictedOverrides = HashMap<String, String?>()
         private var loaded = false
         private var dirty = false
         private var flushScheduled = false
@@ -626,6 +633,7 @@ internal object DesktopStorage {
 
         fun getString(key: String): String? = synchronized(lock) {
             lastAccessMs = System.currentTimeMillis()
+            if (!loaded && evictedOverrides.containsKey(key)) return evictedOverrides[key]
             ensureLoaded()
             properties.getProperty(key)
         }
@@ -642,6 +650,8 @@ internal object DesktopStorage {
                     PerfTelemetry.recordStoreWrite(perfName, key, changed = false)
                     return@synchronized
                 }
+                writeWhileEvictedLocked(key, value)
+                return@synchronized
             }
             ensureLoaded()
             val previous = if (value == null) {
@@ -696,8 +706,12 @@ internal object DesktopStorage {
 
         fun remove(key: String) = synchronized(lock) {
             lastAccessMs = System.currentTimeMillis()
-            if (!loaded && evictedStamps.isNotEmpty() && !evictedStamps.containsKey(key)) {
-                PerfTelemetry.recordStoreWrite(perfName, key, changed = false)
+            if (!loaded && evictedStamps.isNotEmpty()) {
+                if (!evictedStamps.containsKey(key)) {
+                    PerfTelemetry.recordStoreWrite(perfName, key, changed = false)
+                } else {
+                    writeWhileEvictedLocked(key, null)
+                }
                 return@synchronized
             }
             ensureLoaded()
@@ -722,6 +736,7 @@ internal object DesktopStorage {
             synchronized(lock) {
                 properties.clear()
                 evictedStamps.clear()
+                evictedOverrides.clear()
                 loaded = false
                 dirty = false
                 readOnly = false
@@ -732,7 +747,7 @@ internal object DesktopStorage {
         }
 
         internal fun evictIfIdleAndClean(nowMs: Long, idleMs: Long, minChars: Long): Long = synchronized(lock) {
-            if (!loaded || dirty || readOnly || flushScheduled) return 0L
+            if (!loaded || dirty || readOnly || flushScheduled || evictedOverrides.isNotEmpty()) return 0L
             if (nowMs - lastAccessMs < idleMs) return 0L
             var chars = 0L
             for (entry in properties.entries) {
@@ -759,6 +774,9 @@ internal object DesktopStorage {
         fun flush() = synchronized(ioLock) {
             val snapshot = synchronized(lock) {
                 flushScheduled = false
+                // A write made while evicted is only an override: the file has to be read back to
+                // write it out, here on the flush thread rather than on the writer's.
+                if (dirty && !readOnly && !loaded) ensureLoaded()
                 if (!dirty || readOnly) {
                     null
                 } else {
@@ -815,8 +833,25 @@ internal object DesktopStorage {
             }
         }
 
+        private fun writeWhileEvictedLocked(key: String, value: String?) {
+            evictedOverrides[key] = value
+            if (value == null) evictedStamps.remove(key) else evictedStamps[key] = valueStamp(value)
+            PerfTelemetry.recordStoreWrite(perfName, key, changed = true)
+            markDirty()
+        }
+
         private fun ensureLoaded() {
             if (loaded) return
+            loadFromDiskLocked()
+            if (evictedOverrides.isNotEmpty()) {
+                for ((key, value) in evictedOverrides) {
+                    if (value == null) properties.remove(key) else properties.setProperty(key, value)
+                }
+                evictedOverrides.clear()
+            }
+        }
+
+        private fun loadFromDiskLocked() {
             properties.clear()
             evictedStamps.clear()
             lastAccessMs = System.currentTimeMillis()

@@ -2185,6 +2185,7 @@ private fun PlayerScreenRuntime.buildPlayerControlSourceItems(
             order = sortOrder,
             cachedFirst = cachedFirst,
             streamOf = { it.value.second },
+            preferredLanguages = scoreContext.preferredLanguages,
         )
         val current = findCurrentPlayerControlStream(
             entries = ordered,

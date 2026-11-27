@@ -309,6 +309,31 @@ fun TonightHost(
         if (view == TonightView.Questions && question == null && current.isNotEmpty()) deal(current, reshuffle = false)
     }
 
+    // Keep each launcher tile's backdrop stable while the pool enriches progressively: once a mode
+    // has art for this night/bedtime bucket, later pool updates only fill in modes that were bare.
+    val launcherArtBucket = clock.night to (minutesUntilBed / 30)
+    val stickyLauncherArt = remember(launcherArtBucket) { mutableMapOf<TonightMode, TonightTitle>() }
+    val launcherArt = remember(pool, poolState.titles, launcherArtBucket) {
+        val fresh = tonightTileArt(pool, poolState.titles, taste, clock.night.hashCode().toLong(), minutesUntilBed, System.currentTimeMillis())
+        for ((mode, title) in fresh) {
+            if (mode !in stickyLauncherArt) stickyLauncherArt[mode] = title
+        }
+        stickyLauncherArt.toMap()
+    }
+    // Prefetch the launcher tile backdrops and top mode posters in the background so entering
+    // Three Cards, Coin Toss, Knockout, or The Pile renders images straight from cache.
+    val platformContext = coil3.compose.LocalPlatformContext.current
+    LaunchedEffect(launcherArt, pool) {
+        val urls = buildList {
+            launcherArt.values.mapNotNullTo(this) { it.backdrop }
+            pool.take(12).mapNotNullTo(this) { it.poster ?: it.backdrop }
+        }.distinct()
+        val loader = coil3.SingletonImageLoader.get(platformContext)
+        for (url in urls) {
+            loader.enqueue(coil3.request.ImageRequest.Builder(platformContext).data(url).build())
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -325,9 +350,7 @@ fun TonightHost(
                 clock = clock,
                 settings = settings,
                 bedtimeFilters = bedtimeFilters,
-                art = remember(pool, poolState.titles, clock.night, minutesUntilBed / 30) {
-                    tonightTileArt(pool, poolState.titles, taste, clock.night.hashCode().toLong(), minutesUntilBed, System.currentTimeMillis())
-                },
+                art = launcherArt,
                 onOpen = ::openMode,
                 onBrowseAll = onClose,
             )
@@ -798,6 +821,7 @@ private fun ModeTile(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 alpha = if (selected) 1f else 0.82f,
+                onSuccess = { recordBackdropColours(url, it.result.image) },
                 modifier = Modifier.fillMaxSize(),
             )
             Box(
@@ -1295,6 +1319,7 @@ private fun DealtCard(
                             contentDescription = card.title.name,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
+                            onSuccess = { recordBackdropColours(art, it.result.image) },
                         )
                     }
                     Box(

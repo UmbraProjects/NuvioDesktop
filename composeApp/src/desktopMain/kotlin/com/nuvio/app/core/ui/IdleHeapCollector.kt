@@ -145,7 +145,7 @@ internal object FullGcLog {
         lastTimeMs = timeMs
         lastEdenMb = pools.edenMb
         lastOldMb = pools.oldMb
-        // Idle too: with the 768m heap floor (2026-11-23) natural full GCs are rare, and an idle
+        // Idle too: with the Proportionate policy (2026-11-25) natural full GCs are rare, and an idle
         // collection is the one moment a ~3 s dump freeze goes unseen.
         if (trigger == "natural" || trigger.startsWith("idle")) HeapDumpOnHighLiveSet.check(used)
     }

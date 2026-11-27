@@ -133,6 +133,35 @@ actual object WatchedStorage {
         }
     }
 
+    /**
+     * Every profile's watched history in this account, keyed `watched_<profileId>` like the legacy
+     * `nuvio_watched.properties` store. The settings backup writes it under that store's name, so a
+     * restore (on this build or an older one) brings the history back through the legacy migration.
+     */
+    internal fun payloadsForBackup(): Map<String, String> {
+        migrateLegacyStoreIfPresent()
+        val out = sortedMapOf<String, String>()
+        runCatching {
+            val dir = DesktopStorage.accountDir
+            if (Files.isDirectory(dir)) {
+                Files.list(dir).use { entries ->
+                    entries.forEach { path ->
+                        val name = path.fileName.toString()
+                        if (!name.startsWith(BLOB_PREFIX) || !name.endsWith(".json")) return@forEach
+                        val profileId = name.removePrefix(BLOB_PREFIX).removeSuffix(".json").toIntOrNull()
+                            ?: return@forEach
+                        blobFor(profileId).read()?.let { out["$LEGACY_KEY_PREFIX$profileId"] = it }
+                    }
+                }
+            }
+        }.onFailure { error -> log.w(error) { "Could not list watched history for backup" } }
+        // Not yet flushed: newer than the file.
+        synchronized(pendingLock) {
+            pendingPayloads.forEach { (profileId, payload) -> out["$LEGACY_KEY_PREFIX$profileId"] = payload }
+        }
+        return out
+    }
+
     @Synchronized
     private fun migrateLegacyStoreIfPresent() {
         val legacyFile = DesktopStorage.storeFile(LEGACY_STORE)
@@ -143,11 +172,12 @@ actual object WatchedStorage {
             keys.forEach { key ->
                 val profileId = key.removePrefix(LEGACY_KEY_PREFIX).toIntOrNull() ?: return@forEach
                 val value = store.getString(key) ?: return@forEach
-                val blob = blobFor(profileId)
-                // Do not overwrite a newer blob if one already exists on disk.
-                if (blob.readStream { } == null) {
-                    blob.write(value)
-                }
+                // The legacy store wins over a blob already on disk. Once migrated it is deleted, so
+                // it only reappears when a settings backup is restored (backups carry watched history
+                // as `nuvio_watched.properties`, see [payloadsForBackup]) or an older build wrote it:
+                // either way it is the newer copy, and skipping it threw the restored history away.
+                synchronized(pendingLock) { pendingPayloads.remove(profileId) }
+                blobFor(profileId).write(value)
             }
             store.deleteAll()
             log.i { "Migrated $LEGACY_STORE (${keys.size} profile(s)) to raw JSON blob files" }

@@ -200,6 +200,24 @@ class PlayerProgressFlushTest {
     }
 
     @Test
+    fun earlyExitWithRunningSessionStillSendsStopBelowOneTenthPercent() {
+        // Closing a ~108 min movie after ~5–10s (~0.08%) after scrobble/start already fired must
+        // still send stop so trackers do not stay stuck on "currently watching".
+        assertEquals(
+            FlushScrobbleStopKind.PROGRESS,
+            flushScrobbleStopKind(effectivePercent = 0.08f, paused = false, sessionRunning = true, completionSent = false),
+        )
+        assertEquals(
+            FlushScrobbleStopKind.PROGRESS,
+            flushScrobbleStopKind(effectivePercent = 0f, paused = false, sessionRunning = true, completionSent = false),
+        )
+        assertEquals(
+            FlushScrobbleStopKind.NONE,
+            flushScrobbleStopKind(effectivePercent = 0.08f, paused = false, sessionRunning = false, completionSent = false),
+        )
+    }
+
+    @Test
     fun aShortVideoEndsForRealOnlyWhenItCannotBeAPlaceholder() {
         // The 1:44 YouTube video autoplay sat at the end of (Nov 3): under two minutes reads as a placeholder clip.
         val end = { allowShort: Boolean ->

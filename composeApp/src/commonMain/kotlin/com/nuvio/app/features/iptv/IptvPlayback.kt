@@ -170,6 +170,20 @@ object IptvPlaybackSession {
         url != null && _active.value?.candidates?.any { it.url == url } == true
 
     /**
+     * The channel (primary or alternate copy) associated with [url] in the active IPTV session, or
+     * null when [url] is not part of the active session.
+     */
+    fun channelForUrl(url: String?): IptvChannel? {
+        if (url == null) return null
+        val current = _active.value ?: return null
+        if (current.candidates.none { it.url == url }) return null
+        val altMatch = current.alternates[current.channel.uid].orEmpty().firstOrNull { alt ->
+            alt.url == url
+        }
+        return altMatch ?: current.channel
+    }
+
+    /**
      * After [failedUrl] failed: the next URL to try for the same channel, or null when every format
      * has been tried.
      */

@@ -2602,9 +2602,9 @@ internal fun findCredentialRefreshCandidate(
 
 private const val CREDENTIAL_REFRESH_POLL_COUNT = 30
 private const val CREDENTIAL_REFRESH_POLL_INTERVAL_MS = 500L
-private const val DISCORD_PROGRESS_UPDATE_BUCKET_MS = 60_000L
+private const val DISCORD_PROGRESS_UPDATE_BUCKET_MS = 15_000L
 private const val DISCORD_PAUSED_ANCHOR_REFRESH_MS = 5_000L
-private const val DISCORD_PLAYBACK_RECONCILE_MS = 60_000L
+private const val DISCORD_PLAYBACK_RECONCILE_MS = 10_000L
 // How often, while paused, to re-anchor the Discord progress bar to the frozen position. Small
 // enough that the (live) bar never visibly creeps forward before it snaps back.
 // How far into the freshly-loaded episode playback must reach before the next-episode auto-advance

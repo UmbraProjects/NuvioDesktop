@@ -4929,6 +4929,7 @@
   <string name="streams_sort_highest_quality">Υψηλότερη ποιότητα</string>
   <string name="streams_sort_best_video_hdr_dv">Καλύτερο βίντεο (HDR/DV)</string>
   <string name="streams_sort_best_audio">Καλύτερος ήχος</string>
+  <string name="streams_sort_preferred_language">Προτιμώμενη γλώσσα πρώτα</string>
   <string name="streams_sort_cached_first">Πρώτα τα αποθηκευμένα</string>
   <string name="streams_single_column">Μία στήλη</string>
   <string name="streams_two_columns">Δύο στήλες</string>

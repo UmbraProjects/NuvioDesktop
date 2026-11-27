@@ -1251,7 +1251,8 @@ private fun NativePlayerSurface(
         controller.pipBrowseAvailable = browsePipAvailable && !browsePip
         controller.pipBrowseBox = browsePip
         val youTubeBrowse = youTubePageAvailable && youTubeBrowsing
-        val youTubePage = ((youTubePageAvailable && youTubePageWindowed) || youTubeBrowse) && !browsePip
+        val youTubePage = ((youTubePageAvailable && youTubePageWindowed) || youTubeBrowse) &&
+            !browsePip && !playerControlsState.pictureInPictureActive
         controller.watchPage = youTubePage
         controller.miniPlayer = (youTubeMiniPlayer && youTubePage) || youTubeBrowse || browsePip
         controller.miniPlayerClosable = youTubeBrowse || browsePip

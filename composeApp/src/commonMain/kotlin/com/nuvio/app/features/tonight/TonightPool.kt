@@ -62,7 +62,7 @@ object TonightPool {
     private const val DISCOVER_WAIT_MS = 20_000L
     private const val RECOMMENDED_PER_ROW = 15
     private const val RECOMMENDED_MAX = 80
-    private const val ENRICH_PARALLEL = 4
+    private const val ENRICH_PARALLEL = 6
 
     /**
      * Builds the pool, or rebuilds it once it is ten minutes old, or when it was gathered before the
@@ -86,7 +86,15 @@ object TonightPool {
         _state.value = current.copy(loading = true)
         runningWithLibrary = libraryLoaded
         job = scope.launch {
-            val titles = runCatching { build() }
+            val titles = runCatching {
+                build(
+                    publishIntermediate = { partial ->
+                        if (partial.isNotEmpty() && (_state.value.titles.isEmpty() || partial.size > _state.value.titles.size)) {
+                            _state.value = _state.value.copy(titles = partial, loading = true)
+                        }
+                    },
+                )
+            }
                 .onFailure { log.w { "Tonight: could not gather titles: ${it.message}" } }
                 .getOrDefault(current.titles)
             log.i { "Tonight: pool of ${titles.size} (" + titles.groupingBy { it.kind }.eachCount() + ")" }
@@ -122,13 +130,12 @@ object TonightPool {
         _state.value = _state.value.copy(titles = _state.value.titles.filterNot { it.key == key })
     }
 
-    private suspend fun build(): List<TonightTitle> {
-        // The repositories load on the UI thread elsewhere; do the same here (as the phone remote does).
-        withContext(Dispatchers.Main) {
-            LibraryRepository.ensureLoaded()
-            WatchedRepository.ensureLoaded()
-            WatchProgressRepository.ensureLoaded()
-        }
+    private suspend fun build(publishIntermediate: (List<TonightTitle>) -> Unit = {}): List<TonightTitle> {
+        LibraryRepository.ensureLoaded()
+        WatchedRepository.ensureLoaded()
+        WatchProgressRepository.ensureLoaded()
+        TonightSettingsRepository.ensureLoaded()
+
         val watchedKeys = WatchedRepository.uiState.value.watchedKeys
         fun isWatched(type: String, id: String) = watchedItemKey(type = type, id = id) in watchedKeys
 
@@ -145,24 +152,77 @@ object TonightPool {
             }
         }
 
-        val continuing = runCatching { WatchProgressRepository.continueWatching() }.getOrDefault(emptyList())
-        continuing.forEach { add(it.toTonightTitle()) }
-        LibraryRepository.uiState.value.items.forEach { add(it.toTonightTitle(isWatched(it.type, it.id))) }
-        trending().forEach { add(it) }
-        TonightSettingsRepository.ensureLoaded()
-        recommended(TonightSettingsRepository.state.value.discoverSources).forEach { add(it) }
-
         val notInterested = runCatching { DiscoverNotInterestedStorage.load() }.getOrDefault(emptySet())
         // Watched is judged for every title, not only the library's: a film from trending or Discover that is in the
         // history was dealt as "New to you" (user, Nov 23). The same title-level matcher as Hide watched content, which
         // also answers `tmdb:` ids (trending's) and ids the history knows under another name.
         val watchedTitles = com.nuvio.app.features.home.WatchedContentFilter.forHistory(WatchedRepository.uiState.value.items)
-        val kept = merged.values
+
+        fun snapshotFilteredAndPeeked(): List<TonightTitle> = merged.values
             .filter { it.key !in notInterested && it.type in setOf("movie", "series") }
-            .map { title ->
-                if (!title.watched && watchedTitles.isWatched(title.type, title.id)) title.copy(watched = true) else title
+            .map { raw ->
+                val watchedFixed = if (!raw.watched && watchedTitles.isWatched(raw.type, raw.id)) raw.copy(watched = true) else raw
+                hydrateFromMemoryCache(watchedFixed)
             }
+
+        // Stage 1 (instant): publish titles already in memory (Continue watching, Library, and any
+        // already-loaded Discover rows), hydrated from the in-memory lightweight meta cache so the
+        // launcher tiles and modes get real backdrops immediately instead of waiting on network I/O.
+        val continuing = runCatching { WatchProgressRepository.continueWatching() }.getOrDefault(emptyList())
+        continuing.forEach { add(it.toTonightTitle()) }
+        LibraryRepository.uiState.value.items.forEach { add(it.toTonightTitle(isWatched(it.type, it.id))) }
+        val discoverSources = TonightSettingsRepository.state.value.discoverSources
+        extractDiscoverTitles(DiscoverRecommendationsRepository.uiState.value, discoverSources).forEach { add(it) }
+        publishIntermediate(snapshotFilteredAndPeeked())
+
+        // Stage 2 (parallel network): fetch trending and wait for Discover concurrently, then
+        // publish again before the slower lightweight-meta enrichment pass.
+        val (trendingTitles, recommendedTitles) = coroutineScope {
+            val trendingDeferred = async { trending() }
+            val recommendedDeferred = async { recommended(discoverSources) }
+            trendingDeferred.await() to recommendedDeferred.await()
+        }
+        trendingTitles.forEach { add(it) }
+        recommendedTitles.forEach { add(it) }
+
+        val kept = snapshotFilteredAndPeeked()
+        publishIntermediate(kept)
         return enrich(kept)
+    }
+
+    /** Fills missing fields synchronously from the in-memory meta cache without any network I/O. */
+    private fun hydrateFromMemoryCache(title: TonightTitle): TonightTitle {
+        val needs = title.genres.isEmpty() || title.runtimeMinutes == null || title.year == null ||
+            title.poster.isNullOrBlank() || title.backdrop.isNullOrBlank()
+        if (!needs) return title
+        val meta = MetaDetailsRepository.peekAny(title.type, title.id) ?: return title
+        return title.copy(
+            genres = title.genres.ifEmpty { meta.genres },
+            runtimeMinutes = title.runtimeMinutes ?: meta.runtime?.let(::parseRuntimeMinutes),
+            year = title.year ?: meta.releaseInfo.yearOrNull(),
+            rating = title.rating ?: meta.imdbRating?.toDoubleOrNull(),
+            poster = title.poster ?: meta.poster,
+            backdrop = title.backdrop ?: meta.background,
+            tmdbId = title.tmdbId ?: meta.tmdbId,
+        )
+    }
+
+    private fun extractDiscoverTitles(
+        state: com.nuvio.app.features.discover.DiscoverRecommendationsUiState,
+        sources: Set<TonightDiscoverSource>,
+    ): List<TonightTitle> {
+        if (sources.isEmpty()) return emptyList()
+        val byFamily = sources.associateBy { it.family.entryId }
+        return state.rows
+            .filter { !it.isPlaceholder && it.entryId in byFamily }
+            .flatMap { row ->
+                val why = byFamily.getValue(row.entryId).why(row.title)
+                row.items.take(RECOMMENDED_PER_ROW).map {
+                    it.toTonightTitle(TonightOrigin.Recommended).copy(recommendedBy = why)
+                }
+            }
+            .distinctBy { it.key }
+            .take(RECOMMENDED_MAX)
     }
 
     private suspend fun trending(): List<TonightTitle> = coroutineScope {
@@ -192,16 +252,7 @@ object TonightPool {
         val state = withTimeoutOrNull(DISCOVER_WAIT_MS) {
             discover.first { it.hasLoadedOnce && !it.isLoading && it.rows.none { row -> row.isPlaceholder && row.entryId in byFamily } }
         } ?: discover.value
-        val titles = state.rows
-            .filter { !it.isPlaceholder && it.entryId in byFamily }
-            .flatMap { row ->
-                val why = byFamily.getValue(row.entryId).why(row.title)
-                row.items.take(RECOMMENDED_PER_ROW).map {
-                    it.toTonightTitle(TonightOrigin.Recommended).copy(recommendedBy = why)
-                }
-            }
-            .distinctBy { it.key }
-            .take(RECOMMENDED_MAX)
+        val titles = extractDiscoverTitles(state, sources)
         log.i { "Tonight: ${titles.size} from Discover (${sources.joinToString { it.name }})" }
         return titles
     }

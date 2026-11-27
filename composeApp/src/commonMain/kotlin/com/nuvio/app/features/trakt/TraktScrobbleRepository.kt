@@ -141,10 +141,6 @@ internal object TraktScrobbleRepository {
         val headers = TraktAuthRepository.authorizedHeaders() ?: return TrackingScrobbleResult.Declined
         val activeProfileId = ProfileRepository.activeProfileId
         val clampedProgress = progressPercent.coerceIn(0f, 100f)
-        if (action == "stop" && clampedProgress < 1f) {
-            log.d { "Skipping Trakt scrobble stop below 1%: ${"%.2f".format(clampedProgress)}%" }
-            return TrackingScrobbleResult.Declined
-        }
         if (shouldSkip(activeProfileId, action, item.itemKey, clampedProgress)) return TrackingScrobbleResult.Declined
 
         val url = "$BASE_URL/scrobble/$action"
@@ -248,7 +244,7 @@ internal object TraktScrobbleRepository {
             timestampMs = TraktPlatformClock.nowEpochMs(),
         )
 
-        if (action == "stop") {
+        if (action == "stop" && clampedProgress >= 1f) {
             runCatching { TraktProgressRepository.refreshNow() }
                 .onFailure { error ->
                     if (error is CancellationException) throw error

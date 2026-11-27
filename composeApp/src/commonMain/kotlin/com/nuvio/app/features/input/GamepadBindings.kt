@@ -97,6 +97,10 @@ enum class ControllerCursorSpeed(val maxPxPerSecond: Double) {
 expect fun panelRingMouseState(): StateFlow<Boolean>
 expect fun setPanelRingMouse(enabled: Boolean)
 
+/** Include a Close app slot in the panel ring. */
+expect fun panelRingCloseAppState(): StateFlow<Boolean>
+expect fun setPanelRingCloseApp(enabled: Boolean)
+
 /**
  * A DualSense's light bar. [LeaveAlone] never writes to the controller (the default: on Bluetooth any
  * light change also switches the pad to its larger report). [Accent] follows the app's accent colour.

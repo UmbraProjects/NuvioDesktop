@@ -1508,7 +1508,7 @@ fun HomeScreen(
 
     val currentNextUpSeedByContentId = remember(allNextUpSeedCandidates) {
         allNextUpSeedCandidates.associate { candidate ->
-            candidate.content.id to (candidate.seasonNumber to candidate.episodeNumber)
+            candidate.content.id to candidate.seedKey
         }.toMap()
     }
 
@@ -1957,8 +1957,8 @@ fun HomeScreen(
                 isKnownNoCard = { candidate ->
                     NextUpNoCardCache.isKnownNoCard(
                         contentId = candidate.content.id,
-                        seedSeason = candidate.seasonNumber,
-                        seedEpisode = candidate.episodeNumber,
+                        seedSeason = candidate.seedKey.first,
+                        seedEpisode = candidate.seedKey.second,
                         settingsKey = noCardSettingsKey,
                     )
                 },
@@ -1987,7 +1987,7 @@ fun HomeScreen(
                 forcedMetaRefresh = forceArtworkMetaRefresh,
                 withinBudget = resolutionCandidates.count { it.content.id in cachedStaleArtworkItems },
             )
-            val seedLastWatchedMap = completedSeriesCandidates.associate { it.content.id to it.markedAtEpochMs }
+            val seedLastWatchedMap = completedSeriesCandidates.associate { it.content.id to it.latestActivityEpochMs }
             if (candidatesToResolve.isEmpty()) {
                 appliedArtworkRefreshVersion = cwArtworkRefreshVersion
                 withContext(Dispatchers.Main) {
@@ -5544,7 +5544,7 @@ internal fun filterHomeNextUpCandidatesForContinueWatchingWindow(
     if (cutoffMs <= 0L) return candidates
     return candidates.filter { candidate ->
         isWithinContinueWatchingWindow(
-            lastUpdatedEpochMs = candidate.markedAtEpochMs,
+            lastUpdatedEpochMs = candidate.latestActivityEpochMs,
             nextEpisodeAirEpochMs = candidate.nextEpisodeAirEpochMs ?: upcomingAirEpochMs(candidate),
             cutoffMs = cutoffMs,
             nowEpochMs = nowEpochMs,
@@ -5601,6 +5601,17 @@ internal fun buildHomeNextUpSeedCandidates(
         .groupBy { entry -> entry.parentMetaId }
         .mapValues { (_, entries) -> entries.maxOf { entry -> entry.nextEpisodeAirEpochMs ?: 0L } }
 
+    // With the furthest episode preferred, the most recent one is kept beside it for a rewatch of a
+    // finished show (see CompletedSeriesCandidate.rewatchFallback).
+    val latestByTime = if (preferFurthestEpisode) {
+        WatchingState.latestCompletedBySeries(
+            progressEntries = progressSeeds,
+            watchedItems = watchedSeeds,
+            preferFurthestEpisode = false,
+        )
+    } else {
+        emptyMap()
+    }
     return WatchingState.latestCompletedBySeries(
         progressEntries = progressSeeds,
         watchedItems = watchedSeeds,
@@ -5625,9 +5636,14 @@ internal fun buildHomeNextUpSeedCandidates(
             episodeNumber = completed.episodeNumber,
             markedAtEpochMs = completed.markedAtEpochMs,
             nextEpisodeAirEpochMs = nextAirBySeries[content.id],
+            rewatchFallback = latestByTime[content]?.takeIf { latest ->
+                latest.markedAtEpochMs > completed.markedAtEpochMs &&
+                    latest.seasonNumber > 0 &&
+                    (latest.seasonNumber to latest.episodeNumber) != (completed.seasonNumber to completed.episodeNumber)
+            },
         )
     }.sortedWith(
-        compareByDescending<CompletedSeriesCandidate> { candidate -> candidate.markedAtEpochMs }
+        compareByDescending<CompletedSeriesCandidate> { candidate -> candidate.latestActivityEpochMs }
             .thenByDescending { candidate -> candidate.seasonNumber }
             .thenByDescending { candidate -> candidate.episodeNumber },
     )
@@ -5675,8 +5691,8 @@ private suspend fun resolveHomeNextUpCandidate(
         if (noCardSettingsKey == null) return
         NextUpNoCardCache.record(
             contentId = completedEntry.content.id,
-            seedSeason = completedEntry.seasonNumber,
-            seedEpisode = completedEntry.episodeNumber,
+            seedSeason = completedEntry.seedKey.first,
+            seedEpisode = completedEntry.seedKey.second,
             settingsKey = noCardSettingsKey,
         )
     }
@@ -5696,7 +5712,14 @@ private suspend fun resolveHomeNextUpCandidate(
     // The card shows one episode: TMDB decorates the seed's season and the one after it, where the next episode
     // almost always is, not every season of the series. A forced refresh (a resync for a missing thumbnail) bypasses
     // the cache but needs no more seasons than that either.
-    val seedSeasons = setOf(completedEntry.seasonNumber, completedEntry.seasonNumber + 1)
+    val seedSeasons = buildSet {
+        add(completedEntry.seasonNumber)
+        add(completedEntry.seasonNumber + 1)
+        completedEntry.rewatchFallback?.let { fallback ->
+            add(fallback.seasonNumber)
+            add(fallback.seasonNumber + 1)
+        }
+    }.filterTo(mutableSetOf()) { it > 0 }
         .takeIf { completedEntry.seasonNumber > 0 }
     var meta = try {
         MetaDetailsRepository.fetch(
@@ -5717,6 +5740,7 @@ private suspend fun resolveHomeNextUpCandidate(
         return NextUpResolveOutcome(card = null)
     }
 
+    val simklRewatchSeed = SimklRewatchRepository.rewatchSeedFor(contentId)
     val action = meta.seriesPrimaryAction(
         content = completedEntry.content,
         entries = resolvedProgressEntries,
@@ -5724,8 +5748,20 @@ private suspend fun resolveHomeNextUpCandidate(
         todayIsoDate = todayIsoDate,
         preferFurthestEpisode = preferFurthestEpisode,
         showUnairedNextUp = showUnairedNextUp,
-        rewatchSeed = SimklRewatchRepository.rewatchSeedFor(contentId),
-    )
+        rewatchSeed = simklRewatchSeed,
+    ) ?: completedEntry.rewatchFallback?.takeIf { simklRewatchSeed == null }?.let { fallback ->
+        // The furthest episode is the last one there is: the show is being watched again, so Up
+        // Next follows the episode just finished (Details' seriesRestartAction does the same).
+        meta.seriesPrimaryAction(
+            content = completedEntry.content,
+            entries = resolvedProgressEntries,
+            watchedItems = resolvedWatchedItems,
+            todayIsoDate = todayIsoDate,
+            preferFurthestEpisode = preferFurthestEpisode,
+            showUnairedNextUp = showUnairedNextUp,
+            rewatchSeed = fallback,
+        )
+    }
     if (action == null) {
         // Covers the showUnairedNextUp preference: with it off, an unaired next episode yields no
         // action at all, so the whole card disappears rather than losing only its badge.
@@ -5771,6 +5807,10 @@ private suspend fun resolveHomeNextUpCandidate(
     }
     val item = completedEntry.toContinueWatchingSeed(meta)
         .toUpNextContinueWatchingItem(nextEpisode)
+        .copy(
+            nextUpSeedSeasonNumber = completedEntry.seedKey.first,
+            nextUpSeedEpisodeNumber = completedEntry.seedKey.second,
+        )
     if (nextUpDismissKey(item.parentMetaId, item.nextUpSeedSeasonNumber, item.nextUpSeedEpisodeNumber) in dismissedNextUpKeys) {
         logNextUpResolutionRejected(completedEntry, "dismissed-by-user")
         return NextUpResolveOutcome(card = null, definitiveNoCard = true)
@@ -5798,7 +5838,7 @@ private suspend fun resolveHomeNextUpCandidate(
     val sortTimestamp = if (item.isReleaseAlert) {
         com.nuvio.app.features.watchprogress.parseReleaseDateToEpochMs(item.released) ?: completedEntry.markedAtEpochMs
     } else {
-        completedEntry.markedAtEpochMs
+        completedEntry.latestActivityEpochMs
     }
     return NextUpResolveOutcome(card = contentId to (sortTimestamp to item))
 }
@@ -6086,7 +6126,25 @@ internal data class CompletedSeriesCandidate(
     val markedAtEpochMs: Long,
     /** When the provider says the next unwatched episode airs; only SIMKL seeds carry it today. */
     val nextEpisodeAirEpochMs: Long? = null,
-)
+    /**
+     * With "Up Next from furthest episode" on: the most recently finished episode, when it is not the
+     * furthest one and was finished after it (an earlier episode watched again). Used only when the
+     * furthest episode has nothing after it — a fully watched show being rewatched — so the card
+     * offers the episode after the one just watched, as Details and the official apps do.
+     */
+    val rewatchFallback: WatchingCompletedEpisode? = null,
+) {
+    /**
+     * What identifies this seed's card in the caches and the current-seed check: the fallback when
+     * there is one, so watching on through a rewatch moves the seed and re-resolves the card.
+     */
+    val seedKey: Pair<Int, Int>
+        get() = rewatchFallback?.let { it.seasonNumber to it.episodeNumber } ?: (seasonNumber to episodeNumber)
+
+    /** Newest activity on this seed, for the Continue Watching window. */
+    val latestActivityEpochMs: Long
+        get() = maxOf(markedAtEpochMs, rewatchFallback?.markedAtEpochMs ?: 0L)
+}
 
 /**
  * What the Up Next pass has to do this run, decided purely from the candidates and the persisted
@@ -6176,8 +6234,8 @@ internal fun planNextUpResolution(
         val cached = cachedNextUpItems[candidate.content.id] ?: return@mapNotNull null
         val item = cached.second
         if (
-            item.nextUpSeedSeasonNumber != candidate.seasonNumber ||
-            item.nextUpSeedEpisodeNumber != candidate.episodeNumber
+            item.nextUpSeedSeasonNumber != candidate.seedKey.first ||
+            item.nextUpSeedEpisodeNumber != candidate.seedKey.second
         ) {
             return@mapNotNull null
         }

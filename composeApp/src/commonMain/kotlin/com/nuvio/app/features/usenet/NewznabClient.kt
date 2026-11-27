@@ -5,6 +5,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.security.MessageDigest
 import java.time.Duration
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -13,6 +14,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +33,17 @@ import kotlinx.serialization.json.Json
  */
 
 class IndexerCooldownException(val until: Long) : IllegalStateException("Indexer limit reached")
+
+/** The indexer answered with an HTTP error status and no Newznab error that says more. */
+class IndexerHttpException(val code: Int) : IllegalStateException("Indexer HTTP $code")
+
+/**
+ * True when the indexer refused the search itself (Newznab 200-203, or an HTTP 4xx), which asking
+ * again would not change. Not a timeout, an unreachable indexer, a server error or a cooldown, which
+ * may pass; nor an authentication failure, 408 or 429.
+ */
+internal fun isSearchRejection(e: Exception): Boolean = e is NewznabUnsupportedSearchException ||
+    (e is IndexerHttpException && e.code in 400..499 && e.code !in setOf(401, 403, 408, 429))
 
 /** Why the last request to an indexer failed. Categories only: raw errors could echo keys. */
 enum class IndexerProblem { AUTH, UNREACHABLE, RESPONSE }
@@ -315,17 +329,20 @@ class NewznabClient(
             pages(indexer, url, request, caps, results, wholeSeason = true, byTitle = byTitle)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IndexerCooldownException) {
-            throw e
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // Some indexers reject season-only searches; remember it so each episode does not retry.
-            emptyList()
+            // Any other failure may pass, so it is not remembered: the next episode asks again.
+            if (isSearchRejection(e)) emptyList() else throw e
         }
         synchronized(seasons) { seasons[cacheKey] = now() to releases }
         return releases
     }
 
-    /** Bounds API use and memory to [results]; never downloads NZBs during a search. */
+    /**
+     * Bounds fetching to [results] items, or reads every page when zero; never downloads NZBs.
+     * Indexers leave items out of a page while more follow, so the total they report says whether
+     * to ask for the next; without one, a full page does. An empty or repeated page ends the search.
+     */
     private suspend fun pages(
         indexer: UsenetIndexer,
         url: UsenetUrl,
@@ -335,22 +352,38 @@ class NewznabClient(
         wholeSeason: Boolean = false,
         byTitle: Boolean = false,
     ): List<UsenetRelease> {
+        require(results >= 0) { "Invalid fetch limit" }
         val limit = caps.limit.coerceIn(1, 100)
-        var page = request(indexer, url) { NewznabProtocol.releases(it, indexer) }
-        val releases = page.releases.toMutableList()
-        var offset = limit
-        while (offset < results && page.items > 0 && (page.total?.let { offset < it } ?: (page.items >= limit))) {
-            page = try {
-                NewznabProtocol.searchUrl(indexer, request, caps, offset, wholeSeason, byTitle)?.let { next ->
-                    request(indexer, next) { NewznabProtocol.releases(it, indexer) }
+        val releases = mutableListOf<UsenetRelease>()
+        val seenUrls = hashSetOf<String>()
+        val seenPages = hashSetOf<List<Byte>>()
+        var offset = 0
+        while (results == 0 || offset < results) {
+            currentCoroutineContext().ensureActive()
+            val pageSize = if (results == 0) limit else minOf(limit, results - offset)
+            val next = (if (offset == 0) url else
+                NewznabProtocol.searchUrl(indexer, request, caps, offset, wholeSeason, byTitle) ?: break)
+                .newBuilder().setQueryParameter("limit", pageSize.toString()).build()
+            val answer = try {
+                request(indexer, next) { xml ->
+                    NewznabProtocol.releases(xml, indexer) to
+                        MessageDigest.getInstance("SHA-256").digest(xml.toByteArray()).toList()
                 }
             } catch (e: CancellationException) {
                 throw e
-            } catch (_: Exception) {
-                null // The pages read so far still answer the search.
-            } ?: break
-            releases += page.releases
-            offset += limit
+            } catch (e: Exception) {
+                // A failed first page is still an error; later failures retain the pages already read.
+                if (offset == 0) throw e else break
+            }
+            val (page, fingerprint) = answer
+            if (page.items == 0 || !seenPages.add(fingerprint)) break
+            val fresh = page.releases.filter { seenUrls.add(it.nzbUrl) }
+            // Some indexers ignore offsets or cycle through the same pages with changing metadata.
+            if (page.releases.isNotEmpty() && fresh.isEmpty()) break
+            releases += if (results == 0) fresh else fresh.take(pageSize)
+            if (offset > Int.MAX_VALUE - pageSize) break
+            offset += pageSize
+            if (page.total?.let { offset >= it } ?: (page.items < pageSize)) break
         }
         return releases
     }
@@ -389,7 +422,7 @@ class NewznabClient(
             if (response.statusCode() !in 200..299) {
                 NewznabProtocol.throwIfKnownError(body)
                 if (response.statusCode() == 401 || response.statusCode() == 403) throw NewznabAuthException()
-                error("Indexer HTTP ${response.statusCode()}")
+                throw IndexerHttpException(response.statusCode())
             }
             parse(body).also {
                 val apiHitsLeft = left(response, API_LEFT_HEADERS)

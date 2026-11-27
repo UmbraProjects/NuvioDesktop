@@ -271,10 +271,12 @@ fun YouTubeTabScreen(
     val searchBox = YouTubeTopBarSearch
     var focusResultsPending by remember { mutableStateOf(false) }
     fun submitSearch() {
-        if (searchBox.text.isBlank()) return
+        val query = searchBox.text.trim()
+        if (query.isEmpty()) return
         focusResultsPending = true
-        YouTubeSearchHistory.record(searchBox.text)
-        YouTubeFeedRepository.search(searchBox.text)
+        YouTubeSearchHistory.record(query)
+        YouTubeFeedRepository.search(query)
+        searchBox.text = ""
         // Back from the results returns to where the search was typed.
         if (selectedName != YouTubeFeedKind.Search.name) {
             backStack = (backStack + selectedName).takeLast(MAX_BACK_STEPS)

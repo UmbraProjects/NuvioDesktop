@@ -137,4 +137,83 @@ class M3uParserTest {
         assertTrue(M3uParser.isVod("http://h/a/b.MP4"))
         assertFalse(M3uParser.isVod("http://h/live/1.ts"))
     }
+
+    @Test
+    fun `reads KODIPROP clearkey, EXTHTTP cookies, http-origin, and pipe headers without bleeding`() {
+        val r = parse(
+            """
+            #EXTM3U
+            #EXTINF:-1 tvg-id="143" group-title="English",CNBC TV18 Prime
+            #KODIPROP:inputstream.adaptive.license_type=clearkey
+            #KODIPROP:inputstream.adaptive.license_key=https://example.site/jtv/license?id=143
+            #EXTVLCOPT:http-user-agent=Chrome/140
+            https://example.site/jtv/manifest.mpd?id=143
+
+            #EXTINF:-1 tvg-id="9487112" group-title="Movies",&Pictures HD
+            #KODIPROP:inputstream.adaptive.license_type=org.w3.clearkey
+            #KODIPROP:inputstream.adaptive.license_key=0771502eee1e4de3ba76894175f3c5ea:13f23aaf5d66b038385bb2137bf5dcd8
+            https://cdn.example/And_Pictures_HD.mpd
+
+            #EXTINF:-1 tvg-id="144" group-title="Entertainment",Colors HD
+            #EXTVLCOPT:http-user-agent=Hotstar/25
+            #EXTHTTP:{"cookie":"hdntl=token123"}
+            #EXTVLCOPT:http-origin=https://www.hotstar.com
+            #EXTVLCOPT:http-referrer=https://www.hotstar.com/
+            https://cdn.example/ColorsHD.m3u8
+
+            #EXTINF:-1,Pipe Channel
+            https://cdn.example/pipe.m3u8|User-Agent=PipeUA%2F1.0&Cookie=sid%3D42
+            """.trimIndent(),
+        )
+        assertEquals(4, r.channels.size)
+
+        val jtv = r.channels[0]
+        assertEquals("clearkey", jtv.drmScheme)
+        assertEquals("https://example.site/jtv/license?id=143", jtv.drmLicenseKey)
+        assertEquals("Chrome/140", jtv.userAgent)
+        assertEquals("https://example.site/jtv/manifest.mpd?id=143", jtv.url)
+
+        val dish = r.channels[1]
+        assertEquals("org.w3.clearkey", dish.drmScheme)
+        assertEquals("0771502eee1e4de3ba76894175f3c5ea:13f23aaf5d66b038385bb2137bf5dcd8", dish.drmLicenseKey)
+        assertNull(dish.userAgent)
+        assertNull(dish.headers)
+
+        val colors = r.channels[2]
+        assertNull(colors.drmScheme)
+        assertNull(colors.drmLicenseKey)
+        assertEquals(
+            mapOf(
+                "Cookie" to "hdntl=token123",
+                "Origin" to "https://www.hotstar.com",
+                "User-Agent" to "Hotstar/25",
+                "Referer" to "https://www.hotstar.com/",
+            ),
+            colors.requestHeaders(),
+        )
+
+        val pipe = r.channels[3]
+        assertEquals("https://cdn.example/pipe.m3u8", pipe.url)
+        assertEquals("PipeUA/1.0", pipe.userAgent)
+        assertEquals("sid=42", pipe.headers?.get("Cookie"))
+    }
+
+    @Test
+    fun `reads KODIPROP placed before EXTINF`() {
+        val r = parse(
+            """
+            #EXTM3U
+            #KODIPROP:inputstream.adaptive.license_type=org.w3.clearkey
+            #KODIPROP:inputstream.adaptive.license_key=0771502eee1e4de3ba76894175f3c5ea:13f23aaf5d66b038385bb2137bf5dcd8
+            #EXTINF:-1,Before Extinf
+            https://cdn.example/live.mpd
+            #EXTINF:-1,Plain Next
+            https://cdn.example/plain.m3u8
+            """.trimIndent(),
+        )
+        assertEquals(2, r.channels.size)
+        assertEquals("org.w3.clearkey", r.channels[0].drmScheme)
+        assertNull(r.channels[1].drmScheme)
+        assertNull(r.channels[1].drmLicenseKey)
+    }
 }

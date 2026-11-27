@@ -59,6 +59,8 @@ data class UsenetIndexer(
     val apiPath: String = "",
     /** How this indexer is asked: by ID, by title, or both; see [UsenetSearchMode]. */
     val searchMode: UsenetSearchMode = UsenetSearchMode.AUTO,
+    /** Null uses the global fetch setting; zero reads every page. Independent of the display limit. */
+    val fetchResultsLimit: Int? = null,
 ) {
     /**
      * The Newznab endpoint: [apiUrl] with [apiPath] appended, keeping the URL's query parameters.
@@ -80,6 +82,9 @@ data class UsenetIndexer(
         val url = endpointUrl()
         require(name.isNotBlank() && url != null) { "A name and valid HTTP(S) API URL are required" }
         require(priority in USENET_PRIORITIES) { "Invalid priority" }
+        require(fetchResultsLimit == null || fetchResultsLimit in 0..UsenetSourceConfiguration.MAX_INDEXER_RESULTS) {
+            "Invalid fetch limit"
+        }
         require(!apiPath.contains(Regex("[?#\\\\\\s]")) && apiPath.split('/').none { it == "." || it == ".." }) {
             "Enter an API path such as /api"
         }
@@ -168,6 +173,9 @@ data class UsenetSourceConfiguration(
         maxResults == UNLIMITED_RESULTS -> MAX_INDEXER_RESULTS
         else -> maxOf(DEFAULT_INDEXER_RESULTS, maxResults)
     }
+
+    /** Zero means unlimited fetching, independently of how many results are listed. */
+    fun indexerResults(indexer: UsenetIndexer): Int = indexer.fetchResultsLimit ?: indexerResults
 
     /** The enabled providers, as the engine is given them. */
     fun servers(): List<String> = providers.filter { it.enabled }.map { it.serverUrl() }

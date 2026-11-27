@@ -265,8 +265,9 @@ object BuiltInUsenet {
         request: UsenetSearchRequest,
         config: UsenetSourceConfiguration,
     ): List<UsenetRelease>? {
+        val fetchLimit = config.indexerResults(indexer)
         // No UsenetStats here: the live search already counted these releases.
-        client.cachedSearch(indexer, request, config.indexerResults)?.let { cached ->
+        client.cachedSearch(indexer, request, fetchLimit)?.let { cached ->
             log.i { "${indexer.name}: ${cached.size} releases (cached)" }
             return cached
         }
@@ -274,9 +275,9 @@ object BuiltInUsenet {
         fun elapsedMs() = (System.nanoTime() - started) / 1_000_000
         return try {
             val caps = client.capabilities(indexer)
-            client.search(indexer, request, caps, config.indexerResults).also { found ->
+            client.search(indexer, request, caps, fetchLimit).also { found ->
                 val ms = elapsedMs()
-                client.cacheSearch(indexer, request, config.indexerResults, found)
+                client.cacheSearch(indexer, request, fetchLimit, found)
                 UsenetStats.search(indexer.id, ms, found.size)
                 UsenetStats.found(found)
                 log.i { "${indexer.name}: ${found.size} releases in $ms ms" }

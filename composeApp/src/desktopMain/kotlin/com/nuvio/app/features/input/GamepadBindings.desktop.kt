@@ -87,6 +87,9 @@ actual fun setPanelRingSize(size: PanelRingSize) = GamepadSettingsRepository.set
 actual fun panelRingMouseState(): StateFlow<Boolean> = GamepadSettingsRepository.ringMouseState
 actual fun setPanelRingMouse(enabled: Boolean) = GamepadSettingsRepository.setRingMouse(enabled)
 
+actual fun panelRingCloseAppState(): StateFlow<Boolean> = GamepadSettingsRepository.ringCloseAppState
+actual fun setPanelRingCloseApp(enabled: Boolean) = GamepadSettingsRepository.setRingCloseApp(enabled)
+
 /**
  * What a target does, in words. Deliberately no key names: the pad presses whatever key the action
  * is bound to, and those bindings are already listed in full in the keyboard sections above this

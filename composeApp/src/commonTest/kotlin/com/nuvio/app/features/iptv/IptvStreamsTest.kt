@@ -75,6 +75,17 @@ class IptvStreamsTest {
     }
 
     @Test
+    fun `m3u dash manifest does not swap extensions`() {
+        val c = iptvStreamCandidates(
+            m3u,
+            channel(url = "https://cdn.example/live/ch.mpd?id=143").copy(drmScheme = "clearkey"),
+            null,
+        )
+        assertEquals(listOf("https://cdn.example/live/ch.mpd?id=143"), c.map { it.url })
+        assertEquals(listOf(IptvStreamFormat.DASH), c.map { it.format })
+    }
+
+    @Test
     fun `content groups unknown categories into Other`() {
         val content = IptvPlaylistContent.build(
             playlist = xtream,

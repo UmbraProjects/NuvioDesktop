@@ -128,7 +128,13 @@ internal fun TonightPoster(
                 )
             } else {
                 if (art != null) {
-                    NuvioAsyncImage(model = art, contentDescription = title.name, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    NuvioAsyncImage(
+                        model = art,
+                        contentDescription = title.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        onSuccess = { recordBackdropColours(art, it.result.image) },
+                    )
                 }
                 Box(
                     Modifier.fillMaxSize().background(

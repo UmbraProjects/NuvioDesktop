@@ -2,6 +2,7 @@ package com.nuvio.app.features.streams
 
 import com.nuvio.app.features.debrid.DebridStreamAudioChannel
 import com.nuvio.app.features.debrid.DebridStreamAudioTag
+import com.nuvio.app.features.debrid.DebridStreamLanguage
 import com.nuvio.app.features.debrid.DebridStreamQuality
 import com.nuvio.app.features.debrid.DebridStreamVisualTag
 import nuvio.composeapp.generated.resources.*
@@ -15,6 +16,8 @@ enum class StreamListSortOrder(val label: String) {
     QUALITY(localizedString(Res.string.streams_sort_highest_quality)),
     VIDEO(localizedString(Res.string.streams_sort_best_video_hdr_dv)),
     AUDIO(localizedString(Res.string.streams_sort_best_audio)),
+    // Last, so the ordinal the player HUD sends for the others is unchanged.
+    LANGUAGE(localizedString(Res.string.streams_sort_preferred_language)),
 }
 
 /**
@@ -41,6 +44,7 @@ internal object StreamListSort {
         groups: List<AddonStreamGroup>,
         order: StreamListSortOrder,
         cachedFirst: Boolean = false,
+        preferredLanguages: List<String> = emptyList(),
         traitsOf: (StreamItem) -> StreamTraits = StreamTraitDetector::detect,
         sizeOf: (StreamItem) -> Long? = StreamTraitDetector::listSortSizeBytes,
     ): List<AddonStreamGroup> {
@@ -54,6 +58,7 @@ internal object StreamListSort {
             order = order,
             cachedFirst = cachedFirst,
             streamOf = { it },
+            preferredLanguages = preferredLanguages,
             traitsOf = traitsOf,
             sizeOf = sizeOf,
         )
@@ -80,10 +85,11 @@ internal object StreamListSort {
         order: StreamListSortOrder,
         cachedFirst: Boolean,
         streamOf: (T) -> StreamItem,
+        preferredLanguages: List<String> = emptyList(),
         traitsOf: (StreamItem) -> StreamTraits = StreamTraitDetector::detect,
         sizeOf: (StreamItem) -> Long? = StreamTraitDetector::listSortSizeBytes,
     ): List<T> {
-        val comparator = comparatorFor(order, cachedFirst) ?: return entries
+        val comparator = comparatorFor(order, cachedFirst, preferredLanguages) ?: return entries
         // Rows with nothing playable behind them (diagnostics, notices) have no size or quality;
         // pinned after the real sources in the order the addons sent them, as the score sort does.
         val (rankable, extras) = entries.partition { streamOf(it).isScorableStream }
@@ -96,7 +102,11 @@ internal object StreamListSort {
     }
 
     /** Null when nothing would move: the default order with cached-first off. */
-    private fun comparatorFor(order: StreamListSortOrder, cachedFirst: Boolean): Comparator<SortKey>? {
+    private fun comparatorFor(
+        order: StreamListSortOrder,
+        cachedFirst: Boolean,
+        preferredLanguages: List<String>,
+    ): Comparator<SortKey>? {
         // Unknown sizes always go last, in either direction — "smallest first" putting every row
         // without a size at the top would bury the answer.
         val bySizeKnown = compareBy<SortKey> { it.size == null }
@@ -117,6 +127,11 @@ internal object StreamListSort {
             StreamListSortOrder.AUDIO -> compareBy<SortKey> { audioFormatRank(it.traits.value) }
                 .thenBy { channelRank(it.traits.value) }
                 .then(byResolution)
+                .then(largestFirst)
+            // Each language bucket is then ranked as Highest quality ranks the whole list.
+            StreamListSortOrder.LANGUAGE -> compareBy<SortKey> { languageRank(it.traits.value, preferredLanguages) }
+                .then(byResolution)
+                .then(bySource)
                 .then(largestFirst)
         }
         if (!cachedFirst) return comparator
@@ -169,6 +184,26 @@ internal object StreamListSort {
             DebridStreamAudioTag.DD in tags -> 5
             DebridStreamAudioTag.OPUS in tags || DebridStreamAudioTag.AAC in tags -> 6
             else -> 7
+        }
+    }
+
+    /**
+     * Lower is better: the first preferred language (Settings > Playback's audio languages), then the
+     * next, then a Multi release (which usually carries it), then everything else. A release that
+     * names no language is not assumed to be in any one: it sorts with the rest.
+     */
+    internal fun languageRank(traits: StreamTraits, preferredLanguages: List<String>): Int {
+        val preferred = preferredLanguages.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+        val named = traits.languages.map { it.code.lowercase() }
+        // Settings can hold a regional code ("pt-br", "es-419"); release names only say the language.
+        val best = preferred.indexOfFirst { code ->
+            code in named || code.substringBefore('-') in named ||
+                (code == "es-419" && DebridStreamLanguage.LA.code in named)
+        }
+        return when {
+            best >= 0 -> best
+            DebridStreamLanguage.MULTI in traits.languages -> preferred.size
+            else -> preferred.size + 1
         }
     }
 

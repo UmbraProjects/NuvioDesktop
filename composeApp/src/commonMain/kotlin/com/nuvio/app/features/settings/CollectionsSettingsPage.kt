@@ -39,12 +39,14 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.nuvio.app.core.ui.NuvioActionLabel
 import com.nuvio.app.core.ui.NuvioStatusModal
 import com.nuvio.app.core.ui.nuvio
 import com.nuvio.app.features.collection.Collection
 import com.nuvio.app.features.collection.CollectionImportDialog
 import com.nuvio.app.features.collection.CollectionRepository
+import com.nuvio.app.features.home.HomeCatalogSettingsRepository
 import nuvio.composeapp.generated.resources.Res
 import nuvio.composeapp.generated.resources.action_cancel
 import nuvio.composeapp.generated.resources.action_delete
@@ -60,6 +62,8 @@ import nuvio.composeapp.generated.resources.collections_header
 import nuvio.composeapp.generated.resources.collections_import
 import nuvio.composeapp.generated.resources.collections_new
 import nuvio.composeapp.generated.resources.collections_pinned
+import nuvio.composeapp.generated.resources.settings_collections_focus_gifs
+import nuvio.composeapp.generated.resources.settings_collections_focus_gifs_description
 import org.jetbrains.compose.resources.stringResource
 import sh.calvin.reorderable.ReorderableColumn
 
@@ -79,6 +83,10 @@ private fun CollectionsSettingsSection(
 ) {
     val tokens = MaterialTheme.nuvio
     val collections by CollectionRepository.collections.collectAsState()
+    val homeSettings by remember {
+        HomeCatalogSettingsRepository.snapshot()
+        HomeCatalogSettingsRepository.uiState
+    }.collectAsStateWithLifecycle()
     val clipboardManager = LocalClipboardManager.current
     var showImportDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
@@ -119,6 +127,17 @@ private fun CollectionsSettingsSection(
     ) {
         // Laid out like the Homescreen catalog section: the summary as the heading's subtitle,
         // then one divider-separated row per collection, dragged by the row itself.
+        SettingsSwitchRow(
+            title = stringResource(Res.string.settings_collections_focus_gifs),
+            description = stringResource(Res.string.settings_collections_focus_gifs_description),
+            checked = homeSettings.collectionFocusGifsEnabled,
+            isTablet = isTablet,
+            modifier = Modifier.settingsScrollAnchor(
+                SettingsScrollAnchor.searchKey("x-collections-focus-gifs"),
+            ),
+            onCheckedChange = HomeCatalogSettingsRepository::setCollectionFocusGifsEnabled,
+        )
+        SettingsGroupDivider(isTablet = isTablet)
         if (collections.isNotEmpty()) {
             CollectionSettingsList(
                 collections = collections,

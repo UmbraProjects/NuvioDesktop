@@ -141,10 +141,12 @@ fun LibraryScreen(
     onNavigateToHome: (() -> Unit)? = null,
     onCalendarClick: (() -> Unit)? = null,
 ) {
-    val uiState by remember {
-        LibraryRepository.ensureLoaded()
-        LibraryRepository.uiState
-    }.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.Default) {
+            LibraryRepository.ensureLoaded()
+        }
+    }
+    val uiState by LibraryRepository.uiState.collectAsStateWithLifecycle()
     val cloudUiState by CloudLibraryRepository.uiState.collectAsStateWithLifecycle()
     val cloudSettings by remember {
         DebridSettingsRepository.ensureLoaded()

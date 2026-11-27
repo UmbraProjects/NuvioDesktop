@@ -60,4 +60,40 @@ class WatchedStorageDesktopTest {
         assertNull(WatchedStorage.loadPayload(1))
         assertNull(WatchedStorage.loadPayloadStream(1) { it.readBytes() })
     }
+
+    @Test
+    fun `a restored legacy store replaces the history already on disk`() {
+        WatchedStorage.clearAll()
+        WatchedStorage.savePayload(1, """{"items":[{"id":"ttCurrent","type":"movie"}]}""")
+        DesktopStorage.flushAll()
+
+        // What a settings restore writes before the app opens any store.
+        val restored = """{"items":[{"id":"ttRestored","type":"movie"}]}"""
+        DesktopStorage.store("nuvio_watched").apply {
+            putString("watched_1", restored)
+            flush()
+        }
+
+        assertEquals(restored, WatchedStorage.loadPayload(1))
+        assertEquals(restored, Files.readString(DesktopStorage.accountDir.resolve("nuvio_watched_1.json")))
+        assertFalse(Files.exists(DesktopStorage.storeFile("nuvio_watched")))
+        WatchedStorage.clearAll()
+    }
+
+    @Test
+    fun `backup payloads cover every profile on disk and unflushed saves`() {
+        WatchedStorage.clearAll()
+        WatchedStorage.savePayload(1, """{"items":[{"id":"tt1","type":"movie"}]}""")
+        DesktopStorage.flushAll()
+        WatchedStorage.savePayload(2, """{"items":[{"id":"tt2","type":"movie"}]}""") // not flushed yet
+
+        assertEquals(
+            mapOf(
+                "watched_1" to """{"items":[{"id":"tt1","type":"movie"}]}""",
+                "watched_2" to """{"items":[{"id":"tt2","type":"movie"}]}""",
+            ),
+            WatchedStorage.payloadsForBackup(),
+        )
+        WatchedStorage.clearAll()
+    }
 }

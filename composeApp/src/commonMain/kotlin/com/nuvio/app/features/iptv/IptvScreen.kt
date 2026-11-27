@@ -289,7 +289,11 @@ fun IptvScreen(
     val wallSection = onNow && section in IptvWall.SECTIONS
     // fork:live-tv-lineup - what was thrown out with "Never again", and the lineup as merged channels.
     // fork:live-tv-weed - channels the night checks found dead leave the same way as ones thrown out.
-    val never = settings.never[playlist.id].orEmpty() + IptvWeedRules.dead(settings.weeds[playlist.id].orEmpty())
+    val playlistNever = settings.never[playlist.id]
+    val playlistWeeds = settings.weeds[playlist.id]
+    val never = remember(playlistNever, playlistWeeds) {
+        playlistNever.orEmpty() + IptvWeedRules.dead(playlistWeeds.orEmpty())
+    }
     val storedLineup = settings.lineup[playlist.id]
     val keyIndex = derived?.keyIndex.orEmpty()
     val lineupChannels = remember(storedLineup, keyIndex, never, lineupOn, stageOn) {
@@ -313,6 +317,56 @@ fun IptvScreen(
         }
     }
     val wallMerged = remember(merged, never) { merged?.let { IptvLineupRules.visible(it, never) } }
+
+    // Return early for Triage and Stage *before* computing the classic channel page's wall,
+    // sidebar category counts, and filtered channel list — those scan tens of thousands of
+    // channels and the full EPG guide even though Stage never uses them.
+    if (triageOpen && content != null) {
+        IptvTriageScreen(
+            playlist = playlist,
+            content = content,
+            categoryRegions = categoryRegions,
+            settings = settings,
+            modifier = modifier,
+            topChromePadding = topChromePadding,
+            onClose = { triageOpen = false },
+        )
+        return
+    }
+    if (stageOn && stageOpen && content != null && merged != null) {
+        IptvStageScreen(
+            playlist = playlist,
+            content = content,
+            merged = wallMerged ?: merged,
+            lineup = lineupChannels,
+            settings = settings,
+            alternates = alternates,
+            guideVersion = guideVersion,
+            modifier = modifier,
+            topChromePadding = topChromePadding,
+            onAllChannels = { stageOpen = false },
+            onTriage = { triageOpen = true },
+            keptCategories = keptCategories,
+        )
+        return
+    }
+    // With Stage on, the channel list and the merged channels arrive a moment after the tab opens (from disk, then worked
+    // out off the UI thread). The plain channel page used to show meanwhile and then swap to Stage with no warning (user,
+    // Nov 23): wait on Stage's own background instead. A list that failed to load still falls through to the plain page,
+    // which says why.
+    if (stageOn && stageOpen && (content == null || merged == null) && !(content == null && state.error != null && !state.loading)) {
+        val waitTokens = MaterialTheme.nuvio
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .settingsSkyBackground(waitTokens.colors.background, waitTokens.colors.accent),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Loading Live TV…", style = MaterialTheme.typography.titleMedium, color = waitTokens.colors.textMuted)
+        }
+        return
+    }
+
     var askSkips by remember(filter) { mutableIntStateOf(0) } // fork:live-tv-evening - "Not that"
     val wall = if (onNow) rememberIptvWall(playlist, content, wallMerged, settings, now, guideVersion, keptCategories, filter, askSkips) else null
     val wallRows = remember(wall, section, filter, wallSection) { if (wallSection) wall?.rows(section, filter).orEmpty() else emptyList() }
@@ -769,55 +823,6 @@ fun IptvScreen(
             stageOpen = true
             section = home
         }
-    }
-
-    // fork:live-tv-triage - the questions take the whole tab while they are open.
-    if (triageOpen && content != null) {
-        IptvTriageScreen(
-            playlist = playlist,
-            content = content,
-            categoryRegions = categoryRegions,
-            settings = settings,
-            modifier = modifier,
-            topChromePadding = topChromePadding,
-            onClose = { triageOpen = false },
-        )
-        return
-    }
-
-    // fork:live-tv-stage
-    if (stageOn && stageOpen && content != null && merged != null) {
-        IptvStageScreen(
-            playlist = playlist,
-            content = content,
-            merged = wallMerged ?: merged,
-            lineup = lineupChannels,
-            settings = settings,
-            alternates = alternates,
-            guideVersion = guideVersion,
-            modifier = modifier,
-            topChromePadding = topChromePadding,
-            onAllChannels = { stageOpen = false },
-            onTriage = { triageOpen = true },
-            keptCategories = keptCategories,
-        )
-        return
-    }
-    // With Stage on, the channel list and the merged channels arrive a moment after the tab opens (from disk, then worked
-    // out off the UI thread). The plain channel page used to show meanwhile and then swap to Stage with no warning (user,
-    // Nov 23): wait on Stage's own background instead. A list that failed to load still falls through to the plain page,
-    // which says why.
-    if (stageOn && stageOpen && (content == null || merged == null) && !(content == null && state.error != null && !state.loading)) {
-        val waitTokens = MaterialTheme.nuvio
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .settingsSkyBackground(waitTokens.colors.background, waitTokens.colors.accent),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("Loading Live TV…", style = MaterialTheme.typography.titleMedium, color = waitTokens.colors.textMuted)
-        }
-        return
     }
 
     val tokens = MaterialTheme.nuvio
@@ -1703,7 +1708,7 @@ object IptvTopBarSearch {
     internal var playlistId: String? = null
 }
 
-private data class IptvScreenDerived(
+internal data class IptvScreenDerived(
     val categoryRegions: Map<String, String> = emptyMap(),
     val regions: List<String> = emptyList(),
     val keptCategories: IptvKept? = null,
@@ -1749,7 +1754,7 @@ private fun computeIptvScreenDerived(
  * Process-level single-entry cache for [computeIptvScreenDerived] so leaving the Live TV tab and
  * returning does not re-run language/region regex triage and channel merging over the playlist.
  */
-private object IptvScreenDerivedCache {
+internal object IptvScreenDerivedCache {
     private class Entry(
         val content: IptvPlaylistContent,
         val triage: IptvTriage?,
@@ -1771,5 +1776,9 @@ private object IptvScreenDerivedCache {
 
     fun put(content: IptvPlaylistContent, triage: IptvTriage?, needMerge: Boolean, value: IptvScreenDerived) {
         entry = Entry(content, triage, needMerge, value)
+    }
+
+    fun clear() {
+        entry = null
     }
 }

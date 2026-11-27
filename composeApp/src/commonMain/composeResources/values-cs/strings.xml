@@ -4939,6 +4939,7 @@
   <string name="streams_sort_highest_quality">Nejvyšší kvalita</string>
   <string name="streams_sort_best_video_hdr_dv">Nejlepší video (HDR/DV)</string>
   <string name="streams_sort_best_audio">Nejlepší zvuk</string>
+  <string name="streams_sort_preferred_language">Preferovaný jazyk první</string>
   <string name="streams_sort_cached_first">Nejdřív z mezipaměti</string>
   <string name="streams_single_column">Jeden sloupec</string>
   <string name="streams_two_columns">Dva sloupce</string>

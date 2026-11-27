@@ -62,6 +62,7 @@ object TraktLibraryRepository {
     private val _uiState = MutableStateFlow(TraktLibraryUiState())
     val uiState: StateFlow<TraktLibraryUiState> = _uiState.asStateFlow()
 
+    private val loadStateLock = Any()
     private var hasLoaded = false
     private val refreshJobMutex = Mutex()
     private val refreshMutex = Mutex()
@@ -69,10 +70,40 @@ object TraktLibraryRepository {
     private var lastRefreshAtMs: Long = 0L
     private var lastListTabsRefreshAtMs: Long = 0L
 
+    /** The read of the stored snapshot that [ensureLoaded] started; suspend callers wait for it. */
+    private var snapshotLoadJob: Job? = null
+
+    /** Bumped when the profile changes or the state is cleared, so a late read is dropped. */
+    private var snapshotGeneration = 0
+
+    /**
+     * Starts reading the stored snapshot without waiting for it. Called from composition (Details,
+     * Library via LibraryRepository), and the store's open has taken 8-10s at launch (2026-11-26:
+     * `nuvio_trakt_library` 9.6s and 8.4s, Windows holding the open), which would freeze the window
+     * that long if it were read on the caller's thread. The list appears once the read is done.
+     */
     fun ensureLoaded() {
-        if (hasLoaded) return
+        ensureLoadedJob()
+    }
+
+    private fun ensureLoadedJob(): Job? = synchronized(loadStateLock) {
+        if (hasLoaded) return snapshotLoadJob
         hasLoaded = true
-        loadSnapshotFromDisk()
+        val generation = snapshotGeneration
+        scope.launch {
+            val stored = loadSnapshotFromDisk() ?: return@launch
+            // A refresh or an edit that landed first is newer than the stored copy.
+            synchronized(loadStateLock) {
+                if (generation == snapshotGeneration && !_uiState.value.hasLoaded) {
+                    _uiState.value = stored
+                }
+            }
+        }.also { snapshotLoadJob = it }
+    }
+
+    /** [ensureLoaded], then waits for the stored snapshot so what follows sees it. */
+    private suspend fun awaitLoaded() {
+        ensureLoadedJob()?.join()
     }
 
     fun preloadListTabsAsync() {
@@ -88,18 +119,28 @@ object TraktLibraryRepository {
     }
 
     fun onProfileChanged() {
-        hasLoaded = false
-        lastRefreshAtMs = 0L
-        lastListTabsRefreshAtMs = 0L
-        _uiState.value = TraktLibraryUiState()
+        synchronized(loadStateLock) {
+            hasLoaded = false
+            snapshotGeneration++
+            snapshotLoadJob?.cancel()
+            snapshotLoadJob = null
+            lastRefreshAtMs = 0L
+            lastListTabsRefreshAtMs = 0L
+            _uiState.value = TraktLibraryUiState()
+        }
         ensureLoaded()
     }
 
     fun clearLocalState() {
-        hasLoaded = false
-        lastRefreshAtMs = 0L
-        lastListTabsRefreshAtMs = 0L
-        _uiState.value = TraktLibraryUiState()
+        synchronized(loadStateLock) {
+            hasLoaded = false
+            snapshotGeneration++
+            snapshotLoadJob?.cancel()
+            snapshotLoadJob = null
+            lastRefreshAtMs = 0L
+            lastListTabsRefreshAtMs = 0L
+            _uiState.value = TraktLibraryUiState()
+        }
         TraktLibraryStorage.savePayload("")
     }
 
@@ -120,7 +161,7 @@ object TraktLibraryRepository {
     }
 
     private suspend fun preloadListTabs() {
-        ensureLoaded()
+        awaitLoaded()
         refreshMutex.withLock {
             if (_uiState.value.listTabs.isNotEmpty()) return
 
@@ -135,7 +176,7 @@ object TraktLibraryRepository {
     }
 
     private suspend fun refresh(force: Boolean) {
-        ensureLoaded()
+        awaitLoaded()
         val job = refreshJobMutex.withLock {
             val runningRefresh = refreshJob?.takeIf(Job::isActive)
             if (runningRefresh != null) {
@@ -213,7 +254,7 @@ object TraktLibraryRepository {
     }
 
     suspend fun getMembershipSnapshot(item: LibraryItem): TraktMembershipSnapshot {
-        ensureLoaded()
+        awaitLoaded()
         if (TraktAuthRepository.isAuthenticated.value) {
             ensureFresh()
         }
@@ -225,7 +266,7 @@ object TraktLibraryRepository {
     }
 
     suspend fun toggleWatchlist(item: LibraryItem) {
-        ensureLoaded()
+        awaitLoaded()
         val snapshot = getMembershipSnapshot(item)
         val currentlyInWatchlist = snapshot.listMembership[WATCHLIST_KEY] == true
         val desired = snapshot.listMembership.toMutableMap().apply {
@@ -235,7 +276,7 @@ object TraktLibraryRepository {
     }
 
     suspend fun applyMembershipChanges(item: LibraryItem, changes: TraktMembershipChanges) {
-        ensureLoaded()
+        awaitLoaded()
         val headers = TraktAuthRepository.authorizedHeaders() ?: return
         ensureFresh()
 
@@ -414,21 +455,21 @@ object TraktLibraryRepository {
         )
     }
 
-    private fun loadSnapshotFromDisk() {
+    private fun loadSnapshotFromDisk(): TraktLibraryUiState? {
         val payload = TraktLibraryStorage.loadPayload().orEmpty().trim()
-        if (payload.isBlank()) return
+        if (payload.isBlank()) return null
 
         val cached = runCatching {
             json.decodeFromString<StoredTraktLibraryPayload>(payload)
         }.onFailure {
             log.w { "Failed to parse cached Trakt library payload: ${it.message}" }
-        }.getOrNull() ?: return
+        }.getOrNull() ?: return null
 
         val state = rebuildUiState(
             listTabs = cached.listTabs,
             entriesByList = cached.entriesByList,
         )
-        _uiState.value = state.copy(isLoading = false, errorMessage = null, hasLoaded = true)
+        return state.copy(isLoading = false, errorMessage = null, hasLoaded = true)
     }
 
     private fun persistSnapshot(state: TraktLibraryUiState) {

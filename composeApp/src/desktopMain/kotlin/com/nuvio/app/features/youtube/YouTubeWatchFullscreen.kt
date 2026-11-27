@@ -1,6 +1,8 @@
 package com.nuvio.app.features.youtube
 
+import com.nuvio.app.features.player.PlayerBrowsePip
 import com.nuvio.app.features.player.desktop.desktopAppFullscreenState
+import com.nuvio.app.features.player.desktop.desktopPictureInPictureState
 import com.nuvio.app.features.player.desktop.toggleDesktopAppFullscreen
 import java.awt.Window
 
@@ -14,6 +16,10 @@ import java.awt.Window
 /** The HUD's fullscreen button. True when it was taken for the watch page; false leaves it to the player. */
 internal fun handleYouTubeFullscreenButton(window: Window?): Boolean {
     if (!YouTubeWatchLayout.available.value) return false
+    // While in classic PiP or the browse-PiP corner box, fullscreen/F exits PiP rather than
+    // flipping the underlying watch page to full-window mode (which would leave the video stuck
+    // filling the window with volume-wheel instead of watch-page scroll upon returning from PiP).
+    if (desktopPictureInPictureState.value || PlayerBrowsePip.active.value) return false
     if (YouTubeWatchLayout.windowed.value) {
         val makeFullscreen = !desktopAppFullscreenState.value
         YouTubeWatchLayout.goFull(madeFullscreen = makeFullscreen)
@@ -32,7 +38,10 @@ internal actual fun requestYouTubeFullscreen() {
 }
 
 /** Escape. True when it went back to the watch page; false leaves it to the player (leave fullscreen, or close). */
-internal fun handleYouTubeEscape(window: Window?): Boolean = leaveYouTubeFull(window)
+internal fun handleYouTubeEscape(window: Window?): Boolean {
+    if (desktopPictureInPictureState.value || PlayerBrowsePip.active.value) return false
+    return leaveYouTubeFull(window)
+}
 
 /** A short wait first: a hand-over to the next video opens its player within about a second and keeps the fullscreen. */
 private fun restoreWindowAfterPlayer(window: Window?) {

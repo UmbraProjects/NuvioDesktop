@@ -24,6 +24,12 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.pow
 
@@ -36,6 +42,30 @@ import kotlin.math.pow
 
 /** Each backdrop's main colours, most present first; kept for the session. Empty = looked, nothing usable. */
 private val BackdropColours = mutableStateMapOf<String, List<Color>>()
+private val PaletteScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+private val PaletteInFlight = mutableSetOf<String>()
+private val PaletteLock = Any()
+
+/**
+ * Extracts palette colours directly from an image already decoded by a visible `NuvioAsyncImage`,
+ * avoiding a duplicate Coil network fetch and decode for the same URL.
+ */
+internal fun recordBackdropColours(url: String?, image: coil3.Image) {
+    if (url.isNullOrBlank() || url in BackdropColours) return
+    val claimed = synchronized(PaletteLock) {
+        if (url in BackdropColours || !PaletteInFlight.add(url)) false else true
+    }
+    if (!claimed) return
+    PaletteScope.launch {
+        val colours = runCatching {
+            com.nuvio.app.features.home.extractHeroPaletteColors(image, count = 3)
+        }.getOrNull().orEmpty()
+        withContext(Dispatchers.Main) {
+            BackdropColours[url] = colours
+            synchronized(PaletteLock) { PaletteInFlight.remove(url) }
+        }
+    }
+}
 
 /** The main colours of each of [urls], filled in as they are read (a small copy of each picture is enough). */
 @Composable
@@ -44,6 +74,11 @@ internal fun rememberBackdropColours(urls: Collection<String>): Map<String, List
     for (url in urls) androidx.compose.runtime.key(url) {
         LaunchedEffect(url) {
             if (url in BackdropColours) return@LaunchedEffect
+            // Give the visible NuvioAsyncImage a brief head start so it gets full priority on the
+            // network/disk cache and can supply its decoded image via [recordBackdropColours]
+            // without triggering a duplicate fetch for the same URL.
+            delay(150)
+            if (url in BackdropColours) return@LaunchedEffect
             val image = runCatching {
                 (
                     coil3.SingletonImageLoader.get(context).execute(
@@ -51,9 +86,11 @@ internal fun rememberBackdropColours(urls: Collection<String>): Map<String, List
                     ) as? coil3.request.SuccessResult
                     )?.image
             }.getOrNull()
-            BackdropColours[url] = image?.let {
-                runCatching { com.nuvio.app.features.home.extractHeroPaletteColors(it, count = 3) }.getOrNull()
-            }.orEmpty()
+            if (url !in BackdropColours) {
+                BackdropColours[url] = image?.let {
+                    runCatching { com.nuvio.app.features.home.extractHeroPaletteColors(it, count = 3) }.getOrNull()
+                }.orEmpty()
+            }
         }
     }
     return BackdropColours

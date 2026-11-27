@@ -59,6 +59,9 @@ data class UsenetConfiguration(
         else -> sizeBytes == null || sizeBytes > maxCompressedBytes
     }
 
+    /** Engine NNTP pipeline depth for the chosen profile, mirrored from `internal/engine/config.go`. */
+    val pipelineDepth: Int get() = if (profile == "low-memory") 2 else 4
+
     /** The User-Agent to send, or null to leave the library's own default. */
     val userAgent: String?
         get() = when (userAgentMode) {

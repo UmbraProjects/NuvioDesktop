@@ -416,6 +416,7 @@ internal fun LazyListScope.homescreenSettingsContent(
                         title = stringResource(Res.string.settings_homescreen_animate_collection_gifs_on_focus_only),
                         description = stringResource(Res.string.settings_homescreen_collection_gifs_play_only_on_the),
                         checked = homeSettings.collectionGifsOnFocusOnly,
+                        enabled = homeSettings.collectionFocusGifsEnabled,
                         isTablet = isTablet,
                         modifier = Modifier.settingsScrollAnchor(
                             SettingsScrollAnchor.searchKey("home-collection-gifs-on-focus"),

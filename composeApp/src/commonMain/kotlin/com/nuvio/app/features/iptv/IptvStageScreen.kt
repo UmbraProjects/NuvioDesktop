@@ -473,15 +473,55 @@ internal fun IptvStageScreen(
     val followedMatches by LiveScoreEngine.followed.collectAsStateWithLifecycle()
     // Only which matches and their phase rebuild the stage; a goal changes the score shown, not the picks.
     val matchShape = remember(followedMatches) { followedMatches.map { it.id to it.phase } }
-    val model by produceState<IptvStageModel?>(
-        null,
-        playlist.id, merged, lineup, guideVersion, now / 60_000L, settings.plays.size, settings.favourites, settings.recents, settings.homeRegion,
-        settings.follows, settings.shuffle, settings.minutes, settings.reminders, askText, askSkips, orderExclude, bedMinute, fromChoice,
-        aiPick, settings.askAi, keptCategories, liveTeams, settings.teams, settings.teamsDeclined, matchShape,
+    val stageCacheKey = remember(
+        playlist.id, lineup, guideVersion, now / 60_000L, settings.plays.size, settings.favourites,
+        settings.recents, settings.homeRegion, settings.follows, settings.shuffle, settings.minutes,
+        settings.reminders, askText, askSkips, orderExclude, bedMinute, fromChoice, aiPick,
+        settings.askAi, keptCategories, liveTeams, settings.teams, settings.teamsDeclined, matchShape,
     ) {
-        value = withContext(Dispatchers.Default) {
+        IptvStageModelCache.Key(
+            playlistId = playlist.id,
+            lineup = lineup,
+            guideVersion = guideVersion,
+            minuteBucket = now / 60_000L,
+            playsCount = settings.plays.size,
+            favourites = settings.favourites,
+            recents = settings.recents,
+            homeRegion = settings.homeRegion,
+            follows = settings.follows,
+            shuffle = settings.shuffle,
+            minutes = settings.minutes,
+            reminders = settings.reminders,
+            askText = askText,
+            askSkips = askSkips,
+            orderExclude = orderExclude,
+            bedMinute = bedMinute,
+            fromChoice = fromChoice,
+            aiPick = aiPick,
+            askAi = settings.askAi,
+            keptCategories = keptCategories,
+            liveTeamsSize = liveTeams.size,
+            teams = settings.teams,
+            teamsDeclined = settings.teamsDeclined,
+            matchShape = matchShape,
+        )
+    }
+    val cachedStageModel = remember(stageCacheKey, content, merged) {
+        IptvStageModelCache.get(stageCacheKey, content, merged)
+    }
+    val model by produceState(
+        initialValue = cachedStageModel,
+        stageCacheKey, content, merged,
+    ) {
+        IptvStageModelCache.get(stageCacheKey, content, merged)?.let {
+            value = it
+            return@produceState
+        }
+        val built = withContext(Dispatchers.Default) {
             buildIptvStage(playlist, content, merged, lineup, settings, System.currentTimeMillis(), askText, askSkips, orderExclude, orderFrom, aiPick, keptCategories, liveTeams, followedMatches)
         }
+        IptvStageModelCache.put(stageCacheKey, content, merged, built)
+        value = built
     }
 
     val zapList = remember(lineup, merged) { (lineup.ifEmpty { merged }).map { it.primary } }
@@ -3279,3 +3319,64 @@ internal fun Modifier.stageSecondary(onClick: (() -> Unit)?): Modifier =
         IptvRightClick.arm()
         onClick()
     }
+
+/**
+ * Process-level single-entry cache for [buildIptvStage] so switching away from Live TV and back
+ * paints the stages on the first frame instead of rebuilding across the full playlist and guide.
+ * Cleared by [IptvRepository.evictInMemoryCachesIfIdle] so idle eviction releases the playlist.
+ */
+internal object IptvStageModelCache {
+    data class Key(
+        val playlistId: String,
+        val lineup: List<IptvMergedChannel>,
+        val guideVersion: Int,
+        val minuteBucket: Long,
+        val playsCount: Int,
+        val favourites: List<String>,
+        val recents: List<String>,
+        val homeRegion: String?,
+        val follows: List<String>,
+        val shuffle: IptvShuffle,
+        val minutes: Int,
+        val reminders: List<IptvReminder>,
+        val askText: String,
+        val askSkips: Int,
+        val orderExclude: Set<String>,
+        val bedMinute: Int,
+        val fromChoice: Int,
+        val aiPick: IptvAiPick?,
+        val askAi: Boolean,
+        val keptCategories: Set<String>?,
+        val liveTeamsSize: Int,
+        val teams: Map<String, IptvTeamStat>,
+        val teamsDeclined: Set<String>,
+        val matchShape: List<Pair<String, Any>>,
+    )
+
+    private class Entry(
+        val key: Key,
+        val content: IptvPlaylistContent,
+        val merged: List<IptvMergedChannel>,
+        val value: IptvStageModel,
+    )
+
+    @Volatile
+    private var entry: Entry? = null
+
+    fun get(key: Key, content: IptvPlaylistContent, merged: List<IptvMergedChannel>): IptvStageModel? {
+        val current = entry ?: return null
+        return if (current.content === content && current.merged === merged && current.key == key) {
+            current.value
+        } else {
+            null
+        }
+    }
+
+    fun put(key: Key, content: IptvPlaylistContent, merged: List<IptvMergedChannel>, value: IptvStageModel) {
+        entry = Entry(key, content, merged, value)
+    }
+
+    fun clear() {
+        entry = null
+    }
+}

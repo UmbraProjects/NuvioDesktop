@@ -288,7 +288,15 @@ fun <T> NuvioShelfSection(
                     NuvioShelfItemSlot(
                         focused = index == focusedItemIndex,
                         onHover = onHoverItem?.let { { it(index) } },
-                        modifier = Modifier.animateItem(placementSpec = ShuffleDealPlacementSpec),
+                        // Placement-only: Compose's default fadeInSpec/fadeOutSpec wraps entering
+                        // items in a translucent GraphicsLayer sized to the unscaled card bounds,
+                        // which clips the focused poster's scale-up (top corners and badge) for
+                        // several frames whenever a catalog swaps in Discover.
+                        modifier = Modifier.animateItem(
+                            fadeInSpec = null,
+                            placementSpec = ShuffleDealPlacementSpec,
+                            fadeOutSpec = null,
+                        ),
                         // Only keyed rows animate the deal: without stable keys a reorder tears the
                         // items down and rebuilds them, so there is nothing for the cards to slide
                         // between and the stagger would fire on unrelated content changes.

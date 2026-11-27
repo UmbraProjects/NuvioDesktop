@@ -585,74 +585,50 @@ fun SettingsScreen(
         }.collectAsStateWithLifecycle()
         val liquidGlassNativeTabBarSupported = remember { isLiquidGlassNativeTabBarSupported() }
         val selectedAppLanguage by remember { ThemeSettingsRepository.selectedAppLanguage }.collectAsStateWithLifecycle()
-        val tmdbSettings by remember {
-            TmdbSettingsRepository.ensureLoaded()
-            TmdbSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val mdbListSettings by remember {
-            MdbListSettingsRepository.ensureLoaded()
-            MdbListSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val qualiCacheSettings by remember {
-            QualiCacheSettingsRepository.ensureLoaded()
-            QualiCacheSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val customPosterSettings by remember {
-            CustomPosterSettingsRepository.ensureLoaded()
-            CustomPosterSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val gameLibrarySettings by remember {
-            GameLibrarySettingsRepository.ensureLoaded()
-            GameLibrarySettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val screensaverSettings by remember {
-            ScreensaverSettingsRepository.ensureLoaded()
-            ScreensaverSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val debridSettings by remember {
-            DebridSettingsRepository.ensureLoaded()
-            DebridSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val discordPresenceSettings by remember {
-            DiscordPresenceSettingsRepository.ensureLoaded()
-            DiscordPresenceSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val traktAuthUiState by remember {
-            TraktAuthRepository.ensureLoaded()
-            TraktAuthRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val simklAuthUiState by remember {
-            SimklAuthRepository.ensureLoaded()
-            SimklAuthRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val simklSettingsUiState by remember {
-            SimklSettingsRepository.ensureLoaded()
-            SimklSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val yamtrackSettingsUiState by remember {
-            YamtrackSettingsRepository.ensureLoaded()
-            YamtrackSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val lightsSettingsUiState by remember {
-            LightsSettingsRepository.ensureLoaded()
-            LightsSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val traktCommentsEnabled by remember {
-            TraktCommentsSettings.ensureLoaded()
-            TraktCommentsSettings.enabled
-        }.collectAsStateWithLifecycle()
-        val traktSettingsUiState by remember {
-            TraktSettingsRepository.ensureLoaded()
-            TraktSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val addonsUiState by remember {
-            AddonRepository.initialize()
-            AddonRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val downloadsUiState by remember {
-            DownloadsRepository.ensureLoaded()
-            DownloadsRepository.uiState
-        }.collectAsStateWithLifecycle()
+        // Hydrate the page repositories off the first composition frame so opening Settings never
+        // blocks the UI thread on uncached or idle-evicted stores (e.g. nuvio_downloads).
+        LaunchedEffect(Unit) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                TmdbSettingsRepository.ensureLoaded()
+                MdbListSettingsRepository.ensureLoaded()
+                QualiCacheSettingsRepository.ensureLoaded()
+                CustomPosterSettingsRepository.ensureLoaded()
+                GameLibrarySettingsRepository.ensureLoaded()
+                ScreensaverSettingsRepository.ensureLoaded()
+                DebridSettingsRepository.ensureLoaded()
+                DiscordPresenceSettingsRepository.ensureLoaded()
+                TraktAuthRepository.ensureLoaded()
+                SimklAuthRepository.ensureLoaded()
+                SimklSettingsRepository.ensureLoaded()
+                YamtrackSettingsRepository.ensureLoaded()
+                LightsSettingsRepository.ensureLoaded()
+                TraktCommentsSettings.ensureLoaded()
+                TraktSettingsRepository.ensureLoaded()
+                AddonRepository.initialize()
+                DownloadsRepository.ensureLoaded()
+                MetaScreenSettingsRepository.ensureLoaded()
+                ContinueWatchingPreferencesRepository.ensureLoaded()
+                PosterCardStyleRepository.ensureLoaded()
+                EpisodeReleaseNotificationsRepository.ensureLoaded()
+            }
+        }
+        val tmdbSettings by TmdbSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val mdbListSettings by MdbListSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val qualiCacheSettings by QualiCacheSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val customPosterSettings by CustomPosterSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val gameLibrarySettings by GameLibrarySettingsRepository.uiState.collectAsStateWithLifecycle()
+        val screensaverSettings by ScreensaverSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val debridSettings by DebridSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val discordPresenceSettings by DiscordPresenceSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val traktAuthUiState by TraktAuthRepository.uiState.collectAsStateWithLifecycle()
+        val simklAuthUiState by SimklAuthRepository.uiState.collectAsStateWithLifecycle()
+        val simklSettingsUiState by SimklSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val yamtrackSettingsUiState by YamtrackSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val lightsSettingsUiState by LightsSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val traktCommentsEnabled by TraktCommentsSettings.enabled.collectAsStateWithLifecycle()
+        val traktSettingsUiState by TraktSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val addonsUiState by AddonRepository.uiState.collectAsStateWithLifecycle()
+        val downloadsUiState by DownloadsRepository.uiState.collectAsStateWithLifecycle()
         val homescreenCatalogRefreshKey = remember(addonsUiState.addons) {
             val enabledAddons = addonsUiState.addons.enabledAddons()
             val allManifestsSettled = enabledAddons.isNotEmpty() &&
@@ -674,22 +650,10 @@ fun SettingsScreen(
             HomeCatalogSettingsRepository.uiState
         }.collectAsStateWithLifecycle()
         val collections by CollectionRepository.collections.collectAsStateWithLifecycle()
-        val metaScreenSettingsUiState by remember {
-            MetaScreenSettingsRepository.ensureLoaded()
-            MetaScreenSettingsRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val continueWatchingPreferencesUiState by remember {
-            ContinueWatchingPreferencesRepository.ensureLoaded()
-            ContinueWatchingPreferencesRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val posterCardStyleUiState by remember {
-            PosterCardStyleRepository.ensureLoaded()
-            PosterCardStyleRepository.uiState
-        }.collectAsStateWithLifecycle()
-        val episodeReleaseNotificationsUiState by remember {
-            EpisodeReleaseNotificationsRepository.ensureLoaded()
-            EpisodeReleaseNotificationsRepository.uiState
-        }.collectAsStateWithLifecycle()
+        val metaScreenSettingsUiState by MetaScreenSettingsRepository.uiState.collectAsStateWithLifecycle()
+        val continueWatchingPreferencesUiState by ContinueWatchingPreferencesRepository.uiState.collectAsStateWithLifecycle()
+        val posterCardStyleUiState by PosterCardStyleRepository.uiState.collectAsStateWithLifecycle()
+        val episodeReleaseNotificationsUiState by EpisodeReleaseNotificationsRepository.uiState.collectAsStateWithLifecycle()
         val profileSettingsState by remember {
             ProfileRepository.state
         }.collectAsStateWithLifecycle()
@@ -697,7 +661,10 @@ fun SettingsScreen(
 
         LaunchedEffect(homescreenCatalogRefreshKey) {
             if (homescreenCatalogRefreshKey.isEmpty()) return@LaunchedEffect
-            HomeCatalogSettingsRepository.syncCatalogs(addonsUiState.addons.enabledAddons())
+            val enabled = addonsUiState.addons.enabledAddons()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                HomeCatalogSettingsRepository.syncCatalogs(enabled)
+            }
         }
 
         LaunchedEffect(Unit) {
@@ -705,7 +672,9 @@ fun SettingsScreen(
         }
 
         LaunchedEffect(collections) {
-            HomeCatalogSettingsRepository.syncCollections(collections)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                HomeCatalogSettingsRepository.syncCollections(collections)
+            }
         }
 
         var currentPage by rememberSaveable { mutableStateOf(SettingsPage.Addons.name) }
@@ -2993,10 +2962,10 @@ private fun DesktopSettingsTopBar(
 ) {
     val tokens = MaterialTheme.nuvio
     // The search field's clear X sits in the window's top-right corner, under the fullscreen
-    // button's hover zone; while it is showing, that button stays out of the way.
-    val clearButtonVisible = query.isNotEmpty()
-    DisposableEffect(clearButtonVisible) {
-        DesktopFullscreenHoverButtonState.suppressed = clearButtonVisible
+    // button's hover zone; while there is text to clear, that button stays out of the way.
+    val hasQuery = query.isNotEmpty()
+    DisposableEffect(hasQuery) {
+        DesktopFullscreenHoverButtonState.suppressed = hasQuery
         onDispose { DesktopFullscreenHoverButtonState.suppressed = false }
     }
     // The shell is centred in the window, so centring the nav icons on the whole bar puts them

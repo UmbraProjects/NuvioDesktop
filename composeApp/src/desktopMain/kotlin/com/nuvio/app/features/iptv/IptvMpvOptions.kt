@@ -46,10 +46,11 @@ private const val IPTV_REWIND_BYTES_PER_MINUTE = 90L * 1024 * 1024
 internal fun iptvMpvOptions(sourceUrl: String): List<String> {
     if (!IptvPlaybackSession.isIptvUrl(sourceUrl)) return emptyList()
     val settings = IptvRepository.settings.value
+    val isSegmented = sourceUrl.isHlsPlaylistUrl() || sourceUrl.isDashManifestUrl()
     return buildList {
         add("ytdl=no")
-        add("network-timeout=${if (sourceUrl.isHlsPlaylistUrl()) IPTV_HLS_NETWORK_TIMEOUT_SECONDS else IPTV_NETWORK_TIMEOUT_SECONDS}")
-        add(iptvDemuxerOption(sourceUrl))
+        add("network-timeout=${if (isSegmented) IPTV_HLS_NETWORK_TIMEOUT_SECONDS else IPTV_NETWORK_TIMEOUT_SECONDS}")
+        iptvDemuxerOption(sourceUrl)?.let(::add)
         add("force-seekable=yes")
         add("demuxer-seekable-cache=yes")
         add("sub-lavc-o=txt_format=text")
@@ -74,7 +75,13 @@ internal const val IPTV_CACHE_PAUSE_WAIT_SECONDS = 3
  * each segment with its own MPEG-TS reader, so there it goes through `seg_format_options`
  * (bracketed: the value holds an `=`); a `.ts` stream is read by MPEG-TS directly.
  */
-internal fun iptvDemuxerOption(sourceUrl: String): String {
+internal fun iptvDemuxerOption(sourceUrl: String): String? {
+    val channel = IptvPlaybackSession.channelForUrl(sourceUrl)
+    if (sourceUrl.isDashManifestUrl() || !channel?.drmScheme.isNullOrBlank()) {
+        // DASH uses FFmpeg's dash demuxer (not mpegts), and ClearKey streams set their own
+        // demuxer-lavf-o=cenc_decryption_key=... during native attach.
+        return null
+    }
     return if (sourceUrl.isHlsPlaylistUrl()) {
         "demuxer-lavf-o=seg_format_options=[merge_pmt_versions=1]"
     } else {
@@ -86,6 +93,12 @@ internal fun iptvDemuxerOption(sourceUrl: String): String {
 internal fun String.isHlsPlaylistUrl(): Boolean {
     val path = substringBefore('?').substringBefore('#').lowercase()
     return path.endsWith(".m3u8") || path.endsWith(".m3u")
+}
+
+/** Whether this URL's path names an MPEG-DASH manifest (`.mpd`). */
+internal fun String.isDashManifestUrl(): Boolean {
+    val path = substringBefore('?').substringBefore('#').lowercase()
+    return path.endsWith(".mpd")
 }
 
 /** Whether [sourceUrl] is live TV, whose buffer options outrank the preset's. */

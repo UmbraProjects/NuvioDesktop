@@ -49,6 +49,7 @@ object GamepadSettingsRepository {
     private const val KEY_RING_BUTTON = "panel_ring_pad_button"
     private const val KEY_RING_SIZE = "panel_ring_size"
     private const val KEY_RING_MOUSE = "panel_ring_middle_mouse"
+    private const val KEY_RING_CLOSE_APP = "panel_ring_close_app"
     private const val KEY_CURSOR_BUTTON = "gamepad_cursor_button"
     private const val KEY_CURSOR_SPEED = "gamepad_cursor_speed"
     private const val KEY_CURSOR_DEFAULT = "gamepad_cursor_default"
@@ -82,6 +83,7 @@ object GamepadSettingsRepository {
         GamepadButton.Start,
     )
     const val DEFAULT_RING_MOUSE = true
+    const val DEFAULT_RING_CLOSE_APP = false
 
     private val store = DesktopStorage.store("nuvio_gamepad")
 
@@ -156,6 +158,9 @@ object GamepadSettingsRepository {
     private val _ringMouseState = MutableStateFlow(DEFAULT_RING_MOUSE)
     val ringMouseState: StateFlow<Boolean> = _ringMouseState.asStateFlow()
 
+    private val _ringCloseAppState = MutableStateFlow(DEFAULT_RING_CLOSE_APP)
+    val ringCloseAppState: StateFlow<Boolean> = _ringCloseAppState.asStateFlow()
+
     /** A DualSense's light bar and player light; written to the pad by GamepadInput. */
     private val _lightBarState = MutableStateFlow(ControllerLightBar.LeaveAlone)
     val lightBarState: StateFlow<ControllerLightBar> = _lightBarState.asStateFlow()
@@ -194,6 +199,7 @@ object GamepadSettingsRepository {
         ringButton = decodeRingButton(store.getString(scoped(KEY_RING_BUTTON)))
         _ringSizeState.value = PanelRingSize.fromKey(store.getString(scoped(KEY_RING_SIZE)))
         _ringMouseState.value = store.getBoolean(scoped(KEY_RING_MOUSE)) ?: DEFAULT_RING_MOUSE
+        _ringCloseAppState.value = store.getBoolean(scoped(KEY_RING_CLOSE_APP)) ?: DEFAULT_RING_CLOSE_APP
         _lightBarState.value = ControllerLightBar.entries.firstOrNull { it.name == store.getString(scoped(KEY_LIGHT_BAR)) }
             ?: ControllerLightBar.LeaveAlone
         _playerLightState.value = store.getBoolean(scoped(KEY_PLAYER_LIGHT)) ?: true
@@ -306,6 +312,12 @@ object GamepadSettingsRepository {
         ensureLoaded()
         if (enabled == DEFAULT_RING_MOUSE) store.remove(scoped(KEY_RING_MOUSE)) else store.putBoolean(scoped(KEY_RING_MOUSE), enabled)
         _ringMouseState.value = enabled
+    }
+
+    fun setRingCloseApp(enabled: Boolean) {
+        ensureLoaded()
+        if (enabled == DEFAULT_RING_CLOSE_APP) store.remove(scoped(KEY_RING_CLOSE_APP)) else store.putBoolean(scoped(KEY_RING_CLOSE_APP), enabled)
+        _ringCloseAppState.value = enabled
     }
 
     fun setLightBar(mode: ControllerLightBar) {

@@ -94,6 +94,20 @@ class PanelRingMathTest {
     }
 
     @Test
+    fun closeAppSlotIsAppendedAfterSettingsWhenEnabled() {
+        val slots = panelRingSlots(listOf(NavBarEntry.Home, NavBarEntry.Library), includeCloseApp = true)
+        assertEquals(
+            listOf(
+                PanelRingSlot.Nav(NavBarEntry.Home),
+                PanelRingSlot.Nav(NavBarEntry.Library),
+                PanelRingSlot.Settings,
+                PanelRingSlot.CloseApp,
+            ),
+            slots,
+        )
+    }
+
+    @Test
     fun controllerAimsCommitsAndSteps() {
         PanelRingController.close()
         PanelRingController.slots = panelRingSlots(listOf(NavBarEntry.Home, NavBarEntry.Search, NavBarEntry.Library))

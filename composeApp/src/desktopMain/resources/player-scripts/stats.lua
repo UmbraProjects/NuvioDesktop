@@ -1225,6 +1225,77 @@ local function add_connection(s)
     end
 end
 
+-- Nuvio: live Usenet session diagnostics pushed by NativePlayerController into
+-- `user-data/nuvio-usenet` while the diagnostics overlay is open on a Usenet stream.
+local function nuvio_usenet_color(sev)
+    if sev == "danger" then
+        return "{\\1c&H3643F4&}"
+    elseif sev == "warn" then
+        return "{\\1c&H00B3FF&}"
+    end
+    return ""
+end
+
+local function add_usenet(s)
+    -- `user-data/*` is an MPV_FORMAT_NODE property: `get_property()` returns a JSON-quoted string,
+    -- whereas `get_property_native()` returns the raw Lua string (or table if mpv decoded it).
+    local raw = mp.get_property_native("user-data/nuvio-usenet")
+    local data = nil
+    if type(raw) == "table" then
+        data = raw
+    elseif type(raw) == "string" and raw ~= "" then
+        data = utils.parse_json(raw)
+    end
+    if type(data) ~= "table" or (not data.providers and not data.articles) then
+        return
+    end
+
+    local reset = "{\\1c}"
+    append(s, "", {prefix="Usenet:", nl=o.nl .. o.nl, indent=""})
+    if data.providers then
+        append(s, data.providers, {prefix_sep="", nl="", indent=""})
+    end
+    if data.articles then
+        local col = nuvio_usenet_color(data.articles_sev)
+        append(s, data.articles, {
+            prefix="Articles:",
+            prefix_sep=o.prefix_sep .. col,
+            suffix=(col ~= "" and reset or ""),
+        })
+    end
+    if data.ttfb then
+        local col = nuvio_usenet_color(data.ttfb_sev)
+        append(s, data.ttfb, {
+            prefix="TTFB:",
+            nl=(data.articles and "" or o.nl),
+            indent=(data.articles and (o.prefix_sep .. o.prefix_sep) or o.indent),
+            prefix_sep=o.prefix_sep .. col,
+            suffix=(col ~= "" and reset or ""),
+        })
+    end
+    if data.nntp_err then
+        local col = nuvio_usenet_color(data.nntp_err_sev)
+        append(s, data.nntp_err, {
+            prefix="NNTP Errors:",
+            prefix_sep=o.prefix_sep .. col,
+            suffix=(col ~= "" and reset or ""),
+        })
+    end
+    if data.failure then
+        append(s, data.failure, {
+            prefix="Status:",
+            prefix_sep=o.prefix_sep .. nuvio_usenet_color("danger"),
+            suffix=reset,
+        })
+    elseif mp.get_property_native("paused-for-cache") and data.stall_hint then
+        append(s, data.stall_hint, {
+            prefix="Status:",
+            prefix_sep=o.prefix_sep .. nuvio_usenet_color("warn"),
+            suffix=reset,
+        })
+    end
+end
+
 -- Returns an ASS string with "normal" stats
 local function default_stats()
     local stats = {}
@@ -1235,6 +1306,7 @@ local function default_stats()
     add_video(stats)
     add_audio(stats)
     add_connection(stats) -- Nuvio
+    add_usenet(stats) -- Nuvio
     return finalize_page({}, stats, false)
 end
 

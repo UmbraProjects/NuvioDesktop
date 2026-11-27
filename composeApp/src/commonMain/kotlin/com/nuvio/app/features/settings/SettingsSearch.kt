@@ -831,6 +831,15 @@ private fun settingsSearchEntries(
         )
         addRow(
             page = SettingsPage.KeyboardShortcuts,
+            key = "panel-ring-close-app",
+            title = resolve(Res.string.panel_ring_close_app),
+            description = resolve(Res.string.panel_ring_close_app_description),
+            pageLabel = resolve(Res.string.compose_settings_page_keyboard_shortcuts),
+            section = resolve(Res.string.panel_ring_settings_section),
+            icon = Icons.Rounded.Keyboard,
+        )
+        addRow(
+            page = SettingsPage.KeyboardShortcuts,
             key = "controller-cursor",
             title = resolve(Res.string.gamepad_cursor_section),
             description = resolve(Res.string.gamepad_cursor_search_description),

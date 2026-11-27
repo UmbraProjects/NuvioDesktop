@@ -1964,6 +1964,7 @@ private fun MainAppContent(
     fun submitSearch(query: String, confidentQuery: String = query) {
         val trimmed = query.trim()
         submittedSearchQuery = trimmed
+        searchQuery = ""
         searchOverlayActive = false
         handleRootTabClick(AppScreenTab.Search)
         navigateToContentCount++
@@ -2061,12 +2062,17 @@ private fun MainAppContent(
     LaunchedEffect(navController) {
         com.nuvio.app.features.panelring.PanelRingController.selections.collect { slot ->
             if (navController.currentDestination?.hasRoute<PlayerRoute>() == true) return@collect
+            if (slot == com.nuvio.app.features.panelring.PanelRingSlot.CloseApp) {
+                platformExitApp()
+                return@collect
+            }
             navController.navigate(TabsRoute) {
                 popUpTo<TabsRoute> { inclusive = false }
                 launchSingleTop = true
             }
             when (slot) {
                 com.nuvio.app.features.panelring.PanelRingSlot.Settings -> latestRootTabClick.value(AppScreenTab.Settings)
+                com.nuvio.app.features.panelring.PanelRingSlot.CloseApp -> Unit
                 is com.nuvio.app.features.panelring.PanelRingSlot.Nav ->
                     com.nuvio.app.features.navbar.NavBarNavigation.request(slot.entry)
             }
@@ -7874,8 +7880,14 @@ private fun TabletFloatingTopBar(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = statusBarPadding + NavBarTopOffset, bottom = tokens.spacing.controlGap)
-            .alpha(barAlpha),
+            // Alpha before padding: an alpha < 1f allocates an offscreen layer clipped to the
+            // node's bounds, so padding must sit inside it to leave room for NavGlowSpread above
+            // and below the pill while the bar fades in or out.
+            .alpha(barAlpha)
+            .padding(
+                top = statusBarPadding + NavBarTopOffset,
+                bottom = maxOf(tokens.spacing.controlGap, NavGlowSpread + 2.dp),
+            ),
         contentAlignment = Alignment.TopCenter,
     ) {
         val pickerMaxHeight = (

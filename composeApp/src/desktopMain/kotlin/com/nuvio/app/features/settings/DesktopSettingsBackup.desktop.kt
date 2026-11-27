@@ -177,6 +177,9 @@ internal fun mergeCredentialFreeStore(current: Properties, backup: Properties): 
 private const val PreferencesEntryPrefix = "preferences/"
 private const val BackupInfoEntry = "backup-info.txt"
 private const val CredentialsIncludedLine = "Credentials included:"
+/** The store name watched history is backed up under (see `WatchedStorage.payloadsForBackup`). */
+private const val WatchedHistoryBackupStore = "nuvio_watched"
+
 private val StoreFileName = Regex("[A-Za-z0-9_.-]+\\.properties")
 private const val MaxStoreEntryBytes = 64 * 1024 * 1024
 
@@ -329,15 +332,25 @@ internal actual object DesktopSettingsBackup {
                                 keep(path.fileName.toString().removeSuffix(".properties"))
                         }.toList()
                     }
+                    // Watched history lives in per-profile JSON files, not a .properties store; it
+                    // goes in under its old store's name so any build can restore it. Read first:
+                    // this also migrates a leftover legacy file, which is then not listed twice.
+                    val watchedHistory = com.nuvio.app.features.watched.WatchedStorage.payloadsForBackup()
                     val files = (
                         storesIn(DesktopStorage.rootDir) { it in MACHINE_STORE_NAMES } +
-                            storesIn(DesktopStorage.accountDir) { true }
+                            storesIn(DesktopStorage.accountDir) { it != WatchedHistoryBackupStore }
                         ).sortedBy { it.fileName.toString() }
                     files.forEach { file ->
                         val properties = settingsPropertiesForBackup(file, includeCredentials)
                             ?: return@forEach
                         zip.putNextEntry(ZipEntry("preferences/${file.fileName}"))
                         properties.store(zip, "Nuvio settings backup")
+                        zip.closeEntry()
+                    }
+                    if (watchedHistory.isNotEmpty()) {
+                        zip.putNextEntry(ZipEntry("preferences/$WatchedHistoryBackupStore.properties"))
+                        Properties().apply { watchedHistory.forEach { (key, value) -> setProperty(key, value) } }
+                            .store(zip, "Nuvio settings backup")
                         zip.closeEntry()
                     }
                     zip.putNextEntry(ZipEntry("backup-info.txt"))

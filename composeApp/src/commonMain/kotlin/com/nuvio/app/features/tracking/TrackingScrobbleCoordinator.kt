@@ -4,8 +4,12 @@ import co.touchlab.kermit.Logger
 import com.nuvio.app.features.profiles.ProfileRepository
 import com.nuvio.app.features.watchprogress.WatchProgressClock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 
 data class TrackingScrobbleFailure(
@@ -66,6 +70,12 @@ internal fun isPauseThatStopWouldRecordAsWatched(event: TrackingScrobbleEvent): 
 
 object TrackingScrobbleCoordinator {
     private val log = Logger.withTag("TrackingScrobble")
+    private val detachedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Runs a scrobble stop independently of a disposing player Compose scope. */
+    fun launchDetached(block: suspend () -> Unit) {
+        detachedScope.launch { block() }
+    }
 
     suspend fun scrobble(
         profileId: Int,

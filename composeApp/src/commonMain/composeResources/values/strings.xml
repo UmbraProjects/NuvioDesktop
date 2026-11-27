@@ -5042,7 +5042,9 @@
     <string name="poster_template_the_template_has_no_supported_id">The template has no supported id placeholder to fill in.</string>
     <string name="poster_template_the_request_could_not_be_made">The request could not be made.</string>
     <string name="settings_homescreen_animate_collection_gifs_on_focus_only">Animate collection GIFs on focus only</string>
-    <string name="settings_homescreen_collection_gifs_play_only_on_the">Collection GIFs play only on the highlighted card. The others show their first frame.</string>
+    <string name="settings_homescreen_collection_gifs_play_only_on_the">Collection GIFs play only on the highlighted card. The others show their cover image.</string>
+    <string name="settings_collections_focus_gifs">Show collection focus GIFs</string>
+    <string name="settings_collections_focus_gifs_description">Show each folder's focus GIF or hover artwork on highlight. Turn off to always show the static cover and follow normal poster highlight.</string>
     <string name="settings_meta_on_poster">On Poster</string>
     <string name="settings_meta_below_poster">Below Poster</string>
     <string name="settings_subtitle_color_soft_black">Soft black</string>
@@ -5069,6 +5071,7 @@
     <string name="streams_sort_highest_quality">Highest quality</string>
     <string name="streams_sort_best_video_hdr_dv">Best video (HDR/DV)</string>
     <string name="streams_sort_best_audio">Best audio</string>
+    <string name="streams_sort_preferred_language">Preferred language first</string>
     <string name="streams_sort_cached_first">Cached first</string>
     <string name="streams_single_column">Single column</string>
     <string name="streams_two_columns">Two columns</string>
@@ -5238,6 +5241,8 @@
     <string name="panel_ring_off">Off</string>
     <string name="panel_ring_mouse">Hold the middle mouse button</string>
     <string name="panel_ring_mouse_description">Opens the ring at the pointer; drag towards a panel and let go.</string>
+    <string name="panel_ring_close_app">Close app</string>
+    <string name="panel_ring_close_app_description">Adds a Close app slot to the panel ring so you can quit with the mouse or controller.</string>
     <string name="panel_ring_size">Ring size</string>
     <string name="panel_ring_size_small">Small</string>
     <string name="panel_ring_size_medium">Medium</string>

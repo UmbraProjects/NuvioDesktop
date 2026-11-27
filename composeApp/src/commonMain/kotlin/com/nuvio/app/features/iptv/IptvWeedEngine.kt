@@ -43,22 +43,43 @@ object IptvWeedEngine {
         val hour = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).hour
         if (!IptvWeedRules.quietHour(hour)) return
         val night = IptvDecide.nightOf(now)
-        for (playlist in settings.playlists) {
-            if (playlist.type == IptvPlaylistType.Stalker) continue
-            val content = IptvRepository.contentState(playlist.id).value.content ?: continue
-            val byKey = content.channels.associateBy { it.key }
-            val prefix = IptvRepository.channelRef(playlist.id, "")
-            val recents = settings.recents.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }
-            val records = settings.weeds[playlist.id].orEmpty()
-            val targets = IptvWeedRules.targets(settings.lineup[playlist.id].orEmpty(), recents, records, night).mapNotNull { byKey[it] }
-            for (channel in targets) {
-                // Something playing (or a viewer back) ends the night's weeding; it carries on with what is left next tick.
-                if (IptvPlaybackSession.active.value != null || !IptvRepository.settings.value.weed) return
-                val ok = open(playlist, channel, settings.preferredFormat, content.account?.allowedFormats.orEmpty())
-                IptvRepository.weedResult(playlist.id, channel.key, ok, night)
-                delay(PAUSE_MS)
+        // Off the Live TV tab the channel lists are released after a few minutes
+        // (IptvRepository.evictInMemoryCachesIfIdle), so read them back from disk for the night's
+        // pass and let them go again afterwards.
+        var reloaded = false
+        try {
+            for (playlist in settings.playlists) {
+                if (playlist.type == IptvPlaylistType.Stalker) continue
+                val wasInMemory = IptvRepository.contentState(playlist.id).value.content != null
+                val content = IptvRepository.contentForBackgroundUse(playlist.id) ?: continue
+                if (!wasInMemory) reloaded = true
+                if (!weedPlaylist(playlist, content, settings, night)) return
             }
+        } finally {
+            if (reloaded) IptvRepository.scheduleIdleEvictionIfOffTab()
         }
+    }
+
+    /** One playlist's share of the night's weeding; false when playback (or the setting) ends it. */
+    private suspend fun weedPlaylist(
+        playlist: IptvPlaylist,
+        content: IptvPlaylistContent,
+        settings: IptvSettings,
+        night: Long,
+    ): Boolean {
+        val byKey = content.channels.associateBy { it.key }
+        val prefix = IptvRepository.channelRef(playlist.id, "")
+        val recents = settings.recents.filter { it.startsWith(prefix) }.map { it.removePrefix(prefix) }
+        val records = settings.weeds[playlist.id].orEmpty()
+        val targets = IptvWeedRules.targets(settings.lineup[playlist.id].orEmpty(), recents, records, night).mapNotNull { byKey[it] }
+        for (channel in targets) {
+            // Something playing (or a viewer back) ends the night's weeding; it carries on with what is left next tick.
+            if (IptvPlaybackSession.active.value != null || !IptvRepository.settings.value.weed) return false
+            val ok = open(playlist, channel, settings.preferredFormat, content.account?.allowedFormats.orEmpty())
+            IptvRepository.weedResult(playlist.id, channel.key, ok, night)
+            delay(PAUSE_MS)
+        }
+        return true
     }
 
     /** True when the channel's stream starts sending bytes within the timeout. Only the first bytes are read. */

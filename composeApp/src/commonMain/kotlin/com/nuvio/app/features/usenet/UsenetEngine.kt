@@ -132,6 +132,7 @@ object UsenetEngine {
     @Volatile private var token: String? = null
     @Volatile private var sessionId: String? = null
     @Volatile private var playbackUrl: String? = null
+    @Volatile private var liveSessionProviders: Pair<String, List<String>>? = null
     private var idleStop: Job? = null
 
     val isInstalled: Boolean get() = usenetEngineExecutable() != null
@@ -197,6 +198,13 @@ object UsenetEngine {
         }.getOrNull()?.also { UsenetStats.sessionCounters(id, it) }
     }
 
+    /** Live session snapshot (providers, completion, TTFB, NNTP errors) for mpv's diagnostics overlay. */
+    suspend fun liveStats(url: String): UsenetLiveStats? {
+        val raw = diagnostics(url) ?: return null
+        val names = liveSessionProviders?.takeIf { it.first == url }?.second.orEmpty()
+        return UsenetLiveStats.fromDiagnostics(raw, names)
+    }
+
     /** A closing session's last counters for Usenet info; the engine forgets them on DELETE. */
     private suspend fun recordFinalCounters(id: String) {
         val base = endpoint ?: return
@@ -236,9 +244,15 @@ object UsenetEngine {
         val configuration = UsenetSettingsRepository.engine
         val nzbUrl = requireNotNull(stream.nzbUrl) { "Not a Usenet stream" }
         val addonServers = stream.usenetServers?.takeIf { it.isNotEmpty() }
+        val enabledProviders = sources.providers.filter { it.enabled }
         val servers = addonServers ?: sources.servers()
         // Usenet info names the engine's server indexes by provider; an addon's own servers are not ours.
-        val providerIds = if (addonServers != null) emptyList() else sources.providers.filter { it.enabled }.map { it.id }
+        val providerIds = if (addonServers != null) emptyList() else enabledProviders.map { it.id }
+        val providerNames = if (addonServers != null) {
+            addonServers.map(::usenetServerDisplayName)
+        } else {
+            enabledProviders.map { it.name.takeIf { n -> n.isNotBlank() } ?: it.host }
+        }
         val cachedNzb = configuration.cacheNzb && UsenetKeptNzbs.isKept(nzbUrl)
         if (servers.isEmpty()) {
             throw UsenetPreparationException("Add a Usenet provider in Settings > Usenet", UsenetPreparationException.Scope.PROVIDER)
@@ -309,6 +323,7 @@ object UsenetEngine {
             }
             sessionId = newId
             playbackUrl = url
+            liveSessionProviders = url to providerNames
             previousId?.let(::retireSession)
             UsenetStats.sessionOpened(newId, providerIds)
             UsenetFailedReleases.forget(stream)
@@ -415,6 +430,7 @@ object UsenetEngine {
         val id = sessionId
         sessionId = null
         playbackUrl = null
+        liveSessionProviders = null
         if (id != null) {
             recordFinalCounters(id)
             val answer = runCatching { withTimeoutOrNull(2_000L) { control("/sessions/$id", null, delete = true) } }.getOrNull()
@@ -512,7 +528,7 @@ object UsenetEngine {
         idleStop?.cancel(); idleStop = null
         val child = process
         sessionId?.let(UsenetStats::sessionClosed)
-        process = null; processProfile = null; endpoint = null; token = null; sessionId = null; playbackUrl = null
+        process = null; processProfile = null; endpoint = null; token = null; sessionId = null; playbackUrl = null; liveSessionProviders = null
         if (child != null) {
             runCatching { child.outputStream.close() }
             runCatching {

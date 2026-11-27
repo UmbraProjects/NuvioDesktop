@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,7 +34,12 @@ import com.nuvio.app.features.usenet.BuiltInUsenet
 import com.nuvio.app.features.usenet.DEFAULT_API_PATH
 import com.nuvio.app.features.usenet.IndexerProblem
 import com.nuvio.app.features.usenet.NntpProviderTester
+import com.nuvio.app.features.usenet.NntpProviderTuner
 import com.nuvio.app.features.usenet.ProviderTestResult
+import com.nuvio.app.features.usenet.TuneFailure
+import com.nuvio.app.features.usenet.TuneOutcome
+import com.nuvio.app.features.usenet.TuneProgress
+import com.nuvio.app.features.usenet.TuneReading
 import com.nuvio.app.features.usenet.UsenetConfiguration
 import com.nuvio.app.features.usenet.UsenetEngine
 import com.nuvio.app.features.usenet.isValidUserAgent
@@ -46,7 +53,9 @@ import com.nuvio.app.features.usenet.UsenetStats
 import com.nuvio.app.features.usenet.UsenetInfoFormat
 import com.nuvio.app.features.usenet.USENET_PRIORITIES
 import com.nuvio.app.features.usenet.replaceOrAdd
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import nuvio.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -59,6 +68,7 @@ import org.jetbrains.compose.resources.stringResource
 
 private sealed interface UsenetEditor {
     data class Provider(val provider: UsenetProvider, val isNew: Boolean) : UsenetEditor
+    data class TuneProvider(val provider: UsenetProvider) : UsenetEditor
     data class Indexer(val indexer: UsenetIndexer, val isNew: Boolean) : UsenetEditor
 }
 
@@ -191,6 +201,12 @@ internal fun LazyListScope.usenetSettingsContent(isTablet: Boolean) {
                             title = indexer.name,
                             description = listOfNotNull(
                                 stringResource(Res.string.usenet_priority_value, indexer.priority),
+                                indexer.fetchResultsLimit?.let { limit ->
+                                    stringResource(
+                                        Res.string.usenet_indexer_fetch_limit_row,
+                                        if (limit == 0) stringResource(Res.string.usenet_unlimited) else limit.toString(),
+                                    )
+                                },
                                 status.apiHitsLeft?.let { stringResource(Res.string.usenet_hits_left, it) },
                                 stringResource(Res.string.usenet_disabled).takeUnless { indexer.enabled },
                                 stats.indexers[indexer.id]?.averageRequestMs?.let {
@@ -372,12 +388,23 @@ internal fun LazyListScope.usenetSettingsContent(isTablet: Boolean) {
                 initial = open.provider,
                 isNew = open.isNew,
                 allowPrivateNetwork = engine.allowPrivateNetwork,
+                onTune = if (open.isNew) null else { { editor = UsenetEditor.TuneProvider(open.provider) } },
                 onSave = { provider ->
                     save { it.copy(providers = it.providers.replaceOrAdd(provider) { p -> p.id }) }
                     editor = null
                 },
                 onDelete = { id ->
                     save { it.copy(providers = it.providers.filterNot { p -> p.id == id }) }
+                    editor = null
+                },
+                onDismiss = { editor = null },
+            )
+            is UsenetEditor.TuneProvider -> ProviderTuneDialog(
+                provider = sources.providers.firstOrNull { it.id == open.provider.id } ?: open.provider,
+                allowPrivateNetwork = engine.allowPrivateNetwork,
+                pipeline = engine.pipelineDepth,
+                onApply = { tuned ->
+                    save { it.copy(providers = it.providers.replaceOrAdd(tuned) { p -> p.id }) }
                     editor = null
                 },
                 onDismiss = { editor = null },
@@ -456,6 +483,7 @@ private fun ProviderDialog(
     initial: UsenetProvider,
     isNew: Boolean,
     allowPrivateNetwork: Boolean,
+    onTune: (() -> Unit)?,
     onSave: (UsenetProvider) -> Unit,
     onDelete: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -486,6 +514,13 @@ private fun ProviderDialog(
         actions = {
             if (!isNew) {
                 DialogButton(text = stringResource(Res.string.usenet_delete), onClick = { onDelete(initial.id) })
+            }
+            if (onTune != null) {
+                DialogButton(
+                    text = stringResource(Res.string.usenet_provider_tune),
+                    enabled = !testing,
+                    onClick = onTune,
+                )
             }
             DialogButton(
                 text = stringResource(if (testing) Res.string.usenet_testing else Res.string.usenet_test),
@@ -566,6 +601,7 @@ private fun IndexerDialog(
     var priority by remember { mutableStateOf(initial.priority) }
     var enabled by remember { mutableStateOf(initial.enabled) }
     var searchMode by remember { mutableStateOf(initial.searchMode) }
+    var fetchResultsLimit by remember { mutableStateOf(initial.fetchResultsLimit) }
     var testing by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     val okText = stringResource(Res.string.usenet_test_ok)
@@ -574,7 +610,7 @@ private fun IndexerDialog(
 
     fun draft() = initial.copy(
         name = name.trim(), apiUrl = apiUrl.trim(), apiPath = apiPath.trim(), apiKey = apiKey.trim(),
-        priority = priority, enabled = enabled, searchMode = searchMode,
+        priority = priority, enabled = enabled, searchMode = searchMode, fetchResultsLimit = fetchResultsLimit,
     )
 
     NuvioModalDialog(
@@ -642,6 +678,20 @@ private fun IndexerDialog(
                 isTablet = true,
                 onSelected = { searchMode = it },
             )
+            SettingsChoiceRow(
+                title = stringResource(Res.string.usenet_indexer_fetch_limit),
+                description = stringResource(Res.string.usenet_indexer_fetch_limit_description),
+                options = listOf(
+                    SettingsChoiceOption<Int?>(null, stringResource(Res.string.usenet_indexer_fetch_limit_default)),
+                ) + UsenetSourceConfiguration.INDEXER_RESULT_CHOICES.map { value ->
+                    SettingsChoiceOption<Int?>(value, value.toString())
+                } + listOf(
+                    SettingsChoiceOption<Int?>(0, stringResource(Res.string.usenet_unlimited)),
+                ),
+                selectedValue = fetchResultsLimit,
+                isTablet = true,
+                onSelected = { fetchResultsLimit = it },
+            )
             SettingsSwitchRow(title = stringResource(Res.string.usenet_field_enabled), checked = enabled, isTablet = true, onCheckedChange = { enabled = it })
             SettingsChoiceRow(
                 title = stringResource(Res.string.usenet_field_priority),
@@ -667,7 +717,7 @@ private fun UsenetFallbackScoreRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = if (isTablet) DesktopRowVerticalPadding else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(if (isTablet) SettingsRowTextGap else 12.dp),
     ) {
         Text(
             text = title,
@@ -680,11 +730,228 @@ private fun UsenetFallbackScoreRow(
             step = 20.0,
             min = 0.0,
             max = 1000.0,
+            modifier = if (isTablet) Modifier.width(DesktopControlWidth) else Modifier,
+            fillWidth = isTablet,
             onChange = { onValueChange(it.toInt()) },
             format = { it.toInt().toString() },
         )
     }
 }
+
+@Composable
+private fun ProviderTuneDialog(
+    provider: UsenetProvider,
+    allowPrivateNetwork: Boolean,
+    pipeline: Int,
+    onApply: (UsenetProvider) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val tuner = remember { NntpProviderTuner() }
+    val messages = providerMessages()
+    var running by remember { mutableStateOf(false) }
+    var stopped by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<TuneProgress?>(null) }
+    var outcome by remember { mutableStateOf<TuneOutcome?>(null) }
+    var job by remember { mutableStateOf<Job?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose { job?.cancel() }
+    }
+
+    fun start() {
+        job?.cancel()
+        running = true
+        stopped = false
+        progress = null
+        outcome = null
+        job = scope.launch {
+            try {
+                val result = tuner.tune(provider, allowPrivateNetwork, pipeline) { update ->
+                    progress = update
+                }
+                outcome = result
+            } catch (_: CancellationException) {
+                stopped = true
+            } finally {
+                running = false
+            }
+        }
+    }
+
+    fun stop() {
+        stopped = true
+        job?.cancel()
+    }
+
+    val success = outcome as? TuneOutcome.Success
+    val hasChanges = success != null && (
+        success.result.port != provider.port ||
+            success.result.tls != provider.tls ||
+            success.result.connections != provider.connections
+        )
+    val notStarted = !running && !stopped && outcome == null
+    val readings = success?.result?.readings ?: progress?.readings.orEmpty()
+
+    NuvioModalDialog(
+        onDismissRequest = { if (running) stop() else onDismiss() },
+        title = stringResource(Res.string.usenet_provider_tune_title, provider.name.ifBlank { provider.host }),
+        actions = {
+            if (running) {
+                DialogButton(
+                    text = stringResource(Res.string.usenet_provider_tune_stop),
+                    style = DialogButtonStyle.Primary,
+                    onClick = ::stop,
+                )
+            } else if (hasChanges) {
+                val tuned = success.result
+                DialogButton(text = stringResource(Res.string.usenet_cancel), onClick = onDismiss)
+                DialogButton(
+                    text = stringResource(Res.string.usenet_provider_tune_apply),
+                    style = DialogButtonStyle.Primary,
+                    onClick = {
+                        onApply(
+                            provider.copy(
+                                port = tuned.port,
+                                tls = tuned.tls,
+                                connections = tuned.connections,
+                            ),
+                        )
+                    },
+                )
+            } else if (outcome != null || stopped) {
+                DialogButton(text = stringResource(Res.string.usenet_provider_tune_again), onClick = ::start)
+                DialogButton(
+                    text = stringResource(Res.string.usenet_provider_tune_close),
+                    style = DialogButtonStyle.Primary,
+                    onClick = onDismiss,
+                )
+            } else {
+                DialogButton(text = stringResource(Res.string.usenet_cancel), onClick = onDismiss)
+                DialogButton(
+                    text = stringResource(Res.string.usenet_provider_tune_start),
+                    style = DialogButtonStyle.Primary,
+                    onClick = ::start,
+                )
+            }
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (notStarted) {
+                Text(
+                    text = stringResource(Res.string.usenet_provider_tune_intro),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.nuvio.colors.textSecondary,
+                )
+            }
+            if (running) {
+                Text(
+                    text = tuneProgressText(progress),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.nuvio.colors.textPrimary,
+                )
+            }
+            if (success != null) {
+                val result = success.result
+                Text(
+                    text = if (result.limit != null) {
+                        stringResource(Res.string.usenet_provider_tune_limit, result.limit)
+                    } else {
+                        stringResource(Res.string.usenet_provider_tune_no_limit, result.tried)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.nuvio.colors.textPrimary,
+                )
+                if (result.limit != null && provider.connections > result.limit) {
+                    Text(
+                        text = stringResource(Res.string.usenet_provider_tune_over_limit, provider.connections),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.nuvio.colors.textPrimary,
+                    )
+                }
+                val fastestMbps = result.readings
+                    .filter { it.port == result.port && it.tls == result.tls && it.connections == result.fastestConnections }
+                    .map { it.mbps }
+                    .takeIf { it.isNotEmpty() }
+                    ?.average()
+                    ?: result.mbps
+                Text(
+                    text = stringResource(Res.string.usenet_provider_tune_fastest, result.fastestConnections, formatTuneMbps(fastestMbps)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.nuvio.colors.textPrimary,
+                )
+                Text(
+                    text = if (hasChanges) {
+                        stringResource(
+                            Res.string.usenet_provider_tune_recommended,
+                            result.port,
+                            result.connections,
+                            provider.port,
+                            provider.connections,
+                        )
+                    } else {
+                        stringResource(Res.string.usenet_provider_tune_unchanged)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.nuvio.colors.textPrimary,
+                )
+                Text(
+                    text = stringResource(Res.string.usenet_provider_tune_data, UsenetInfoFormat.bytes(result.downloadedBytes)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.nuvio.colors.textSecondary,
+                )
+            }
+            val failed = outcome as? TuneOutcome.Failed
+            if (failed != null) {
+                val errorText = when (failed.reason) {
+                    TuneFailure.CONNECT -> messages(failed.connect ?: ProviderTestResult.UNREACHABLE, provider.username.isBlank())
+                    TuneFailure.TEST_DATA -> stringResource(Res.string.usenet_provider_tune_test_data)
+                    TuneFailure.MISSING_ARTICLES -> stringResource(Res.string.usenet_provider_tune_missing)
+                    TuneFailure.TOO_SLOW -> stringResource(Res.string.usenet_provider_tune_too_slow)
+                }
+                Text(
+                    text = errorText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.nuvio.colors.danger,
+                )
+            }
+            if (stopped && !running && outcome == null) {
+                Text(
+                    text = stringResource(Res.string.usenet_provider_tune_stopped),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.nuvio.colors.textSecondary,
+                )
+            }
+            readings.forEach { reading ->
+                Text(
+                    text = tuneReadingText(reading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.nuvio.colors.textSecondary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun tuneProgressText(progress: TuneProgress?): String = when (progress?.phase) {
+    null -> stringResource(Res.string.usenet_provider_tune_preparing)
+    TuneProgress.Phase.LIMIT -> stringResource(Res.string.usenet_provider_tune_limit_running, progress.connections)
+    TuneProgress.Phase.PORT -> stringResource(Res.string.usenet_provider_tune_port_running, progress.port, progress.connections)
+    TuneProgress.Phase.CONNECTIONS -> stringResource(Res.string.usenet_provider_tune_connections_running, progress.connections)
+}
+
+@Composable
+private fun tuneReadingText(reading: TuneReading): String =
+    stringResource(Res.string.usenet_provider_tune_reading, reading.port, reading.connections, formatTuneMbps(reading.mbps))
+
+private fun formatTuneMbps(value: Double): String = String.format(Locale.getDefault(), "%.0f", value)
 
 @Composable
 private fun providerMessages(): (ProviderTestResult, Boolean) -> String {
