@@ -961,13 +961,13 @@ val buildWindowsWhisper = tasks.register("buildWindowsWhisper") {
 val usenetSourceDir = providers.gradleProperty("nuvio.usenet.sourceDir").orNull
     ?.takeIf { it.isNotBlank() }
     ?.let(::File)
-    ?: rootProject.projectDir.resolve("../nuvio-usenet-engine")
+    ?: projectDir.resolve("src/desktopMain/native/nuvio-usenet-engine")
 val usenetExpectedCommit = "1f64198502f8455da0a2f885f1b58e43b5c3a3da"
 val usenetGoRoot = nuvioEngineMsys2Root.resolve("lib/go")
 val usenetOutput = layout.buildDirectory.file("native/windows/nuvio-usenet.exe")
 
 fun missingUsenetInputs(): List<String> = listOfNotNull(
-    "nuvio-usenet-engine checkout ${usenetSourceDir.absolutePath} (git clone https://github.com/NuvioMedia/nuvio-usenet-engine beside NuvioDesktop and check out $usenetExpectedCommit, or pass -Pnuvio.usenet.sourceDir)"
+    "nuvio-usenet-engine sources under ${usenetSourceDir.absolutePath} (or pass -Pnuvio.usenet.sourceDir)"
         .takeUnless { usenetSourceDir.resolve("cmd/nuvio-usenet").isDirectory },
     "Go under ${usenetGoRoot.absolutePath} (MSYS2: pacman -S mingw-w64-ucrt-x86_64-go)"
         .takeUnless { usenetGoRoot.resolve("bin/go.exe").isFile },
@@ -983,6 +983,7 @@ val buildWindowsUsenetEngine = tasks.register("buildWindowsUsenetEngine") {
         inputs.dir(usenetSourceDir.resolve("cmd"))
         inputs.dir(usenetSourceDir.resolve("third_party"))
         inputs.file(usenetSourceDir.resolve("go.mod"))
+        inputs.file(usenetSourceDir.resolve("go.sum"))
     }
     outputs.file(usenetOutput)
     doLast {
@@ -994,12 +995,14 @@ val buildWindowsUsenetEngine = tasks.register("buildWindowsUsenetEngine") {
             return@doLast
         }
         try {
-            val head = runCatching {
-                ProcessBuilder("git", "-C", usenetSourceDir.absolutePath, "rev-parse", "HEAD")
-                    .redirectErrorStream(true).start().let { it.inputStream.bufferedReader().readText().trim() }
-            }.getOrDefault("")
-            if (head.isNotEmpty() && head != usenetExpectedCommit) {
-                logger.warn("nuvio-usenet-engine is at $head, not the tested $usenetExpectedCommit")
+            if (usenetSourceDir.resolve(".git").exists()) {
+                val head = runCatching {
+                    ProcessBuilder("git", "-C", usenetSourceDir.absolutePath, "rev-parse", "HEAD")
+                        .redirectErrorStream(true).start().let { it.inputStream.bufferedReader().readText().trim() }
+                }.getOrDefault("")
+                if (head.isNotEmpty() && head != usenetExpectedCommit) {
+                    logger.warn("nuvio-usenet-engine is at $head, not the tested $usenetExpectedCommit")
+                }
             }
             val work = layout.buildDirectory.dir("native/usenet").get().asFile.apply { mkdirs() }
             output.parentFile.mkdirs()
